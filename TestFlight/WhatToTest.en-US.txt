@@ -1,0 +1,4 @@
+What to Test
+
+1. Scroll optimization
+2. Load-earlier only triggers on upward scroll, prevents false triggers after jump

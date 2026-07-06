@@ -1,0 +1,2125 @@
+{
+  "x_ray": [
+    "xray"
+  ],
+  "right_anger_bubble": [
+    "anger_right"
+  ],
+  "ballot_box": [
+    "ballot_box_with_ballot"
+  ],
+  "man_bouncing_ball": [
+    "basketball_man"
+  ],
+  "person_bouncing_ball": [
+    "person_with_ball",
+    "basketball_player"
+  ],
+  "bellhop_bell": [
+    "bellhop"
+  ],
+  "biohazard": [
+    "biohazard_sign"
+  ],
+  "bow_and_arrow": [
+    "archery"
+  ],
+  "spiral_calendar": [
+    "calendar_spiral",
+    "spiral_calendar_pad"
+  ],
+  "card_file_box": [
+    "card_box"
+  ],
+  "champagne": [
+    "bottle_with_popping_cork"
+  ],
+  "cheese": [
+    "cheese_wedge"
+  ],
+  "cityscape_at_dusk": [
+    "city_sunset",
+    "city_dusk"
+  ],
+  "couch_and_lamp": [
+    "couch"
+  ],
+  "crayon": [
+    "lower_left_crayon"
+  ],
+  "cricket_game": [
+    "cricket_bat_and_ball",
+    "cricket_bat_ball"
+  ],
+  "latin_cross": [
+    "cross"
+  ],
+  "dagger": [
+    "dagger_knife"
+  ],
+  "desktop_computer": [
+    "desktop"
+  ],
+  "card_index_dividers": [
+    "dividers"
+  ],
+  "dove": [
+    "dove_of_peace"
+  ],
+  "footprints": [
+    "feet"
+  ],
+  "fire": [
+    "flame"
+  ],
+  "black_flag": [
+    "flag_black",
+    "waving_black_flag"
+  ],
+  "white_flag": [
+    "flag_white",
+    "waving_white_flag"
+  ],
+  "framed_picture": [
+    "frame_photo",
+    "frame_with_picture"
+  ],
+  "hammer_and_pick": [
+    "hammer_pick"
+  ],
+  "houses": [
+    "homes",
+    "house_buildings"
+  ],
+  "hotdog": [
+    "hot_dog"
+  ],
+  "derelict_house": [
+    "house_abandoned",
+    "derelict_house_building"
+  ],
+  "desert_island": [
+    "island"
+  ],
+  "old_key": [
+    "key2"
+  ],
+  "person_lifting_weights": [
+    "lifter",
+    "weight_lifter"
+  ],
+  "military_medal": [
+    "medal_military"
+  ],
+  "sports_medal": [
+    "medal_sports",
+    "medal"
+  ],
+  "sign_of_the_horns": [
+    "metal"
+  ],
+  "fu": [
+    "middle_finger",
+    "reversed_hand_with_middle_finger_extended"
+  ],
+  "motorcycle": [
+    "racing_motorcycle"
+  ],
+  "mountain_snow": [
+    "snow_capped_mountain"
+  ],
+  "spiral_notepad": [
+    "notepad_spiral",
+    "spiral_note_pad"
+  ],
+  "oil_drum": [
+    "oil"
+  ],
+  "old_woman": [
+    "grandma",
+    "older_woman"
+  ],
+  "old_man": [
+    "older_man",
+    "grandpa"
+  ],
+  "paintbrush": [
+    "lower_left_paintbrush"
+  ],
+  "paperclips": [
+    "linked_paperclips"
+  ],
+  "pause_button": [
+    "double_vertical_bar"
+  ],
+  "peace_symbol": [
+    "peace"
+  ],
+  "fountain_pen": [
+    "pen_fountain",
+    "lower_left_fountain_pen"
+  ],
+  "ping_pong": [
+    "table_tennis"
+  ],
+  "place_of_worship": [
+    "worship_symbol"
+  ],
+  "poop": [
+    "poo",
+    "shit",
+    "pile_of_poo",
+    "hankey"
+  ],
+  "radioactive": [
+    "radioactive_sign"
+  ],
+  "railway_track": [
+    "railroad_track"
+  ],
+  "robot": [
+    "robot_face"
+  ],
+  "skull": [
+    "skeleton"
+  ],
+  "skull_and_crossbones": [
+    "skull_crossbones"
+  ],
+  "speaking_head": [
+    "speaking_head_in_silhouette"
+  ],
+  "man_detective": [
+    "spy",
+    "sleuth_or_spy",
+    "male_detective"
+  ],
+  "thinking": [
+    "thinking_face"
+  ],
+  "cloud_with_lightning_and_rain": [
+    "thunder_cloud_rain",
+    "thunder_cloud_and_rain"
+  ],
+  "tickets": [
+    "admission_tickets"
+  ],
+  "next_track_button": [
+    "track_next",
+    "next_track"
+  ],
+  "unicorn": [
+    "unicorn_face"
+  ],
+  "funeral_urn": [
+    "urn"
+  ],
+  "sun_behind_large_cloud": [
+    "white_sun_cloud",
+    "white_sun_behind_cloud"
+  ],
+  "sun_behind_rain_cloud": [
+    "white_sun_rain_cloud",
+    "white_sun_behind_cloud_with_rain"
+  ],
+  "sun_behind_cloud": [
+    "partly_sunny"
+  ],
+  "sun_behind_small_cloud": [
+    "white_sun_small_cloud",
+    "white_sun_with_small_cloud"
+  ],
+  "umbrella": [
+    "umbrella2",
+    "open_umbrella"
+  ],
+  "hammer_and_wrench": [
+    "tools"
+  ],
+  "face_with_thermometer": [
+    "thermometer_face"
+  ],
+  "timer_clock": [
+    "timer"
+  ],
+  "slightly_smiling_face": [
+    "slightly_smiling",
+    "slight_smile"
+  ],
+  "upside_down_face": [
+    "upside_down"
+  ],
+  "money_mouth_face": [
+    "money_mouth"
+  ],
+  "nerd_face": [
+    "nerd"
+  ],
+  "hugs": [
+    "hugging",
+    "hugging_face",
+    "smiling_face_with_open_hands"
+  ],
+  "roll_eyes": [
+    "face_with_rolling_eyes",
+    "rolling_eyes"
+  ],
+  "slightly_frowning_face": [
+    "slight_frown"
+  ],
+  "frowning": [
+    "frowning_face",
+    "frowning2",
+    "white_frowning_face"
+  ],
+  "zipper_mouth_face": [
+    "zipper_mouth"
+  ],
+  "face_with_head_bandage": [
+    "head_bandage"
+  ],
+  "hand_with_fingers_splayed": [
+    "raised_hand_with_fingers_splayed",
+    "hand_splayed"
+  ],
+  "raised_hand": [
+    "hand"
+  ],
+  "vulcan_salute": [
+    "vulcan",
+    "raised_hand_with_part_between_middle_and_ring_fingers"
+  ],
+  "police_officer": [
+    "policeman",
+    "cop"
+  ],
+  "man_walking": [
+    "walking_man"
+  ],
+  "person_walking": [
+    "walking"
+  ],
+  "man_bowing": [
+    "bow",
+    "bowing_man"
+  ],
+  "passenger_ship": [
+    "cruise_ship"
+  ],
+  "motor_boat": [
+    "motorboat",
+    "boat"
+  ],
+  "flight_arrival": [
+    "airplane_arriving"
+  ],
+  "flight_departure": [
+    "airplane_departure"
+  ],
+  "small_airplane": [
+    "airplane_small"
+  ],
+  "racing_car": [
+    "race_car"
+  ],
+  "family_man_woman_boy_boy": [
+    "family_man_woman_boys"
+  ],
+  "family_man_woman_girl_girl": [
+    "family_man_woman_girls"
+  ],
+  "family_woman_woman_boy": [
+    "family_women_boy"
+  ],
+  "family_woman_woman_girl": [
+    "family_women_girl"
+  ],
+  "family_woman_woman_girl_boy": [
+    "family_women_girl_boy"
+  ],
+  "family_woman_woman_boy_boy": [
+    "family_women_boys"
+  ],
+  "family_woman_woman_girl_girl": [
+    "family_women_girls"
+  ],
+  "family_man_man_boy": [
+    "family_men_boy"
+  ],
+  "family_man_man_girl": [
+    "family_men_girl"
+  ],
+  "family_man_man_girl_boy": [
+    "family_men_girl_boy"
+  ],
+  "family_man_man_boy_boy": [
+    "family_men_boys"
+  ],
+  "family_man_man_girl_girl": [
+    "family_men_girls"
+  ],
+  "cloud_with_lightning": [
+    "cloud_lightning"
+  ],
+  "tornado": [
+    "cloud_tornado",
+    "cloud_with_tornado"
+  ],
+  "cloud_with_rain": [
+    "cloud_rain"
+  ],
+  "cloud_with_snow": [
+    "cloud_snow"
+  ],
+  "studio_microphone": [
+    "microphone2"
+  ],
+  "honeybee": [
+    "bee"
+  ],
+  "lion": [
+    "lion_face"
+  ],
+  "satellite": [
+    "artificial_satellite",
+    "satellite_orbital"
+  ],
+  "computer_mouse": [
+    "mouse_three_button",
+    "three_button_mouse"
+  ],
+  "wind_face": [
+    "wind_blowing_face"
+  ],
+  "man_golfing": [
+    "golfer",
+    "golfing_man"
+  ],
+  "building_construction": [
+    "construction_site"
+  ],
+  "ice_hockey": [
+    "hockey"
+  ],
+  "play_or_pause_button": [
+    "play_pause"
+  ],
+  "film_projector": [
+    "projector"
+  ],
+  "shopping": [
+    "shopping_bags"
+  ],
+  "open_book": [
+    "book"
+  ],
+  "national_park": [
+    "park"
+  ],
+  "world_map": [
+    "map"
+  ],
+  "pen": [
+    "pen_ballpoint",
+    "lower_left_ballpoint_pen"
+  ],
+  "e_mail": [
+    "e-mail",
+    "email"
+  ],
+  "atom_symbol": [
+    "atom"
+  ],
+  "mantelpiece_clock": [
+    "clock"
+  ],
+  "camera_flash": [
+    "camera_with_flash"
+  ],
+  "film_strip": [
+    "film_frames"
+  ],
+  "balance_scale": [
+    "scales"
+  ],
+  "person_surfing": [
+    "surfer"
+  ],
+  "man_surfing": [
+    "surfing_man"
+  ],
+  "kiss_woman_man": [
+    "couplekiss",
+    "couplekiss_man_woman"
+  ],
+  "kiss_woman_woman": [
+    "couplekiss_woman_woman",
+    "female_couplekiss"
+  ],
+  "kiss_man_man": [
+    "couplekiss_man_man",
+    "male_couplekiss"
+  ],
+  "couple_with_heart_man_man": [
+    "male_couple_with_heart"
+  ],
+  "couple_with_heart": [
+    "couple_with_heart_woman_man"
+  ],
+  "couple_with_heart_woman_woman": [
+    "female_couple_with_heart"
+  ],
+  "clamp": [
+    "compression"
+  ],
+  "person_in_bed": [
+    "sleeping_accommodation",
+    "sleeping_bed"
+  ],
+  "om": [
+    "om_symbol"
+  ],
+  "man_rowing_boat": [
+    "rowing_boat",
+    "rowboat",
+    "rowing_man"
+  ],
+  "new_moon": [
+    "moon"
+  ],
+  "fleur_de_lis": [
+    "fleur-de-lis"
+  ],
+  "face_vomiting": [
+    "puke"
+  ],
+  "smile": [
+    "grinning_face_with_smiling_eyes"
+  ],
+  "frowning_with_open_mouth": [
+    "frowning_face_with_open_mouth"
+  ],
+  "grinning_face": [
+    "grinning"
+  ],
+  "smiley": [
+    "grinning_face_with_big_eyes"
+  ],
+  "grinning_face_with_smiling_eyes": [
+    "smile"
+  ],
+  "grin": [
+    "beaming_face_with_smiling_eyes"
+  ],
+  "laughing": [
+    "grinning_squinting_face",
+    "satisfied"
+  ],
+  "sweat_smile": [
+    "grinning_face_with_sweat"
+  ],
+  "rofl": [
+    "rolling_on_the_floor_laughing"
+  ],
+  "joy": [
+    "face_with_tears_of_joy"
+  ],
+  "wink": [
+    "winking_face"
+  ],
+  "blush": [
+    "smiling_face_with_smiling_eyes"
+  ],
+  "innocent": [
+    "smiling_face_with_halo"
+  ],
+  "smiling_face_with_three_hearts": [
+    "smiling_face_with_hearts"
+  ],
+  "heart_eyes": [
+    "smiling_face_with_heart_eyes"
+  ],
+  "face_blowing_a_kiss": [
+    "kissing_heart"
+  ],
+  "kissing_face": [
+    "kissing"
+  ],
+  "kissing_face_with_closed_eyes": [
+    "kissing_closed_eyes"
+  ],
+  "kissing_face_with_smiling_eyes": [
+    "kissing_smiling_eyes"
+  ],
+  "face_savoring_food": [
+    "yum"
+  ],
+  "face_with_tongue": [
+    "stuck_out_tongue"
+  ],
+  "winking_face_with_tongue": [
+    "stuck_out_tongue_winking_eye"
+  ],
+  "zany_face": [
+    "crazy_face"
+  ],
+  "squinting_face_with_tongue": [
+    "stuck_out_tongue_closed_eyes"
+  ],
+  "expressionless_face": [
+    "expressionless"
+  ],
+  "face_without_mouth": [
+    "no_mouth"
+  ],
+  "smirking_face": [
+    "smirk"
+  ],
+  "unamused_face": [
+    "unamused"
+  ],
+  "grimacing": [
+    "grimacing_face"
+  ],
+  "relieved_face": [
+    "relieved",
+    "relaxed"
+  ],
+  "pensive_face": [
+    "pensive"
+  ],
+  "sleepy_face": [
+    "sleepy"
+  ],
+  "sleeping_face": [
+    "sleeping"
+  ],
+  "face_with_medical_mask": [
+    "mask"
+  ],
+  "face_with_crossed_out_eyes": [
+    "dizzy_face"
+  ],
+  "confused": [
+    "confused_face"
+  ],
+  "worried": [
+    "worried_face"
+  ],
+  "open_mouth": [
+    "face_with_open_mouth"
+  ],
+  "hushed_face": [
+    "hushed"
+  ],
+  "astonished_face": [
+    "astonished"
+  ],
+  "flushed_face": [
+    "flushed"
+  ],
+  "frowning_face_with_open_mouth": [
+    "frowning_with_open_mouth"
+  ],
+  "anguished_face": [
+    "anguished"
+  ],
+  "fearful": [
+    "fearful_face"
+  ],
+  "anxious_face_with_sweat": [
+    "cold_sweat"
+  ],
+  "sad_but_relieved_face": [
+    "disappointed_relieved"
+  ],
+  "cry": [
+    "crying_face"
+  ],
+  "sob": [
+    "loudly_crying_face"
+  ],
+  "scream": [
+    "face_screaming_in_fear"
+  ],
+  "confounded_face": [
+    "confounded"
+  ],
+  "persevering_face": [
+    "persevere"
+  ],
+  "disappointed_face": [
+    "disappointed"
+  ],
+  "downcast_face_with_sweat": [
+    "sweat"
+  ],
+  "weary_face": [
+    "weary"
+  ],
+  "face_with_steam_from_nose": [
+    "triumph"
+  ],
+  "enraged_face": [
+    "rage"
+  ],
+  "angry": [
+    "angry_face"
+  ],
+  "face_with_symbols_on_mouth": [
+    "face_with_symbols_over_mouth"
+  ],
+  "smiling_face_with_horns": [
+    "smiling_imp"
+  ],
+  "angry_face_with_horns": [
+    "imp"
+  ],
+  "ogre": [
+    "japanese_ogre"
+  ],
+  "goblin": [
+    "japanese_goblin"
+  ],
+  "alien_monster": [
+    "space_invader"
+  ],
+  "grinning_cat": [
+    "smiley_cat"
+  ],
+  "grinning_cat_with_smiling_eyes": [
+    "smile_cat"
+  ],
+  "joy_cat": [
+    "cat_with_tears_of_joy"
+  ],
+  "smiling_cat_with_heart_eyes": [
+    "heart_eyes_cat"
+  ],
+  "cat_with_wry_smile": [
+    "smirk_cat"
+  ],
+  "weary_cat": [
+    "scream_cat"
+  ],
+  "crying_cat": [
+    "crying_cat_face"
+  ],
+  "see_no_evil_monkey": [
+    "see_no_evil"
+  ],
+  "hear_no_evil_monkey": [
+    "hear_no_evil"
+  ],
+  "speak_no_evil_monkey": [
+    "speak_no_evil"
+  ],
+  "heart_with_arrow": [
+    "cupid"
+  ],
+  "heart_with_ribbon": [
+    "gift_heart"
+  ],
+  "growing_heart": [
+    "heartpulse"
+  ],
+  "beating_heart": [
+    "heartbeat"
+  ],
+  "heart_exclamation": [
+    "heavy_heart_exclamation",
+    "heavy_heart_exclamation_mark_ornament"
+  ],
+  "heart": [
+    "red_heart"
+  ],
+  "100": [
+    "hundred_points"
+  ],
+  "anger_symbol": [
+    "anger"
+  ],
+  "collision": [
+    "boom"
+  ],
+  "sweat_droplets": [
+    "sweat_drops"
+  ],
+  "dashing_away": [
+    "dash"
+  ],
+  "waving_hand": [
+    "wave"
+  ],
+  "victory_hand": [
+    "v"
+  ],
+  "backhand_index_pointing_left": [
+    "point_left"
+  ],
+  "backhand_index_pointing_right": [
+    "point_right"
+  ],
+  "backhand_index_pointing_up": [
+    "point_up_2"
+  ],
+  "backhand_index_pointing_down": [
+    "point_down"
+  ],
+  "index_pointing_up": [
+    "point_up"
+  ],
+  "+1": [
+    "thumbs_up",
+    "thumbsup"
+  ],
+  "-1": [
+    "thumbs_down",
+    "thumbsdown"
+  ],
+  "raised_fist": [
+    "fist"
+  ],
+  "oncoming_fist": [
+    "facepunch",
+    "punch"
+  ],
+  "left_facing_fist": [
+    "fist_left"
+  ],
+  "right_facing_fist": [
+    "fist_right"
+  ],
+  "clap": [
+    "clapping_hands"
+  ],
+  "raising_hands": [
+    "raised_hands"
+  ],
+  "folded_hands": [
+    "pray",
+    "high_five"
+  ],
+  "nail_polish": [
+    "nail_care"
+  ],
+  "flexed_biceps": [
+    "muscle"
+  ],
+  "ear_with_hearing_aid": [
+    "hear_with_hearing_aid"
+  ],
+  "mouth": [
+    "lips"
+  ],
+  "person": [
+    "adult"
+  ],
+  "person_blond_hair": [
+    "person_with_blond_hair"
+  ],
+  "person_beard": [
+    "bearded_person"
+  ],
+  "man_red_hair": [
+    "man_red_haired"
+  ],
+  "man_curly_hair": [
+    "man_curly_haired"
+  ],
+  "man_white_hair": [
+    "man_white_haired"
+  ],
+  "woman_red_hair": [
+    "woman_red_haired"
+  ],
+  "woman_curly_hair": [
+    "woman_curly_haired"
+  ],
+  "woman_white_hair": [
+    "woman_white_haired"
+  ],
+  "blonde_woman": [
+    "woman_blond_hair"
+  ],
+  "blonde_man": [
+    "man_blond_hair"
+  ],
+  "older_person": [
+    "old_person",
+    "older_adult"
+  ],
+  "man_frowning": [
+    "frowning_man"
+  ],
+  "woman_frowning": [
+    "frowning_woman"
+  ],
+  "man_pouting": [
+    "pouting_man"
+  ],
+  "woman_pouting": [
+    "pouting_woman"
+  ],
+  "person_pouting": [
+    "person_with_pouting_face"
+  ],
+  "man_gesturing_no": [
+    "no_good_man"
+  ],
+  "woman_gesturing_no": [
+    "no_good_woman"
+  ],
+  "person_gesturing_no": [
+    "no_good"
+  ],
+  "man_gesturing_ok": [
+    "ok_man"
+  ],
+  "woman_gesturing_ok": [
+    "ok_woman"
+  ],
+  "man_tipping_hand": [
+    "tipping_hand_man"
+  ],
+  "woman_tipping_hand": [
+    "tipping_hand_woman"
+  ],
+  "person_tipping_hand": [
+    "information_desk_person"
+  ],
+  "man_raising_hand": [
+    "raising_hand_man"
+  ],
+  "woman_raising_hand": [
+    "raising_hand_woman"
+  ],
+  "person_raising_hand": [
+    "raising_hand"
+  ],
+  "woman_bowing": [
+    "bowing_woman"
+  ],
+  "woman_police_officer": [
+    "policewoman"
+  ],
+  "woman_detective": [
+    "female_detective"
+  ],
+  "guard": [
+    "guardsman"
+  ],
+  "woman_guard": [
+    "guardswoman"
+  ],
+  "person_with_skullcap": [
+    "man_with_gua_pi_mao"
+  ],
+  "construction_worker_man": [
+    "man_construction_worker"
+  ],
+  "construction_worker_woman": [
+    "woman_construction_worker"
+  ],
+  "woman_wearing_turban": [
+    "woman_with_turban"
+  ],
+  "man_wearing_turban": [
+    "man_with_turban"
+  ],
+  "person_with_veil": [
+    "bride_with_veil"
+  ],
+  "baby_angel": [
+    "angel"
+  ],
+  "santa_claus": [
+    "santa"
+  ],
+  "man_getting_massage": [
+    "massage_man"
+  ],
+  "woman_getting_massage": [
+    "massage_woman",
+    "massage"
+  ],
+  "person_getting_haircut": [
+    "haircut"
+  ],
+  "man_getting_haircut": [
+    "haircut_man"
+  ],
+  "woman_getting_haircut": [
+    "haircut_woman"
+  ],
+  "woman_walking": [
+    "walking_woman"
+  ],
+  "man_with_white_cane": [
+    "man_with_probing_cane"
+  ],
+  "woman_with_white_cane": [
+    "woman_with_probing_cane"
+  ],
+  "woman_running": [
+    "running_woman"
+  ],
+  "man_running": [
+    "running_man",
+    "runner"
+  ],
+  "woman_dancing": [
+    "dancer"
+  ],
+  "people_with_bunny_ears": [
+    "dancing_women",
+    "dancers"
+  ],
+  "person_in_suit_levitating": [
+    "business_suit_levitating",
+    "man_in_business_suit_levitating",
+    "levitate"
+  ],
+  "men_with_bunny_ears": [
+    "dancing_men"
+  ],
+  "woman_golfing": [
+    "golfing_woman"
+  ],
+  "woman_surfing": [
+    "surfing_woman"
+  ],
+  "woman_rowing_boat": [
+    "rowing_woman"
+  ],
+  "woman_swimming": [
+    "swimming_woman"
+  ],
+  "man_swimming": [
+    "swimming_man",
+    "swimmer"
+  ],
+  "woman_bouncing_ball": [
+    "basketball_woman"
+  ],
+  "woman_lifting_weights": [
+    "weight_lifting_woman"
+  ],
+  "man_lifting_weights": [
+    "weight_lifting_man"
+  ],
+  "man_biking": [
+    "biking_man",
+    "bicyclist"
+  ],
+  "woman_biking": [
+    "biking_woman"
+  ],
+  "woman_mountain_biking": [
+    "mountain_biking_woman"
+  ],
+  "man_mountain_biking": [
+    "mountain_biking_man",
+    "mountain_bicyclist"
+  ],
+  "person_taking_bath": [
+    "bath"
+  ],
+  "women_holding_hands": [
+    "two_women_holding_hands"
+  ],
+  "woman_and_man_holding_hands": [
+    "couple"
+  ],
+  "men_holding_hands": [
+    "two_men_holding_hands"
+  ],
+  "dog": [
+    "dog2"
+  ],
+  "cat": [
+    "cat2"
+  ],
+  "tiger": [
+    "tiger2"
+  ],
+  "horse": [
+    "racehorse"
+  ],
+  "cow": [
+    "cow2"
+  ],
+  "pig": [
+    "pig2"
+  ],
+  "fox": [
+    "fox_face"
+  ],
+  "ewe": [
+    "sheep"
+  ],
+  "camel": [
+    "dromedary_camel"
+  ],
+  "mouse": [
+    "mouse2"
+  ],
+  "rabbit": [
+    "rabbit2"
+  ],
+  "panda": [
+    "panda_face"
+  ],
+  "front_facing_baby_chick": [
+    "hatched_chick"
+  ],
+  "spouting_whale": [
+    "whale2"
+  ],
+  "spiral_shell": [
+    "shell"
+  ],
+  "sheaf_of_rice": [
+    "ear_of_rice"
+  ],
+  "leaf_fluttering_in_wind": [
+    "leaves"
+  ],
+  "red_apple": [
+    "apple"
+  ],
+  "ear_of_corn": [
+    "corn"
+  ],
+  "cheese_wedge": [
+    "cheese"
+  ],
+  "french_fries": [
+    "fries"
+  ],
+  "hot_dog": [
+    "hotdog"
+  ],
+  "cooking": [
+    "fried_egg"
+  ],
+  "pot_of_food": [
+    "stew"
+  ],
+  "bento_box": [
+    "bento"
+  ],
+  "cooked_rice": [
+    "rice"
+  ],
+  "curry_rice": [
+    "curry"
+  ],
+  "steaming_bowl": [
+    "ramen"
+  ],
+  "roasted_sweet_potato": [
+    "sweet_potato"
+  ],
+  "fish_cake_with_swirl": [
+    "fish_cake"
+  ],
+  "soft_ice_cream": [
+    "icecream"
+  ],
+  "birthday_cake": [
+    "birthday"
+  ],
+  "shortcake": [
+    "cake"
+  ],
+  "glass_of_milk": [
+    "milk_glass"
+  ],
+  "hot_beverage": [
+    "coffee"
+  ],
+  "teacup_without_handle": [
+    "tea"
+  ],
+  "bottle_with_popping_cork": [
+    "champagne"
+  ],
+  "cocktail_glass": [
+    "cocktail"
+  ],
+  "beer_mug": [
+    "beer"
+  ],
+  "clinking_beer_mugs": [
+    "beers"
+  ],
+  "mate": [
+    "maté"
+  ],
+  "ice": [
+    "ice_cube"
+  ],
+  "shushing_face": [
+    "sushing_face"
+  ],
+  "fork_and_knife_with_plate": [
+    "fork_knife_plate",
+    "plate_with_cutlery"
+  ],
+  "kitchen_knife": [
+    "hocho",
+    "knife"
+  ],
+  "globe_showing_europe_africa": [
+    "earth_africa"
+  ],
+  "globe_showing_americas": [
+    "earth_americas"
+  ],
+  "globe_showing_asia_australia": [
+    "earth_asia"
+  ],
+  "snow_capped_mountain": [
+    "mountain_snow"
+  ],
+  "beach_with_umbrella": [
+    "beach_umbrella",
+    "parasol_on_ground",
+    "beach"
+  ],
+  "office_building": [
+    "office"
+  ],
+  "post_office": [
+    "european_post_office"
+  ],
+  "castle": [
+    "european_castle"
+  ],
+  "sunset": [
+    "city_sunrise"
+  ],
+  "hot_springs": [
+    "hotsprings"
+  ],
+  "barber_pole": [
+    "barber"
+  ],
+  "locomotive": [
+    "steam_locomotive"
+  ],
+  "high_speed_train": [
+    "bullettrain_side"
+  ],
+  "bullet_train": [
+    "bullettrain_front"
+  ],
+  "train": [
+    "train2"
+  ],
+  "automobile": [
+    "red_car",
+    "car"
+  ],
+  "sport_utility_vehicle": [
+    "blue_car"
+  ],
+  "delivery_truck": [
+    "truck"
+  ],
+  "bicycle": [
+    "bike"
+  ],
+  "bus_stop": [
+    "busstop"
+  ],
+  "fuel_pump": [
+    "fuelpump"
+  ],
+  "police_car_light": [
+    "rotating_light"
+  ],
+  "horizontal_traffic_light": [
+    "traffic_light"
+  ],
+  "airplane_departure": [
+    "flight_departure"
+  ],
+  "airplane_arrival": [
+    "flight_arrival",
+    "airplane_arriving"
+  ],
+  "hourglass_done": [
+    "hourglass"
+  ],
+  "hourglass_not_done": [
+    "hourglass_flowing_sand"
+  ],
+  "twelve_o_clock": [
+    "clock12"
+  ],
+  "twelve_thirty": [
+    "clock1230"
+  ],
+  "one_o_clock": [
+    "clock1"
+  ],
+  "one_thirty": [
+    "clock130"
+  ],
+  "two_o_clock": [
+    "clock2"
+  ],
+  "two_thirty": [
+    "clock230"
+  ],
+  "three_o_clock": [
+    "clock3"
+  ],
+  "three_thirty": [
+    "clock330"
+  ],
+  "four_o_clock": [
+    "clock4"
+  ],
+  "four_thirty": [
+    "clock430"
+  ],
+  "five_o_clock": [
+    "clock5"
+  ],
+  "five_thirty": [
+    "clock530"
+  ],
+  "six_o_clock": [
+    "clock6"
+  ],
+  "six_thirty": [
+    "clock630"
+  ],
+  "seven_o_clock": [
+    "clock7"
+  ],
+  "seven_thirty": [
+    "clock730"
+  ],
+  "eight_o_clock": [
+    "clock8"
+  ],
+  "eight_thirty": [
+    "clock830"
+  ],
+  "nine_o_clock": [
+    "clock9"
+  ],
+  "nine_thirty": [
+    "clock930"
+  ],
+  "ten_o_clock": [
+    "clock10"
+  ],
+  "ten_thirty": [
+    "clock1030"
+  ],
+  "eleven_o_clock": [
+    "clock11"
+  ],
+  "eleven_thirty": [
+    "clock1130"
+  ],
+  "new_moon_face": [
+    "new_moon_with_face"
+  ],
+  "first_quarter_moon_face": [
+    "first_quarter_moon_with_face"
+  ],
+  "last_quarter_moon_face": [
+    "last_quarter_moon_with_face"
+  ],
+  "sun": [
+    "sunny"
+  ],
+  "full_moon_face": [
+    "full_moon_with_face"
+  ],
+  "ringed_planet": [
+    "ringer_planet"
+  ],
+  "glowing_star": [
+    "star2"
+  ],
+  "shooting_star": [
+    "stars"
+  ],
+  "high_voltage": [
+    "zap"
+  ],
+  "snowman": [
+    "snowman_with_snow"
+  ],
+  "snowman_without_snow": [
+    "snowman2"
+  ],
+  "ocean": [
+    "water_wave"
+  ],
+  "tada": [
+    "party_popper"
+  ],
+  "pine_decoration": [
+    "bamboo"
+  ],
+  "japanese_dolls": [
+    "dolls"
+  ],
+  "carp_streamer": [
+    "flags"
+  ],
+  "moon_viewing_ceremony": [
+    "rice_scene"
+  ],
+  "red_envelope": [
+    "red_gift_envelope"
+  ],
+  "wrapped_gift": [
+    "gift"
+  ],
+  "admission_tickets": [
+    "tickets"
+  ],
+  "soccer_ball": [
+    "soccer"
+  ],
+  "american_football": [
+    "football"
+  ],
+  "in_hole": [
+    "golf"
+  ],
+  "fishing_pole": [
+    "fishing_pole_and_fish"
+  ],
+  "running_shirt": [
+    "running_shirt_with_sash"
+  ],
+  "skis": [
+    "ski"
+  ],
+  "bullseye": [
+    "dart"
+  ],
+  "yoyo": [
+    "yo_yo",
+    "yo-yo"
+  ],
+  "water_pistol": [
+    "gun"
+  ],
+  "pool_8_ball": [
+    "8ball"
+  ],
+  "puzzle_piece": [
+    "jigsaw"
+  ],
+  "spade_suit": [
+    "spades"
+  ],
+  "heart_suit": [
+    "hearts"
+  ],
+  "diamond_suit": [
+    "diamonds"
+  ],
+  "club_suit": [
+    "clubs"
+  ],
+  "joker": [
+    "black_joker"
+  ],
+  "mahjong_red_dragon": [
+    "mahjong"
+  ],
+  "artist_palette": [
+    "art"
+  ],
+  "glasses": [
+    "eyeglasses"
+  ],
+  "sunglasses": [
+    "dark_sunglasses"
+  ],
+  "t_shirt": [
+    "tshirt",
+    "shirt"
+  ],
+  "woman_s_clothes": [
+    "womans_clothes"
+  ],
+  "clutch_bag": [
+    "pouch"
+  ],
+  "shopping_bags": [
+    "shopping"
+  ],
+  "backpack": [
+    "school_satchel"
+  ],
+  "man_s_shoe": [
+    "mans_shoe"
+  ],
+  "running_shoe": [
+    "athletic_shoe"
+  ],
+  "high_heeled_shoe": [
+    "high_heel"
+  ],
+  "woman_s_sandal": [
+    "sandal"
+  ],
+  "woman_s_boot": [
+    "boot"
+  ],
+  "woman_s_hat": [
+    "womans_hat"
+  ],
+  "top_hat": [
+    "tophat"
+  ],
+  "graduation_cap": [
+    "mortar_board"
+  ],
+  "rescue_worker_s_helmet": [
+    "rescue_worker_helmet",
+    "helmet_with_cross",
+    "helmet_with_white_cross"
+  ],
+  "gem_stone": [
+    "gem"
+  ],
+  "muted_speaker": [
+    "mute"
+  ],
+  "speaker_low_volume": [
+    "speaker"
+  ],
+  "speaker_medium_volume": [
+    "sound"
+  ],
+  "speaker_high_volume": [
+    "loud_sound"
+  ],
+  "megaphone": [
+    "mega"
+  ],
+  "bell_with_slash": [
+    "no_bell"
+  ],
+  "musical_notes": [
+    "notes"
+  ],
+  "headphone": [
+    "headphones"
+  ],
+  "mobile_phone": [
+    "iphone"
+  ],
+  "mobile_phone_with_arrow": [
+    "calling"
+  ],
+  "telephone": [
+    "phone"
+  ],
+  "fax_machine": [
+    "fax"
+  ],
+  "laptop": [
+    "computer"
+  ],
+  "computer_disk": [
+    "minidisc"
+  ],
+  "optical_disk": [
+    "cd"
+  ],
+  "film_frames": [
+    "film_strip"
+  ],
+  "clapper_board": [
+    "clapper"
+  ],
+  "television": [
+    "tv"
+  ],
+  "camera_with_flash": [
+    "camera_flash"
+  ],
+  "videocassette": [
+    "vhs"
+  ],
+  "magnifying_glass_tilted_left": [
+    "mag"
+  ],
+  "magnifying_glass_tilted_right": [
+    "mag_right"
+  ],
+  "light_bulb": [
+    "bulb"
+  ],
+  "red_paper_lantern": [
+    "izakaya_lantern"
+  ],
+  "rolled_up_newspaper": [
+    "newspaper_roll",
+    "newspaper2"
+  ],
+  "money_bag": [
+    "moneybag"
+  ],
+  "yen_banknote": [
+    "yen"
+  ],
+  "dollar_banknote": [
+    "dollar"
+  ],
+  "euro_banknote": [
+    "euro"
+  ],
+  "pound_banknote": [
+    "pound"
+  ],
+  "chart_increasing_with_yen": [
+    "chart"
+  ],
+  "closed_mailbox_with_raised_flag": [
+    "mailbox"
+  ],
+  "closed_mailbox_with_lowered_flag": [
+    "mailbox_closed"
+  ],
+  "open_mailbox_with_raised_flag": [
+    "mailbox_with_mail"
+  ],
+  "open_mailbox_with_lowered_flag": [
+    "mailbox_with_no_mail"
+  ],
+  "ballot_box_with_ballot": [
+    "ballot_box"
+  ],
+  "pencil": [
+    "pencil2"
+  ],
+  "date": [
+    "calendar"
+  ],
+  "chart_increasing": [
+    "chart_with_upwards_trend"
+  ],
+  "chart_decreasing": [
+    "chart_with_downwards_trend"
+  ],
+  "linked_paperclips": [
+    "paperclips"
+  ],
+  "locked": [
+    "lock"
+  ],
+  "unlocked": [
+    "unlock"
+  ],
+  "locked_with_pen": [
+    "lock_with_ink_pen"
+  ],
+  "locked_with_key": [
+    "closed_lock_with_key"
+  ],
+  "white_cane": [
+    "probing_cane"
+  ],
+  "roll_of_paper": [
+    "roll_of_toilet_paper"
+  ],
+  "cigarette": [
+    "smoking"
+  ],
+  "moai": [
+    "moyai"
+  ],
+  "atm_sign": [
+    "atm"
+  ],
+  "litter_in_bin_sign": [
+    "put_litter_in_its_place"
+  ],
+  "wheelchair_symbol": [
+    "wheelchair"
+  ],
+  "men_s_room": [
+    "mens"
+  ],
+  "women_s_room": [
+    "womens"
+  ],
+  "water_closet": [
+    "wc"
+  ],
+  "prohibited": [
+    "no_entry_sign"
+  ],
+  "no_littering": [
+    "do_not_litter"
+  ],
+  "non_potable_water": [
+    "non-potable_water"
+  ],
+  "no_one_under_eighteen": [
+    "underage"
+  ],
+  "up_arrow": [
+    "arrow_up"
+  ],
+  "up_right_arrow": [
+    "arrow_upper_right"
+  ],
+  "right_arrow": [
+    "arrow_right"
+  ],
+  "down_right_arrow": [
+    "arrow_lower_right"
+  ],
+  "down_arrow": [
+    "arrow_down"
+  ],
+  "down_left_arrow": [
+    "arrow_lower_left"
+  ],
+  "left_arrow": [
+    "arrow_left"
+  ],
+  "up_left_arrow": [
+    "arrow_upper_left"
+  ],
+  "up_down_arrow": [
+    "arrow_up_down"
+  ],
+  "right_arrow_curving_left": [
+    "leftwards_arrow_with_hook"
+  ],
+  "left_arrow_curving_right": [
+    "arrow_right_hook"
+  ],
+  "right_arrow_curving_up": [
+    "arrow_heading_up"
+  ],
+  "right_arrow_curving_down": [
+    "arrow_heading_down"
+  ],
+  "clockwise_vertical_arrows": [
+    "arrows_clockwise"
+  ],
+  "counterclockwise_arrows_button": [
+    "arrows_counterclockwise"
+  ],
+  "back_arrow": [
+    "back"
+  ],
+  "end_arrow": [
+    "end"
+  ],
+  "on_arrow": [
+    "on"
+  ],
+  "soon_arrow": [
+    "soon"
+  ],
+  "top_arrow": [
+    "top"
+  ],
+  "dotted_six_pointed_star": [
+    "six_pointed_star"
+  ],
+  "scorpio": [
+    "scorpius"
+  ],
+  "shuffle_tracks_button": [
+    "twisted_rightwards_arrows"
+  ],
+  "repeat_button": [
+    "repeat"
+  ],
+  "repeat_single_button": [
+    "repeat_one"
+  ],
+  "play_button": [
+    "arrow_forward"
+  ],
+  "fast_forward_button": [
+    "fast_forward"
+  ],
+  "reverse_button": [
+    "arrow_backward"
+  ],
+  "fast_reverse_button": [
+    "rewind"
+  ],
+  "last_track_button": [
+    "previous_track_button",
+    "track_previous",
+    "previous_track"
+  ],
+  "upwards_button": [
+    "arrow_up_small"
+  ],
+  "fast_up_button": [
+    "arrow_double_up"
+  ],
+  "downwards_button": [
+    "arrow_down_small"
+  ],
+  "fast_down_button": [
+    "arrow_double_down"
+  ],
+  "dim_button": [
+    "low_brightness"
+  ],
+  "bright_button": [
+    "high_brightness"
+  ],
+  "antenna_bars": [
+    "signal_strength"
+  ],
+  "multiply": [
+    "heavy_multiplication_x"
+  ],
+  "plus": [
+    "heavy_plus_sign"
+  ],
+  "minus": [
+    "heavy_minus_sign"
+  ],
+  "divide": [
+    "heavy_division_sign"
+  ],
+  "double_exclamation_mark": [
+    "bangbang"
+  ],
+  "exclamation_question_mark": [
+    "interrobang"
+  ],
+  "red_question_mark": [
+    "question"
+  ],
+  "white_question_mark": [
+    "grey_question"
+  ],
+  "white_exclamation_mark": [
+    "grey_exclamation"
+  ],
+  "red_exclamation_mark": [
+    "exclamation"
+  ],
+  "recycling_symbol": [
+    "recycle"
+  ],
+  "trident_emblem": [
+    "trident"
+  ],
+  "japanese_symbol_for_beginner": [
+    "beginner"
+  ],
+  "hollow_red_circle": [
+    "o"
+  ],
+  "white_check_mark": [
+    "check_mark_button"
+  ],
+  "check_box_with_check": [
+    "ballot_box_with_check"
+  ],
+  "check_mark": [
+    "heavy_check_mark"
+  ],
+  "cross_mark": [
+    "x"
+  ],
+  "cross_mark_button": [
+    "negative_squared_cross_mark"
+  ],
+  "double_curly_loop": [
+    "loop"
+  ],
+  "eight_pointed_star": [
+    "eight_pointed_black_star"
+  ],
+  "trade_mark": [
+    "tm"
+  ],
+  "hash": [
+    "keycap_hash",
+    "keycap_#"
+  ],
+  "asterisk": [
+    "keycap_asterisk",
+    "keycap_*",
+    "keycap_star"
+  ],
+  "zero": [
+    "keycap_0"
+  ],
+  "one": [
+    "keycap_1"
+  ],
+  "two": [
+    "keycap_2"
+  ],
+  "three": [
+    "keycap_3"
+  ],
+  "four": [
+    "keycap_4"
+  ],
+  "five": [
+    "keycap_5"
+  ],
+  "six": [
+    "keycap_6"
+  ],
+  "seven": [
+    "keycap_7"
+  ],
+  "eight": [
+    "keycap_8"
+  ],
+  "nine": [
+    "keycap_9"
+  ],
+  "ten": [
+    "keycap_10",
+    "keycap_ten"
+  ],
+  "input_latin_uppercase": [
+    "capital_abcd"
+  ],
+  "input_latin_lowercase": [
+    "abcd"
+  ],
+  "1234": [
+    "input_numbers"
+  ],
+  "input_symbols": [
+    "symbols"
+  ],
+  "input_latin_letters": [
+    "abc"
+  ],
+  "a_button_blood_type": [
+    "a"
+  ],
+  "ab_button_blood_type": [
+    "ab"
+  ],
+  "b_button_blood_type": [
+    "b"
+  ],
+  "cl_button": [
+    "cl"
+  ],
+  "cool_button": [
+    "cool"
+  ],
+  "free_button": [
+    "free"
+  ],
+  "information_source": [
+    "information"
+  ],
+  "id_button": [
+    "id"
+  ],
+  "circled_m": [
+    "m"
+  ],
+  "new_button": [
+    "new"
+  ],
+  "ng_button": [
+    "ng"
+  ],
+  "o_button_blood_type": [
+    "o2"
+  ],
+  "ok_button": [
+    "ok"
+  ],
+  "p_button": [
+    "parking"
+  ],
+  "sos_button": [
+    "sos"
+  ],
+  "up_button": [
+    "up"
+  ],
+  "vs_button": [
+    "vs"
+  ],
+  "japanese_vacancy_button": [
+    "u7a7a"
+  ],
+  "japanese_discount_button": [
+    "u5272"
+  ],
+  "japanese_here_button": [
+    "koko"
+  ],
+  "japanese_not_free_of_charge_button": [
+    "sa",
+    "u6709"
+  ],
+  "japanese_application_button": [
+    "u7533"
+  ],
+  "japanese_bargain_button": [
+    "ideograph_advantage"
+  ],
+  "japanese_prohibited_button": [
+    "u7981"
+  ],
+  "japanese_acceptable_button": [
+    "accept"
+  ],
+  "japanese_congratulations_button": [
+    "congratulations"
+  ],
+  "japanese_secret_button": [
+    "secret"
+  ],
+  "japanese_open_for_business_button": [
+    "u55b6"
+  ],
+  "japanese_monthly_amount_button": [
+    "u6708"
+  ],
+  "japanese_passing_grade_button": [
+    "u5408"
+  ],
+  "japanese_no_vacancy_button": [
+    "u6e80"
+  ],
+  "japanese_free_of_charge_button": [
+    "u7121"
+  ],
+  "japanese_reserved_button": [
+    "u6307"
+  ],
+  "blue_circle": [
+    "large_blue_circle"
+  ],
+  "red_triangle_pointed_up": [
+    "small_red_triangle"
+  ],
+  "red_triangle_pointed_down": [
+    "small_red_triangle_down"
+  ],
+  "diamond_with_a_dot": [
+    "diamond_shape_with_a_dot_inside"
+  ],
+  "chequered_flag": [
+    "checkered_flag"
+  ],
+  "triangular_flag": [
+    "triangular_flag_on_post"
+  ],
+  "åland_islands": [
+    "aland_islands"
+  ],
+  "piñata": [
+    "pinata"
+  ],
+  "cocos_keeling_islands": [
+    "cocos_islands"
+  ],
+  "côte_d_ivoire": [
+    "cote_divoire",
+    "cote_d_ivoire"
+  ],
+  "china": [
+    "cn",
+    "flag_cn"
+  ],
+  "curaçao": [
+    "curacao"
+  ],
+  "czechia": [
+    "czech_republic"
+  ],
+  "türkiye": [
+    "turkiye",
+    "tr",
+    "flag_tr"
+  ],
+  "germany": [
+    "de",
+    "flag_de"
+  ],
+  "ceuta_melilla": [
+    "ceuta_and_melilla"
+  ],
+  "spain": [
+    "es",
+    "flag_es"
+  ],
+  "european_union": [
+    "eu"
+  ],
+  "france": [
+    "fr",
+    "flag_fr"
+  ],
+  "hong_kong_sar_china": [
+    "hong_kong"
+  ],
+  "heard_mcdonald_islands": [
+    "heard_and_mc_donald_islands"
+  ],
+  "italy": [
+    "it",
+    "flag_it"
+  ],
+  "japan": [
+    "jp",
+    "flag_jp"
+  ],
+  "south_korea": [
+    "kr",
+    "flag_kr"
+  ],
+  "north_macedonia": [
+    "macedonia"
+  ],
+  "myanmar_burma": [
+    "myanmar"
+  ],
+  "macao_sar_china": [
+    "macau"
+  ],
+  "russia": [
+    "ru",
+    "flag_ru"
+  ],
+  "svalbard_jan_mayen": [
+    "svalbard_and_jan_mayen"
+  ],
+  "eswatini": [
+    "swaziland"
+  ],
+  "united_states": [
+    "us",
+    "flag_us"
+  ],
+  "united_kingdom": [
+    "uk",
+    "gb",
+    "flag_gb"
+  ]
+}

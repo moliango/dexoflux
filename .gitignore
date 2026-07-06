@@ -1,0 +1,24 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Tuist
+Derived/
+Tuist/.build/
+TODO.md
+# Build
+DerivedData/
+build/
+.build/
+
+# Local config (contains DEVELOPMENT_TEAM etc.)
+.mise.local.toml
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# CocoaPods (if ever used)
+Pods/

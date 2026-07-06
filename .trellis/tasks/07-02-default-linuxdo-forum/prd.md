@@ -1,0 +1,442 @@
+# Default Linux.do Forum
+
+## Goal
+
+Make the app a Linux.do-focused client by default. Users should enter the Linux.do experience directly, and the product should no longer present itself as a multi-forum manager where arbitrary other forums can be added.
+
+This project is a fork of another project and is being customized as a second-development version, so requirements should prefer a focused Linux.do product shape over preserving generic upstream forum-management behavior.
+
+## User-Provided Intent
+
+- Default behavior should enter the Linux.do page directly.
+- Users should no longer be able to add other forums.
+- The page needs UI/UX adjustments to match the new single-forum positioning.
+- The project is a fork and this work is part of a customized second-development direction.
+- Global project direction: compare against `/Users/naine/Documents/AndroidWorkspace/fluxdo` and use it as the reference for how this second-development version should behave and feel.
+- Phase 1: first update the home page to match FluxDo's home page style as closely as practical in native UIKit. FluxDo is a Flutter project; this app should keep native iOS quality while mirroring the visible style.
+- Phase 1.2: remove the multi-site product model and make Linux.do the single default site. The app should launch directly into Linux.do instead of the forum list.
+- Phase 1.3: refine the FluxDo parity pass by redesigning topic item category/tag labels as compact tag badges, replacing the home filter bar with a FluxDo-style dropdown chip component, and removing the Home navigation title/circle affordance so the home screen reads as a full-screen single-site page.
+- Phase 1.4: lower the real minimum runtime target to iOS 15.0. The project currently declares iOS 17.0 in Tuist and uses iOS 17 Observation APIs, so iOS 15 support requires both target changes and code-level compatibility work.
+- Phase 1.5: update the topic detail page to follow FluxDo's post detail presentation. Posts should read as clear native item cards, inline/preview links must be visible and tappable, and Discourse related links should be shown when the API provides them.
+- Phase 1.6: further replicate FluxDo's topic detail content and loading experience. The initial detail load should use a FluxDo-style post-list skeleton, and native cooked-content blocks should visually match FluxDo's readable card/content treatment more closely.
+- Phase 1.7: replicate FluxDo's home interaction model more closely. The home FAB should default to topic creation, switch to refresh when the user scrolls back toward the top, the search row should collapse while browsing deeper, the search capsule should sit closer to the Dynamic Island/status area, and the status/header background should match the page surface.
+- Phase 1.8: fix visual regressions from the home parity pass. Topic cards should keep a FluxDo-like compact feel while allowing height to follow the actual title line count without scroll-time self-sizing jitter, the reply/count badge should use a stable icon-plus-count treatment with gray for normal counts and yellow/orange for high counts, the bottom tab bar should no longer expose a search tab/button, and the home topic list should not show a vertical scroll indicator.
+- Phase 1.9: refine home topic tag badges using FluxDo as the target. Tags need visible icons and distinct colors, and HTTP 429 rate limiting must show a human-friendly state instead of a misleading decode/parse failure.
+- Phase 1.9.1: refine Home scroll chrome. On Home, an upward finger swipe should hide the bottom tab bar, and a downward finger swipe should show it again with a push-style animation.
+- Phase 1.9.4: fix follow-up visual parity bugs. Topic-detail tags should match the colored icon tag treatment used on Home, and the topic-detail page should hide its main vertical scroll indicator.
+- Phase 1.9.3: add the FluxDo-style Home incoming-topic banner. The intended behavior is the highlighted "查看 N 个新的或更新的话题" row above the topic list, not merely adding new/unread entries to the filter dropdown.
+- Phase 2: build notifications as a larger product slice. The home search/header area should expose a notification button that opens a notification page/panel, and a standalone notification page should exist for a future dynamic tab bar even if it is not shown as a tab yet.
+- Phase 2.1: build a real bookmarks list page similar to the Home topic list, kept reusable as a future dynamic tab bar page even though it is still reached from Me for now.
+- Phase 3: rebuild the Me/Profile page against FluxDo's profile page direction. The page should use card-style native UIKit sections and show avatar, display name, username, trust level, a configurable stats card, and account entries for private messages, badges, trust requirements, invite links, and app settings.
+- Phase 4.1: make the Me/Profile account features real instead of fallback-only. Private messages, badges, trust requirements, and invite links should have usable native/in-app pages; bookmark rows must reliably show avatars; settings should follow FluxDo's grouped design with appearance, reading, network, bottom bar, and data-management categories.
+- Phase 4.2: support manual Cloudflare challenge completion using FluxDo as the reference. Users should be able to open an in-app browser from Network settings, manually pass the Cloudflare shield for Linux.do, and have the resulting `cf_clearance` cookie reused by native API requests.
+- Phase 4.3: fix Home layout regressions from the dynamic header, incoming-topic banner, and bottom tab bar. The home list should not visually stick/jump around the banner/header, and non-liquid-glass tab bar fallback must not be translucent enough to show topic rows underneath.
+- Phase 4.4: automatically open the Cloudflare verification page when native API requests hit a Cloudflare challenge, matching FluxDo's interceptor-driven manual verification flow.
+- Phase 4.6: fix avatar image loading reliability. If an avatar fails the first time because of a transient network/CF/CDN issue, later cell reuse or reloads must retry instead of staying blank forever.
+- Phase 4.7: restore and harden the Phase 1.9.3 Home incoming-topic banner. The banner must detect both new topics and updated existing topics, not only filter entries or only topics before the current first row.
+- Phase 4.9: fix Discourse reading history tracking. Opening a topic and reading visible comments must be reported to the server so Linux.do records browsing history and read progress.
+- Phase 5.1.1: refine topic detail layout and interaction against FluxDo's detail page. The detail page should keep a native UIKit implementation, use larger readable typography, make comments feel like compact cards, allow the main content to be lighter than a full card when appropriate, replace the current scattered bottom actions with a center floor/progress control, and support a native radial long-press action menu for timeline, scroll-to-top, reply topic, bookmark, and share-link actions.
+- Phase 5.1.2: mirror FluxDo's Topic page category-tab manager. The search/header category tab row should show only user-pinned categories plus "全部", and the three-line category manager entry near the notification button should let users add/hide the categories shown below search.
+- Phase 5.1.5: refine Topic Detail interaction parity with FluxDo. The centered floor control should open a real timeline sheet, the topic/reply composer and Boost input should become native bottom-sheet flows, the header should show real reply/view/time metadata, the detail page should expose a right-bottom floating reply affordance, and settings subpages should support left-swipe back navigation.
+- Phase 5.1.6: harden the Cloudflare-to-topic-detail transition. Completing Cloudflare verification should not force a Topic/Home refresh, and Topic Detail should silently retry once when its initial request is explicitly cancelled by session or transport churn.
+- Phase 5.2: rebuild the topic reply composer against FluxDo's Markdown editor. The native UIKit sheet should support discard/send, custom emoji from the server, Markdown preview toggling, a bottom tools grid, image upload, attachment upload, and common Markdown insertion tools.
+- Phase 5.3: build a FluxDo-style dynamic forum bottom bar. Home and Me are fixed entries, Me must not appear in the editable layout list, and the user can configure/reorder up to five candidate feature entries while the visible UIKit tab bar remains capped at five total tabs.
+- Phase 6: implement a lightweight DoH path for native API requests so Dexo can still reach Linux.do when local DNS blocks or poisons `linux.do` resolution. This phase should be a native iOS experiment, not a Rust/FFI port.
+
+## Confirmed Facts
+
+- The app is a native iOS Discourse client built with UIKit, Swift, MVVM, `@Observable`, and GRDB. Existing project guidance explicitly says "No SwiftUI" and requires user-facing strings to use `String(localized:)`.
+- Launch currently creates `MainTabBarController` from `SceneDelegate`.
+- `MainTabBarController` currently has two top-level tabs: forums list and settings.
+- `ForumListViewController` is the current default first screen. It loads all saved `ForumInstance` rows, shows a list, and exposes a right navigation bar `+` button.
+- `AddForumViewController` and `AddForumViewModel` currently allow users to enter any URL, normalize it, fetch Discourse basic info, then save it as a `ForumInstance`.
+- `ForumInstance` is persisted in the `forumInstance` table with `title`, `baseURL`, optional icon/auth fields, `addedAt`, `sortOrder`, and optional `username`.
+- Auto-open behavior currently depends on `AppSettings.autoOpenLastForum` and `lastOpenedForumId`; it does not guarantee a fresh install opens Linux.do.
+- The README still presents the project as a generic multi-forum Discourse client with "Multi-Forum Management" / "多论坛管理".
+- The reference project path `/Users/naine/Documents/AndroidWorkspace/fluxdo` exists. Detailed comparison is pending and must happen before implementation decisions are finalized.
+- FluxDo's mobile home preview shows a single-forum product shape with bottom tabs, a search capsule at the top, a horizontal category tab row, compact filter/sort controls, rounded topic cards, and a floating create button.
+- FluxDo's home code is centered on `lib/pages/topics_screen.dart`, `lib/pages/topics_page.dart`, `lib/widgets/topic/sort_and_tags_bar.dart`, and `lib/widgets/topic/topic_card.dart`.
+- FluxDo's topic header uses fixed heights: search bar 56, tab row 36, sort/filter bar 44. The search and sort/filter rows collapse on scroll, while the category tab row remains visible.
+- FluxDo's topic cards use rounded card containers with avatar, two-line title, unread/reply badge, category/tag badges, likes, and relative time.
+- The current native home page already has Linux.do topic data, list modes (`latest`, `hot`, `top`), category loading, pull-to-refresh, pagination, and topic detail navigation.
+- The current native home page uses a `UISegmentedControl` plus a left navigation category menu and plain table rows; this does not match FluxDo's visible home style.
+- The app currently starts from `SceneDelegate` into `MainTabBarController`, whose first tab is `ForumListViewController`.
+- `ForumListViewController` currently exposes a `+` button and `AddForumViewController`, which allows adding arbitrary Discourse forums.
+- `ForumContainerViewController` already owns the single-forum runtime context for Home/Me/Search, but it currently assumes overlay presentation and shows a minimize/close button.
+
+## Requirements
+
+- The app must have Linux.do as the default forum entry.
+- The app must remove or disable the user flow for adding arbitrary non-Linux.do forums.
+- The app UI should be adjusted so it no longer suggests multi-forum management as the main product model.
+- A fresh install must not require the user to manually create a forum entry before browsing Linux.do.
+- Existing localized strings and documentation that describe arbitrary multi-forum adding/switching should be changed or explicitly listed as intentionally deferred.
+- Existing UIKit, MVVM, GRDB, localization, and project structure conventions should be preserved.
+- The implementation should respect existing project structure and avoid unnecessary rewrites.
+- Before implementation, inspect `/Users/naine/Documents/AndroidWorkspace/fluxdo` and document the relevant UI/product behavior that this app should mirror.
+- Use `fluxdo` as a product and interaction reference, but do not blindly copy code that conflicts with this repository's UIKit/MVVM/GRDB structure.
+- Phase 1 must prioritize the home page visual match before broader single-forum entry changes.
+- The native implementation should mirror FluxDo's visible home layout: search capsule, category tab strip, filter/sort chip bar, rounded card list, and floating create button treatment where feasible.
+- The implementation may defer full FluxDo behavior parity where this app lacks supporting data or APIs, but the visual structure should be established.
+- Phase 1.2 must create or reuse a persisted Linux.do `ForumInstance` with base URL `https://linux.do`.
+- Phase 1.2 must route app launch directly into the Linux.do forum container.
+- Phase 1.2 must remove active UI access to adding arbitrary forums.
+- Phase 1.2 should not delete existing saved non-Linux.do forum rows yet; hiding/removing the multi-site entry path is the safer first migration step.
+- Phase 1.3 must style topic categories and API-provided tags as compact badge/tag chips instead of plain text labels.
+- Phase 1.3 must avoid inventing tag data. If a topic list response does not include tags, only the category badge should be shown.
+- Phase 1.3 must replace the current multi-button filter strip with a FluxDo-style dropdown filter chip that shows the current list filter and opens a menu for available filters.
+- Phase 1.3 must remove the visible Home navigation title and any root circle/minimize affordance from the Home screen so the content uses the available top area.
+- Phase 1.4 must set the app and local package minimum iOS target to 15.0.
+- Phase 1.4 must remove unguarded iOS 17 Observation framework usage (`@Observable`, `withObservationTracking`) from app runtime code.
+- Phase 1.4 must preserve the existing UIKit/MVVM refresh behavior using an iOS 15-compatible mechanism.
+- Phase 1.4 must update user-facing project documentation that still claims iOS 17.0 is the minimum target.
+- Phase 1.5 must compare FluxDo's topic detail page and post item implementation before coding.
+- Phase 1.5 must keep the existing native UIKit topic-detail data flow and avoid porting Flutter/Riverpod architecture.
+- Phase 1.5 must make post items visually closer to FluxDo: separated post surface, compact author header, readable content body, and bottom actions.
+- Phase 1.5 must preserve current inline link behavior and improve the visible link/onebox treatment instead of hiding links behind raw HTML.
+- Phase 1.5 must decode and show Discourse `link_counts` related links when present. Missing link data must render nothing, not fake placeholders.
+- Phase 1.5 must decode and show Discourse Boost data (`boosts`, `can_boost`) when present. Missing boost data must render nothing, not fake placeholders.
+- Phase 1.5 must keep iOS 15 compatibility.
+- Phase 1.6 must compare FluxDo's post detail loading and cooked-content builders before coding.
+- Phase 1.6 must keep the existing `CookedHTML -> NativeContentRenderer -> PostNativeCell` native pipeline.
+- Phase 1.6 must not port Flutter/Riverpod state architecture or introduce SwiftUI.
+- Phase 1.6 must replace the plain initial detail spinner with a FluxDo-style topic-detail/post-list skeleton when no posts are ready yet.
+- Phase 1.6 must improve native cooked-content readability for paragraph/list line height, blockquote, Discourse quote, code block, details, table, image placeholder, and unsupported fallback blocks.
+- Phase 1.6 should improve visual parity first. Full long-post chunk virtualization like FluxDo's `ChunkedHtmlContent` / `SegmentedLongPost` is deferred unless profiling proves it is required.
+- Phase 1.6 must keep inline links, image taps, onebox taps, related links, boost strips, reactions, bookmarks, and reply actions working through existing delegates.
+- Phase 1.6 must keep iOS 15 compatibility.
+- Phase 1.7 must compare FluxDo's `TopicsScreen`, `_TopicsFab`, `TopicsPage`, and `_TopicsHeaderDelegate` before coding.
+- Phase 1.7 must implement a native home FAB with two states: create-topic mode by default and refresh mode when user scrolls toward the top.
+- Phase 1.7 refresh mode must scroll the home list to the top and refresh topics.
+- Phase 1.7 create mode must open a usable native new-topic composer instead of a placeholder.
+- Phase 1.7 must keep the first native composer pass minimal: title, body, optional category, send/cancel, and existing auth gating.
+- Phase 1.7 must make the home search row collapse while scrolling deeper into the list, while keeping category/filter controls reachable.
+- Phase 1.7 must reduce the top search gap by extending the header/status background to the screen top and positioning the search row closer to the safe-area top.
+- Phase 1.7 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 1.8 must correct the home topic card height/self-sizing jitter without changing the existing topic loading or detail navigation data flow.
+- Phase 1.8 must restyle the topic count badge to match FluxDo's visual intent: a leading chat/reply bubble symbol plus count, gray when normal and yellow/orange when the count is high.
+- Phase 1.8 must keep the topic count badge width stable during scrolling/reuse instead of occasionally letting Auto Layout stretch it.
+- Phase 1.8 must allow topic count badges to remain readable up to four digits.
+- Phase 1.8 must allow long home topic titles to wrap to up to three lines while keeping the tag row anchored near the card bottom.
+- Phase 1.8 should centralize home topic title font sizing in one local metrics block so later global typography changes are straightforward.
+- Phase 1.8 should use the FluxDo-style chat bubble treatment for the count badge. Native UIKit should map FluxDo `chat_bubble_rounded` to the closest iOS 15 SF Symbol.
+- Phase 1.8 must remove the bottom tab bar search entry/button. Search remains reachable from the home search capsule.
+- Phase 1.8 must hide the home list vertical scroll indicator.
+- Phase 1.8 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 1.8 follow-up: Home topic titles should use a fixed smaller title font, auto-size to the actual line count, and cap at three lines. One-line titles should occupy one line instead of reserving blank space for the other two lines, and the app should not manually insert line breaks.
+- Phase 1.9 must compare FluxDo's tag/category badge behavior where local access is available. If sandbox approval blocks reading FluxDo, record that limitation and implement the closest native mapping from already confirmed FluxDo behavior.
+- Phase 1.9 must add icons and color treatment to home topic tag badges.
+- Phase 1.9 must not invent server-provided tag colors. If the API only provides tag names, use a stable deterministic local palette so the same tag keeps the same color.
+- Phase 1.9 follow-up must show Linux.do category level text on category badges in the Home topic card badge row, such as rendering a category chip as `开发调优LV1` when FluxDo/Linux.do category data exposes that category name with its level.
+- Phase 1.9 follow-up must not append fake `LV1/LV2` values from UI position or arbitrary hierarchy depth. The level text must come from the same category data path FluxDo uses: `/site.json` / preloaded `site.categories` category records, with `/categories.json` only as a fallback.
+- Phase 1.9 follow-up should keep ordinary topic tags distinct from category badges. Topic tags such as `纯水` keep tag styling and are not given category level suffixes unless they can be matched to a real category record by id/name.
+- Phase 1.9 must detect HTTP 429 before JSON decoding and show a clear rate-limit message.
+- Phase 1.9 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 1.9.1 must hide the Home bottom tab bar when the user swipes upward on the topic list.
+- Phase 1.9.1 must show the Home bottom tab bar again when the user swipes downward or returns near the top.
+- Phase 1.9.1 must use a push-in / push-out vertical animation instead of abruptly toggling visibility.
+- Phase 1.9.1 must not leak the hidden tab bar state to pushed detail/search/notification screens or other tabs.
+- Phase 1.9.1 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 1.9.4 must render topic-detail tags with a tag icon and deterministic local color palette, matching the Home tag visual language when the API provides only tag names/slugs.
+- Phase 1.9.4 must hide the topic-detail main list scroll indicator.
+- Phase 1.9.4 must not hide or remove the actual tag tap behavior that opens `TagTopicsViewController`.
+- Phase 1.9.3 must compare FluxDo's incoming-topic banner, topic-list provider `loadBefore`, and latest/new MessageBus tracking before coding.
+- Phase 1.9.3 must show a Home list banner like FluxDo's "查看 N 个新的或更新的话题" when new or updated topics are detected above the current latest list.
+- Phase 1.9.3 must let tapping the banner fetch those topics by `topic_ids`, insert them at the top of the existing Home list, and clear the banner.
+- Phase 1.9.3 should approximate FluxDo's MessageBus-driven incoming detection with a lightweight latest-page polling fallback until a full native MessageBus client exists.
+- Phase 1.9.3 may defer full Discourse MessageBus long polling, new/unread filter counts, dismiss-all action, and `unseen`.
+- Phase 1.9.3 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 2 must compare FluxDo's notification quick panel, notification list page, notification item, notification skeleton, and notification API/model before coding.
+- Phase 2 must enable the Home notification button and open a native notification sheet/page from it.
+- Phase 2 must replace the current placeholder `NotificationsViewController` with a real notification list UI.
+- Phase 2 must keep `NotificationsViewController` independently instantiable so a later dynamic tab bar can reuse it as a full page without rebuilding the notification list.
+- Phase 2 must render notification rows with FluxDo-like intent: avatar, overlaid notification-type icon, unread emphasis, title, action/description, relative time, and unread dot.
+- Phase 2 must support login gating through the existing `AuthGating` flow.
+- Phase 2 must navigate topic-related notifications to `TopicDetailViewController` when `topic_id` is present.
+- Phase 2 should mark tapped unread notifications as read locally and call the Discourse mark-read endpoint when feasible.
+- Phase 2 should expose a mark-all-read action if it can be added without broad architecture changes.
+- Phase 2 may defer push/background notifications, message-bus realtime sync, badge-count polling, and full pagination if the first native slice remains usable.
+- Phase 2 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 2.1 must upgrade the existing `BookmarksViewController` instead of creating a duplicate bookmark page.
+- Phase 2.1 must make the bookmark list visually close to the Home topic cards: rounded card surface, avatar, title, bookmark metadata chip, excerpt, and relative time.
+- Phase 2.1 must keep the controller reusable for a future dynamic tab bar root by supporting auth-gated username resolution, not only the current Me-page push path.
+- Phase 2.1 must provide friendly loading, empty, error, retry, and login-required states.
+- Phase 2.1 may defer FluxDo's richer bookmark workspace behaviors such as bookmark-name filtering, quick rename, reminder editing, pagination, and workspace tabs.
+- Phase 2.1 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 3 must compare FluxDo's `profile_page.dart`, `profile_stats_card.dart`, and profile stats configuration before coding.
+- Phase 3 must keep UIKit-only implementation and must not port Flutter/Riverpod profile architecture.
+- Phase 3 must replace the old plain Me table with a card-style scroll page.
+- Phase 3 must show a profile card with avatar, display name, username, and trust-level badge when logged in.
+- Phase 3 must show a clear login state when logged out.
+- Phase 3 must show a configurable statistics card based on available native Discourse profile/summary data.
+- Phase 3 stats configuration may start with visible-stat selection persisted locally; full FluxDo drag reordering, data-source switching, and edit page can be deferred.
+- Phase 3 must expose entries for private messages, my badges, trust requirements, invite links, and app settings.
+- Phase 3 may route badges, trust requirements, and invite links to web/Safari fallbacks until native pages and data contracts are built.
+- Phase 3 should keep the existing bookmarks entry because Phase 2.1 already made it reusable and FluxDo also exposes bookmarks from profile.
+- Phase 3 must keep iOS 15 compatibility and avoid adding unregistered Swift files unless project registration is handled.
+- Phase 4.1 must compare FluxDo's private messages, badges, trust requirements, invite links, and settings pages before coding.
+- Phase 4.1 must upgrade private messages from a count placeholder to a real list with inbox, sent, and archive filters.
+- Phase 4.1 must allow tapping a private-message topic to open the existing topic detail page.
+- Phase 4.1 must implement a usable badges page backed by Discourse user badge data.
+- Phase 4.1 must implement a usable invite links page that loads pending invites, creates a short-lived invite, and supports copy/share/open actions.
+- Phase 4.1 must implement trust requirements as an in-app page. A WebView wrapper for `https://connect.linux.do/` is acceptable for this phase; a full native parser remains a later refinement.
+- Phase 4.1 must fix bookmark avatar decoding for Discourse bookmark response variants such as nested `user.avatar_template` and `post_user_avatar_template`.
+- Phase 4.1 must restructure app settings into FluxDo-like grouped categories: appearance design, reading design, network settings, bottom bar design, and data management.
+- Phase 4.1 settings rows should only expose real local settings or real actions. Avoid fake controls that do nothing.
+- Phase 4.1 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 4.2 must compare FluxDo's Cloudflare challenge flow before coding.
+- Phase 4.2 must add a real manual Cloudflare verification entry under Network settings.
+- Phase 4.2 must open a `WKWebView` on Linux.do so the user can complete Cloudflare verification with the browser stack.
+- Phase 4.2 must detect and sync `cf_clearance` from `WKHTTPCookieStore` into the existing native `WebCookieStore`.
+- Phase 4.2 should also preserve/sync existing Discourse session cookies and the WebView user agent when verification completes.
+- Phase 4.2 must make native API requests reuse the synced `cf_clearance` cookie through the existing request interceptor path.
+- Phase 4.2 must detect Cloudflare challenge responses before JSON decoding and show a friendly manual-verification-required message.
+- Phase 4.2 must not port FluxDo's Flutter/Riverpod architecture, Windows WebView services, headless refresh service, or full WebView HTTP adapter in this phase.
+- Phase 4.2 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 4.3 must keep Home table top inset synchronized with the dynamic header height without causing visible jumps when the search row collapses or expands.
+- Phase 4.3 must reserve enough Home bottom inset so topic rows do not render underneath the bottom tab bar or FAB area.
+- Phase 4.3 must avoid repeatedly reassigning the incoming-topic table header during layout when only content is being refreshed.
+- Phase 4.3 must use an opaque bottom tab bar fallback on systems without Liquid Glass.
+- Phase 4.3 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 4.4 must compare FluxDo's CF challenge interceptor and verification service before coding.
+- Phase 4.4 must broadcast a Cloudflare challenge event when `DiscourseAPI` detects a challenge response.
+- Phase 4.4 must present the existing in-app Cloudflare verification page automatically from the single-site forum container.
+- Phase 4.4 must avoid presenting duplicate verification pages when multiple API requests fail behind the same shield.
+- Phase 4.4 must sync `cf_clearance` and WebView user agent through the existing `WebCookieStore` boundary after verification succeeds.
+- Phase 4.4 should notify Home after verification succeeds so the topic list can retry/reload without requiring the user to hunt for the setting.
+- Phase 4.4 must keep the manual Network settings Cloudflare verification entry usable.
+- Phase 4.4 follow-up must not treat an existing stale `cf_clearance` as automatic verification success. If the API just hit a CF challenge, the auto verification page must require a fresh clearance value or continue showing the shield.
+- Phase 4.4 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 4.6 must keep SDWebImage as the image-loading/cache engine instead of adding a parallel custom downloader.
+- Phase 4.6 must centralize avatar-template URL resolution so `http(s)`, scheme-relative `//cdn...`, and relative `/user_avatar/...` templates behave consistently.
+- Phase 4.6 must retry failed avatar URLs on later loads so a first-load failure does not permanently poison the UI.
+- Phase 4.6 must keep avatar placeholders visible while retrying or when avatar data is missing.
+- Phase 4.7 must keep the Home incoming-topic banner as an above-list row/header with localized "查看 N 个新的或更新的话题" text.
+- Phase 4.7 must detect updated existing topics by comparing stable topic-list fields such as reply/post count and last-post timestamp.
+- Phase 4.7 must keep the tap behavior: fetch by `topic_ids`, remove duplicates, prepend fetched topics, and clear incoming state.
+- Phase 4.7 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 4.9 must compare FluxDo's Discourse tracking behavior before coding.
+- Phase 4.9 must add `track_visit=true` and Discourse track-view headers when loading a topic detail.
+- Phase 4.9 must track visible topic-detail posts by Discourse `post_number`, not post database id.
+- Phase 4.9 must periodically POST reading timings to `/topics/timings` with `topic_id`, `topic_time`, and `timings[post_number]` form fields.
+- Phase 4.9 must flush pending timings when the topic-detail page disappears.
+- Phase 4.9 must keep tracking failures silent so reading the topic is not blocked by a background analytics/read-state request.
+- Phase 4.9 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 5.1.1 must compare FluxDo's `topic_detail_page`, `topic_post_list`, `PostItem`, `PostSegmentFrame`, `topic_bottom_bar`, `topic_progress_gestures`, and `progress_gesture_action_meta` before coding.
+- Phase 5.1.1 must keep UIKit/MVVM and the existing native cooked-content renderer. It must not port Flutter/Riverpod, `CustomScrollView`, or FluxDo's provider architecture.
+- Phase 5.1.1 detail typography should be larger and more readable than the current detail pass, while preserving Dynamic Type safety and iOS 15 compatibility.
+- Phase 5.1.1 should make the first/main topic content visually lighter than the reply cards when that improves readability; comments/replies should remain card-like.
+- Phase 5.1.1 comment card height should be guided by FluxDo's `PostSegmentFrame` / `PostItem` feel: compact segmented cards, around 16pt internal padding, readable 1.5-ish body line height, and an approximate 80pt minimum item height for short replies.
+- Phase 5.1.1 must replace the current multi-button floating detail bottom bar with a centered floor/progress control that displays the current floor/total progress and can still open an explicit floor/timeline jump UI.
+- Phase 5.1.1 long-pressing the centered floor/progress control must open a native UIKit radial/semicircle action menu, not a Flutter/WebView/third-party menu.
+- Phase 5.1.1 radial menu actions for the first pass are: open timeline, scroll to top, reply topic, bookmark topic, and share topic link.
+- Phase 5.1.1 radial menu must provide press progress, item highlight while dragging, haptic feedback where available, release-to-trigger behavior, and safe cancellation when the finger returns to the center/dead zone.
+- Phase 5.1.1 must support left-swipe/back-swipe returning from topic detail to the topic list without fighting the table view's normal vertical scroll.
+- Phase 5.1.1 must preserve existing detail features: reading tracking, post replies, post bookmark/reaction/boost actions, inline links, onebox/related links, images, tag taps, and reply composer.
+- Phase 5.1.1 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 5.1.2 must compare FluxDo's Topic page `pinnedCategoriesProvider`, category tab row, and `CategoryTabManagerSheet` before coding.
+- Phase 5.1.2 must persist user-pinned category IDs locally, matching FluxDo's "我的分类" behavior.
+- Phase 5.1.2 must make the Home/Topic search-below category tab row render only "全部" plus pinned categories, instead of dumping every loaded category into the row.
+- Phase 5.1.2 must add a native UIKit category manager entry near the Home notification button, using a three-line icon consistent with FluxDo's category manager affordance.
+- Phase 5.1.2 must let users add categories to the row and hide/remove pinned categories from the row. The full category dropdown remains available for all categories.
+- Phase 5.1.2 must keep Linux.do category level display names such as `开发调优LV2` by reusing the existing server-data-backed category display path.
+- Phase 5.1.2 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 5.1.5 must compare FluxDo's `TopicTimelineSheet`, `BoostInputSheet`, `ReplySheet`, and `TopicDetailHeader` before coding.
+- Phase 5.1.5 must replace the simple floor-number alert with a native timeline sheet that supports dragging/clicking a vertical track and entering a floor number.
+- Phase 5.1.5 must make Boost input a native bottom sheet. Text whose visible length is within the Boost limit sends a Boost; longer text should continue into the reply composer.
+- Phase 5.1.5 must make reply composition a native bottom-sheet editor with a FluxDo-like grabber/header/send layout while keeping the existing Discourse reply API path.
+- Phase 5.1.5 must show topic-detail metadata below the title using real API data: reply count, view count, and relative creation time.
+- Phase 5.1.5 must add a right-bottom floating reply button on topic detail.
+- Phase 5.1.5 must restore left-swipe back navigation in settings subpages that currently lack it.
+- Phase 5.1.5 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 5.1.6 must keep Cloudflare verification completion lightweight: hide/suppress the shield state, but do not automatically reset the native API session or reload the Home topic list.
+- Phase 5.1.6 must preserve explicit refresh paths such as pull-to-refresh, the refresh FAB, network recovery reloads, and auth-state reloads.
+- Phase 5.1.6 must make Topic Detail initial load retry exactly once when the failure is `Request explicitly cancelled.` or the equivalent Alamofire explicit-cancel message.
+- Phase 5.1.6 must not hide real topic-detail failures after that single retry; SSL, DNS, Cloudflare challenge, auth, and decoding errors still need to surface normally.
+- Phase 5.1.6 must not retry if the Swift task itself has been cancelled.
+- Phase 5.2 must compare FluxDo's `ReplySheet`, `MarkdownEditor`, `MarkdownToolbar`, `MarkdownToolPanel`, `editorTools`, and upload service before coding.
+- Phase 5.2 must keep the reply composer native UIKit and iOS 15 compatible; it must not port Flutter/Riverpod or introduce SwiftUI.
+- Phase 5.2 must reshape the reply sheet to match the FluxDo screenshots: top grabber, left title, discard action, rounded send button, full-height editor, bottom-left emoji button, and right-side preview/tools pill.
+- Phase 5.2 must use server-provided emoji data (`/site.json` custom emoji or `/emojis.json`-backed data already available in Dexo) for custom emoji insertion, falling back to Unicode emoji if loading fails.
+- Phase 5.2 must implement an eye button that toggles between editable Markdown text and a native Markdown preview state.
+- Phase 5.2 must implement the plus button tools panel with native controls for image, attachment, heading, bold, italic, strikethrough, unordered list, ordered list, link, quote, note/callout, and template insertion where feasible.
+- Phase 5.2 must add composer upload support for image and attachment files through Discourse `/uploads.json` and insert returned upload Markdown into the editor.
+- Phase 5.2 must preserve the existing `createReply` request path and callback behavior after successful send.
+- Phase 5.3 must mirror FluxDo's registry-and-preference bottom navigation idea without porting Flutter/Riverpod architecture.
+- Phase 5.3 must keep `首页` fixed as the first tab and `我的` fixed as the last tab.
+- Phase 5.3 settings must expose a bottom-bar layout editor where `我的` is not shown as a configurable item.
+- Phase 5.3 must support adding, removing, and reordering real native feature entries. The first pass should only expose existing working pages: categories, search, notifications, messages, and bookmarks.
+- Phase 5.3 must avoid fake entries for browsing history or drafts until those native pages exist.
+- Phase 5.3 must prevent UIKit from showing the system `More` tab by limiting the simultaneously visible tab bar to `首页 + first 3 configured feature entries + 我的`.
+- Phase 5.3 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 6 must keep the existing DoH settings as the user-facing control surface.
+- Phase 6 network settings must expose a DoH enable switch and a visible DoH server address row when DoH is enabled.
+- Phase 6 editing the DoH server address must persist the custom URL and make the custom provider active.
+- Phase 6 must add a lightweight DoH resolver for Linux.do-related hostnames using JSON DoH endpoints and provider bootstrap IPs where practical.
+- Phase 6 must add a local HTTP CONNECT proxy for native API requests so TLS still uses the original `linux.do` host/SNI/certificate path.
+- Phase 6 must route Alamofire/`URLSession` native API requests through the local proxy only when DoH is enabled and the proxy starts successfully.
+- Phase 6 must not rewrite request URLs from hostnames to IP addresses.
+- Phase 6 must not introduce Rust, Flutter, global system DNS, NetworkExtension entitlements, or HTTPS MITM/certificate installation in the first pass.
+- Phase 6 must keep iOS 15 compatibility and UIKit-only implementation.
+- Phase 6 revision: continue with a non-MITM design. The app must not generate, install, or trust a local CA certificate for DoH; TLS must remain end-to-end between `URLSession` and `linux.do` through a byte-forwarding CONNECT tunnel.
+- Phase 6 revision: introduce `swift-dns/swift-dns` as the preferred DNS engine dependency so the project can move DNS wire-format parsing and DoH protocol handling out of hand-written app code.
+- Phase 6 revision: keep the existing DoH settings surface and local CONNECT proxy boundary. `swift-dns` is responsible for resolver behavior only; it does not remove the need for the local proxy because `URLSession` otherwise still uses system DNS.
+- Phase 6 revision: if the `swift-dns` API cannot be confirmed locally during implementation, add the dependency and a narrow resolver-backend seam first, while preserving the existing resolver as a fallback instead of guessing unknown upstream API names.
+- Phase 6.2 research: real-device diagnostics proved the lightweight DoH proxy reaches `CONNECT tunnel established`, preserves `linux.do` SNI, and then receives `Connection reset by peer` from the upstream path. This means resolver-only DoH does not solve the tested network condition.
+- Phase 6.2 research: evaluate a proxy-engine route such as `NodePassProject/Anywhere` only after inspecting its source, license, NetworkExtension entitlement needs, MITM/CA trust flow, and whether its core engine can be extracted into Dexo.
+- Phase 6.2 research: do not assume local MITM alone hides upstream SNI. If the reset is SNI-path based, the chosen solution must provide an alternate upstream strategy such as ECH-capable transport, a remote proxy exit, or a NetworkExtension/proxy route that actually changes the observed upstream path.
+
+
+- [x] A fresh user can enter the Linux.do experience without first adding or selecting a forum.
+- [x] The UI no longer exposes an active path to add arbitrary other forums.
+- [x] The top-level app navigation no longer positions "Forums" / "论坛" as the primary product tab if only Linux.do is supported.
+- [x] Existing Linux.do-related login, browsing, and session behavior remains usable.
+- [x] Fresh-install default behavior does not depend on `autoOpenLastForum` already being enabled.
+- [x] User-facing strings touched by this change use localization rather than hardcoded literals.
+- [x] Planning or implementation notes identify which `fluxdo` behaviors are being mirrored and which are intentionally not copied.
+- [x] The native home page no longer looks like a plain segmented-control table; it visually resembles FluxDo's home page hierarchy.
+- [x] The home page includes a top search capsule, horizontal category tab strip, compact filter/sort controls, and rounded topic cards.
+- [x] The implementation preserves existing topic loading, refresh, pagination, and topic-detail navigation.
+- [x] Launch creates/reuses a Linux.do forum record without requiring network access.
+- [x] Direct Linux.do launch does not depend on `autoOpenLastForum` or `lastOpenedForumId`.
+- [x] The single-site root does not show an overlay minimize/close button that would dump the user back to a forum list.
+- [x] Any remaining generic/upstream wording that conflicts with single-forum positioning is identified and either changed or explicitly accepted as out of scope.
+- [x] Topic cards show category and real topic tags as compact FluxDo-like badges.
+- [x] The Home filter row uses a dropdown chip for list mode selection instead of three separate mode buttons.
+- [x] The Home tab no longer shows the top navigation title "Home"/"首页" and has no visible circle/minimize button in the root single-site mode.
+- [x] Tuist app target declares iOS 15.0.
+- [x] `Packages/CookedHTML` declares iOS 15.0.
+- [x] No unguarded `@Observable` or `withObservationTracking` remains in app Swift sources.
+- [x] README minimum target wording says iOS 15.0.
+- [x] Detail posts use a clearer FluxDo-like item/card presentation.
+- [x] Inline links remain visible and tap through the existing native link delegate.
+- [x] Onebox/link preview blocks render as rounded preview cards with source, title, description, optional thumbnail, and tap handling.
+- [x] Related links from `link_counts` render in a compact collapsible card when available.
+- [x] Boosts from `boosts` render as compact FluxDo-like bubbles on detail post items when available.
+- [x] Detail-page changes do not require SwiftUI or iOS 16+ APIs.
+- [x] Initial topic detail loading shows a FluxDo-like title/header skeleton plus post item skeletons instead of only a centered activity spinner.
+- [x] Detail cooked content uses FluxDo-like readable spacing and muted rounded surfaces for quotes, details, code blocks, tables, images, and unsupported fallback rendering.
+- [x] Phase 1.6 changes preserve the native renderer pipeline and do not introduce Flutter/Riverpod architecture concepts.
+- [x] Home shows a right-bottom FAB that is `+` in normal/create mode and `refresh` when scrolling toward the top.
+- [x] Tapping the refresh FAB scrolls Home to the top and refreshes the topic list.
+- [x] Tapping the create FAB opens a functional native new-topic composer.
+- [x] New-topic composer can submit title/body and optional selected category via Discourse `/posts.json`.
+- [x] Home search row collapses when scrolling deeper, while category/filter controls remain accessible.
+- [x] Home header/status background visually matches the FluxDo-style page surface and the search capsule sits closer to the Dynamic Island/status area.
+- [x] Home topic cards use stable Auto Layout self-sizing based on the actual title line count and no longer temporarily become tall before layout settles.
+- [x] Home topic count badge shows an icon and count, with normal counts in gray and high counts in yellow/orange.
+- [x] Home topic count badge keeps a compact stable width and no longer stretches wide during reuse/layout.
+- [x] Home topic count badge remains readable for one-, two-, three-, and four-digit counts.
+- [x] Long Home topic titles can wrap to up to three lines without pushing tags away from the bottom edge.
+- [x] Home topic titles use a fixed smaller font size, auto-height to the actual line count, cap at three lines, and do not reserve blank lines for short titles.
+- [x] The bottom tab bar no longer includes a search tab/button.
+- [x] Home no longer shows a vertical scroll indicator while scrolling.
+- [x] Home topic tag badges include a tag icon and stable color treatment.
+- [ ] Home topic category badges in the badge/tag row show the FluxDo/Linux.do category display name including official level text when available, for example `开发调优LV1`.
+- [ ] Category level text is not guessed from badge order, tab order, or local hierarchy depth.
+- [ ] Ordinary topic tags remain rendered as topic tags and are not mislabeled as categories.
+- [x] HTTP 429 responses show a friendly "too many requests / try again later" message rather than "Response could not be decoded."
+- [x] Home hides the bottom tab bar with a vertical push-out animation on upward finger swipes.
+- [x] Home shows the bottom tab bar with a vertical push-in animation on downward finger swipes.
+- [x] The tab bar is restored when leaving Home so detail/search/other tabs are not left in a hidden-tab state.
+- [x] Topic-detail tags render as colored icon chips instead of gray plain chips.
+- [x] Topic-detail main scrolling no longer shows a vertical scroll indicator.
+- [x] Home shows a FluxDo-style incoming-topic banner above the first topic when new or updated latest topics are detected.
+- [x] The incoming-topic banner text shows the detected count using "查看 N 个新的或更新的话题".
+- [x] Tapping the incoming-topic banner fetches the incoming topics with `topic_ids`, inserts them at the top of the list, and clears the banner.
+- [x] Existing latest/hot/top Home filters still work.
+- [x] Home notification button is enabled and opens a native notification sheet/page.
+- [x] The notification UI shows a real list instead of only a count placeholder.
+- [x] Notification rows show avatar, notification-type icon, unread styling, title, description, relative time, and unread dot.
+- [x] Empty, loading, error, and login-required notification states are user-friendly.
+- [x] Tapping a topic-related notification opens the topic detail page.
+- [x] Tapping unread notifications updates the row to read locally and attempts to mark the notification read on the server.
+- [x] A reusable full notification page/controller exists for future dynamic tab bar integration, but no new visible tab is added in Phase 2.
+- [x] A reusable bookmarks page/controller exists for future dynamic tab bar integration, but no new visible tab is added in Phase 2.1.
+- [x] Bookmark rows use a Home-like rounded card layout with avatar, title, bookmark chip, excerpt, and relative time.
+- [x] Bookmark empty, loading, error, retry, and login-required states are user-friendly.
+- [x] Tapping a bookmark with `topic_id` still opens the topic detail page.
+- [x] Me/Profile uses card-style native UIKit sections instead of the old plain two-section table.
+- [x] Me/Profile shows avatar, display name, username, and trust level for logged-in users.
+- [x] Me/Profile logged-out state remains usable and clearly routes to login.
+- [x] Me/Profile statistics card shows available summary/profile values and supports locally persisted visible-stat customization.
+- [x] Me/Profile exposes private messages, bookmarks, my badges, trust requirements, invite links, and app settings entries.
+- [x] Private messages, bookmarks, and app settings route to existing native controllers.
+- [x] Badges, trust requirements, and invite links have usable fallback routes until native pages are implemented.
+- [x] Private messages show real inbox, sent, and archive lists instead of only a placeholder count.
+- [x] Tapping a private-message row opens the topic detail page.
+- [x] My badges shows a real user badge list grouped by badge type.
+- [x] Invite links loads pending invites and can create a one-day invite link.
+- [x] Invite links support copy/share/open actions for generated or pending links.
+- [x] Trust requirements opens in an in-app page rather than dumping the user into an external browser.
+- [x] Bookmark rows show avatars when the Discourse response uses direct, post-user, or nested user avatar fields.
+- [x] Settings root shows grouped categories for appearance, reading, network, bottom bar, and data management.
+- [x] Network settings still expose DoH toggle, provider, and custom URL.
+- [x] Bottom bar auto-hide setting affects Home scroll tab-bar behavior.
+- [x] Network settings expose a manual Cloudflare verification row.
+- [x] Manual verification opens an in-app WebView on Linux.do.
+- [x] Completing Cloudflare verification syncs `cf_clearance` into the native cookie store used by API requests.
+- [x] Native API responses that are Cloudflare challenge pages show a friendly verification-required message instead of a decode error.
+- [x] Phase 4.2 notes identify which FluxDo CF behaviors are mirrored and which are intentionally deferred.
+- [x] Home keeps table insets synchronized with the dynamic header without sticking around the incoming-topic banner.
+- [x] Home reserves bottom scrolling space for the tab bar/FAB area.
+- [x] Incoming-topic banner no longer reassigns the table header on every layout pass.
+- [x] Bottom tab bar uses an opaque fallback when Liquid Glass is unavailable.
+- [x] Native API Cloudflare challenge detection automatically opens the in-app verification page.
+- [x] The automatic Cloudflare verification page is deduplicated so parallel API failures do not stack modals.
+- [x] Completing automatic Cloudflare verification syncs cookies/user-agent through the existing WebCookieStore.
+- [x] Completing Cloudflare verification hides the Home shield without forcing an automatic topic reload.
+- [x] The manual Network settings Cloudflare verification entry remains available.
+- [x] Automatic Cloudflare verification ignores stale pre-existing `cf_clearance` values and waits for a fresh clearance before completing.
+- [x] Avatar loading uses one shared resolver for absolute, scheme-relative, and relative avatar template URLs.
+- [x] Avatar image views use SDWebImage retry behavior so a first failure does not block later attempts.
+- [x] Avatar placeholders remain visible when the avatar URL is missing or still retrying.
+- [x] Home incoming-topic detection includes updated existing topics, not only new IDs before the first current topic.
+- [x] Home still fetches incoming topics by `topic_ids`, prepends them, removes duplicates, and clears the banner after tap.
+- [x] Topic detail layout is refined against FluxDo's detail page while staying native UIKit and MVVM.
+- [x] Detail typography is larger and easier to read without breaking Dynamic Type or iOS 15 compatibility.
+- [x] The first/main topic content uses a lighter treatment when appropriate, while comments/replies remain card-like.
+- [x] Comment cards follow FluxDo's compact post feel with roughly 16pt internal padding, readable line height, and short-reply minimum height around 80pt.
+- [x] The current detail bottom bar is replaced by a centered floor/progress control showing current floor and total progress.
+- [x] Tapping the centered floor/progress control opens a timeline or floor jump UI.
+- [x] Long-pressing the centered floor/progress control opens a native radial/semicircle menu with timeline, top, reply topic, bookmark topic, and share-link actions.
+- [x] The radial menu supports press progress, drag highlight, release-to-trigger, haptics where available, and dead-zone cancellation.
+- [x] Left swipe/back swipe returns from topic detail to the topic list without breaking vertical scrolling.
+- [x] Existing detail behavior for reading tracking, replies, post bookmark/reaction/boost, links, images, tags, and reply composer still works.
+- [x] Topic Detail initial load retries once when the first request is explicitly cancelled.
+- [x] Explicit cancellation retry does not swallow real topic-detail errors after the retry attempt.
+- [x] Reply composer uses a FluxDo-like native sheet header with discard and send actions.
+- [x] Reply composer bottom toolbar exposes emoji, Markdown preview toggle, and expandable tools.
+- [x] Reply composer emoji panel can insert Unicode emoji and server custom emoji.
+- [x] Reply composer tools can insert common Markdown wrappers/prefixes without losing the current selection.
+- [x] Reply composer can upload images and attachments to Discourse and insert the returned Markdown.
+- [x] Reply composer preview mode renders a readable native Markdown preview and can return to editing.
+- [ ] Enabling DoH starts a lightweight local proxy for native API requests.
+- [ ] Network settings expose both the DoH switch and the currently effective DoH server URL.
+- [ ] Editing the DoH server URL switches the provider to custom and restarts/reconfigures the lightweight DoH service.
+- [ ] Native API requests keep `https://linux.do/...` URLs and rely on CONNECT tunneling rather than IP URL replacement.
+- [ ] The DoH resolver can resolve `linux.do` through configured JSON DoH providers and cache results with a bounded TTL.
+- [ ] If the local proxy cannot start, native API requests fall back to the normal Alamofire session instead of bricking the app.
+
+
+- Rebranding every upstream asset or package identifier unless it blocks the Linux.do-only experience.
+- Deleting or migrating existing saved non-Linux.do forum rows in Phase 1.2.
+- Adding support for additional forums.
+- Phase 3 does not implement full native My Badges, Trust Requirements, or Invite Links pages.
+- Phase 3 does not implement FluxDo's profile stats drag-and-drop edit page, connect.linux.do stats source switching, CDK/LDC balance cards, drafts, browsing history, browser, AI settings, or metaverse entries.
+- Phase 4.1 does not implement a full native parser for connect.linux.do trust requirement cards.
+- Phase 4.1 does not implement invite editing/deletion, invite rate-limit countdowns, or advanced restriction fields.
+- Phase 4.1 does not implement FluxDo's settings search, shortcut settings, Notion settings, or desktop-only setting surfaces.
+- Phase 4.4 does not implement a headless `cf_clearance` renewal service or a full WebView-backed HTTP adapter.
+- Phase 6 does not implement FluxDo's Rust DoH proxy, ECH, h2 MITM, WebView proxy override, system-wide DNS, or NetworkExtension support.
+
+## Open Questions
+
+- Later phase: what should happen to users who already have other forums saved from the upstream/multi-forum version?
+- Later phase: should FluxDo be treated as the source of truth for navigation structure and product behavior beyond the home page?
+
+## Notes
+
+- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
+- Lightweight tasks can remain PRD-only.
+- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
