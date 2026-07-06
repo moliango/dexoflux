@@ -47,7 +47,6 @@ let project = Project(
                 .external(name: "SDWebImage"),
                 .external(name: "SDWebImageSVGCoder"),
                 .external(name: "Lightbox"),
-                .external(name: "DNS"),
                 .package(product: "CookedHTML"),
             ],
             settings: .settings(

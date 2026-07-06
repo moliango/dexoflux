@@ -11,6 +11,5 @@ let package = Package(
         .package(url: "https://github.com/SDWebImage/SDWebImageSVGCoder.git", from: "1.7.0"),
         .package(url: "https://github.com/hyperoslo/Lightbox.git", from: "2.5.0"),
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
-        .package(url: "https://github.com/swift-dns/swift-dns.git", branch: "main"),
     ]
 )
