@@ -1,0 +1,61 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'TestFlight/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Generate Xcode project
+        run: mise x -- tuist install && mise x -- tuist generate
+
+      - name: Set build number
+        id: buildnumber
+        run: echo "build=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned archive
+        run: |
+          xcodebuild archive \
+            -workspace dexo.xcworkspace \
+            -scheme dexo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/dexo.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            CURRENT_PROJECT_VERSION=${{ steps.buildnumber.outputs.build }} | xcpretty
+      - name: Package IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r build/dexo.xcarchive/Products/Applications/dexo.app build/Payload/
+          cd build && zip -r dexo-unsigned.ipa Payload
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(grep -o '"MARKETING_VERSION": "[^"]*"' Project.swift | grep -o '"[^"]*"$' | tr -d '"')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Create tag and Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}-build.${{ steps.buildnumber.outputs.build }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" build/dexo-unsigned.ipa \
+            --title "Dexo $TAG" \
+            --generate-notes
