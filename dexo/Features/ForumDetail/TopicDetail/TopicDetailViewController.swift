@@ -1153,16 +1153,16 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
     }
 
     private func showTimelineSheet() {
-        let total = viewModel.totalFloors
-        guard total > 0 else { return }
+        let stream = viewModel.allPostIds
+        guard !stream.isEmpty else { return }
 
         let timeline = TopicTimelineSheetViewController(
-            currentFloor: currentVisibleFloor(),
-            totalFloors: total,
+            currentIndex: currentVisibleFloor(),
+            stream: stream,
             title: viewModel.topic?.fancyTitle ?? viewModel.topic?.title
         )
-        timeline.onJump = { [weak self] floor in
-            self?.jumpToFloor(floor)
+        timeline.onJumpToPostId = { [weak self] postId in
+            self?.jumpToPostId(postId)
         }
         timeline.modalPresentationStyle = .pageSheet
         if let sheet = timeline.sheetPresentationController {
@@ -1197,6 +1197,11 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             self.jumpToFloor(floor)
         })
         present(alert, animated: true)
+    }
+
+    private func jumpToPostId(_ postId: Int) {
+        guard let targetIndex = viewModel.allPostIds.firstIndex(of: postId) else { return }
+        jumpToFloor(targetIndex + 1)
     }
 
     private func jumpToFloor(_ floor: Int) {
@@ -1412,13 +1417,14 @@ extension TopicDetailViewController: UITableViewDelegate {
 // MARK: - Topic Timeline Sheet
 
 private final class TopicTimelineSheetViewController: UIViewController {
-    var onJump: ((Int) -> Void)?
+    var onJumpToPostId: ((Int) -> Void)?
 
-    private let initialFloor: Int
-    private let totalFloors: Int
+    private let initialIndex: Int
+    private let stream: [Int]
     private let titleText: String?
-    private var selectedFloor: Int
+    private var selectedIndex: Int
     private let feedback = UISelectionFeedbackGenerator()
+    private var totalCount: Int { stream.count }
 
     private let grabberView: UIView = {
         let view = UIView()
@@ -1494,16 +1500,17 @@ private final class TopicTimelineSheetViewController: UIViewController {
     private lazy var trackView: TopicTimelineTrackView = {
         let view = TopicTimelineTrackView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.totalFloors = totalFloors
-        view.selectedFloor = selectedFloor
+        view.totalCount = totalCount
+        view.selectedIndex = selectedIndex
         view.addTarget(self, action: #selector(trackValueChanged(_:)), for: .valueChanged)
         return view
     }()
 
-    init(currentFloor: Int, totalFloors: Int, title: String?) {
-        self.totalFloors = max(totalFloors, 1)
-        self.initialFloor = min(max(currentFloor, 1), max(totalFloors, 1))
-        self.selectedFloor = min(max(currentFloor, 1), max(totalFloors, 1))
+    init(currentIndex: Int, stream: [Int], title: String?) {
+        self.stream = stream
+        let safeTotal = max(stream.count, 1)
+        self.initialIndex = min(max(currentIndex, 1), safeTotal)
+        self.selectedIndex = min(max(currentIndex, 1), safeTotal)
         self.titleText = title
         super.init(nibName: nil, bundle: nil)
     }
@@ -1557,7 +1564,7 @@ private final class TopicTimelineSheetViewController: UIViewController {
         buttonRow.spacing = 16
 
         titleLabel.text = titleText
-        totalLabel.text = "/ \(totalFloors)"
+        totalLabel.text = "/ \(totalCount)"
 
         view.addSubview(grabberView)
         view.addSubview(titleLabel)
@@ -1601,14 +1608,14 @@ private final class TopicTimelineSheetViewController: UIViewController {
     }
 
     @objc private func trackValueChanged(_ sender: TopicTimelineTrackView) {
-        setSelectedFloor(sender.selectedFloor, haptic: true)
+        setSelectedIndex(sender.selectedIndex, haptic: true)
     }
 
     @objc private func floorTextChanged() {
         guard let text = floorTextField.text,
               let value = Int(text)
         else { return }
-        setSelectedFloor(min(max(value, 1), totalFloors), haptic: true, updateText: false)
+        setSelectedIndex(min(max(value, 1), totalCount), haptic: true, updateText: false)
     }
 
     @objc private func cancelTapped() {
@@ -1618,20 +1625,20 @@ private final class TopicTimelineSheetViewController: UIViewController {
     @objc private func jumpTapped() {
         view.endEditing(true)
         normalizeInputFloor()
-        let floor = selectedFloor
-        dismiss(animated: true) { [onJump] in
-            onJump?(floor)
+        let selectedPostId = stream[selectedIndex - 1]
+        dismiss(animated: true) { [onJumpToPostId] in
+            onJumpToPostId?(selectedPostId)
         }
     }
 
-    private func setSelectedFloor(_ floor: Int, haptic: Bool, updateText: Bool = true) {
-        let next = min(max(floor, 1), totalFloors)
-        guard next != selectedFloor else {
+    private func setSelectedIndex(_ index: Int, haptic: Bool, updateText: Bool = true) {
+        let next = min(max(index, 1), totalCount)
+        guard next != selectedIndex else {
             updateFloorDisplay(updateText: updateText)
             return
         }
-        selectedFloor = next
-        trackView.selectedFloor = next
+        selectedIndex = next
+        trackView.selectedIndex = next
         if haptic {
             feedback.selectionChanged()
             feedback.prepare()
@@ -1641,9 +1648,9 @@ private final class TopicTimelineSheetViewController: UIViewController {
 
     private func updateFloorDisplay(updateText: Bool = true) {
         if updateText {
-            floorTextField.text = "\(selectedFloor)"
+            floorTextField.text = "\(selectedIndex)"
         }
-        statusLabel.text = selectedFloor == initialFloor
+        statusLabel.text = selectedIndex == initialIndex
             ? String(localized: "topic_detail.timeline.current")
             : String(localized: "topic_detail.timeline.ready")
     }
@@ -1655,7 +1662,7 @@ private final class TopicTimelineSheetViewController: UIViewController {
             updateFloorDisplay()
             return
         }
-        setSelectedFloor(value, haptic: false)
+        setSelectedIndex(value, haptic: false)
     }
 }
 
@@ -1666,27 +1673,27 @@ extension TopicTimelineSheetViewController: UITextFieldDelegate {
 }
 
 private final class TopicTimelineTrackView: UIControl {
-    var totalFloors: Int {
-        get { totalFloorsValue }
+    var totalCount: Int {
+        get { totalCountValue }
         set {
-            totalFloorsValue = max(newValue, 1)
-            selectedFloorValue = clampedFloor(selectedFloorValue)
+            totalCountValue = max(newValue, 1)
+            selectedIndexValue = clampedIndex(selectedIndexValue)
             setNeedsDisplay()
         }
     }
 
-    var selectedFloor: Int {
-        get { selectedFloorValue }
+    var selectedIndex: Int {
+        get { selectedIndexValue }
         set {
-            let next = clampedFloor(newValue)
-            guard next != selectedFloorValue else { return }
-            selectedFloorValue = next
+            let next = clampedIndex(newValue)
+            guard next != selectedIndexValue else { return }
+            selectedIndexValue = next
             setNeedsDisplay()
         }
     }
 
-    private var totalFloorsValue = 1
-    private var selectedFloorValue = 1
+    private var totalCountValue = 1
+    private var selectedIndexValue = 1
     private let trackInset: CGFloat = 30
     private let handleSize: CGFloat = 46
 
@@ -1701,7 +1708,7 @@ private final class TopicTimelineTrackView: UIControl {
         let height = max(bottom - top, 1)
         let x = bounds.midX - trackWidth / 2
         let trackRect = CGRect(x: x, y: top, width: trackWidth, height: height)
-        let handleY = yPosition(for: selectedFloor)
+        let handleY = yPosition(for: selectedIndex)
         let activeRect = CGRect(x: x, y: top, width: trackWidth, height: max(handleY - top, 0))
 
         UIColor.tertiarySystemFill.setFill()
@@ -1747,30 +1754,30 @@ private final class TopicTimelineTrackView: UIControl {
     }
 
     private func updateSelection(for touch: UITouch) {
-        let floor = floorForY(touch.location(in: self).y)
-        guard floor != selectedFloor else { return }
-        selectedFloor = floor
+        let index = indexForY(touch.location(in: self).y)
+        guard index != selectedIndex else { return }
+        selectedIndex = index
         sendActions(for: .valueChanged)
     }
 
-    private func clampedFloor(_ floor: Int) -> Int {
-        min(max(floor, 1), max(totalFloors, 1))
+    private func clampedIndex(_ index: Int) -> Int {
+        min(max(index, 1), max(totalCount, 1))
     }
 
-    private func yPosition(for floor: Int) -> CGFloat {
+    private func yPosition(for index: Int) -> CGFloat {
         let top = trackInset
         let bottom = bounds.height - trackInset
-        guard totalFloors > 1 else { return top }
-        let percent = CGFloat(floor - 1) / CGFloat(totalFloors - 1)
+        guard totalCount > 1 else { return top }
+        let percent = CGFloat(index - 1) / CGFloat(totalCount - 1)
         return top + (bottom - top) * percent
     }
 
-    private func floorForY(_ y: CGFloat) -> Int {
+    private func indexForY(_ y: CGFloat) -> Int {
         let top = trackInset
         let bottom = bounds.height - trackInset
-        guard totalFloors > 1 else { return 1 }
+        guard totalCount > 1 else { return 1 }
         let percent = min(max((y - top) / max(bottom - top, 1), 0), 1)
-        return Int(round(percent * CGFloat(totalFloors - 1))) + 1
+        return Int(round(percent * CGFloat(totalCount - 1))) + 1
     }
 
     private func drawEndpointMark(center: CGPoint, filled: Bool) {

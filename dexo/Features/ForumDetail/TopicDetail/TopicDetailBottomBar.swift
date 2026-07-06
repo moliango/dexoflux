@@ -47,49 +47,60 @@ final class TopicDetailBottomBar: UIControl {
     weak var delegate: TopicDetailBottomBarDelegate?
 
     private enum Metrics {
-        static let height: CGFloat = 52
-        static let minWidth: CGFloat = 154
-        static let horizontalPadding: CGFloat = 14
+        static let height: CGFloat = 40
+        static let width: CGFloat = 120
     }
 
-    private let blurView: UIVisualEffectView = {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    private let surfaceView: UIView = {
+        let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .secondarySystemGroupedBackground
+        view.isUserInteractionEnabled = false
+        view.clipsToBounds = true
+        return view
+    }()
+
+    private let progressFillView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = UIColor.tintColor.withAlphaComponent(0.12)
         view.isUserInteractionEnabled = false
         return view
     }()
 
-    private let titleLabel: UILabel = {
+    private let currentLabel: UILabel = {
         let label = UILabel()
         label.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .label
+        label.textColor = .tintColor
         label.textAlignment = .center
         return label
     }()
 
-    private let subtitleLabel: UILabel = {
+    private let slashLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.text = "/"
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .center
+        return label
+    }()
+
+    private let totalLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 15, weight: .medium)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
         return label
     }()
 
-    private let progressView: UIProgressView = {
-        let view = UIProgressView(progressViewStyle: .bar)
-        view.trackTintColor = UIColor.tertiarySystemFill
-        view.progressTintColor = .tintColor
-        view.layer.cornerRadius = 1.5
-        view.clipsToBounds = true
-        return view
-    }()
-
     private lazy var labelStack: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, progressView])
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 2
+        let stack = UIStackView(arrangedSubviews: [currentLabel, slashLabel, totalLabel])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.distribution = .equalCentering
+        stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isUserInteractionEnabled = false
         return stack
     }()
 
@@ -106,6 +117,8 @@ final class TopicDetailBottomBar: UIControl {
     private var radialOverlay: TopicDetailRadialMenuOverlay?
     private var highlightedAction: TopicDetailRadialAction?
     private var isPresentingRadialMenu = false
+    private var progressFraction: CGFloat = 0
+    private var progressFillWidthConstraint: NSLayoutConstraint?
     private let feedback = UIImpactFeedbackGenerator(style: .medium)
     private let selectionFeedback = UISelectionFeedbackGenerator()
 
@@ -119,7 +132,8 @@ final class TopicDetailBottomBar: UIControl {
         layer.shadowOffset = CGSize(width: 0, height: 4)
         layer.shadowRadius = 14
 
-        addSubview(blurView)
+        addSubview(surfaceView)
+        surfaceView.addSubview(progressFillView)
         addSubview(labelStack)
         layer.addSublayer(pressProgressLayer)
 
@@ -134,19 +148,23 @@ final class TopicDetailBottomBar: UIControl {
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Metrics.height),
-            widthAnchor.constraint(greaterThanOrEqualToConstant: Metrics.minWidth),
+            widthAnchor.constraint(equalToConstant: Metrics.width),
 
-            blurView.topAnchor.constraint(equalTo: topAnchor),
-            blurView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            blurView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            blurView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            surfaceView.topAnchor.constraint(equalTo: topAnchor),
+            surfaceView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            surfaceView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            surfaceView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            labelStack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            labelStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.horizontalPadding),
-            labelStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.horizontalPadding),
-            labelStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            progressView.heightAnchor.constraint(equalToConstant: 3),
+            progressFillView.topAnchor.constraint(equalTo: surfaceView.topAnchor),
+            progressFillView.leadingAnchor.constraint(equalTo: surfaceView.leadingAnchor),
+            progressFillView.bottomAnchor.constraint(equalTo: surfaceView.bottomAnchor),
+
+            labelStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            labelStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        let fillWidth = progressFillView.widthAnchor.constraint(equalToConstant: 0)
+        fillWidth.isActive = true
+        progressFillWidthConstraint = fillWidth
     }
 
     @available(*, unavailable)
@@ -157,8 +175,8 @@ final class TopicDetailBottomBar: UIControl {
     override func layoutSubviews() {
         super.layoutSubviews()
         layer.cornerRadius = bounds.height / 2
-        blurView.layer.cornerRadius = bounds.height / 2
-        blurView.clipsToBounds = true
+        surfaceView.layer.cornerRadius = bounds.height / 2
+        progressFillWidthConstraint?.constant = surfaceView.bounds.width * progressFraction
         pressProgressLayer.path = UIBezierPath(
             roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5),
             cornerRadius: max(0, bounds.height / 2 - 1.5)
@@ -168,10 +186,10 @@ final class TopicDetailBottomBar: UIControl {
     func configure(currentFloor: Int, totalFloors: Int) {
         let safeTotal = max(totalFloors, 0)
         let safeCurrent = safeTotal == 0 ? 0 : min(max(currentFloor, 1), safeTotal)
-        titleLabel.text = safeTotal > 0 ? "\(safeCurrent) / \(safeTotal)" : "0 / 0"
-        subtitleLabel.text = String(localized: "topic_detail.progress.subtitle")
-        let progress = safeTotal > 0 ? Float(safeCurrent) / Float(safeTotal) : 0
-        progressView.setProgress(progress, animated: false)
+        currentLabel.text = "\(safeCurrent)"
+        totalLabel.text = "\(safeTotal)"
+        progressFraction = safeTotal > 0 ? CGFloat(safeCurrent) / CGFloat(safeTotal) : 0
+        setNeedsLayout()
         accessibilityLabel = String(localized: "topic_detail.progress.accessibility \(safeCurrent) \(safeTotal)")
     }
 

@@ -24,7 +24,13 @@ Questions to answer:
 
 <!-- Standard structure of a component file -->
 
-(To be filled by the team)
+### Topic Detail Timeline
+
+- `TopicDetail` progress and timeline controls must use Discourse `post_stream.stream` as the source of truth for ordering.
+- Displayed progress is the 1-based stream index over `stream.count`, matching FluxDo's `TopicProgress` behavior.
+- Timeline selection should return the selected post id from `stream`; the view controller may map that id back to the existing native floor-jump loader.
+- Do not derive timeline position from visible table rows, loaded batch size, or filtered post arrays except as a temporary fallback for finding the current visible stream index.
+- The progress entry should remain a compact centered capsule (`current / total`) that opens the timeline on tap and keeps gesture actions attached to the same control.
 
 ---
 
