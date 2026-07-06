@@ -1,8 +1,8 @@
 name: Build Unsigned IPA
 
-于:
+on:
   push:
-    分支: [main]
+    branches: [main]
     paths:
       - 'TestFlight/**'
   workflow_dispatch:
