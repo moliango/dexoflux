@@ -1,8 +1,8 @@
 name: Build Unsigned IPA
 
-on:
+于:
   push:
-    branches: [main]
+    分支: [main]
     paths:
       - 'TestFlight/**'
   workflow_dispatch:
@@ -59,4 +59,3 @@ jobs:
           gh release create "$TAG" build/dexo-unsigned.ipa \
             --title "Dexo $TAG" \
             --generate-notes
-Footer
