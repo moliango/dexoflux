@@ -51,10 +51,10 @@ struct NativeRenderConfig {
         let basePointSize = settings.contentFontSize.basePointSize
         let comfortFontDelta: CGFloat = comfortMode ? 1 : 0
         let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .systemFont(ofSize: basePointSize + comfortFontDelta)
+            for: settings.contentFont(ofSize: basePointSize + comfortFontDelta)
         )
         let codeFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .monospacedSystemFont(ofSize: max(basePointSize - 1, 14) + comfortFontDelta, weight: .regular)
+            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 14) + comfortFontDelta)
         )
         return NativeRenderConfig(
             baseFont: bodyFont,

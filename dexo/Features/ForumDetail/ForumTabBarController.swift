@@ -11,6 +11,7 @@ final class ForumTabBarController: UITabBarController {
     private var settingsObservationToken: NSObjectProtocol?
     private var tabIdentifiers: [String] = []
     private var visibleDynamicTabItems: [AppSettings.ForumDynamicTabItem] = []
+    private var renderedLanguage = AppSettings.shared.appLanguage
 
     init(api: DiscourseAPI, authGate: AuthGating? = nil) {
         self.api = api
@@ -229,9 +230,18 @@ private extension ForumTabBarController {
 
     func handleSettingsChanged() {
         configureTabBarSurface()
+        let currentLanguage = AppSettings.shared.appLanguage
+        let languageChanged = currentLanguage != renderedLanguage
+        renderedLanguage = currentLanguage
+
         let newVisibleItems = AppSettings.shared.forumVisibleDynamicTabItems
-        guard newVisibleItems != visibleDynamicTabItems else { return }
-        rebuildTabs(preservingIdentifier: selectedTabIdentifier())
+        if newVisibleItems != visibleDynamicTabItems {
+            rebuildTabs(preservingIdentifier: selectedTabIdentifier())
+            return
+        }
+        if languageChanged {
+            refreshLocalizedTabTitles()
+        }
     }
 
     func rebuildTabs(preservingIdentifier preferredIdentifier: String?) {
@@ -289,6 +299,21 @@ private extension ForumTabBarController {
     func selectedTabIdentifier() -> String? {
         guard selectedIndex >= 0, selectedIndex < tabIdentifiers.count else { return nil }
         return tabIdentifiers[selectedIndex]
+    }
+
+    func refreshLocalizedTabTitles() {
+        let specs = buildTabSpecs()
+        for (index, navigationController) in navigationControllers.enumerated() where index < specs.count {
+            let spec = specs[index]
+            navigationController.tabBarItem.title = spec.title
+            navigationController.viewControllers.first?.title = spec.title
+        }
+        if #available(iOS 18.0, *) {
+            for (index, tab) in tabs.enumerated() where index < specs.count {
+                tab.title = specs[index].title
+            }
+        }
+        onNavigationControllersChanged?()
     }
 
     func buildTabSpecs() -> [TabSpec] {

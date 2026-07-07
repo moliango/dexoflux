@@ -27,6 +27,7 @@ private struct WebRenderStyle: Sendable {
     let mutedBackgroundHex: String
     let quoteBorderHex: String
     let blockquoteBackgroundHex: String
+    let bodyFontFamilyCSS: String
 
     static let `default` = WebRenderStyle(
         bodyFontSize: 18,
@@ -36,7 +37,8 @@ private struct WebRenderStyle: Sendable {
         backgroundHex: "transparent",
         mutedBackgroundHex: "#f6f8ff",
         quoteBorderHex: "#cccccc",
-        blockquoteBackgroundHex: "transparent"
+        blockquoteBackgroundHex: "transparent",
+        bodyFontFamilyCSS: "-apple-system, BlinkMacSystemFont, sans-serif"
     )
 }
 
@@ -154,7 +156,8 @@ final class PostContentRenderer: NSObject {
             backgroundHex: themeStyle.webBackgroundHex,
             mutedBackgroundHex: themeStyle.webMutedBackgroundHex,
             quoteBorderHex: themeStyle.webQuoteBorderHex,
-            blockquoteBackgroundHex: themeStyle.webBlockquoteBackgroundHex
+            blockquoteBackgroundHex: themeStyle.webBlockquoteBackgroundHex,
+            bodyFontFamilyCSS: settings.webContentFontFamilyCSS
         )
     }
 
@@ -217,7 +220,7 @@ final class PostContentRenderer: NSObject {
             margin: 0;
             font: -apple-system-body;
             font-size: \(webStyle.bodyFontSize)px;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: \(webStyle.bodyFontFamilyCSS);
             line-height: 1.5;
             color: #1a1a1a;
             background: \(webStyle.backgroundHex);

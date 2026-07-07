@@ -11,6 +11,20 @@ enum TopicTagVisualStyle {
     }
 }
 
+struct XiaohongshuTopicCardModel {
+    let id: Int
+    let title: String
+    let excerpt: String?
+    let avatarURL: URL?
+    let username: String?
+    let categoryName: String?
+    let categoryColor: UIColor?
+    let tags: [String]
+    let replyCount: Int
+    let views: Int
+    let timeText: String
+}
+
 final class TopicCell: UITableViewCell {
     static let reuseIdentifier = "TopicCell"
     static let estimatedHeight: CGFloat = 96
@@ -288,7 +302,7 @@ final class TopicCell: UITableViewCell {
 
     // MARK: - Helpers
 
-    private static func formatDate(_ isoString: String) -> String {
+    static func formatDate(_ isoString: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let date = formatter.date(from: isoString) else { return isoString }
@@ -297,6 +311,439 @@ final class TopicCell: UITableViewCell {
         return relative.localizedString(for: date, relativeTo: Date())
     }
 
+}
+
+final class XiaohongshuTopicGridCell: UITableViewCell {
+    static let reuseIdentifier = "XiaohongshuTopicGridCell"
+    static let estimatedHeight: CGFloat = 274
+
+    var onTopicSelected: ((Int) -> Void)?
+
+    private let leftCard = XiaohongshuTopicCardView()
+    private let rightCard = XiaohongshuTopicCardView()
+
+    private let stackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .top
+        stack.distribution = .fillEqually
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        selectionStyle = .none
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+
+        leftCard.addTarget(self, action: #selector(leftCardTapped), for: .touchUpInside)
+        rightCard.addTarget(self, action: #selector(rightCardTapped), for: .touchUpInside)
+
+        stackView.addArrangedSubview(leftCard)
+        stackView.addArrangedSubview(rightCard)
+        contentView.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            stackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+        ])
+    }
+
+    func configure(left: XiaohongshuTopicCardModel?, right: XiaohongshuTopicCardModel?) {
+        leftCard.configure(with: left)
+        rightCard.configure(with: right)
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onTopicSelected = nil
+        leftCard.prepareForReuse()
+        rightCard.prepareForReuse()
+    }
+
+    @objc private func leftCardTapped() {
+        guard let topicId = leftCard.topicId else { return }
+        onTopicSelected?(topicId)
+    }
+
+    @objc private func rightCardTapped() {
+        guard let topicId = rightCard.topicId else { return }
+        onTopicSelected?(topicId)
+    }
+}
+
+private final class XiaohongshuTopicCardView: UIControl {
+    private static let decorationSymbols = [
+        "sparkles",
+        "diamond.fill",
+        "flame.fill",
+        "gamecontroller.fill",
+        "camera.fill",
+        "mic.fill",
+        "target",
+        "bubble.left.and.bubble.right.fill",
+        "star.fill",
+    ]
+
+    private(set) var topicId: Int?
+    private var currentAvatarURL: URL?
+
+    private let topPanel: UIView = {
+        let view = UIView()
+        view.layer.cornerRadius = 16
+        view.layer.cornerCurve = .continuous
+        view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let badgeStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 5
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let decorationIconView: UIImageView = {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFit
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let cornerIconView: UIImageView = {
+        let config = UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        let view = UIImageView(image: UIImage(systemName: "heart.fill", withConfiguration: config))
+        view.contentMode = .scaleAspectFit
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let previewLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.numberOfLines = 4
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let titleLabel: TopicTitleLabel = {
+        let label = TopicTitleLabel()
+        label.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 14, weight: .semibold)
+        )
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let avatarImageView: UIImageView = {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFill
+        view.clipsToBounds = true
+        view.layer.cornerRadius = 9
+        view.backgroundColor = .secondarySystemFill
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let usernameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let replyIconView: UIImageView = {
+        let config = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        let view = UIImageView(image: UIImage(systemName: "bubble.left", withConfiguration: config))
+        view.contentMode = .scaleAspectFit
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let replyCountLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let viewsIconView: UIImageView = {
+        let config = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        let view = UIImageView(image: UIImage(systemName: "eye", withConfiguration: config))
+        view.contentMode = .scaleAspectFit
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let viewsLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let metaRow: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let statsRow: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
+                self.alpha = self.isHighlighted ? 0.86 : 1
+            }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        layer.cornerRadius = 16
+        layer.cornerCurve = .continuous
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.07
+        layer.shadowRadius = 14
+        layer.shadowOffset = CGSize(width: 0, height: 5)
+
+        metaRow.addArrangedSubview(avatarImageView)
+        metaRow.addArrangedSubview(usernameLabel)
+        statsRow.addArrangedSubview(replyIconView)
+        statsRow.addArrangedSubview(replyCountLabel)
+        statsRow.addArrangedSubview(viewsIconView)
+        statsRow.addArrangedSubview(viewsLabel)
+        [
+            topPanel,
+            badgeStackView,
+            decorationIconView,
+            cornerIconView,
+            previewLabel,
+            titleLabel,
+            avatarImageView,
+            usernameLabel,
+            replyIconView,
+            replyCountLabel,
+            viewsIconView,
+            viewsLabel,
+            metaRow,
+            statsRow,
+        ].forEach { $0.isUserInteractionEnabled = false }
+
+        addSubview(topPanel)
+        topPanel.addSubview(badgeStackView)
+        topPanel.addSubview(decorationIconView)
+        topPanel.addSubview(cornerIconView)
+        topPanel.addSubview(previewLabel)
+        addSubview(titleLabel)
+        addSubview(metaRow)
+        addSubview(statsRow)
+
+        NSLayoutConstraint.activate([
+            topPanel.topAnchor.constraint(equalTo: topAnchor),
+            topPanel.leadingAnchor.constraint(equalTo: leadingAnchor),
+            topPanel.trailingAnchor.constraint(equalTo: trailingAnchor),
+            topPanel.heightAnchor.constraint(equalToConstant: 136),
+
+            badgeStackView.topAnchor.constraint(equalTo: topPanel.topAnchor, constant: 10),
+            badgeStackView.leadingAnchor.constraint(equalTo: topPanel.leadingAnchor, constant: 10),
+            badgeStackView.trailingAnchor.constraint(lessThanOrEqualTo: topPanel.trailingAnchor, constant: -34),
+            badgeStackView.heightAnchor.constraint(equalToConstant: 18),
+
+            cornerIconView.topAnchor.constraint(equalTo: topPanel.topAnchor, constant: 12),
+            cornerIconView.trailingAnchor.constraint(equalTo: topPanel.trailingAnchor, constant: -12),
+            cornerIconView.widthAnchor.constraint(equalToConstant: 14),
+            cornerIconView.heightAnchor.constraint(equalToConstant: 14),
+
+            decorationIconView.topAnchor.constraint(equalTo: badgeStackView.bottomAnchor, constant: 8),
+            decorationIconView.leadingAnchor.constraint(equalTo: topPanel.leadingAnchor, constant: 12),
+            decorationIconView.widthAnchor.constraint(equalToConstant: 26),
+            decorationIconView.heightAnchor.constraint(equalToConstant: 26),
+
+            previewLabel.topAnchor.constraint(equalTo: decorationIconView.bottomAnchor, constant: 10),
+            previewLabel.leadingAnchor.constraint(equalTo: topPanel.leadingAnchor, constant: 12),
+            previewLabel.trailingAnchor.constraint(equalTo: topPanel.trailingAnchor, constant: -12),
+            previewLabel.bottomAnchor.constraint(lessThanOrEqualTo: topPanel.bottomAnchor, constant: -12),
+
+            titleLabel.topAnchor.constraint(equalTo: topPanel.bottomAnchor, constant: 10),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+
+            metaRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
+            metaRow.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            metaRow.trailingAnchor.constraint(lessThanOrEqualTo: statsRow.leadingAnchor, constant: -8),
+            metaRow.heightAnchor.constraint(equalToConstant: 20),
+
+            avatarImageView.widthAnchor.constraint(equalToConstant: 18),
+            avatarImageView.heightAnchor.constraint(equalToConstant: 18),
+
+            statsRow.centerYAnchor.constraint(equalTo: metaRow.centerYAnchor),
+            statsRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            statsRow.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+
+            replyIconView.widthAnchor.constraint(equalToConstant: 11),
+            replyIconView.heightAnchor.constraint(equalToConstant: 11),
+            viewsIconView.widthAnchor.constraint(equalToConstant: 11),
+            viewsIconView.heightAnchor.constraint(equalToConstant: 11),
+        ])
+    }
+
+    func configure(with model: XiaohongshuTopicCardModel?) {
+        guard let model else {
+            resetContent()
+            alpha = 0
+            isUserInteractionEnabled = false
+            accessibilityElementsHidden = true
+            return
+        }
+
+        alpha = 1
+        isUserInteractionEnabled = true
+        accessibilityElementsHidden = false
+        topicId = model.id
+        accessibilityLabel = model.title
+        accessibilityTraits = [.button]
+
+        let seed = model.tags.first ?? model.categoryName ?? model.title
+        let accentColor = TopicTagVisualStyle.color(for: seed)
+        backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        topPanel.backgroundColor = accentColor.withAlphaComponent(0.13)
+        previewLabel.textColor = readableTextColor(for: accentColor)
+        previewLabel.text = Self.cleanPreviewText(model.excerpt) ?? model.title
+        titleLabel.text = model.title
+        usernameLabel.text = model.username.map { "@\($0)" } ?? model.timeText
+        replyCountLabel.text = Self.compactCount(model.replyCount)
+        viewsLabel.text = Self.compactCount(model.views)
+
+        decorationIconView.image = UIImage(
+            systemName: Self.symbolName(for: seed),
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)
+        )
+        decorationIconView.tintColor = accentColor
+        cornerIconView.tintColor = accentColor.withAlphaComponent(0.42)
+        replyIconView.tintColor = accentColor.withAlphaComponent(0.72)
+        viewsIconView.tintColor = accentColor.withAlphaComponent(0.72)
+
+        configureBadges(model: model)
+        if currentAvatarURL != model.avatarURL || avatarImageView.image == nil {
+            currentAvatarURL = model.avatarURL
+            AvatarImageLoader.setImage(on: avatarImageView, url: model.avatarURL)
+        }
+    }
+
+    func prepareForReuse() {
+        resetContent()
+        alpha = 1
+        isUserInteractionEnabled = true
+        accessibilityElementsHidden = false
+    }
+
+    private func resetContent() {
+        topicId = nil
+        titleLabel.text = nil
+        previewLabel.text = nil
+        usernameLabel.text = nil
+        replyCountLabel.text = nil
+        viewsLabel.text = nil
+        currentAvatarURL = nil
+        avatarImageView.sd_cancelCurrentImageLoad()
+        avatarImageView.image = nil
+        badgeStackView.arrangedSubviews.forEach { view in
+            badgeStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+    }
+
+    private func configureBadges(model: XiaohongshuTopicCardModel) {
+        badgeStackView.arrangedSubviews.forEach { view in
+            badgeStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        if let categoryName = model.categoryName {
+            let themedColor = TopicTagVisualStyle.categoryColor(for: categoryName, fallback: model.categoryColor)
+            badgeStackView.addArrangedSubview(TopicBadgeView(text: categoryName, style: .category(color: themedColor)))
+        }
+        if let tag = model.tags.first, !tag.isEmpty {
+            badgeStackView.addArrangedSubview(TopicBadgeView(text: tag, style: .tag(color: TopicTagVisualStyle.color(for: tag))))
+        }
+    }
+
+    private func readableTextColor(for color: UIColor) -> UIColor {
+        AppSettings.shared.themeStyle == .xiaohongshu
+            ? UIColor(red: 0.22, green: 0.12, blue: 0.13, alpha: 1)
+            : .label
+    }
+
+    private static func cleanPreviewText(_ html: String?) -> String? {
+        guard let html, !html.isEmpty else { return nil }
+        let text = html
+            .replacingOccurrences(of: "<br\\s*/?>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "</(p|div|li)>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private static func compactCount(_ count: Int) -> String {
+        if count >= 10_000 {
+            return "\(count / 10_000)w"
+        }
+        if count >= 1_000 {
+            return "\(count / 1_000)k"
+        }
+        return "\(count)"
+    }
+
+    private static func symbolName(for seed: String) -> String {
+        let hash = seed.unicodeScalars.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1.value) }
+        return decorationSymbols[Int(hash % UInt64(decorationSymbols.count))]
+    }
 }
 
 private final class TopicTitleLabel: UILabel {

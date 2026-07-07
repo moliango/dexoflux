@@ -225,6 +225,7 @@ final class TopicDetailViewController: ObservableViewController {
     private var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
     private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
     private var lastContentFontSize = AppSettings.shared.contentFontSize
+    private var lastContentFontFamily = AppSettings.shared.contentFontFamily
     private var lastThemeStyle = AppSettings.shared.themeStyle
     private var hasPresentedInitialContent = false
     private var isHandlingBackSwipeFallback = false
@@ -555,9 +556,11 @@ final class TopicDetailViewController: ObservableViewController {
         let didChangeThemeStyle = lastThemeStyle != settings.themeStyle
         let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
             || lastContentFontSize != settings.contentFontSize
+            || lastContentFontFamily != settings.contentFontFamily
             || didChangeThemeStyle
         lastReadingComfortMode = settings.readingComfortMode
         lastContentFontSize = settings.contentFontSize
+        lastContentFontFamily = settings.contentFontFamily
         lastThemeStyle = settings.themeStyle
         if didChangeThemeStyle {
             hasTitleHeader = false

@@ -12,6 +12,7 @@ import UIKit
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AppSettings.shared.applyLanguage()
         SDImageCodersManager.shared.addCoder(SDImageSVGCoder.shared)
         AvatarImageLoader.configureGlobalImageLoading()
         LightweightDohProxyService.shared.configureFromSettings()

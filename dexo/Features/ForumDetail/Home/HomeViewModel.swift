@@ -75,6 +75,11 @@ final class HomeViewModel: DexoObservableObject {
         return usersById[firstPoster.userId]?.avatarTemplate
     }
 
+    func username(for topic: DiscourseTopicList.Topic) -> String? {
+        guard let firstPoster = topic.posters?.first else { return nil }
+        return usersById[firstPoster.userId]?.username
+    }
+
     func category(for topic: DiscourseTopicList.Topic) -> DiscourseCategory? {
         guard let catId = topic.categoryId else { return nil }
         return categoryIndex[catId]

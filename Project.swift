@@ -52,6 +52,7 @@ let project = Project(
             settings: .settings(
                 base: [
                     "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+                    "ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES": "DexoFluxOrbit DexoFluxCards DexoFluxSignal",
                     "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                     "CODE_SIGN_STYLE": "Automatic",
                     "CURRENT_PROJECT_VERSION": "1",

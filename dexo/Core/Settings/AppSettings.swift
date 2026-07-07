@@ -1,9 +1,17 @@
+import ObjectiveC
+import CoreText
 import UIKit
 
 final class AppSettings: DexoObservableObject {
     static let shared = AppSettings()
 
     private let defaults = UserDefaults.standard
+
+    private override init() {
+        super.init()
+        registerStoredContentFonts()
+        applyLanguage()
+    }
 
     // MARK: - Appearance
 
@@ -97,7 +105,13 @@ final class AppSettings: DexoObservableObject {
             switch self {
             case .systemDefault:
                 return .secondarySystemGroupedBackground
-            case .eyeCare, .xiaohongshu, .telegram:
+            case .xiaohongshu:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.18, green: 0.11, blue: 0.12, alpha: 1)
+                        : UIColor.white
+                }
+            case .eyeCare, .telegram:
                 return contentBackgroundColor
             }
         }
@@ -257,10 +271,12 @@ final class AppSettings: DexoObservableObject {
             case .xiaohongshu:
                 return [
                     UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1),
-                    UIColor(red: 1.0, green: 0.36, blue: 0.47, alpha: 1),
-                    UIColor(red: 0.95, green: 0.23, blue: 0.53, alpha: 1),
-                    UIColor(red: 1.0, green: 0.48, blue: 0.32, alpha: 1),
-                    UIColor(red: 0.78, green: 0.16, blue: 0.32, alpha: 1),
+                    UIColor(red: 1.0, green: 0.54, blue: 0.42, alpha: 1),
+                    UIColor(red: 0.96, green: 0.67, blue: 0.18, alpha: 1),
+                    UIColor(red: 0.26, green: 0.71, blue: 0.50, alpha: 1),
+                    UIColor(red: 0.18, green: 0.66, blue: 0.78, alpha: 1),
+                    UIColor(red: 0.63, green: 0.42, blue: 0.95, alpha: 1),
+                    UIColor(red: 0.98, green: 0.38, blue: 0.61, alpha: 1),
                 ]
             case .telegram:
                 return [
@@ -286,8 +302,10 @@ final class AppSettings: DexoObservableObject {
             case .xiaohongshu:
                 return [
                     UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1),
-                    UIColor(red: 0.98, green: 0.30, blue: 0.39, alpha: 1),
-                    UIColor(red: 0.86, green: 0.18, blue: 0.42, alpha: 1),
+                    UIColor(red: 1.0, green: 0.50, blue: 0.36, alpha: 1),
+                    UIColor(red: 0.25, green: 0.68, blue: 0.46, alpha: 1),
+                    UIColor(red: 0.21, green: 0.62, blue: 0.82, alpha: 1),
+                    UIColor(red: 0.92, green: 0.58, blue: 0.17, alpha: 1),
                 ]
             case .telegram:
                 return [
@@ -302,6 +320,29 @@ final class AppSettings: DexoObservableObject {
             guard !palette.isEmpty else { return accentColor }
             let hash = seed.unicodeScalars.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1.value) }
             return palette[Int(hash % UInt64(palette.count))]
+        }
+    }
+
+    enum AppIconStyle: String, CaseIterable {
+        case primary
+        case fluxOrbit = "DexoFluxOrbit"
+        case fluxCards = "DexoFluxCards"
+        case fluxSignal = "DexoFluxSignal"
+
+        var alternateIconName: String? {
+            switch self {
+            case .primary: return nil
+            case .fluxOrbit, .fluxCards, .fluxSignal: return rawValue
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .primary: return String(localized: "settings.app_icon.default")
+            case .fluxOrbit: return String(localized: "settings.app_icon.orbit")
+            case .fluxCards: return String(localized: "settings.app_icon.cards")
+            case .fluxSignal: return String(localized: "settings.app_icon.signal")
+            }
         }
     }
 
@@ -324,6 +365,7 @@ final class AppSettings: DexoObservableObject {
         set {
             defaults.set(newValue.rawValue, forKey: "appLanguage")
             defaults.set(newValue.preferredLanguageCodes, forKey: "AppleLanguages")
+            RuntimeLanguageBundle.shared.apply(language: newValue)
             notifyChanged()
         }
     }
@@ -334,6 +376,58 @@ final class AppSettings: DexoObservableObject {
             defaults.set(newValue.rawValue, forKey: "themeStyle")
             applyAppearance()
             notifyChanged()
+        }
+    }
+
+    var appIconStyle: AppIconStyle {
+        get {
+            if let activeName = UIApplication.shared.alternateIconName,
+               let active = AppIconStyle(rawValue: activeName) {
+                return active
+            }
+            guard let storedValue = defaults.string(forKey: "appIconStyle") else {
+                return .primary
+            }
+            return AppIconStyle(rawValue: storedValue) ?? .primary
+        }
+    }
+
+    func setAppIconStyle(_ style: AppIconStyle, completion: ((Error?) -> Void)? = nil) {
+        let applyStoredValue = {
+            self.defaults.set(style.rawValue, forKey: "appIconStyle")
+            self.notifyChanged()
+            completion?(nil)
+        }
+
+        guard style != appIconStyle else {
+            completion?(nil)
+            return
+        }
+
+        guard UIApplication.shared.supportsAlternateIcons else {
+            completion?(AppIconChangeError.unsupported)
+            return
+        }
+
+        UIApplication.shared.setAlternateIconName(style.alternateIconName) { error in
+            DispatchQueue.main.async {
+                if let error {
+                    completion?(error)
+                    return
+                }
+                applyStoredValue()
+            }
+        }
+    }
+
+    enum AppIconChangeError: LocalizedError {
+        case unsupported
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupported:
+                return String(localized: "settings.app_icon.unsupported")
+            }
         }
     }
 
@@ -349,6 +443,10 @@ final class AppSettings: DexoObservableObject {
                 window.tintColor = tintColor
             }
         }
+    }
+
+    func applyLanguage() {
+        RuntimeLanguageBundle.shared.apply(language: appLanguage)
     }
 
     // MARK: - General
@@ -427,6 +525,20 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    enum ContentFontFamily: String, CaseIterable {
+        case system
+        case miSans
+        case custom
+
+        var title: String {
+            switch self {
+            case .system: return String(localized: "settings.font.system")
+            case .miSans: return "MiSans"
+            case .custom: return String(localized: "settings.font.custom")
+            }
+        }
+    }
+
     var contentFontSize: ContentFontSize {
         get {
             guard defaults.object(forKey: "contentFontSize") != nil else {
@@ -438,6 +550,279 @@ final class AppSettings: DexoObservableObject {
             defaults.set(newValue.rawValue, forKey: "contentFontSize")
             notifyChanged()
         }
+    }
+
+    var contentFontFamily: ContentFontFamily {
+        get {
+            guard let rawValue = defaults.string(forKey: "contentFontFamily") else {
+                return .system
+            }
+            return ContentFontFamily(rawValue: rawValue) ?? .system
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: "contentFontFamily")
+            notifyChanged()
+        }
+    }
+
+    var customContentFontDisplayName: String? {
+        defaults.string(forKey: contentFontDisplayNameKey(for: .custom))
+    }
+
+    var miSansContentFontDisplayName: String? {
+        defaults.string(forKey: contentFontDisplayNameKey(for: .miSans))
+    }
+
+    func contentFontSubtitle(for family: ContentFontFamily) -> String {
+        switch family {
+        case .system:
+            return String(localized: "settings.font.system.subtitle")
+        case .miSans:
+            if isContentFontFamilyAvailable(.miSans) {
+                return miSansContentFontDisplayName ?? String(localized: "settings.font.misans.subtitle")
+            }
+            return String(localized: "settings.font.misans.need_upload")
+        case .custom:
+            if let name = customContentFontDisplayName {
+                return String(format: String(localized: "settings.font.custom.imported"), name)
+            }
+            return String(localized: "settings.font.custom.subtitle")
+        }
+    }
+
+    func isContentFontFamilyAvailable(_ family: ContentFontFamily) -> Bool {
+        switch family {
+        case .system:
+            return true
+        case .miSans:
+            return activeFontName(for: .miSans) != nil
+        case .custom:
+            return activeFontName(for: .custom) != nil
+        }
+    }
+
+    func contentFont(ofSize pointSize: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        guard let fontName = activeFontName(for: contentFontFamily),
+              let font = UIFont(name: fontName, size: pointSize)
+        else {
+            return .systemFont(ofSize: pointSize, weight: weight)
+        }
+        return font.applying(weight: weight)
+    }
+
+    func contentMonospacedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        .monospacedSystemFont(ofSize: pointSize, weight: weight)
+    }
+
+    var webContentFontFamilyCSS: String {
+        guard let fontName = activeFontName(for: contentFontFamily) else {
+            return "-apple-system, BlinkMacSystemFont, sans-serif"
+        }
+        let escapedName = fontName.replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escapedName)\", -apple-system, BlinkMacSystemFont, sans-serif"
+    }
+
+    @discardableResult
+    func importContentFont(from sourceURL: URL, targetFamily: ContentFontFamily) throws -> ImportedContentFont {
+        guard targetFamily != .system else {
+            throw ContentFontImportError.invalidFont
+        }
+
+        let allowedExtensions: Set<String> = ["ttf", "otf", "ttc"]
+        guard allowedExtensions.contains(sourceURL.pathExtension.lowercased()) else {
+            throw ContentFontImportError.unsupportedFileType
+        }
+
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let metadata = try fontMetadata(from: sourceURL)
+        if targetFamily == .miSans, !metadata.matchesMiSans {
+            throw ContentFontImportError.notMiSans
+        }
+
+        let directory = try contentFontsDirectory()
+        let destination = directory.appendingPathComponent(fontFileName(for: targetFamily, sourceURL: sourceURL))
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        try registerFont(at: destination)
+
+        defaults.set(destination.lastPathComponent, forKey: contentFontFileNameKey(for: targetFamily))
+        defaults.set(metadata.postScriptName, forKey: contentFontPostScriptNameKey(for: targetFamily))
+        defaults.set(metadata.displayName, forKey: contentFontDisplayNameKey(for: targetFamily))
+        contentFontFamily = targetFamily
+        return ImportedContentFont(
+            postScriptName: metadata.postScriptName,
+            displayName: metadata.displayName,
+            fileName: destination.lastPathComponent
+        )
+    }
+
+    struct ImportedContentFont {
+        let postScriptName: String
+        let displayName: String
+        let fileName: String
+    }
+
+    enum ContentFontImportError: LocalizedError {
+        case invalidFont
+        case unsupportedFileType
+        case notMiSans
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidFont:
+                return String(localized: "settings.font.import_invalid")
+            case .unsupportedFileType:
+                return String(localized: "settings.font.import_unsupported")
+            case .notMiSans:
+                return String(localized: "settings.font.import_not_misans")
+            }
+        }
+    }
+
+    private struct FontMetadata {
+        let postScriptName: String
+        let displayName: String
+
+        var matchesMiSans: Bool {
+            let searchable = "\(postScriptName) \(displayName)".lowercased()
+            return searchable.contains("misans") || searchable.contains("mi sans")
+        }
+    }
+
+    private func registerStoredContentFonts() {
+        registerBundledMiSansIfPresent()
+        registerStoredContentFont(for: .miSans)
+        registerStoredContentFont(for: .custom)
+    }
+
+    private func registerBundledMiSansIfPresent() {
+        let candidates = [
+            ("MiSans-Regular", "ttf"),
+            ("MiSans", "ttf"),
+            ("MiSans-Regular", "otf"),
+            ("MiSans", "otf"),
+        ]
+        for candidate in candidates {
+            guard let url = Bundle.main.url(forResource: candidate.0, withExtension: candidate.1) else {
+                continue
+            }
+            try? registerFont(at: url)
+            if defaults.string(forKey: contentFontPostScriptNameKey(for: .miSans)) == nil,
+               let metadata = try? fontMetadata(from: url) {
+                defaults.set(metadata.postScriptName, forKey: contentFontPostScriptNameKey(for: .miSans))
+                defaults.set(metadata.displayName, forKey: contentFontDisplayNameKey(for: .miSans))
+            }
+            return
+        }
+    }
+
+    private func registerStoredContentFont(for family: ContentFontFamily) {
+        guard family != .system,
+              let fileName = defaults.string(forKey: contentFontFileNameKey(for: family))
+        else {
+            return
+        }
+        let url = contentFontsDirectoryURL.appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try? registerFont(at: url)
+    }
+
+    private func activeFontName(for family: ContentFontFamily) -> String? {
+        switch family {
+        case .system:
+            return nil
+        case .miSans:
+            if let storedName = defaults.string(forKey: contentFontPostScriptNameKey(for: .miSans)),
+               UIFont(name: storedName, size: 17) != nil {
+                return storedName
+            }
+            let candidates = ["MiSans", "MiSans-Regular", "MiSans-Normal"]
+            return candidates.first { UIFont(name: $0, size: 17) != nil }
+        case .custom:
+            guard let storedName = defaults.string(forKey: contentFontPostScriptNameKey(for: .custom)),
+                  UIFont(name: storedName, size: 17) != nil
+            else {
+                return nil
+            }
+            return storedName
+        }
+    }
+
+    private var contentFontsDirectoryURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Fonts", isDirectory: true)
+    }
+
+    private func contentFontsDirectory() throws -> URL {
+        let url = contentFontsDirectoryURL
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func fontFileName(for family: ContentFontFamily, sourceURL: URL) -> String {
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "ttf" : sourceURL.pathExtension.lowercased()
+        switch family {
+        case .system:
+            return "SystemFont.\(fileExtension)"
+        case .miSans:
+            return "MiSansImported.\(fileExtension)"
+        case .custom:
+            return "CustomContentFont.\(fileExtension)"
+        }
+    }
+
+    private func fontMetadata(from url: URL) throws -> FontMetadata {
+        if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+           let descriptor = descriptors.first,
+           let postScriptName = CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as? String {
+            let displayName = (CTFontDescriptorCopyAttribute(descriptor, kCTFontDisplayNameAttribute) as? String)
+                ?? postScriptName
+            return FontMetadata(postScriptName: postScriptName, displayName: displayName)
+        }
+        guard let provider = CGDataProvider(url: url as CFURL),
+              let font = CGFont(provider),
+              let postScriptName = font.postScriptName as String?
+        else {
+            throw ContentFontImportError.invalidFont
+        }
+        let displayName = (font.fullName as String?) ?? postScriptName
+        return FontMetadata(postScriptName: postScriptName, displayName: displayName)
+    }
+
+    private func registerFont(at url: URL) throws {
+        var registrationError: Unmanaged<CFError>?
+        let didRegister = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &registrationError)
+        if didRegister {
+            return
+        }
+        if let error = registrationError?.takeRetainedValue() {
+            let nsError = error as Error as NSError
+            if nsError.domain == kCTFontManagerErrorDomain as String,
+               nsError.code == CTFontManagerError.alreadyRegistered.rawValue {
+                return
+            }
+        }
+        throw ContentFontImportError.invalidFont
+    }
+
+    private func contentFontFileNameKey(for family: ContentFontFamily) -> String {
+        "contentFont.\(family.rawValue).fileName"
+    }
+
+    private func contentFontPostScriptNameKey(for family: ContentFontFamily) -> String {
+        "contentFont.\(family.rawValue).postScriptName"
+    }
+
+    private func contentFontDisplayNameKey(for family: ContentFontFamily) -> String {
+        "contentFont.\(family.rawValue).displayName"
     }
 
     // MARK: - Bottom Bar
@@ -637,5 +1022,46 @@ final class AppSettings: DexoObservableObject {
             return limitedItems
         }
         return Array(defaultForumDynamicTabItems.prefix(minimumConfiguredForumDynamicTabItems))
+    }
+}
+
+private extension UIFont {
+    func applying(weight: UIFont.Weight) -> UIFont {
+        guard weight.rawValue >= UIFont.Weight.semibold.rawValue,
+              let descriptor = fontDescriptor.withSymbolicTraits(fontDescriptor.symbolicTraits.union(.traitBold))
+        else {
+            return self
+        }
+        return UIFont(descriptor: descriptor, size: pointSize)
+    }
+}
+
+private final class RuntimeLanguageBundle {
+    static let shared = RuntimeLanguageBundle()
+
+    private var didInstallRuntimeBundle = false
+    fileprivate var selectedBundle: Bundle?
+
+    func apply(language: AppSettings.AppLanguage) {
+        installRuntimeBundleIfNeeded()
+        selectedBundle = language.preferredLanguageCodes.lazy.compactMap { code -> Bundle? in
+            guard let path = Bundle.main.path(forResource: code, ofType: "lproj") else { return nil }
+            return Bundle(path: path)
+        }.first
+    }
+
+    private func installRuntimeBundleIfNeeded() {
+        guard !didInstallRuntimeBundle else { return }
+        object_setClass(Bundle.main, RuntimeLocalizedBundle.self)
+        didInstallRuntimeBundle = true
+    }
+}
+
+private final class RuntimeLocalizedBundle: Bundle, @unchecked Sendable {
+    override func localizedString(forKey key: String, value: String?, table tableName: String?) -> String {
+        if let bundle = RuntimeLanguageBundle.shared.selectedBundle {
+            return bundle.localizedString(forKey: key, value: value, table: tableName)
+        }
+        return super.localizedString(forKey: key, value: value, table: tableName)
     }
 }

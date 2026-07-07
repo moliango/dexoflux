@@ -16,6 +16,8 @@ final class HomeViewController: ObservableViewController {
     private static let cloudflareForegroundAutoPresentationCooldown: TimeInterval = 10
     private static let headerVerticalSpacing: CGFloat = 8 + 6
     private static let headerBottomPadding: CGFloat = 8
+    private static let baseTableTopSpacing: CGFloat = 8
+    private static let xiaohongshuTableTopSpacing: CGFloat = 18
 
     private let api: DiscourseAPI
     private let viewModel: HomeViewModel
@@ -187,6 +189,7 @@ final class HomeViewController: ObservableViewController {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        tv.register(XiaohongshuTopicGridCell.self, forCellReuseIdentifier: XiaohongshuTopicGridCell.reuseIdentifier)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -198,10 +201,29 @@ final class HomeViewController: ObservableViewController {
     }()
 
     private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, topicId in
-        guard let self,
-              let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
-              let topic = self.viewModel.topics.first(where: { $0.id == topicId })
-        else {
+        guard let self else {
+            return UITableViewCell()
+        }
+        if let rowIndex = Self.xiaohongshuRowIndex(from: topicId) {
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: XiaohongshuTopicGridCell.reuseIdentifier,
+                for: indexPath
+            ) as? XiaohongshuTopicGridCell else {
+                return UITableViewCell()
+            }
+            let pair = self.xiaohongshuTopicPair(at: rowIndex)
+            cell.configure(
+                left: pair.left.map { self.xiaohongshuCardModel(for: $0) },
+                right: pair.right.map { self.xiaohongshuCardModel(for: $0) }
+            )
+            cell.onTopicSelected = { [weak self] topicId in
+                self?.openTopic(topicId)
+            }
+            return cell
+        }
+
+        guard let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
+              let topic = self.viewModel.topics.first(where: { $0.id == topicId }) else {
             return UITableViewCell()
         }
         let baseURL = self.api.baseURL
@@ -220,6 +242,52 @@ final class HomeViewController: ObservableViewController {
             tags: topic.tags ?? []
         )
         return cell
+    }
+
+    private var usesXiaohongshuCardLayout: Bool {
+        AppSettings.shared.themeStyle == .xiaohongshu
+    }
+
+    private static func xiaohongshuRowIdentifier(for rowIndex: Int) -> Int {
+        -(rowIndex + 1)
+    }
+
+    private static func xiaohongshuRowIndex(from identifier: Int) -> Int? {
+        guard identifier < 0 else { return nil }
+        return abs(identifier) - 1
+    }
+
+    private func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
+        let leftIndex = rowIndex * 2
+        guard viewModel.topics.indices.contains(leftIndex) else {
+            return (nil, nil)
+        }
+        let rightIndex = leftIndex + 1
+        let rightTopic = viewModel.topics.indices.contains(rightIndex) ? viewModel.topics[rightIndex] : nil
+        return (viewModel.topics[leftIndex], rightTopic)
+    }
+
+    private func xiaohongshuCardModel(for topic: DiscourseTopicList.Topic) -> XiaohongshuTopicCardModel {
+        let avatarURL = AvatarImageLoader.url(
+            from: viewModel.avatarTemplate(for: topic),
+            baseURL: api.baseURL,
+            size: 96
+        )
+        let category = viewModel.category(for: topic)
+        let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
+        return XiaohongshuTopicCardModel(
+            id: topic.id,
+            title: topic.fancyTitle,
+            excerpt: topic.excerpt,
+            avatarURL: avatarURL,
+            username: viewModel.username(for: topic),
+            categoryName: viewModel.categoryDisplayName(for: category),
+            categoryColor: categoryColor,
+            tags: topic.tags ?? [],
+            replyCount: max(topic.postsCount - 1, 0),
+            views: topic.views,
+            timeText: TopicCell.formatDate(topic.lastPostedAt ?? topic.createdAt)
+        )
     }
 
     private let activityIndicator: UIActivityIndicatorView = {
@@ -805,6 +873,9 @@ final class HomeViewController: ObservableViewController {
         let pageBackground: UIColor = themeStyle == .systemDefault ? .systemGroupedBackground : themeStyle.mutedContentBackgroundColor
         view.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
+        tableView.estimatedRowHeight = usesXiaohongshuCardLayout
+            ? XiaohongshuTopicGridCell.estimatedHeight
+            : TopicCell.estimatedHeight
         headerContainer.backgroundColor = pageBackground
         searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
         floatingActionButton.backgroundColor = themeStyle.accentColor
@@ -898,38 +969,7 @@ final class HomeViewController: ObservableViewController {
             requestAutomaticCloudflareForegroundVerification(reason: "home_error_state")
         }
 
-        var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
-        snapshot.appendSections([0])
-        var seen = Set<Int>()
-        let uniqueIds = viewModel.topics.compactMap { topic -> Int? in
-            guard seen.insert(topic.id).inserted else { return nil }
-            return topic.id
-        }
-        prefetchAvatarImages(for: viewModel.topics)
-        snapshot.appendItems(uniqueIds, toSection: 0)
-        let currentSnapshot = dataSource.snapshot()
-        let currentIds = currentSnapshot.itemIdentifiers
-        let needsInitialSnapshot = currentSnapshot.sectionIdentifiers.isEmpty
-        let visibleExistingIds = Set(
-            tableView.indexPathsForVisibleRows?.compactMap { dataSource.itemIdentifier(for: $0) } ?? []
-        )
-        let idsNeedingReconfigure = uniqueIds.filter { visibleExistingIds.contains($0) }
-        let shouldAnimateSnapshot = view.window != nil
-            && !tableView.isDragging
-            && !tableView.isDecelerating
-
-        if !needsInitialSnapshot, currentIds == uniqueIds {
-            if !idsNeedingReconfigure.isEmpty {
-                var updatedSnapshot = currentSnapshot
-                updatedSnapshot.reconfigureItems(idsNeedingReconfigure)
-                dataSource.apply(updatedSnapshot, animatingDifferences: false)
-            }
-        } else {
-            if !idsNeedingReconfigure.isEmpty {
-                snapshot.reconfigureItems(idsNeedingReconfigure)
-            }
-            dataSource.apply(snapshot, animatingDifferences: shouldAnimateSnapshot)
-        }
+        applyTopicSnapshot()
 
         if viewModel.isLoading {
             activityIndicator.startAnimating()
@@ -943,6 +983,53 @@ final class HomeViewController: ObservableViewController {
         } else {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
+        }
+    }
+
+    private func applyTopicSnapshot(animatingDifferences: Bool? = nil) {
+        let itemIdentifiers = topicSnapshotItemIdentifiers()
+        var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
+        snapshot.appendSections([0])
+        snapshot.appendItems(itemIdentifiers, toSection: 0)
+
+        prefetchAvatarImages(for: viewModel.topics)
+        let currentSnapshot = dataSource.snapshot()
+        let currentIds = currentSnapshot.itemIdentifiers
+        let needsInitialSnapshot = currentSnapshot.sectionIdentifiers.isEmpty
+        let visibleExistingIds = Set(
+            tableView.indexPathsForVisibleRows?.compactMap { dataSource.itemIdentifier(for: $0) } ?? []
+        )
+        let idsNeedingReconfigure = itemIdentifiers.filter { visibleExistingIds.contains($0) }
+        let shouldAnimateSnapshot = animatingDifferences ?? (
+            view.window != nil
+                && !tableView.isDragging
+                && !tableView.isDecelerating
+        )
+
+        if !needsInitialSnapshot, currentIds == itemIdentifiers {
+            if !idsNeedingReconfigure.isEmpty {
+                var updatedSnapshot = currentSnapshot
+                updatedSnapshot.reconfigureItems(idsNeedingReconfigure)
+                dataSource.apply(updatedSnapshot, animatingDifferences: false)
+            }
+        } else {
+            if !idsNeedingReconfigure.isEmpty {
+                snapshot.reconfigureItems(idsNeedingReconfigure)
+            }
+            dataSource.apply(snapshot, animatingDifferences: shouldAnimateSnapshot)
+        }
+    }
+
+    private func topicSnapshotItemIdentifiers() -> [Int] {
+        if usesXiaohongshuCardLayout {
+            let rowCount = Int(ceil(Double(viewModel.topics.count) / 2.0))
+            return (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
+        }
+
+        var seen = Set<Int>()
+        return viewModel.topics.compactMap { topic -> Int? in
+            guard seen.insert(topic.id).inserted else { return nil }
+            return topic.id
         }
     }
 
@@ -1064,6 +1151,7 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func pullToRefresh() {
+        revealHeaderForTopRefresh(animated: true)
         reloadTopics()
     }
 
@@ -1296,8 +1384,7 @@ final class HomeViewController: ObservableViewController {
     private func refreshFromFloatingActionButton() {
         setFABMode(.create, animated: true)
         setHomeTabBarHidden(false, animated: true)
-        let topOffset = CGPoint(x: 0, y: -tableView.contentInset.top)
-        tableView.setContentOffset(topOffset, animated: true)
+        revealHeaderForTopRefresh(animated: true)
         reloadTopics()
     }
 
@@ -1400,9 +1487,9 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func updateIncomingTopicsPlacement(animated: Bool) {
-        let shouldUseTopSpace = shouldIncomingTopicsUseTopSpace()
+        let shouldUseTopSpace = isIncomingTopicsBannerVisible
         setIncomingTopicsUsesTopSpace(shouldUseTopSpace)
-        incomingTopicsButton.setFloating(isIncomingTopicsBannerVisible && !shouldUseTopSpace)
+        incomingTopicsButton.setFloating(false)
 
         guard animated else { return }
         UIView.animate(
@@ -1412,12 +1499,6 @@ final class HomeViewController: ObservableViewController {
         ) {
             self.view.layoutIfNeeded()
         }
-    }
-
-    private func shouldIncomingTopicsUseTopSpace() -> Bool {
-        guard isIncomingTopicsBannerVisible else { return false }
-        let topDistance = tableView.contentOffset.y + tableView.contentInset.top
-        return topDistance <= 12
     }
 
     private func setIncomingTopicsUsesTopSpace(_ usesTopSpace: Bool) {
@@ -1430,8 +1511,8 @@ final class HomeViewController: ObservableViewController {
         let incomingTopicsTopSpace = isIncomingTopicsBannerVisible && incomingTopicsUsesTopSpace
             ? Self.incomingTopicsBannerHeight
             : 0
-        let topInset = headerContainer.frame.maxY + 8 + incomingTopicsTopSpace
-        let bottomInset: CGFloat = 0
+        let topInset = headerContainer.frame.maxY + tableTopSpacing + incomingTopicsTopSpace
+        let bottomInset = currentBottomChromeHeight
 
         var insets = tableView.contentInset
         let oldTopInset = insets.top
@@ -1447,20 +1528,37 @@ final class HomeViewController: ObservableViewController {
         if oldTopInset > 0, abs(oldTopInset - topInset) > 0.5 {
             tableView.contentOffset.y += oldTopInset - topInset
         }
+        if bottomInset < oldBottomInset {
+            let minimumOffsetY = -insets.top
+            let maximumOffsetY = max(
+                minimumOffsetY,
+                tableView.contentSize.height + insets.bottom - tableView.bounds.height
+            )
+            if tableView.contentOffset.y > maximumOffsetY {
+                tableView.contentOffset.y = maximumOffsetY
+            }
+        }
     }
 
     private var currentBottomChromeHeight: CGFloat {
-        if isHomeTabBarHidden {
-            return homeIndicatorBottomInset
+        if let forumTabBarController = tabBarController as? ForumTabBarController {
+            return forumTabBarController.visibleTabBarHeight
         }
-        let tabBarHeight = (tabBarController as? ForumTabBarController)?.tabBarTotalHeight
-            ?? tabBarController?.tabBar.frame.height
-            ?? 0
-        return max(tabBarHeight, homeIndicatorBottomInset)
+        guard let tabBar = tabBarController?.tabBar, !tabBar.isHidden else { return 0 }
+        return tabBar.frame.height
     }
 
-    private var homeIndicatorBottomInset: CGFloat {
-        view.window?.safeAreaInsets.bottom ?? view.safeAreaInsets.bottom
+    private var tableTopSpacing: CGFloat {
+        usesXiaohongshuCardLayout ? Self.xiaohongshuTableTopSpacing : Self.baseTableTopSpacing
+    }
+
+    private func revealHeaderForTopRefresh(animated: Bool) {
+        setSearchRowCollapsed(false, animated: animated)
+        view.layoutIfNeeded()
+        updateTableInsets()
+        let topOffset = CGPoint(x: 0, y: -tableView.contentInset.top)
+        tableView.setContentOffset(topOffset, animated: animated)
+        lastHomeScrollY = 0
     }
 
     private func updateBottomChrome(animated: Bool) {
@@ -1736,8 +1834,10 @@ final class HomeViewController: ObservableViewController {
 
     private func updateTabBarVisibilityForCurrentScroll(animated: Bool) {
         let y = tableView.contentOffset.y + tableView.contentInset.top
-        if y <= 4 {
+        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 4 {
             setHomeTabBarHidden(false, animated: animated)
+        } else if y > 40 {
+            setHomeTabBarHidden(true, animated: animated)
         }
     }
 
@@ -1756,7 +1856,13 @@ final class HomeViewController: ObservableViewController {
         updateCategoryTabs()
         updateFloatingActionButton(animated: false)
         incomingTopicsButton.applyThemeStyle()
-        tableView.reloadData()
+        updateTableInsets()
+        applyTopicSnapshot(animatingDifferences: false)
+    }
+
+    private func openTopic(_ topicId: Int) {
+        let detailVC = TopicDetailViewController(api: api, topicId: topicId)
+        navigationController?.pushViewController(detailVC, animated: true)
     }
 }
 
@@ -2293,9 +2399,10 @@ extension HomeViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard let topicId = dataSource.itemIdentifier(for: indexPath) else { return }
-        let detailVC = TopicDetailViewController(api: api, topicId: topicId)
-        navigationController?.pushViewController(detailVC, animated: true)
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              Self.xiaohongshuRowIndex(from: topicId) == nil
+        else { return }
+        openTopic(topicId)
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
