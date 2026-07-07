@@ -165,6 +165,7 @@ final class TopicDetailBottomBar: UIControl {
         let fillWidth = progressFillView.widthAnchor.constraint(equalToConstant: 0)
         fillWidth.isActive = true
         progressFillWidthConstraint = fillWidth
+        applyThemeStyle()
     }
 
     @available(*, unavailable)
@@ -174,6 +175,7 @@ final class TopicDetailBottomBar: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        applyThemeStyle()
         layer.cornerRadius = bounds.height / 2
         surfaceView.layer.cornerRadius = bounds.height / 2
         progressFillWidthConstraint?.constant = surfaceView.bounds.width * progressFraction
@@ -184,6 +186,7 @@ final class TopicDetailBottomBar: UIControl {
     }
 
     func configure(currentFloor: Int, totalFloors: Int) {
+        applyThemeStyle()
         let safeTotal = max(totalFloors, 0)
         let safeCurrent = safeTotal == 0 ? 0 : min(max(currentFloor, 1), safeTotal)
         currentLabel.text = "\(safeCurrent)"
@@ -191,6 +194,13 @@ final class TopicDetailBottomBar: UIControl {
         progressFraction = safeTotal > 0 ? CGFloat(safeCurrent) / CGFloat(safeTotal) : 0
         setNeedsLayout()
         accessibilityLabel = String(localized: "topic_detail.progress.accessibility \(safeCurrent) \(safeTotal)")
+    }
+
+    private func applyThemeStyle() {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+        progressFillView.backgroundColor = accentColor.withAlphaComponent(0.12)
+        currentLabel.textColor = accentColor
+        pressProgressLayer.strokeColor = accentColor.cgColor
     }
 
     // MARK: - Actions

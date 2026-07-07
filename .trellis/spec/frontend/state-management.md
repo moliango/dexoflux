@@ -40,14 +40,17 @@ Questions to answer:
 - Runtime visual settings that affect Topic Detail content must flow through both render paths:
   - Native content: `AppSettings` -> `NativeRenderConfig.default(...)` / `TopicDetailContentStyle`.
   - Web fallback content: `AppSettings` -> `PostContentRenderer.currentWebRenderStyle` -> fallback HTML/CSS.
+- Runtime visual settings that affect Home or Topic Detail badge/chip colors must use `AppSettings.ThemeStyle` tokens, including tag colors, category colors, selected chip colors, topic-card surfaces, and count badges.
 - Topic Detail controllers must listen through the existing observable update path and reload visible content when reading typography or theme settings change.
+- Home controllers must observe `AppSettings.shared` when theme settings affect visible cells or header chrome, then refresh chip/header styling and reconfigure visible topic cells.
 - Do not store enum settings with `UserDefaults.integer(forKey:)` alone when the first enum case is not the intended default. Check `object(forKey:)` before interpreting integer `0`.
 
 ### App Language
 
 - Language selection is persisted in `AppSettings.appLanguage`.
 - Runtime language switching is not supported; changing language writes `AppleLanguages` and shows a restart-required notice.
-- Traditional Chinese language choices must include Simplified Chinese as a fallback language code until all legacy string-catalog keys have `zh-Hant` / `zh-HK` localizations.
+- Traditional Chinese language choices use regional preferred language codes (`zh-Hant-TW`, `zh-Hant-HK`) with resource fallbacks (`zh-Hant`, `zh-HK`, `zh-Hans`).
+- String catalog Traditional Chinese support must be complete enough to avoid falling back to English after the bundle selects a Traditional Chinese localization. If `zh-Hans` exists for a key, `zh-Hant` and `zh-HK` should exist too.
 - If adding new supported language codes to `Localizable.xcstrings`, also add them to `Project.swift` `defaultKnownRegions`.
 
 ---

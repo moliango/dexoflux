@@ -54,7 +54,7 @@ private class DetailsCardView: UIView {
         // MARK: Header
 
         chevron.image = UIImage(systemName: "chevron.right")
-        chevron.tintColor = .systemBlue
+        chevron.tintColor = AppSettings.shared.themeStyle.accentColor
         chevron.contentMode = .scaleAspectFit
         chevron.translatesAutoresizingMaskIntoConstraints = false
 

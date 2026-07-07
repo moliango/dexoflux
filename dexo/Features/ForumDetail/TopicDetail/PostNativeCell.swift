@@ -1186,27 +1186,28 @@ private final class RelatedLinksCardView: UIView {
     }
 
     private func makeHeader() -> UIView {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
         let button = UIButton(type: .system)
         button.tintColor = .label
         button.contentHorizontalAlignment = .fill
         button.addTarget(self, action: #selector(toggleExpanded), for: .touchUpInside)
 
         let iconView = UIImageView(image: UIImage(systemName: "link"))
-        iconView.tintColor = .systemBlue
+        iconView.tintColor = accentColor
         iconView.contentMode = .scaleAspectFit
         iconView.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = UILabel()
         titleLabel.text = String(localized: "post.related_links")
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .systemBlue
+        titleLabel.textColor = accentColor
 
         let countLabel = UILabel()
         countLabel.text = "\(links.count)"
         countLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        countLabel.textColor = .systemBlue
+        countLabel.textColor = accentColor
         countLabel.textAlignment = .center
-        countLabel.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.12)
+        countLabel.backgroundColor = accentColor.withAlphaComponent(0.12)
         countLabel.layer.cornerRadius = 8
         countLabel.clipsToBounds = true
         countLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1270,7 +1271,7 @@ private final class RelatedLinksCardView: UIView {
             let label = UILabel()
             label.text = String.localizedStringWithFormat(String(localized: "post.more_links %lld"), Int64(remaining))
             label.font = .systemFont(ofSize: 12, weight: .medium)
-            label.textColor = .systemBlue
+            label.textColor = AppSettings.shared.themeStyle.accentColor
             label.textAlignment = .center
             label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1302,7 +1303,7 @@ private final class RelatedLinksCardView: UIView {
         let titleLabel = UILabel()
         titleLabel.text = link.title
         titleLabel.font = .systemFont(ofSize: 13)
-        titleLabel.textColor = .systemBlue
+        titleLabel.textColor = AppSettings.shared.themeStyle.accentColor
         titleLabel.numberOfLines = 2
 
         let clickLabel = UILabel()
@@ -1473,6 +1474,7 @@ private final class BoostStripView: UIView {
     }
 
     private func makeBubble(for group: BoostGroup) -> UIView {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
         let container = UIView()
         container.backgroundColor = .tertiarySystemGroupedBackground
         container.layer.cornerRadius = 13
@@ -1482,13 +1484,13 @@ private final class BoostStripView: UIView {
         container.translatesAutoresizingMaskIntoConstraints = false
 
         let iconContainer = UIView()
-        iconContainer.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.14)
+        iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
         iconContainer.layer.cornerRadius = 10
         iconContainer.layer.cornerCurve = .continuous
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
 
         let iconView = UIImageView(image: PostNativeCell.boostIconImage)
-        iconView.tintColor = .systemBlue
+        iconView.tintColor = accentColor
         iconView.contentMode = .scaleAspectFit
         iconView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1518,7 +1520,7 @@ private final class BoostStripView: UIView {
         countLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
         countLabel.textColor = .white
         countLabel.textAlignment = .center
-        countLabel.backgroundColor = .systemBlue
+        countLabel.backgroundColor = accentColor
         countLabel.layer.cornerRadius = 8
         countLabel.clipsToBounds = true
         countLabel.translatesAutoresizingMaskIntoConstraints = false

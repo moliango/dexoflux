@@ -31,8 +31,8 @@ final class AppSettings: DexoObservableObject {
 
     enum AppLanguage: String, CaseIterable {
         case simplifiedChinese = "zh-Hans"
-        case traditionalChineseTaiwan = "zh-Hant"
-        case traditionalChineseHongKong = "zh-HK"
+        case traditionalChineseTaiwan = "zh-Hant-TW"
+        case traditionalChineseHongKong = "zh-Hant-HK"
         case english = "en"
 
         var title: String {
@@ -49,11 +49,22 @@ final class AppSettings: DexoObservableObject {
             case .simplifiedChinese:
                 return ["zh-Hans"]
             case .traditionalChineseTaiwan:
-                return ["zh-Hant", "zh-Hans"]
+                return ["zh-Hant-TW", "zh-Hant", "zh-Hans"]
             case .traditionalChineseHongKong:
-                return ["zh-HK", "zh-Hant", "zh-Hans"]
+                return ["zh-Hant-HK", "zh-HK", "zh-Hant", "zh-Hans"]
             case .english:
                 return ["en"]
+            }
+        }
+
+        static func storedValue(_ rawValue: String) -> AppLanguage? {
+            switch rawValue {
+            case "zh-Hant", "zh-TW":
+                return .traditionalChineseTaiwan
+            case "zh-HK":
+                return .traditionalChineseHongKong
+            default:
+                return AppLanguage(rawValue: rawValue)
             }
         }
     }
@@ -80,6 +91,56 @@ final class AppSettings: DexoObservableObject {
             case .xiaohongshu: return UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1)
             case .telegram: return UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1)
             }
+        }
+
+        var topicCardBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault:
+                return .secondarySystemGroupedBackground
+            case .eyeCare, .xiaohongshu, .telegram:
+                return contentBackgroundColor
+            }
+        }
+
+        var topicChipBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault:
+                return .secondarySystemGroupedBackground
+            case .eyeCare, .xiaohongshu, .telegram:
+                return mutedContentBackgroundColor
+            }
+        }
+
+        var topicCountForegroundColor: UIColor {
+            switch self {
+            case .systemDefault: return .secondaryLabel
+            case .eyeCare, .xiaohongshu, .telegram: return accentColor
+            }
+        }
+
+        var topicCountBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault: return .tertiarySystemFill
+            case .eyeCare, .xiaohongshu, .telegram: return accentColor.withAlphaComponent(0.12)
+            }
+        }
+
+        var hotTopicColor: UIColor {
+            switch self {
+            case .systemDefault: return .systemOrange
+            case .eyeCare: return UIColor(red: 0.72, green: 0.47, blue: 0.18, alpha: 1)
+            case .xiaohongshu: return UIColor(red: 1.0, green: 0.34, blue: 0.40, alpha: 1)
+            case .telegram: return UIColor(red: 0.0, green: 0.56, blue: 0.86, alpha: 1)
+            }
+        }
+
+        func topicTagColor(for seed: String) -> UIColor {
+            paletteColor(for: seed, palette: topicTagPalette)
+        }
+
+        func topicCategoryColor(for seed: String?, fallback: UIColor?) -> UIColor {
+            guard self != .systemDefault else { return fallback ?? .systemGray }
+            return paletteColor(for: seed ?? "", palette: topicCategoryPalette)
         }
 
         var contentBackgroundColor: UIColor {
@@ -180,6 +241,68 @@ final class AppSettings: DexoObservableObject {
             case .eyeCare, .xiaohongshu, .telegram: return webMutedBackgroundHex
             }
         }
+
+        private var topicTagPalette: [UIColor] {
+            switch self {
+            case .systemDefault:
+                return [.systemBlue, .systemGreen, .systemOrange, .systemPink, .systemPurple, .systemTeal, .systemIndigo]
+            case .eyeCare:
+                return [
+                    UIColor(red: 0.24, green: 0.55, blue: 0.34, alpha: 1),
+                    UIColor(red: 0.38, green: 0.62, blue: 0.31, alpha: 1),
+                    UIColor(red: 0.57, green: 0.52, blue: 0.25, alpha: 1),
+                    UIColor(red: 0.31, green: 0.61, blue: 0.53, alpha: 1),
+                    UIColor(red: 0.63, green: 0.45, blue: 0.24, alpha: 1),
+                ]
+            case .xiaohongshu:
+                return [
+                    UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1),
+                    UIColor(red: 1.0, green: 0.36, blue: 0.47, alpha: 1),
+                    UIColor(red: 0.95, green: 0.23, blue: 0.53, alpha: 1),
+                    UIColor(red: 1.0, green: 0.48, blue: 0.32, alpha: 1),
+                    UIColor(red: 0.78, green: 0.16, blue: 0.32, alpha: 1),
+                ]
+            case .telegram:
+                return [
+                    UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1),
+                    UIColor(red: 0.0, green: 0.64, blue: 0.88, alpha: 1),
+                    UIColor(red: 0.26, green: 0.70, blue: 0.93, alpha: 1),
+                    UIColor(red: 0.08, green: 0.45, blue: 0.69, alpha: 1),
+                    UIColor(red: 0.30, green: 0.62, blue: 0.95, alpha: 1),
+                ]
+            }
+        }
+
+        private var topicCategoryPalette: [UIColor] {
+            switch self {
+            case .systemDefault:
+                return topicTagPalette
+            case .eyeCare:
+                return [
+                    UIColor(red: 0.19, green: 0.48, blue: 0.29, alpha: 1),
+                    UIColor(red: 0.45, green: 0.60, blue: 0.25, alpha: 1),
+                    UIColor(red: 0.33, green: 0.55, blue: 0.42, alpha: 1),
+                ]
+            case .xiaohongshu:
+                return [
+                    UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1),
+                    UIColor(red: 0.98, green: 0.30, blue: 0.39, alpha: 1),
+                    UIColor(red: 0.86, green: 0.18, blue: 0.42, alpha: 1),
+                ]
+            case .telegram:
+                return [
+                    UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1),
+                    UIColor(red: 0.0, green: 0.47, blue: 0.74, alpha: 1),
+                    UIColor(red: 0.27, green: 0.66, blue: 0.90, alpha: 1),
+                ]
+            }
+        }
+
+        private func paletteColor(for seed: String, palette: [UIColor]) -> UIColor {
+            guard !palette.isEmpty else { return accentColor }
+            let hash = seed.unicodeScalars.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1.value) }
+            return palette[Int(hash % UInt64(palette.count))]
+        }
     }
 
     var appearanceMode: AppearanceMode {
@@ -196,7 +319,7 @@ final class AppSettings: DexoObservableObject {
             guard let rawValue = defaults.string(forKey: "appLanguage") else {
                 return .simplifiedChinese
             }
-            return AppLanguage(rawValue: rawValue) ?? .simplifiedChinese
+            return AppLanguage.storedValue(rawValue) ?? .simplifiedChinese
         }
         set {
             defaults.set(newValue.rawValue, forKey: "appLanguage")

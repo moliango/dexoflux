@@ -3,17 +3,11 @@ import UIKit
 
 enum TopicTagVisualStyle {
     static func color(for tag: String) -> UIColor {
-        let palette: [UIColor] = [
-            .systemBlue,
-            .systemGreen,
-            .systemOrange,
-            .systemPink,
-            .systemPurple,
-            .systemTeal,
-            .systemIndigo,
-        ]
-        let hash = tag.unicodeScalars.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1.value) }
-        return palette[Int(hash % UInt64(palette.count))]
+        AppSettings.shared.themeStyle.topicTagColor(for: tag)
+    }
+
+    static func categoryColor(for name: String?, fallback: UIColor?) -> UIColor {
+        AppSettings.shared.themeStyle.topicCategoryColor(for: name, fallback: fallback)
     }
 }
 
@@ -154,6 +148,8 @@ final class TopicCell: UITableViewCell {
         categoryColor: UIColor?,
         tags: [String] = []
     ) {
+        let themeStyle = AppSettings.shared.themeStyle
+        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
         configureTitleWithEmoji(topic.fancyTitle)
 
         let replies = max(topic.postsCount - 1, 0)
@@ -276,9 +272,10 @@ final class TopicCell: UITableViewCell {
         }
 
         if let categoryName {
+            let themedColor = TopicTagVisualStyle.categoryColor(for: categoryName, fallback: categoryColor)
             let categoryBadge = TopicBadgeView(
                 text: categoryName,
-                style: .category(color: categoryColor ?? .systemGray)
+                style: .category(color: themedColor)
             )
             badgesStackView.addArrangedSubview(categoryBadge)
         }
@@ -390,13 +387,15 @@ private final class TopicCountBadgeView: UIView {
         let displayText = "\(min(count, 9_999))"
         countLabel.text = displayText
         widthConstraint?.constant = Self.width(forDisplayText: displayText)
+        let themeStyle = AppSettings.shared.themeStyle
         let isHot = count >= Self.hotCountThreshold
-        let foreground: UIColor = isHot ? .systemOrange : .secondaryLabel
+        let hotColor = themeStyle.hotTopicColor
+        let foreground: UIColor = isHot ? hotColor : themeStyle.topicCountForegroundColor
         iconView.tintColor = foreground
         countLabel.textColor = foreground
         backgroundColor = isHot
-            ? UIColor.systemOrange.withAlphaComponent(0.14)
-            : UIColor.tertiarySystemFill
+            ? hotColor.withAlphaComponent(0.14)
+            : themeStyle.topicCountBackgroundColor
     }
 
     func prepareForReuse() {
@@ -508,8 +507,8 @@ private final class TopicBadgeView: UIView {
 private extension TopicBadgeView.Style {
     var textColor: UIColor {
         switch self {
-        case .category:
-            return .label
+        case .category(let color):
+            return AppSettings.shared.themeStyle == .systemDefault ? .label : color
         case .tag(let color):
             return color
         }

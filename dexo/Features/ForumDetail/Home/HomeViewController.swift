@@ -34,6 +34,7 @@ final class HomeViewController: ObservableViewController {
     private var cloudflareChallengeObservationToken: NSObjectProtocol?
     private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
     private var authObservationToken: NSObjectProtocol?
+    private var settingsObservationToken: NSObjectProtocol?
     private var foregroundObservationToken: NSObjectProtocol?
     private var topicReloadTask: Task<Void, Never>?
     private var reloadTimeoutTask: Task<Void, Never>?
@@ -261,7 +262,7 @@ final class HomeViewController: ObservableViewController {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.tintColor = .white
-        button.backgroundColor = .systemBlue
+        button.backgroundColor = AppSettings.shared.themeStyle.accentColor
         button.layer.cornerRadius = 28
         button.layer.cornerCurve = .continuous
         button.layer.shadowColor = UIColor.black.cgColor
@@ -357,6 +358,7 @@ final class HomeViewController: ObservableViewController {
         view.addSubview(cloudflareShieldButton)
 
         setupHeader()
+        applyThemeStyle()
         updateFloatingActionButton(animated: false)
 
         let fabBottomConstraint = floatingActionButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -currentBottomChromeHeight - 20)
@@ -422,6 +424,7 @@ final class HomeViewController: ObservableViewController {
         lastAuthenticatedState = AuthManager.shared.isAuthenticated(for: api.baseURL)
         startObservingCloudflareVerification()
         startObservingAuthChanges()
+        startObservingSettingsChanges()
         startObservingForeground()
         startMonitoringNetwork()
 
@@ -443,6 +446,9 @@ final class HomeViewController: ObservableViewController {
         }
         if let authObservationToken {
             NotificationCenter.default.removeObserver(authObservationToken)
+        }
+        if let settingsObservationToken {
+            NotificationCenter.default.removeObserver(settingsObservationToken)
         }
         if let foregroundObservationToken {
             NotificationCenter.default.removeObserver(foregroundObservationToken)
@@ -506,6 +512,16 @@ final class HomeViewController: ObservableViewController {
             queue: .main
         ) { [weak self] _ in
             self?.handleAuthChanged()
+        }
+    }
+
+    private func startObservingSettingsChanges() {
+        settingsObservationToken = NotificationCenter.default.addObserver(
+            forName: DexoObservableObject.didChangeNotification,
+            object: AppSettings.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSettingsChanged()
         }
     }
 
@@ -784,6 +800,18 @@ final class HomeViewController: ObservableViewController {
         categoryScrollView.showsHorizontalScrollIndicator = false
     }
 
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        let pageBackground: UIColor = themeStyle == .systemDefault ? .systemGroupedBackground : themeStyle.mutedContentBackgroundColor
+        view.backgroundColor = pageBackground
+        tableView.backgroundColor = pageBackground
+        headerContainer.backgroundColor = pageBackground
+        searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
+        floatingActionButton.backgroundColor = themeStyle.accentColor
+        floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
+        incomingTopicsButton.applyThemeStyle()
+    }
+
     private func setupFilterBar() {
         filterStackView.arrangedSubviews.forEach { view in
             filterStackView.removeArrangedSubview(view)
@@ -798,15 +826,16 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func applyDropdownStyle(to button: UIButton, title: String, selected: Bool = false) {
+        let themeStyle = AppSettings.shared.themeStyle
         var config = UIButton.Configuration.plain()
         config.title = title
         config.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
         config.imagePlacement = .trailing
         config.imagePadding = 3
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 8)
-        config.background.backgroundColor = selected ? UIColor.systemBlue.withAlphaComponent(0.14) : .secondarySystemGroupedBackground
+        config.background.backgroundColor = selected ? themeStyle.accentColor.withAlphaComponent(0.14) : themeStyle.topicChipBackgroundColor
         config.background.cornerRadius = 8
-        config.baseForegroundColor = selected ? .systemBlue : .label
+        config.baseForegroundColor = selected ? themeStyle.accentColor : .label
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
             var a = attrs
             a.font = UIFont.systemFont(ofSize: 13, weight: .medium)
@@ -832,6 +861,7 @@ final class HomeViewController: ObservableViewController {
     }
 
     override func updateUI() {
+        applyThemeStyle()
         // Login-required state
         if viewModel.requiresLogin {
             errorLabel.text = viewModel.errorMessage
@@ -1536,6 +1566,7 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func updateCategoryTabs() {
+        let themeStyle = AppSettings.shared.themeStyle
         for (categoryId, button) in categoryTabButtons {
             let selected = categoryId == viewModel.selectedCategoryId
             var config = button.configuration ?? UIButton.Configuration.plain()
@@ -1544,7 +1575,7 @@ final class HomeViewController: ObservableViewController {
             } else {
                 config.title = String(localized: "home.filter.all_categories")
             }
-            config.baseForegroundColor = selected ? .systemBlue : .secondaryLabel
+            config.baseForegroundColor = selected ? themeStyle.accentColor : .secondaryLabel
             config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
                 var a = attrs
                 a.font = UIFont.systemFont(ofSize: 15, weight: selected ? .semibold : .regular)
@@ -1557,7 +1588,7 @@ final class HomeViewController: ObservableViewController {
             if selected {
                 let indicator = CALayer()
                 indicator.name = "selectionIndicator"
-                indicator.backgroundColor = UIColor.systemBlue.cgColor
+                indicator.backgroundColor = themeStyle.accentColor.cgColor
                 indicator.cornerRadius = 1
                 button.layer.addSublayer(indicator)
                 button.setNeedsLayout()
@@ -1717,12 +1748,22 @@ final class HomeViewController: ObservableViewController {
         (tabBarController as? ForumTabBarController)?.setTabBarHiddenByScroll(hidden, animated: animated)
         updateBottomChrome(animated: animated)
     }
+
+    private func handleSettingsChanged() {
+        applyThemeStyle()
+        updateFilterButton()
+        updateCategoryButton()
+        updateCategoryTabs()
+        updateFloatingActionButton(animated: false)
+        incomingTopicsButton.applyThemeStyle()
+        tableView.reloadData()
+    }
 }
 
 private final class IncomingTopicsBannerView: UIControl {
     private let iconContainer: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.14)
+        view.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.14)
         view.layer.cornerRadius = 17
         view.layer.cornerCurve = .continuous
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -1732,7 +1773,7 @@ private final class IncomingTopicsBannerView: UIControl {
     private let iconView: UIImageView = {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
         let view = UIImageView(image: UIImage(systemName: "arrow.up", withConfiguration: config))
-        view.tintColor = .systemBlue
+        view.tintColor = AppSettings.shared.themeStyle.accentColor
         view.contentMode = .scaleAspectFit
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -1792,6 +1833,7 @@ private final class IncomingTopicsBannerView: UIControl {
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupUI()
+        applyThemeStyle()
     }
 
     @available(*, unavailable)
@@ -1801,6 +1843,7 @@ private final class IncomingTopicsBannerView: UIControl {
 
     func configure(title: String, isLoading: Bool) {
         titleLabel.text = title
+        applyThemeStyle()
         if isLoading {
             activityIndicator.startAnimating()
         } else {
@@ -1819,12 +1862,19 @@ private final class IncomingTopicsBannerView: UIControl {
         layer.shadowOffset = isFloating ? CGSize(width: 0, height: 6) : CGSize(width: 0, height: 2)
     }
 
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        backgroundColor = themeStyle.topicCardBackgroundColor
+        layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
+        iconContainer.backgroundColor = themeStyle.accentColor.withAlphaComponent(0.14)
+        iconView.tintColor = themeStyle.accentColor
+        activityIndicator.color = themeStyle.accentColor
+    }
+
     private func setupUI() {
-        backgroundColor = .secondarySystemGroupedBackground
         layer.cornerRadius = 16
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
-        layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.10).cgColor
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.06
         layer.shadowRadius = 12
@@ -2165,13 +2215,13 @@ private final class CategoryManagerCell: UITableViewCell {
         titleLabel.text = title
         subtitleLabel.text = subtitle
         subtitleLabel.isHidden = subtitle?.isEmpty ?? true
-        colorDotView.backgroundColor = color ?? .tertiaryLabel
+        colorDotView.backgroundColor = TopicTagVisualStyle.categoryColor(for: title, fallback: color ?? .tertiaryLabel)
 
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
         switch mode {
         case .add:
             modeImageView.image = UIImage(systemName: "plus.circle.fill", withConfiguration: symbolConfig)
-            modeImageView.tintColor = .systemBlue
+            modeImageView.tintColor = AppSettings.shared.themeStyle.accentColor
             accessibilityHint = String(localized: "home.category_manager.add_hint")
         case .remove:
             modeImageView.image = UIImage(systemName: "minus.circle.fill", withConfiguration: symbolConfig)

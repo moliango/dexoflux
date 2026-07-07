@@ -21,7 +21,7 @@ enum BlockquoteRenderer: BlockRenderer {
         container.clipsToBounds = true
 
         let bar = UIView()
-        bar.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.70)
+        bar.backgroundColor = AppSettings.shared.themeStyle.hotTopicColor.withAlphaComponent(0.70)
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.layer.cornerRadius = 2
         container.addSubview(bar)

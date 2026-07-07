@@ -391,14 +391,15 @@ final class TopicDetailViewController: ObservableViewController {
         var config = UIButton.Configuration.filled()
         config.image = UIImage(systemName: "arrowshape.turn.up.left")
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
-        config.baseForegroundColor = .systemBlue
-        config.baseBackgroundColor = UIColor.systemBlue.withAlphaComponent(0.14)
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+        config.baseForegroundColor = accentColor
+        config.baseBackgroundColor = accentColor.withAlphaComponent(0.14)
         config.cornerStyle = .large
         button.configuration = config
         button.backgroundColor = .clear
         button.layer.cornerRadius = 18
         button.layer.cornerCurve = .continuous
-        button.layer.shadowColor = UIColor.systemBlue.cgColor
+        button.layer.shadowColor = accentColor.cgColor
         button.layer.shadowOpacity = 0.20
         button.layer.shadowOffset = CGSize(width: 0, height: 8)
         button.layer.shadowRadius = 16
@@ -550,12 +551,17 @@ final class TopicDetailViewController: ObservableViewController {
     override func updateUI() {
         let settings = AppSettings.shared
         tableView.showsVerticalScrollIndicator = !settings.hideScrollIndicators
+        applyThemeStyle()
+        let didChangeThemeStyle = lastThemeStyle != settings.themeStyle
         let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
             || lastContentFontSize != settings.contentFontSize
-            || lastThemeStyle != settings.themeStyle
+            || didChangeThemeStyle
         lastReadingComfortMode = settings.readingComfortMode
         lastContentFontSize = settings.contentFontSize
         lastThemeStyle = settings.themeStyle
+        if didChangeThemeStyle {
+            hasTitleHeader = false
+        }
 
         // Title header (set once, but rebuild when canLoadEarlier changes after a jump)
         if let topic = viewModel.topic, !hasTitleHeader {
@@ -656,6 +662,15 @@ final class TopicDetailViewController: ObservableViewController {
         } else {
             tableView.isHidden = true
         }
+    }
+
+    private func applyThemeStyle() {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+        var replyConfig = floatingReplyButton.configuration ?? UIButton.Configuration.filled()
+        replyConfig.baseForegroundColor = accentColor
+        replyConfig.baseBackgroundColor = accentColor.withAlphaComponent(0.14)
+        floatingReplyButton.configuration = replyConfig
+        floatingReplyButton.layer.shadowColor = accentColor.cgColor
     }
 
     private func prepareInitialContentTransition() {

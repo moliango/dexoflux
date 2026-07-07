@@ -56,7 +56,7 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             titleButton.setTitle(topicTitle, for: .normal)
             titleButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
             titleButton.titleLabel?.lineBreakMode = .byTruncatingTail
-            titleButton.setTitleColor(.link, for: .normal)
+            titleButton.setTitleColor(config.linkColor, for: .normal)
             titleButton.contentHorizontalAlignment = .leading
             titleButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             if let topicURL, let url = URL(string: topicURL) {
@@ -90,7 +90,7 @@ enum DiscourseQuoteRenderer: BlockRenderer {
 
         // Vertical bar + content
         let bar = UIView()
-        bar.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.72)
+        bar.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.72)
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.layer.cornerRadius = 2
         container.addSubview(bar)
@@ -144,19 +144,20 @@ private class CategoryBadgeView: UIView {
     init(name: String) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
+        let color = TopicTagVisualStyle.categoryColor(for: name, fallback: .secondaryLabel)
 
         let label = UILabel()
         label.text = name
         label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = .secondaryLabel
+        label.textColor = AppSettings.shared.themeStyle == .systemDefault ? .secondaryLabel : color
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
-        backgroundColor = .secondarySystemGroupedBackground
+        backgroundColor = color.withAlphaComponent(0.10)
         layer.cornerRadius = 6
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
+        layer.borderColor = color.withAlphaComponent(0.20).cgColor
 
         NSLayoutConstraint.activate([
             label.topAnchor.constraint(equalTo: topAnchor, constant: 2),
