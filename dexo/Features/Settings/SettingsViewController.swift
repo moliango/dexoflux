@@ -143,7 +143,10 @@ private final class SettingsCategoryViewController: ObservableViewController {
 
     private enum Row {
         case appearanceMode
+        case appLanguage
+        case themeStyle
         case readingComfort
+        case contentFontSize
         case hideScrollIndicators
         case dohToggle
         case dohDebugLog
@@ -204,9 +207,9 @@ private final class SettingsCategoryViewController: ObservableViewController {
     private var rows: [Row] {
         switch category {
         case .appearance:
-            return [.appearanceMode]
+            return [.appearanceMode, .appLanguage, .themeStyle]
         case .reading:
-            return [.readingComfort, .hideScrollIndicators]
+            return [.readingComfort, .contentFontSize, .hideScrollIndicators]
         case .network:
             var rows: [Row] = [.cloudflareVerify, .dohToggle, .dohDebugLog]
             if settings.dohEnabled {
@@ -241,8 +244,14 @@ extension SettingsCategoryViewController: UITableViewDataSource {
         switch row {
         case .appearanceMode:
             return valueCell(title: String(localized: "settings.dark_mode"), detail: settings.appearanceMode.title)
+        case .appLanguage:
+            return valueCell(title: String(localized: "settings.language"), detail: settings.appLanguage.title)
+        case .themeStyle:
+            return valueCell(title: String(localized: "settings.theme_style"), detail: settings.themeStyle.title)
         case .readingComfort:
             return switchCell(title: String(localized: "settings.reading.comfort"), isOn: settings.readingComfortMode, action: #selector(readingComfortChanged(_:)))
+        case .contentFontSize:
+            return valueCell(title: String(localized: "settings.content_font_size"), detail: settings.contentFontSize.title)
         case .hideScrollIndicators:
             return switchCell(title: String(localized: "settings.reading.hide_scroll_indicators"), isOn: settings.hideScrollIndicators, action: #selector(hideScrollIndicatorsChanged(_:)))
         case .dohToggle:
@@ -320,6 +329,12 @@ extension SettingsCategoryViewController: UITableViewDelegate {
         switch row {
         case .appearanceMode:
             showAppearancePicker(sourceView: tableView.cellForRow(at: indexPath))
+        case .appLanguage:
+            showLanguagePicker(sourceView: tableView.cellForRow(at: indexPath))
+        case .themeStyle:
+            showThemeStylePicker(sourceView: tableView.cellForRow(at: indexPath))
+        case .contentFontSize:
+            showContentFontSizePicker(sourceView: tableView.cellForRow(at: indexPath))
         case .dohProvider:
             showDohProviderPicker(sourceView: tableView.cellForRow(at: indexPath))
         case .dohCustomURL:
@@ -393,8 +408,74 @@ private extension SettingsCategoryViewController {
         present(alert, animated: true)
     }
 
+    func showLanguagePicker(sourceView: UIView?) {
+        let alert = UIAlertController(
+            title: String(localized: "settings.language"),
+            message: String(localized: "settings.language.restart_message"),
+            preferredStyle: .actionSheet
+        )
+        for language in AppSettings.AppLanguage.allCases {
+            let action = UIAlertAction(title: language.title, style: .default) { [weak self] _ in
+                guard let self else { return }
+                settings.appLanguage = language
+                tableView.reloadData()
+                showLanguageRestartNotice()
+            }
+            action.setValue(language == settings.appLanguage, forKey: "checked")
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        alert.popoverPresentationController?.sourceView = sourceView ?? view
+        alert.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
+        present(alert, animated: true)
+    }
+
+    func showLanguageRestartNotice() {
+        let alert = UIAlertController(
+            title: String(localized: "settings.language.restart_title"),
+            message: String(localized: "settings.language.restart_message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+        present(alert, animated: true)
+    }
+
+    func showThemeStylePicker(sourceView: UIView?) {
+        let alert = UIAlertController(title: String(localized: "settings.theme_style"), message: nil, preferredStyle: .actionSheet)
+        for style in AppSettings.ThemeStyle.allCases {
+            let action = UIAlertAction(title: style.title, style: .default) { [weak self] _ in
+                guard let self else { return }
+                settings.themeStyle = style
+                tableView.reloadData()
+            }
+            action.setValue(style == settings.themeStyle, forKey: "checked")
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        alert.popoverPresentationController?.sourceView = sourceView ?? view
+        alert.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
+        present(alert, animated: true)
+    }
+
+    func showContentFontSizePicker(sourceView: UIView?) {
+        let alert = UIAlertController(title: String(localized: "settings.content_font_size"), message: nil, preferredStyle: .actionSheet)
+        for size in AppSettings.ContentFontSize.allCases {
+            let action = UIAlertAction(title: size.title, style: .default) { [weak self] _ in
+                guard let self else { return }
+                settings.contentFontSize = size
+                tableView.reloadData()
+            }
+            action.setValue(size == settings.contentFontSize, forKey: "checked")
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        alert.popoverPresentationController?.sourceView = sourceView ?? view
+        alert.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
+        present(alert, animated: true)
+    }
+
     func showDohProviderPicker(sourceView: UIView?) {
-        let alert = UIAlertController(title: "DoH Provider", message: nil, preferredStyle: .actionSheet)
+        let alert = UIAlertController(title: String(localized: "settings.network.provider"), message: nil, preferredStyle: .actionSheet)
         for provider in AppSettings.DoHProvider.allCases {
             let action = UIAlertAction(title: provider.title, style: .default) { [weak self] _ in
                 self?.settings.dohProvider = provider
@@ -423,7 +504,7 @@ private extension SettingsCategoryViewController {
             textField.keyboardType = .URL
             textField.autocapitalizationType = .none
         }
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default) { [weak self] _ in
             let value = (alert.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             self?.settings.dohCustomURL = value
             if !value.isEmpty {
@@ -444,7 +525,7 @@ private extension SettingsCategoryViewController {
                 message: String(localized: "settings.data.cache_cleared"),
                 preferredStyle: .alert
             )
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
             self?.present(alert, animated: true)
         }
     }
@@ -591,7 +672,7 @@ private final class BottomBarLayoutViewController: ObservableViewController {
 
     private func showLimitMessage(_ message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
         present(alert, animated: true)
     }
 }
@@ -868,7 +949,7 @@ private final class DohDebugLogViewController: UIViewController {
         let log = DohDebugLog.snapshot()
         UIPasteboard.general.string = log.isEmpty ? textView.text : log
         let alert = UIAlertController(title: nil, message: "日志已复制", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
         present(alert, animated: true)
     }
 }

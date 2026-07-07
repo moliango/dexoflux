@@ -18,6 +18,28 @@ struct CodeBlockInfo {
     let fullWidth: CGFloat
 }
 
+private struct WebRenderStyle: Sendable {
+    let bodyFontSize: Int
+    let quoteFontSize: Int
+    let codeFontSize: Int
+    let accentHex: String
+    let backgroundHex: String
+    let mutedBackgroundHex: String
+    let quoteBorderHex: String
+    let blockquoteBackgroundHex: String
+
+    static let `default` = WebRenderStyle(
+        bodyFontSize: 18,
+        quoteFontSize: 17,
+        codeFontSize: 16,
+        accentHex: "#0079d3",
+        backgroundHex: "transparent",
+        mutedBackgroundHex: "#f6f8ff",
+        quoteBorderHex: "#cccccc",
+        blockquoteBackgroundHex: "transparent"
+    )
+}
+
 final class PostContentRenderer: NSObject {
     static let shared = PostContentRenderer()
     private var activeWebViews: [WKWebView] = []
@@ -47,8 +69,9 @@ final class PostContentRenderer: NSObject {
             for _ in 0 ..< min(maxConcurrency, posts.count) {
                 if let post = iterator.next() {
                     let isDark = Self.isDarkMode
+                    let webStyle = Self.currentWebRenderStyle
                     group.addTask {
-                        let html = Self.buildHTML(cooked: post.cooked, baseURL: baseURL, isDark: isDark)
+                        let html = Self.buildHTML(cooked: post.cooked, baseURL: baseURL, isDark: isDark, webStyle: webStyle)
                         let rendered = await self.renderSinglePost(html: html, baseURL: baseURL, width: containerWidth)
                         return (post.id, rendered)
                     }
@@ -62,8 +85,9 @@ final class PostContentRenderer: NSObject {
                 // Sliding window: add next task when one finishes
                 if let post = iterator.next() {
                     let isDark = Self.isDarkMode
+                    let webStyle = Self.currentWebRenderStyle
                     group.addTask {
-                        let html = Self.buildHTML(cooked: post.cooked, baseURL: baseURL, isDark: isDark)
+                        let html = Self.buildHTML(cooked: post.cooked, baseURL: baseURL, isDark: isDark, webStyle: webStyle)
                         let rendered = await self.renderSinglePost(html: html, baseURL: baseURL, width: containerWidth)
                         return (post.id, rendered)
                     }
@@ -80,13 +104,13 @@ final class PostContentRenderer: NSObject {
         width: CGFloat,
         openDetailsIndices: Set<Int>
     ) async -> RenderedPost {
-        let html = Self.buildHTML(cooked: cooked, baseURL: baseURL, openDetailsIndices: openDetailsIndices, isDark: Self.isDarkMode)
+        let html = Self.buildHTML(cooked: cooked, baseURL: baseURL, openDetailsIndices: openDetailsIndices, isDark: Self.isDarkMode, webStyle: Self.currentWebRenderStyle)
         return await renderSinglePost(html: html, baseURL: baseURL, width: width)
     }
 
     /// Render a single HTML block fragment (used by FallbackBlockView for unsupported blocks).
     func renderHTMLBlock(html: String, baseURL: String, width: CGFloat) async -> RenderedPost {
-        let fullHTML = Self.buildHTML(cooked: html, baseURL: baseURL, isDark: Self.isDarkMode)
+        let fullHTML = Self.buildHTML(cooked: html, baseURL: baseURL, isDark: Self.isDarkMode, webStyle: Self.currentWebRenderStyle)
         return await renderSinglePost(html: fullHTML, baseURL: baseURL, width: width)
     }
 
@@ -118,7 +142,29 @@ final class PostContentRenderer: NSObject {
         }
     }
 
-    nonisolated static func buildHTML(cooked: String, baseURL: String, openDetailsIndices: Set<Int> = [], isDark: Bool = false) -> String {
+    private static var currentWebRenderStyle: WebRenderStyle {
+        let settings = AppSettings.shared
+        let fontSize = Int(settings.contentFontSize.basePointSize) + (settings.readingComfortMode ? 1 : 0)
+        let themeStyle = settings.themeStyle
+        return WebRenderStyle(
+            bodyFontSize: fontSize,
+            quoteFontSize: max(fontSize - 1, 14),
+            codeFontSize: max(fontSize - 2, 13),
+            accentHex: themeStyle.webAccentHex,
+            backgroundHex: themeStyle.webBackgroundHex,
+            mutedBackgroundHex: themeStyle.webMutedBackgroundHex,
+            quoteBorderHex: themeStyle.webQuoteBorderHex,
+            blockquoteBackgroundHex: themeStyle.webBlockquoteBackgroundHex
+        )
+    }
+
+    nonisolated private static func buildHTML(
+        cooked: String,
+        baseURL: String,
+        openDetailsIndices: Set<Int> = [],
+        isDark: Bool = false,
+        webStyle: WebRenderStyle = .default
+    ) -> String {
         // Fix lazy-loading images that won't load in off-screen WebView
         let fixedCooked = cooked.replacingOccurrences(of: "loading=\"lazy\"", with: "loading=\"eager\"")
 
@@ -137,10 +183,12 @@ final class PostContentRenderer: NSObject {
             """
         }
 
+        let darkLinkHex = webStyle.accentHex == WebRenderStyle.default.accentHex ? "#4db8ff" : webStyle.accentHex
+        let darkQuoteBorderHex = webStyle.quoteBorderHex == WebRenderStyle.default.quoteBorderHex ? "#555" : webStyle.quoteBorderHex
         let darkCSS = """
-            body.dark { color: #e0e0e0; background: transparent; }
-            body.dark blockquote { border-left-color: #555; color: #aaa; }
-            body.dark aside.quote { border-left-color: #555; }
+            body.dark { color: #e0e0e0; background: \(webStyle.backgroundHex); }
+            body.dark blockquote { border-left-color: \(darkQuoteBorderHex); color: #aaa; background: \(webStyle.blockquoteBackgroundHex); }
+            body.dark aside.quote { border-left-color: \(darkQuoteBorderHex); }
             body.dark aside.quote .title { color: #777; }
             body.dark aside.quote blockquote { color: #aaa; }
             body.dark aside.onebox { border-color: #444; }
@@ -151,7 +199,7 @@ final class PostContentRenderer: NSObject {
             body.dark pre { background: #2a2a2a; }
             body.dark :not(pre) > code { background: #333; }
             body.dark th, body.dark td { border-color: #555; }
-            body.dark a { color: #4db8ff; }
+            body.dark a { color: \(darkLinkHex); }
         """
 
         let bodyClass = isDark ? " class=\"dark\"" : ""
@@ -168,10 +216,11 @@ final class PostContentRenderer: NSObject {
             padding: 12px;
             margin: 0;
             font: -apple-system-body;
-            font-size: 18px;
+            font-size: \(webStyle.bodyFontSize)px;
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             line-height: 1.5;
             color: #1a1a1a;
+            background: \(webStyle.backgroundHex);
             word-wrap: break-word;
             overflow-wrap: break-word;
             -webkit-text-size-adjust: 100%;
@@ -184,17 +233,18 @@ final class PostContentRenderer: NSObject {
             height: 20px;
             border-radius: 0;
         }
-        a { color: #0079d3; text-decoration: none; }
+        a { color: \(webStyle.accentHex); text-decoration: none; }
         blockquote {
-            border-left: 3px solid #ccc;
+            border-left: 3px solid \(webStyle.quoteBorderHex);
             margin: 8px 0;
             padding: 4px 12px;
             color: #666;
+            background: \(webStyle.blockquoteBackgroundHex);
         }
         /* Quote blocks — left border line style */
         aside.quote {
             border: none;
-            border-left: 3px solid #ccc;
+            border-left: 3px solid \(webStyle.quoteBorderHex);
             border-radius: 0;
             margin: 8px 0;
             padding: 0 0 0 12px;
@@ -221,7 +271,7 @@ final class PostContentRenderer: NSObject {
             padding: 0;
             margin: 0;
             color: #666;
-            font-size: 17px;
+            font-size: \(webStyle.quoteFontSize)px;
         }
         /* Onebox / link preview cards */
         aside.onebox {
@@ -250,11 +300,11 @@ final class PostContentRenderer: NSObject {
             padding: 10px 12px;
         }
         aside.onebox .onebox-body h3 {
-            font-size: 17px;
+            font-size: \(webStyle.quoteFontSize)px;
             margin: 0 0 4px;
         }
         aside.onebox .onebox-body p {
-            font-size: 16px;
+            font-size: \(max(webStyle.bodyFontSize - 2, 13))px;
             color: #666;
             margin: 0;
         }
@@ -284,7 +334,7 @@ final class PostContentRenderer: NSObject {
             padding: 8px 12px;
             background: #f0f0f0;
             font-weight: 600;
-            font-size: 17px;
+            font-size: \(webStyle.quoteFontSize)px;
             list-style: none;
         }
         details summary::-webkit-details-marker { display: none; }
@@ -310,12 +360,12 @@ final class PostContentRenderer: NSObject {
             border-radius: 6px;
             overflow-x: hidden;
             margin: 8px 0;
-            font-size: 16px;
+            font-size: \(webStyle.codeFontSize)px;
             white-space: pre;
         }
         code {
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: 16px;
+            font-size: \(webStyle.codeFontSize)px;
         }
         :not(pre) > code {
             background: #f0f0f0;

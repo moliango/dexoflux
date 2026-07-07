@@ -29,6 +29,159 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    enum AppLanguage: String, CaseIterable {
+        case simplifiedChinese = "zh-Hans"
+        case traditionalChineseTaiwan = "zh-Hant"
+        case traditionalChineseHongKong = "zh-HK"
+        case english = "en"
+
+        var title: String {
+            switch self {
+            case .simplifiedChinese: return String(localized: "settings.language.zh_hans")
+            case .traditionalChineseTaiwan: return String(localized: "settings.language.zh_hant_tw")
+            case .traditionalChineseHongKong: return String(localized: "settings.language.zh_hk")
+            case .english: return String(localized: "settings.language.en")
+            }
+        }
+
+        var preferredLanguageCodes: [String] {
+            switch self {
+            case .simplifiedChinese:
+                return ["zh-Hans"]
+            case .traditionalChineseTaiwan:
+                return ["zh-Hant", "zh-Hans"]
+            case .traditionalChineseHongKong:
+                return ["zh-HK", "zh-Hant", "zh-Hans"]
+            case .english:
+                return ["en"]
+            }
+        }
+    }
+
+    enum ThemeStyle: Int, CaseIterable {
+        case systemDefault = 0
+        case eyeCare = 1
+        case xiaohongshu = 2
+        case telegram = 3
+
+        var title: String {
+            switch self {
+            case .systemDefault: return String(localized: "settings.theme.default")
+            case .eyeCare: return String(localized: "settings.theme.eye_care")
+            case .xiaohongshu: return String(localized: "settings.theme.xiaohongshu")
+            case .telegram: return String(localized: "settings.theme.telegram")
+            }
+        }
+
+        var accentColor: UIColor {
+            switch self {
+            case .systemDefault: return .systemBlue
+            case .eyeCare: return UIColor(red: 0.24, green: 0.55, blue: 0.34, alpha: 1)
+            case .xiaohongshu: return UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1)
+            case .telegram: return UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1)
+            }
+        }
+
+        var contentBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor.secondarySystemGroupedBackground
+                        : UIColor.white
+                }
+            case .eyeCare:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.12, green: 0.16, blue: 0.12, alpha: 1)
+                        : UIColor(red: 0.94, green: 0.97, blue: 0.90, alpha: 1)
+                }
+            case .xiaohongshu:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.18, green: 0.11, blue: 0.12, alpha: 1)
+                        : UIColor(red: 1.0, green: 0.96, blue: 0.96, alpha: 1)
+                }
+            case .telegram:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.08, green: 0.13, blue: 0.18, alpha: 1)
+                        : UIColor(red: 0.93, green: 0.97, blue: 1.0, alpha: 1)
+                }
+            }
+        }
+
+        var mutedContentBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor.tertiarySystemGroupedBackground
+                        : UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 1)
+                }
+            case .eyeCare:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.16, green: 0.20, blue: 0.15, alpha: 1)
+                        : UIColor(red: 0.89, green: 0.94, blue: 0.84, alpha: 1)
+                }
+            case .xiaohongshu:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.23, green: 0.12, blue: 0.15, alpha: 1)
+                        : UIColor(red: 1.0, green: 0.91, blue: 0.92, alpha: 1)
+                }
+            case .telegram:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.10, green: 0.17, blue: 0.23, alpha: 1)
+                        : UIColor(red: 0.86, green: 0.94, blue: 1.0, alpha: 1)
+                }
+            }
+        }
+
+        var webAccentHex: String {
+            switch self {
+            case .systemDefault: return "#0079d3"
+            case .eyeCare: return "#3d8c56"
+            case .xiaohongshu: return "#eb3349"
+            case .telegram: return "#229ed9"
+            }
+        }
+
+        var webBackgroundHex: String {
+            switch self {
+            case .systemDefault: return "transparent"
+            case .eyeCare: return "#f0f7e7"
+            case .xiaohongshu: return "#fff5f5"
+            case .telegram: return "#edf8ff"
+            }
+        }
+
+        var webMutedBackgroundHex: String {
+            switch self {
+            case .systemDefault: return "#f6f8ff"
+            case .eyeCare: return "#e3efd7"
+            case .xiaohongshu: return "#ffe8eb"
+            case .telegram: return "#dff1ff"
+            }
+        }
+
+        var webQuoteBorderHex: String {
+            switch self {
+            case .systemDefault: return "#cccccc"
+            case .eyeCare, .xiaohongshu, .telegram: return webAccentHex
+            }
+        }
+
+        var webBlockquoteBackgroundHex: String {
+            switch self {
+            case .systemDefault: return "transparent"
+            case .eyeCare, .xiaohongshu, .telegram: return webMutedBackgroundHex
+            }
+        }
+    }
+
     var appearanceMode: AppearanceMode {
         get { AppearanceMode(rawValue: defaults.integer(forKey: "appearanceMode")) ?? .system }
         set {
@@ -38,12 +191,39 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var appLanguage: AppLanguage {
+        get {
+            guard let rawValue = defaults.string(forKey: "appLanguage") else {
+                return .simplifiedChinese
+            }
+            return AppLanguage(rawValue: rawValue) ?? .simplifiedChinese
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: "appLanguage")
+            defaults.set(newValue.preferredLanguageCodes, forKey: "AppleLanguages")
+            notifyChanged()
+        }
+    }
+
+    var themeStyle: ThemeStyle {
+        get { ThemeStyle(rawValue: defaults.integer(forKey: "themeStyle")) ?? .systemDefault }
+        set {
+            defaults.set(newValue.rawValue, forKey: "themeStyle")
+            applyAppearance()
+            notifyChanged()
+        }
+    }
+
     func applyAppearance() {
         let style = appearanceMode.userInterfaceStyle
+        let tintColor = themeStyle.accentColor
+        UINavigationBar.appearance().tintColor = tintColor
+        UITabBar.appearance().tintColor = tintColor
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows {
                 window.overrideUserInterfaceStyle = style
+                window.tintColor = tintColor
             }
         }
     }
@@ -95,6 +275,44 @@ final class AppSettings: DexoObservableObject {
         get { bool(forKey: "hideScrollIndicators", defaultValue: true) }
         set {
             defaults.set(newValue, forKey: "hideScrollIndicators")
+            notifyChanged()
+        }
+    }
+
+    enum ContentFontSize: Int, CaseIterable {
+        case small = 0
+        case standard = 1
+        case large = 2
+        case extraLarge = 3
+
+        var title: String {
+            switch self {
+            case .small: return String(localized: "settings.content_font.small")
+            case .standard: return String(localized: "settings.content_font.standard")
+            case .large: return String(localized: "settings.content_font.large")
+            case .extraLarge: return String(localized: "settings.content_font.extra_large")
+            }
+        }
+
+        var basePointSize: CGFloat {
+            switch self {
+            case .small: return 16
+            case .standard: return 18
+            case .large: return 20
+            case .extraLarge: return 22
+            }
+        }
+    }
+
+    var contentFontSize: ContentFontSize {
+        get {
+            guard defaults.object(forKey: "contentFontSize") != nil else {
+                return .standard
+            }
+            return ContentFontSize(rawValue: defaults.integer(forKey: "contentFontSize")) ?? .standard
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: "contentFontSize")
             notifyChanged()
         }
     }

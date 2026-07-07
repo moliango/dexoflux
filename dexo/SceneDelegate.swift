@@ -9,9 +9,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: windowScene)
         let defaultForum = DatabaseManager.shared.defaultForum()
         window.rootViewController = ForumContainerViewController(forum: defaultForum, showsDismissButton: false)
-        window.overrideUserInterfaceStyle = AppSettings.shared.appearanceMode.userInterfaceStyle
         window.makeKeyAndVisible()
         self.window = window
+        AppSettings.shared.applyAppearance()
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}

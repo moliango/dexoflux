@@ -45,19 +45,23 @@ struct NativeRenderConfig {
     }
 
     static func `default`(contentWidth: CGFloat, baseURL: String? = nil) -> NativeRenderConfig {
-        let comfortMode = AppSettings.shared.readingComfortMode
+        let settings = AppSettings.shared
+        let comfortMode = settings.readingComfortMode
+        let themeStyle = settings.themeStyle
+        let basePointSize = settings.contentFontSize.basePointSize
+        let comfortFontDelta: CGFloat = comfortMode ? 1 : 0
         let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .systemFont(ofSize: comfortMode ? 19 : 18)
+            for: .systemFont(ofSize: basePointSize + comfortFontDelta)
         )
         let codeFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .monospacedSystemFont(ofSize: comfortMode ? 18 : 17, weight: .regular)
+            for: .monospacedSystemFont(ofSize: max(basePointSize - 1, 14) + comfortFontDelta, weight: .regular)
         )
         return NativeRenderConfig(
             baseFont: bodyFont,
             baseColor: .label,
-            linkColor: .link,
+            linkColor: themeStyle.accentColor,
             codeFont: codeFont,
-            codeBackgroundColor: .secondarySystemBackground,
+            codeBackgroundColor: themeStyle.mutedContentBackgroundColor,
             contentWidth: contentWidth,
             baseURL: baseURL,
             defaultLineSpacing: comfortMode ? 6 : 5,
@@ -90,23 +94,19 @@ struct NativeRenderConfig {
 
 enum TopicDetailContentStyle {
     static var cardBackground: UIColor {
-        UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor.secondarySystemGroupedBackground
-                : UIColor.white
-        }
+        AppSettings.shared.themeStyle.contentBackgroundColor
     }
 
     static var mutedBackground: UIColor {
-        UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor.tertiarySystemGroupedBackground
-                : UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 1)
-        }
+        AppSettings.shared.themeStyle.mutedContentBackgroundColor
     }
 
     static var warmMutedBackground: UIColor {
-        UIColor { trait in
+        let style = AppSettings.shared.themeStyle
+        if style != .systemDefault {
+            return style.mutedContentBackgroundColor
+        }
+        return UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor.tertiarySystemGroupedBackground
                 : UIColor(red: 1.0, green: 0.98, blue: 0.94, alpha: 1)
@@ -127,6 +127,8 @@ enum TopicDetailContentStyle {
     }
 
     static func headingAccentColor(for level: Int) -> UIColor {
+        let style = AppSettings.shared.themeStyle
+        guard style == .systemDefault else { return style.accentColor }
         switch level {
         case 1:
             return .systemBlue

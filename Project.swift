@@ -5,7 +5,7 @@ let developmentTeam = Environment.developmentTeam.getString(default: "")
 let project = Project(
     name: "dexo",
     options: .options(
-        defaultKnownRegions: ["en", "zh-Hans"],
+        defaultKnownRegions: ["en", "zh-Hans", "zh-Hant", "zh-HK"],
         developmentRegion: "en"
     ),
     packages: [

@@ -224,6 +224,8 @@ final class TopicDetailViewController: ObservableViewController {
     /// Anchor info for restoring scroll position after loading earlier posts
     private var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
     private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
+    private var lastContentFontSize = AppSettings.shared.contentFontSize
+    private var lastThemeStyle = AppSettings.shared.themeStyle
     private var hasPresentedInitialContent = false
     private var isHandlingBackSwipeFallback = false
     private weak var backSwipeFallbackHostView: UIView?
@@ -549,7 +551,11 @@ final class TopicDetailViewController: ObservableViewController {
         let settings = AppSettings.shared
         tableView.showsVerticalScrollIndicator = !settings.hideScrollIndicators
         let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
+            || lastContentFontSize != settings.contentFontSize
+            || lastThemeStyle != settings.themeStyle
         lastReadingComfortMode = settings.readingComfortMode
+        lastContentFontSize = settings.contentFontSize
+        lastThemeStyle = settings.themeStyle
 
         // Title header (set once, but rebuild when canLoadEarlier changes after a jump)
         if let topic = viewModel.topic, !hasTitleHeader {

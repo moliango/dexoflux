@@ -34,6 +34,22 @@ Questions to answer:
 
 (To be filled by the team)
 
+### App Settings
+
+- User-facing app settings live in `AppSettings.shared` and must call `notifyChanged()` after mutation.
+- Runtime visual settings that affect Topic Detail content must flow through both render paths:
+  - Native content: `AppSettings` -> `NativeRenderConfig.default(...)` / `TopicDetailContentStyle`.
+  - Web fallback content: `AppSettings` -> `PostContentRenderer.currentWebRenderStyle` -> fallback HTML/CSS.
+- Topic Detail controllers must listen through the existing observable update path and reload visible content when reading typography or theme settings change.
+- Do not store enum settings with `UserDefaults.integer(forKey:)` alone when the first enum case is not the intended default. Check `object(forKey:)` before interpreting integer `0`.
+
+### App Language
+
+- Language selection is persisted in `AppSettings.appLanguage`.
+- Runtime language switching is not supported; changing language writes `AppleLanguages` and shows a restart-required notice.
+- Traditional Chinese language choices must include Simplified Chinese as a fallback language code until all legacy string-catalog keys have `zh-Hant` / `zh-HK` localizations.
+- If adding new supported language codes to `Localizable.xcstrings`, also add them to `Project.swift` `defaultKnownRegions`.
+
 ---
 
 ## Server State

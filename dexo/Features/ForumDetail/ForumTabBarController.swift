@@ -92,14 +92,16 @@ final class ForumTabBarController: UITabBarController {
     }
 
     func configureTabBarSurface() {
+        let themeStyle = AppSettings.shared.themeStyle
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = .systemBackground
+        appearance.backgroundColor = themeStyle == .systemDefault ? .systemBackground : themeStyle.contentBackgroundColor
         appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
         tabBar.standardAppearance = appearance
         tabBar.scrollEdgeAppearance = appearance
         tabBar.backgroundColor = appearance.backgroundColor
-        tabBar.barTintColor = .systemBackground
+        tabBar.barTintColor = appearance.backgroundColor
+        tabBar.tintColor = themeStyle.accentColor
         tabBar.isOpaque = true
         tabBar.isTranslucent = false
         tabBar.alpha = isTabBarHiddenByScroll ? 0 : 1
@@ -226,6 +228,7 @@ private extension ForumTabBarController {
     }
 
     func handleSettingsChanged() {
+        configureTabBarSurface()
         let newVisibleItems = AppSettings.shared.forumVisibleDynamicTabItems
         guard newVisibleItems != visibleDynamicTabItems else { return }
         rebuildTabs(preservingIdentifier: selectedTabIdentifier())
