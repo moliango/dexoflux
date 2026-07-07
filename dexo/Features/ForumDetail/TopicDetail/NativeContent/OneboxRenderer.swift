@@ -70,7 +70,7 @@ final class OneboxCardView: UIView {
         let faviconSize: CGFloat = 16
 
         if let faviconURL, let url = URL(string: faviconURL) {
-            faviconView.sd_setImage(with: url)
+            ForumImageLoader.setImage(on: faviconView, url: url)
             headerStack.addArrangedSubview(faviconView)
             NSLayoutConstraint.activate([
                 faviconView.widthAnchor.constraint(equalToConstant: faviconSize),
@@ -180,7 +180,7 @@ final class OneboxCardView: UIView {
                 imageView.heightAnchor.constraint(equalToConstant: 72),
             ])
 
-            imageView.sd_setImage(with: url) { [weak self] _, _, _, _ in
+            ForumImageLoader.setImage(on: imageView, url: url) { [weak self] _, _, _, _ in
                 self?.imageView.backgroundColor = .clear
             }
         }

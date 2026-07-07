@@ -39,3 +39,74 @@ public enum ContentBlock: Sendable, Equatable {
     case divider
     case rawHTML(String)
 }
+
+public extension AnnotatedBlock {
+    var imageSourceURLs: [String] {
+        block.imageSourceURLs
+    }
+}
+
+public extension ContentBlock {
+    var imageSourceURLs: [String] {
+        switch self {
+        case .paragraph(let inlines), .heading(_, let inlines):
+            return inlines.imageSourceURLs
+        case .blockquote(let blocks), .spoiler(let blocks):
+            return blocks.imageSourceURLs
+        case .discourseQuote(_, let avatarURL, _, _, _, _, let content):
+            return [avatarURL].compactMap { $0 } + content.imageSourceURLs
+        case .image(let src, _, _, _, _):
+            return [src]
+        case .onebox(_, _, _, let imageURL, _, _, let faviconURL):
+            return [imageURL, faviconURL].compactMap { $0 }
+        case .video(_, let thumbnailURL, _, _, _, _, _):
+            return [thumbnailURL].compactMap { $0 }
+        case .list(_, let items):
+            return items.flatMap(\.imageSourceURLs)
+        case .table(let headers, let rows):
+            return headers.flatMap(\.imageSourceURLs)
+                + rows.flatMap { row in row.flatMap(\.imageSourceURLs) }
+        case .details(let summary, let content):
+            return summary.imageSourceURLs + content.imageSourceURLs
+        case .codeBlock, .divider, .rawHTML:
+            return []
+        }
+    }
+}
+
+public extension ListItem {
+    var imageSourceURLs: [String] {
+        content.imageSourceURLs + children.imageSourceURLs
+    }
+}
+
+public extension Array where Element == AnnotatedBlock {
+    var imageSourceURLs: [String] {
+        flatMap(\.imageSourceURLs)
+    }
+}
+
+public extension Array where Element == ContentBlock {
+    var imageSourceURLs: [String] {
+        flatMap(\.imageSourceURLs)
+    }
+}
+
+public extension Array where Element == InlineNode {
+    var imageSourceURLs: [String] {
+        flatMap(\.imageSourceURLs)
+    }
+}
+
+public extension InlineNode {
+    var imageSourceURLs: [String] {
+        switch self {
+        case .image(let src, _, _, _, _):
+            return [src]
+        case .link(_, let children), .spoiler(let children):
+            return children.imageSourceURLs
+        case .text, .styledText, .code, .lineBreak, .mention, .mentionGroup, .hashtag:
+            return []
+        }
+    }
+}

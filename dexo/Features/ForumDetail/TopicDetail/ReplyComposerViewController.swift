@@ -847,7 +847,12 @@ final class ReplyComposerViewController: UIViewController {
                   let url = attachment.emojiURL
             else { return }
 
-            SDWebImageManager.shared.loadImage(with: url, options: [.retryFailed], progress: nil) { [weak self, weak attachment] image, _, _, _, _, _ in
+            SDWebImageManager.shared.loadImage(
+                with: url,
+                options: AvatarImageLoader.options,
+                context: AvatarImageLoader.context(for: url),
+                progress: nil
+            ) { [weak self, weak attachment] image, _, _, _, _, _ in
                 guard let self, let attachment, let image else { return }
                 DispatchQueue.main.async {
                     attachment.image = image

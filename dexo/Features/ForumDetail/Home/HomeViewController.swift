@@ -16,8 +16,11 @@ final class HomeViewController: ObservableViewController {
     private static let cloudflareForegroundAutoPresentationCooldown: TimeInterval = 10
     private static let headerVerticalSpacing: CGFloat = 8 + 6
     private static let headerBottomPadding: CGFloat = 8
-    private static let baseTableTopSpacing: CGFloat = 8
-    private static let xiaohongshuTableTopSpacing: CGFloat = 18
+    private static let baseTableTopSpacing: CGFloat = 16
+    private static let baseTableBottomSpacing: CGFloat = 12
+    private static let xiaohongshuTableTopSpacing: CGFloat = 32
+    private static let xiaohongshuTableBottomSpacing: CGFloat = 16
+    private static let topRefreshGeometryReleaseDelay: TimeInterval = 0.28
 
     private let api: DiscourseAPI
     private let viewModel: HomeViewModel
@@ -50,6 +53,8 @@ final class HomeViewController: ObservableViewController {
     private var cloudflareChallengeReloadSequence: Int?
     private var isPresentingCloudflareForegroundVerification = false
     private var pendingCloudflareForegroundVerification = false
+    private var isTopRefreshGeometryLocked = false
+    private var topRefreshGeometryLockID = 0
     private var lastAutomaticCloudflareForegroundPresentationAt: Date?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
@@ -1075,6 +1080,7 @@ final class HomeViewController: ObservableViewController {
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
         }
+        finishTopRefreshGeometryLockIfNeeded()
         reconcileCloudflareShieldButtonVisibility(animated: false)
     }
 
@@ -1086,6 +1092,7 @@ final class HomeViewController: ObservableViewController {
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
         }
+        finishTopRefreshGeometryLockIfNeeded()
         reconcileCloudflareShieldButtonVisibility(animated: true)
     }
 
@@ -1151,18 +1158,18 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func pullToRefresh() {
-        revealHeaderForTopRefresh(animated: true)
+        beginTopRefreshGeometryLock(animated: false)
         reloadTopics()
     }
 
     @objc private func incomingTopicsTapped() {
         setHomeTabBarHidden(false, animated: true)
+        beginTopRefreshGeometryLock(animated: true)
         incomingTopicsRetryTask?.cancel()
         incomingTopicsRetryTask = nil
         Task {
             await viewModel.loadIncomingTopics()
-            let topOffset = CGPoint(x: 0, y: -tableView.contentInset.top)
-            tableView.setContentOffset(topOffset, animated: true)
+            finishTopRefreshGeometryLockIfNeeded()
         }
     }
 
@@ -1384,7 +1391,7 @@ final class HomeViewController: ObservableViewController {
     private func refreshFromFloatingActionButton() {
         setFABMode(.create, animated: true)
         setHomeTabBarHidden(false, animated: true)
-        revealHeaderForTopRefresh(animated: true)
+        beginTopRefreshGeometryLock(animated: true)
         reloadTopics()
     }
 
@@ -1512,7 +1519,7 @@ final class HomeViewController: ObservableViewController {
             ? Self.incomingTopicsBannerHeight
             : 0
         let topInset = headerContainer.frame.maxY + tableTopSpacing + incomingTopicsTopSpace
-        let bottomInset = currentBottomChromeHeight
+        let bottomInset = currentBottomChromeHeight + tableBottomSpacing
 
         var insets = tableView.contentInset
         let oldTopInset = insets.top
@@ -1524,8 +1531,11 @@ final class HomeViewController: ObservableViewController {
         tableView.contentInset = insets
         tableView.verticalScrollIndicatorInsets = insets
 
-        // Keep the visible content stable when the collapsible header changes height.
-        if oldTopInset > 0, abs(oldTopInset - topInset) > 0.5 {
+        let shouldPreserveVisibleTopContent = !isTopRefreshGeometryLocked
+
+        // Keep the visible content stable for normal header/banner changes. During
+        // an intentional top refresh, the final offset is owned by the geometry lock.
+        if shouldPreserveVisibleTopContent, oldTopInset > 0, abs(oldTopInset - topInset) > 0.5 {
             tableView.contentOffset.y += oldTopInset - topInset
         }
         if bottomInset < oldBottomInset {
@@ -1552,12 +1562,45 @@ final class HomeViewController: ObservableViewController {
         usesXiaohongshuCardLayout ? Self.xiaohongshuTableTopSpacing : Self.baseTableTopSpacing
     }
 
-    private func revealHeaderForTopRefresh(animated: Bool) {
-        setSearchRowCollapsed(false, animated: animated)
+    private var tableBottomSpacing: CGFloat {
+        usesXiaohongshuCardLayout ? Self.xiaohongshuTableBottomSpacing : Self.baseTableBottomSpacing
+    }
+
+    private func beginTopRefreshGeometryLock(animated: Bool) {
+        topRefreshGeometryLockID += 1
+        isTopRefreshGeometryLocked = true
+        normalizeTopRefreshGeometry(animated: animated)
+    }
+
+    private func finishTopRefreshGeometryLockIfNeeded() {
+        guard isTopRefreshGeometryLocked else { return }
+        let lockID = topRefreshGeometryLockID
+        normalizeTopRefreshGeometry(animated: false)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.topRefreshGeometryReleaseDelay) { [weak self] in
+            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: true)
+        }
+    }
+
+    private func normalizeTopRefreshGeometryIfStillLocked(lockID: Int, release: Bool) {
+        guard isTopRefreshGeometryLocked, topRefreshGeometryLockID == lockID else { return }
+        normalizeTopRefreshGeometry(animated: false)
+        if release {
+            isTopRefreshGeometryLocked = false
+        }
+    }
+
+    private func normalizeTopRefreshGeometry(animated: Bool) {
+        setSearchRowCollapsed(false, animated: false)
         view.layoutIfNeeded()
         updateTableInsets()
         let topOffset = CGPoint(x: 0, y: -tableView.contentInset.top)
-        tableView.setContentOffset(topOffset, animated: animated)
+        if abs(tableView.contentOffset.y - topOffset.y) > 0.5 {
+            tableView.setContentOffset(topOffset, animated: animated)
+        }
         lastHomeScrollY = 0
     }
 
@@ -2392,6 +2435,10 @@ extension HomeViewController: UITableViewDelegate {
     }
 
     private func settleSearchRowCollapse(animated: Bool) {
+        guard !isTopRefreshGeometryLocked else {
+            normalizeTopRefreshGeometry(animated: false)
+            return
+        }
         let y = tableView.contentOffset.y + tableView.contentInset.top
         setSearchRowCollapsed(y > 18, animated: animated)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top

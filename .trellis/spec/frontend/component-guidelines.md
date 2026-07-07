@@ -74,5 +74,14 @@ Questions to answer:
 
 - Home table geometry must be owned by a single inset update path that accounts for header height, incoming-topic banner space, bottom tab chrome, and the active card layout.
 - Refresh actions that intentionally return Home to the top must first reveal the collapsed search/header row, then recompute table insets, then set `contentOffset` to `-tableView.contentInset.top`.
-- Xiaohongshu two-column card layout needs a larger top content spacing than the standard list so the first grid row does not visually tuck under the filter chip row after refresh or header collapse changes.
+- Programmatic top refreshes and incoming-topic loads must keep a short geometry lock until after `UIRefreshControl.endRefreshing()` / the banner removal update and the next layout pass, so `scrollViewDidEndScrollingAnimation` cannot immediately collapse the search row against stale offsets.
+- While that geometry lock is active, top inset changes must not preserve visible content by adding `oldTopInset - newTopInset` to `contentOffset`; the lock owns the final `-contentInset.top` offset. This prevents the incoming-topic banner disappearing from pushing the first card under the filter row.
+- Standard Home cards and Xiaohongshu two-column cards both need explicit top and bottom content spacing in the table inset path; Xiaohongshu uses the larger top spacing so the first grid row does not visually tuck under the filter chip row after refresh or header collapse changes.
 - Theme changes that switch between standard list and Xiaohongshu grid must call the snapshot rebuild path and recompute table insets; `tableView.reloadData()` alone is not enough.
+
+### Topic Detail Image Loading
+
+- Topic Detail content images, inline image attachments, onebox thumbnails, video thumbnails, title emoji, and composer emoji must use the shared `ForumImageLoader` / `AvatarImageLoader.context(for:)` path instead of raw `sd_setImage(with:)` or `SDWebImageManager.loadImage(with:)`.
+- The shared path supplies retry, background continuation, large-image downscaling, and `WebCookieStore` Cookie/User-Agent headers. Bypassing it can make Linux.do images fail behind Cloudflare/CDN or stay blank after a transient first failure.
+- `CookedHTML` parsed blocks expose `imageSourceURLs`; Topic Detail controllers should prefetch newly ready posts after parsing/snapshot updates so image downloads run concurrently before cells become visible.
+- Prefetch should be keyed by post id or another stable content id to avoid repeatedly prefetching the same images during `updateUI()`, theme reloads, or diffable snapshot refreshes.

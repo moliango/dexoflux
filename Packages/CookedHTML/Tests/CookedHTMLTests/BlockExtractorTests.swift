@@ -236,4 +236,27 @@ final class BlockExtractorTests: XCTestCase {
             XCTFail("Block 1 should be paragraph, got \(blocks[1])")
         }
     }
+
+    func testImageSourceURLsCollectsNestedContentImages() {
+        let html = """
+        <p>inline <img src="/emoji.png" width="20" height="20"></p>
+        <blockquote><p><img src="/quote.png"></p></blockquote>
+        <details><summary>more</summary><p><img src="/details.png"></p></details>
+        <aside class="onebox">
+            <header class="source"><a href="https://example.com">example.com</a></header>
+            <article class="onebox-body">
+                <img src="/onebox.png">
+                <h3><a href="https://example.com">Example</a></h3>
+            </article>
+        </aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
+
+        XCTAssertEqual(blocks.flatMap(\.imageSourceURLs), [
+            "https://linux.do/emoji.png",
+            "https://linux.do/quote.png",
+            "https://linux.do/details.png",
+            "https://linux.do/onebox.png",
+        ])
+    }
 }

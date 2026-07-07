@@ -111,6 +111,7 @@ final class RepliesViewController: UIViewController {
                     unsupportedPostIds.insert(post.id)
                 }
             }
+            prefetchReplyImages()
 
             var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
             snapshot.appendSections([0])
@@ -121,6 +122,11 @@ final class RepliesViewController: UIViewController {
         }
 
         activityIndicator.stopAnimating()
+    }
+
+    private func prefetchReplyImages() {
+        let urls = parsedBlocks.values.flatMap(\.imageSourceURLs).compactMap(URL.init(string:))
+        ForumImageLoader.prefetch(urls: urls)
     }
 }
 

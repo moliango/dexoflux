@@ -452,7 +452,7 @@ private final class EmojiGroupTabCell: UICollectionViewCell {
         imageView.isHidden = false
         if let first = group.emojis.first,
            let url = EmojiPickerView.resolvedEmojiURL(first.url, baseURL: baseURL) {
-            imageView.sd_setImage(with: url)
+            ForumImageLoader.setImage(on: imageView, url: url)
         } else {
             imageView.image = nil
         }
@@ -526,7 +526,7 @@ private final class ForumEmojiCell: UICollectionViewCell {
     func configure(emoji: DiscourseEmojiEntry, baseURL: String) {
         accessibilityLabel = ":\(emoji.name):"
         if let url = EmojiPickerView.resolvedEmojiURL(emoji.url, baseURL: baseURL) {
-            imageView.sd_setImage(with: url)
+            ForumImageLoader.setImage(on: imageView, url: url)
         } else {
             imageView.image = nil
         }

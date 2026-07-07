@@ -1,3 +1,4 @@
+import CookedHTML
 import Lightbox
 import SafariServices
 import SDWebImage
@@ -234,6 +235,7 @@ final class TopicDetailViewController: ObservableViewController {
     private var isShowingCollapsedNavigationTitle = false
     private var lastBottomBarProgressState: (current: Int, total: Int)?
     private var downloadedAttachmentURLs: Set<URL> = []
+    private var prefetchedImagePostIds = Set<Int>()
 
     private enum BackSwipeFallbackMetrics {
         static let edgeActivationWidth: CGFloat = 44
@@ -630,6 +632,7 @@ final class TopicDetailViewController: ObservableViewController {
                 return post.id
             }
             snapshot.appendItems(readyIds, toSection: 0)
+            prefetchContentImages(forPostIds: readyIds)
 
             // Restore scroll position when earlier posts were prepended
             if let anchor = earlierLoadAnchor {
@@ -701,6 +704,16 @@ final class TopicDetailViewController: ObservableViewController {
             options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
             animations: animations
         )
+    }
+
+    private func prefetchContentImages(forPostIds postIds: [Int]) {
+        let urls = postIds.flatMap { postId -> [URL] in
+            guard prefetchedImagePostIds.insert(postId).inserted,
+                  let blocks = viewModel.parsedBlocks[postId]
+            else { return [] }
+            return blocks.imageSourceURLs.compactMap(URL.init(string:))
+        }
+        ForumImageLoader.prefetch(urls: urls)
     }
 
     private func updateTitleHeader() {
@@ -940,7 +953,12 @@ final class TopicDetailViewController: ObservableViewController {
     private func loadTitleEmojiImages(in attributedString: NSMutableAttributedString, label: UILabel) {
         attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length)) { value, _, _ in
             guard let attachment = value as? EmojiTextAttachment, let url = attachment.emojiURL else { return }
-            SDWebImageManager.shared.loadImage(with: url, progress: nil) { [weak self] image, _, _, _, _, _ in
+            SDWebImageManager.shared.loadImage(
+                with: url,
+                options: AvatarImageLoader.options,
+                context: AvatarImageLoader.context(for: url),
+                progress: nil
+            ) { [weak self] image, _, _, _, _, _ in
                 guard let image, let self else { return }
                 attachment.image = image
                 label.setNeedsDisplay()
@@ -1934,7 +1952,12 @@ private final class TopicReadingTracker {
 
 extension TopicDetailViewController: PostCellDelegate {
     func postCell(didTapImageURL url: URL) {
-        SDWebImageManager.shared.loadImage(with: url, progress: nil) { [weak self] image, _, _, _, _, _ in
+        SDWebImageManager.shared.loadImage(
+            with: url,
+            options: AvatarImageLoader.options,
+            context: AvatarImageLoader.context(for: url),
+            progress: nil
+        ) { [weak self] image, _, _, _, _, _ in
             guard let self, let image else { return }
             let controller = LightboxController(images: [LightboxImage(image: image)])
             controller.dynamicBackground = true

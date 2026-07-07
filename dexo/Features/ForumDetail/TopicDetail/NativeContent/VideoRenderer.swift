@@ -66,7 +66,7 @@ final class VideoCardView: UIView {
         ])
 
         if let thumbnailURL, let thumbURL = URL(string: thumbnailURL) {
-            thumbnailImageView.sd_setImage(with: thumbURL)
+            ForumImageLoader.setImage(on: thumbnailImageView, url: thumbURL)
         }
 
         // Play button with shadow for contrast on any background

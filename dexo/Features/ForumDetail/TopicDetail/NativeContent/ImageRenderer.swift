@@ -78,7 +78,7 @@ final class TappableImageContainer: UIView {
 
         let hasOriginalSize = width != nil && height != nil
 
-        imageView.sd_setImage(with: url) { [weak self] image, _, _, _ in
+        ForumImageLoader.setImage(on: imageView, url: url) { [weak self] image, _, _, _ in
             guard let self, let image else { return }
             self.imageView.backgroundColor = .clear
             if !hasOriginalSize {

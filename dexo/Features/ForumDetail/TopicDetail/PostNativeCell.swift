@@ -535,7 +535,7 @@ final class PostNativeCell: UITableViewCell {
                 if let bgColor = post.flairBgColor, !bgColor.isEmpty {
                     flairImageView.backgroundColor = UIColor(hex: bgColor)
                 }
-                flairImageView.sd_setImage(with: url)
+                ForumImageLoader.setImage(on: flairImageView, url: url)
                 flairImageView.isHidden = false
             }
         }
@@ -662,7 +662,7 @@ final class PostNativeCell: UITableViewCell {
             if i < visible.count {
                 let reaction = visible[visible.index(visible.startIndex, offsetBy: i)]
                 if let url = URL(string: EmojiStore.lookup(for: reaction.id) ?? "") {
-                    iv.sd_setImage(with: url)
+                    ForumImageLoader.setImage(on: iv, url: url)
                 } else {
                     iv.sd_cancelCurrentImageLoad()
                     iv.image = nil
@@ -840,7 +840,12 @@ final class PostNativeCell: UITableViewCell {
         }
 
         for entry in entries {
-            SDWebImageManager.shared.loadImage(with: entry.url, progress: nil) { [weak textView] image, _, _, _, _, _ in
+            SDWebImageManager.shared.loadImage(
+                with: entry.url,
+                options: AvatarImageLoader.options,
+                context: AvatarImageLoader.context(for: entry.url),
+                progress: nil
+            ) { [weak textView] image, _, _, _, _, _ in
                 guard let textView, let image else { return }
                 entry.attachment.image = image
                 // Keep the bounds already set by the attributed string builder
@@ -938,7 +943,7 @@ final class PostNativeCell: UITableViewCell {
                 let iv = UIImageView()
                 iv.contentMode = .scaleAspectFit
                 iv.translatesAutoresizingMaskIntoConstraints = false
-                iv.sd_setImage(with: url)
+                ForumImageLoader.setImage(on: iv, url: url)
                 iv.isUserInteractionEnabled = false
                 button.addSubview(iv)
                 NSLayoutConstraint.activate([

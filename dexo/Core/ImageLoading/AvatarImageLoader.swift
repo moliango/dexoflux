@@ -8,7 +8,7 @@ enum AvatarImageLoader {
     private static let prefetchLock = NSLock()
     private static var prefetchedURLStrings = Set<String>()
 
-    private static let options: SDWebImageOptions = [
+    static let options: SDWebImageOptions = [
         .retryFailed,
         .continueInBackground,
         .scaleDownLargeImages,
@@ -137,7 +137,7 @@ enum AvatarImageLoader {
         return result
     }
 
-    private static func context(for url: URL) -> [SDWebImageContextOption: Any]? {
+    static func context(for url: URL) -> [SDWebImageContextOption: Any]? {
         let headers = requestHeaders(for: url)
         guard !headers.isEmpty else { return nil }
         let modifier = SDWebImageDownloaderRequestModifier(headers: headers)
@@ -164,6 +164,34 @@ enum AvatarImageLoader {
             headers["User-Agent"] = userAgent
         }
         return headers
+    }
+}
+
+enum ForumImageLoader {
+    static func setImage(
+        on imageView: UIImageView,
+        url: URL?,
+        placeholder: UIImage? = nil,
+        completed: SDExternalCompletionBlock? = nil
+    ) {
+        guard let url else {
+            imageView.sd_cancelCurrentImageLoad()
+            imageView.image = placeholder
+            return
+        }
+
+        imageView.sd_setImage(
+            with: url,
+            placeholderImage: placeholder,
+            options: AvatarImageLoader.options,
+            context: AvatarImageLoader.context(for: url),
+            progress: nil,
+            completed: completed
+        )
+    }
+
+    static func prefetch(urls: [URL]) {
+        AvatarImageLoader.prefetch(urls: urls)
     }
 }
 
