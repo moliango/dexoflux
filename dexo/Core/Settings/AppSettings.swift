@@ -4,13 +4,48 @@ import UIKit
 
 final class AppSettings: DexoObservableObject {
     static let shared = AppSettings()
+    static let topicTitleReferencePointSize: CGFloat = 15
+    static let minimumFontScalePercent = 30
+    static let maximumFontScalePercent = 150
+    static let fontScaleStepPercent = 5
+    static let defaultFontScalePercent = 100
+    static let defaultInterfaceFontScalePercent = 100
+    private static let legacyInterfaceFontDefaultPercent = 85
+    private static let interfaceFontDefaultVisualMultiplier: CGFloat = 0.85
 
     private let defaults = UserDefaults.standard
 
     private override init() {
         super.init()
+        migrateFontScaleSettingsIfNeeded()
+        migrateLegacyCustomContentFontIfNeeded()
         registerStoredContentFonts()
         applyLanguage()
+    }
+
+    static func normalizedFontScalePercent(_ value: Int) -> Int {
+        min(max(value, minimumFontScalePercent), maximumFontScalePercent)
+    }
+
+    private func migrateFontScaleSettingsIfNeeded() {
+        if defaults.object(forKey: "contentFontScalePercent") == nil,
+           defaults.object(forKey: "contentFontSize") != nil {
+            let legacySize = ContentFontSize(rawValue: defaults.integer(forKey: "contentFontSize")) ?? .standard
+            defaults.set(legacySize.legacyScalePercent, forKey: "contentFontScalePercent")
+            defaults.set(ContentFontSize.standard.rawValue, forKey: "contentFontSize")
+        }
+        migrateInterfaceFontScaleBaselineIfNeeded()
+    }
+
+    private func migrateInterfaceFontScaleBaselineIfNeeded() {
+        let migrationKey = "interfaceFontScaleBaselineV2"
+        guard !defaults.bool(forKey: migrationKey) else { return }
+        if defaults.object(forKey: "interfaceFontScalePercent") != nil {
+            let oldValue = Self.normalizedFontScalePercent(defaults.integer(forKey: "interfaceFontScalePercent"))
+            let migratedValue = Int((CGFloat(oldValue) / CGFloat(Self.legacyInterfaceFontDefaultPercent) * CGFloat(Self.defaultInterfaceFontScalePercent)).rounded())
+            defaults.set(Self.normalizedFontScalePercent(migratedValue), forKey: "interfaceFontScalePercent")
+        }
+        defaults.set(true, forKey: migrationKey)
     }
 
     // MARK: - Appearance
@@ -113,6 +148,15 @@ final class AppSettings: DexoObservableObject {
                 }
             case .eyeCare, .telegram:
                 return contentBackgroundColor
+            }
+        }
+
+        var topicListBackgroundColor: UIColor {
+            switch self {
+            case .systemDefault:
+                return .systemGroupedBackground
+            case .eyeCare, .xiaohongshu, .telegram:
+                return mutedContentBackgroundColor
             }
         }
 
@@ -443,6 +487,7 @@ final class AppSettings: DexoObservableObject {
                 window.tintColor = tintColor
             }
         }
+        refreshVisibleAppFonts()
     }
 
     func applyLanguage() {
@@ -482,6 +527,187 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var clearImageCacheOnLaunch: Bool {
+        get { defaults.bool(forKey: "clearImageCacheOnLaunch") }
+        set {
+            defaults.set(newValue, forKey: "clearImageCacheOnLaunch")
+            notifyChanged()
+        }
+    }
+
+    func makePreferencesBackupData() throws -> Data {
+        let file = PreferencesBackupFile(
+            format: Self.preferencesBackupFormat,
+            version: 1,
+            exportedAt: Date(),
+            preferences: PreferencesBackupPayload(
+                appearanceMode: appearanceMode.rawValue,
+                appLanguage: appLanguage.rawValue,
+                themeStyle: themeStyle.rawValue,
+                autoOpenLastForum: autoOpenLastForum,
+                lastOpenedForumId: lastOpenedForumId,
+                hasShownAutoOpenPrompt: hasShownAutoOpenPrompt,
+                readingComfortMode: readingComfortMode,
+                hideScrollIndicators: hideScrollIndicators,
+                contentFontSize: contentFontSize.rawValue,
+                contentFontScalePercent: contentFontScalePercent,
+                contentFontFamily: contentFontFamily.rawValue,
+                contentFontScope: contentFontScope.rawValue,
+                interfaceFontScalePercent: interfaceFontScalePercent,
+                openExternalLinksInAppBrowser: openExternalLinksInAppBrowser,
+                defaultExpandRelatedLinks: defaultExpandRelatedLinks,
+                bottomBarAutoHideEnabled: bottomBarAutoHideEnabled,
+                forumDynamicTabItems: forumDynamicTabItems.map(\.rawValue),
+                homePinnedCategoryIds: homePinnedCategoryIds,
+                dohEnabled: dohEnabled,
+                dohProvider: dohProvider.rawValue,
+                dohCustomURL: dohCustomURL,
+                clearImageCacheOnLaunch: clearImageCacheOnLaunch
+            )
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(file)
+    }
+
+    func importPreferencesBackupData(_ data: Data) throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let file = try decoder.decode(PreferencesBackupFile.self, from: data)
+        guard file.format == Self.preferencesBackupFormat else {
+            throw PreferencesBackupError.invalidFile
+        }
+
+        let preferences = file.preferences
+        if let rawValue = preferences.appearanceMode,
+           let value = AppearanceMode(rawValue: rawValue) {
+            appearanceMode = value
+        }
+        if let rawValue = preferences.appLanguage,
+           let value = AppLanguage.storedValue(rawValue) {
+            appLanguage = value
+        }
+        if let rawValue = preferences.themeStyle,
+           let value = ThemeStyle(rawValue: rawValue) {
+            themeStyle = value
+        }
+        if let value = preferences.autoOpenLastForum {
+            autoOpenLastForum = value
+        }
+        if let value = preferences.lastOpenedForumId {
+            lastOpenedForumId = value
+        }
+        if let value = preferences.hasShownAutoOpenPrompt {
+            hasShownAutoOpenPrompt = value
+        }
+        if let value = preferences.readingComfortMode {
+            readingComfortMode = value
+        }
+        if let value = preferences.hideScrollIndicators {
+            hideScrollIndicators = value
+        }
+        if let rawValue = preferences.contentFontSize,
+           let value = ContentFontSize(rawValue: rawValue) {
+            if preferences.contentFontScalePercent == nil {
+                contentFontSize = .standard
+                contentFontScalePercent = value.legacyScalePercent
+            } else {
+                contentFontSize = value
+            }
+        }
+        if let value = preferences.contentFontScalePercent {
+            contentFontScalePercent = value
+        }
+        if let rawValue = preferences.contentFontFamily,
+           let value = ContentFontFamily(rawValue: rawValue) {
+            contentFontFamily = isContentFontFamilyAvailable(value) ? value : .system
+        }
+        if let rawValue = preferences.contentFontScope,
+           let value = ContentFontScope(rawValue: rawValue) {
+            contentFontScope = value
+        }
+        if let value = preferences.interfaceFontScalePercent {
+            interfaceFontScalePercent = value
+        }
+        if let value = preferences.openExternalLinksInAppBrowser {
+            openExternalLinksInAppBrowser = value
+        }
+        if let value = preferences.defaultExpandRelatedLinks {
+            defaultExpandRelatedLinks = value
+        }
+        if let value = preferences.bottomBarAutoHideEnabled {
+            bottomBarAutoHideEnabled = value
+        }
+        if let rawValues = preferences.forumDynamicTabItems {
+            forumDynamicTabItems = rawValues.compactMap(ForumDynamicTabItem.storedValue)
+        }
+        if let values = preferences.homePinnedCategoryIds {
+            homePinnedCategoryIds = values
+        }
+        if let value = preferences.dohEnabled {
+            dohEnabled = value
+        }
+        if let rawValue = preferences.dohProvider,
+           let value = DoHProvider(rawValue: rawValue) {
+            dohProvider = value
+        }
+        if let value = preferences.dohCustomURL {
+            dohCustomURL = value
+        }
+        if let value = preferences.clearImageCacheOnLaunch {
+            clearImageCacheOnLaunch = value
+        }
+        applyLanguage()
+        applyAppearance()
+        notifyChanged()
+    }
+
+    enum PreferencesBackupError: LocalizedError {
+        case invalidFile
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidFile:
+                return String(localized: "settings.data.backup_invalid")
+            }
+        }
+    }
+
+    private static let preferencesBackupFormat = "dexo.preferences.backup"
+
+    private struct PreferencesBackupFile: Codable {
+        let format: String
+        let version: Int
+        let exportedAt: Date
+        let preferences: PreferencesBackupPayload
+    }
+
+    private struct PreferencesBackupPayload: Codable {
+        let appearanceMode: Int?
+        let appLanguage: String?
+        let themeStyle: Int?
+        let autoOpenLastForum: Bool?
+        let lastOpenedForumId: Int64?
+        let hasShownAutoOpenPrompt: Bool?
+        let readingComfortMode: Bool?
+        let hideScrollIndicators: Bool?
+        let contentFontSize: Int?
+        let contentFontScalePercent: Int?
+        let contentFontFamily: String?
+        let contentFontScope: Int?
+        let interfaceFontScalePercent: Int?
+        let openExternalLinksInAppBrowser: Bool?
+        let defaultExpandRelatedLinks: Bool?
+        let bottomBarAutoHideEnabled: Bool?
+        let forumDynamicTabItems: [String]?
+        let homePinnedCategoryIds: [Int]?
+        let dohEnabled: Bool?
+        let dohProvider: Int?
+        let dohCustomURL: String?
+        let clearImageCacheOnLaunch: Bool?
+    }
+
     // MARK: - Reading
 
     var readingComfortMode: Bool {
@@ -496,6 +722,22 @@ final class AppSettings: DexoObservableObject {
         get { bool(forKey: "hideScrollIndicators", defaultValue: true) }
         set {
             defaults.set(newValue, forKey: "hideScrollIndicators")
+            notifyChanged()
+        }
+    }
+
+    var openExternalLinksInAppBrowser: Bool {
+        get { bool(forKey: "openExternalLinksInAppBrowser", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "openExternalLinksInAppBrowser")
+            notifyChanged()
+        }
+    }
+
+    var defaultExpandRelatedLinks: Bool {
+        get { defaults.bool(forKey: "defaultExpandRelatedLinks") }
+        set {
+            defaults.set(newValue, forKey: "defaultExpandRelatedLinks")
             notifyChanged()
         }
     }
@@ -523,6 +765,15 @@ final class AppSettings: DexoObservableObject {
             case .extraLarge: return 22
             }
         }
+
+        var legacyScalePercent: Int {
+            switch self {
+            case .small: return 90
+            case .standard: return 100
+            case .large: return 110
+            case .extraLarge: return 120
+            }
+        }
     }
 
     enum ContentFontFamily: String, CaseIterable {
@@ -539,6 +790,11 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    enum ContentFontScope: Int, CaseIterable {
+        case readingOnly = 0
+        case global = 1
+    }
+
     var contentFontSize: ContentFontSize {
         get {
             guard defaults.object(forKey: "contentFontSize") != nil else {
@@ -552,6 +808,34 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var contentFontScalePercent: Int {
+        get {
+            guard defaults.object(forKey: "contentFontScalePercent") != nil else {
+                return Self.defaultFontScalePercent
+            }
+            return Self.normalizedFontScalePercent(defaults.integer(forKey: "contentFontScalePercent"))
+        }
+        set {
+            defaults.set(Self.normalizedFontScalePercent(newValue), forKey: "contentFontScalePercent")
+            notifyChanged()
+        }
+    }
+
+    var interfaceFontScalePercent: Int {
+        get {
+            guard defaults.object(forKey: "interfaceFontScalePercent") != nil else {
+                return Self.defaultInterfaceFontScalePercent
+            }
+            return Self.normalizedFontScalePercent(defaults.integer(forKey: "interfaceFontScalePercent"))
+        }
+        set {
+            let previousMultiplier = interfaceFontScaleMultiplier
+            defaults.set(Self.normalizedFontScalePercent(newValue), forKey: "interfaceFontScalePercent")
+            refreshVisibleAppFonts(previousInterfaceFontScaleMultiplier: previousMultiplier)
+            notifyChanged()
+        }
+    }
+
     var contentFontFamily: ContentFontFamily {
         get {
             guard let rawValue = defaults.string(forKey: "contentFontFamily") else {
@@ -560,17 +844,52 @@ final class AppSettings: DexoObservableObject {
             return ContentFontFamily(rawValue: rawValue) ?? .system
         }
         set {
+            if newValue == .custom,
+               selectedImportedCustomContentFont == nil,
+               let firstFont = importedCustomContentFonts.first {
+                defaults.set(firstFont.id, forKey: selectedImportedContentFontIdKey)
+            }
             defaults.set(newValue.rawValue, forKey: "contentFontFamily")
+            refreshVisibleAppFonts()
+            notifyChanged()
+        }
+    }
+
+    var contentFontScope: ContentFontScope {
+        get {
+            guard defaults.object(forKey: "contentFontScope") != nil else {
+                return .readingOnly
+            }
+            return ContentFontScope(rawValue: defaults.integer(forKey: "contentFontScope")) ?? .readingOnly
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: "contentFontScope")
+            refreshVisibleAppFonts()
             notifyChanged()
         }
     }
 
     var customContentFontDisplayName: String? {
-        defaults.string(forKey: contentFontDisplayNameKey(for: .custom))
+        selectedImportedCustomContentFont?.displayName
+            ?? defaults.string(forKey: contentFontDisplayNameKey(for: .custom))
     }
 
     var miSansContentFontDisplayName: String? {
         defaults.string(forKey: contentFontDisplayNameKey(for: .miSans))
+    }
+
+    var importedCustomContentFonts: [ImportedContentFont] {
+        storedImportedCustomFonts().filter { importedFontFileExists($0) }
+    }
+
+    var selectedImportedCustomContentFont: ImportedContentFont? {
+        let fonts = importedCustomContentFonts
+        guard !fonts.isEmpty else { return nil }
+        if let selectedId = defaults.string(forKey: selectedImportedContentFontIdKey),
+           let selectedFont = fonts.first(where: { $0.id == selectedId }) {
+            return selectedFont
+        }
+        return fonts.first
     }
 
     func contentFontSubtitle(for family: ContentFontFamily) -> String {
@@ -590,6 +909,19 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    func importedCustomContentFontSubtitle(for font: ImportedContentFont) -> String {
+        if selectedImportedCustomContentFont?.id == font.id, contentFontFamily == .custom {
+            return String(localized: "settings.font.custom.selected")
+        }
+        return String(localized: "settings.font.custom.available")
+    }
+
+    func selectImportedContentFont(id: String) {
+        guard importedCustomContentFonts.contains(where: { $0.id == id }) else { return }
+        defaults.set(id, forKey: selectedImportedContentFontIdKey)
+        contentFontFamily = .custom
+    }
+
     func isContentFontFamilyAvailable(_ family: ContentFontFamily) -> Bool {
         switch family {
         case .system:
@@ -605,9 +937,64 @@ final class AppSettings: DexoObservableObject {
         guard let fontName = activeFontName(for: contentFontFamily),
               let font = UIFont(name: fontName, size: pointSize)
         else {
-            return .systemFont(ofSize: pointSize, weight: weight)
+            return UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
         }
         return font.applying(weight: weight)
+    }
+
+    func effectiveContentPointSize(for pointSize: CGFloat) -> CGFloat {
+        let scale = CGFloat(contentFontScalePercent) / CGFloat(Self.defaultFontScalePercent)
+        let basePointSize: CGFloat
+        if activeFontName(for: contentFontFamily) == nil {
+            basePointSize = max(pointSize - systemContentFontCompensation(for: pointSize), 1)
+        } else {
+            basePointSize = pointSize
+        }
+        // PingFang reads visibly larger than imported content fonts at the same point size,
+        // especially in Topic Detail with Dynamic Type scaling.
+        return max(basePointSize * scale, 1)
+    }
+
+    func effectiveInterfacePointSize(for pointSize: CGFloat) -> CGFloat {
+        guard activeGlobalAppFontName() == nil else {
+            return pointSize
+        }
+        if pointSize >= 20 {
+            return max(pointSize - 4, 11)
+        }
+        if pointSize >= 16 {
+            return max(pointSize - 3, 11)
+        }
+        if pointSize >= 13 {
+            return max(pointSize - 1.5, 11)
+        }
+        return pointSize
+    }
+
+    func sourceInterfacePointSize(matchingEffectivePointSize effectivePointSize: CGFloat) -> CGFloat {
+        var bestPointSize = effectivePointSize
+        var bestDelta = CGFloat.greatestFiniteMagnitude
+        var candidate = max(effectivePointSize, 11)
+        let upperBound = effectivePointSize + 6
+        while candidate <= upperBound {
+            let delta = abs(effectiveInterfacePointSize(for: candidate) - effectivePointSize)
+            if delta < bestDelta {
+                bestDelta = delta
+                bestPointSize = candidate
+            }
+            candidate += 0.5
+        }
+        return bestPointSize
+    }
+
+    private func systemContentFontCompensation(for pointSize: CGFloat) -> CGFloat {
+        if pointSize >= 22 {
+            return 4
+        }
+        if pointSize >= 20 {
+            return 3.5
+        }
+        return 3
     }
 
     func contentMonospacedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
@@ -620,6 +1007,153 @@ final class AppSettings: DexoObservableObject {
         }
         let escapedName = fontName.replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escapedName)\", -apple-system, BlinkMacSystemFont, sans-serif"
+    }
+
+    func installGlobalFontSupport() {
+        UIFont.installDexoAppFontOverride()
+        refreshVisibleAppFonts()
+    }
+
+    func appInterfaceFont(ofSize pointSize: CGFloat, weight: UIFont.Weight, fallback: UIFont) -> UIFont {
+        let scaledPointSize = scaledInterfacePointSize(for: pointSize)
+        guard let fontName = activeGlobalAppFontName(),
+              let font = UIFont(name: fontName, size: scaledPointSize)
+        else {
+            return UIFont.dexoOriginalSystemFont(ofSize: scaledPointSize, weight: weight)
+                .dexoMarkAppFontSourcePointSize(pointSize)
+        }
+        return font.applying(weight: weight).dexoMarkAppFontSourcePointSize(pointSize)
+    }
+
+    func appInterfaceFont(matching font: UIFont) -> UIFont {
+        guard !font.fontDescriptor.symbolicTraits.contains(.traitMonoSpace) else {
+            return font
+        }
+
+        let sourcePointSize = font.dexoAppFontSourcePointSize ?? font.pointSize
+        let pointSize = scaledInterfacePointSize(for: sourcePointSize)
+        let weight = font.dexoDetectedWeight
+        let traits = font.fontDescriptor.symbolicTraits
+        let baseFont: UIFont
+        if let fontName = activeGlobalAppFontName(),
+           let customFont = UIFont(name: fontName, size: pointSize) {
+            baseFont = customFont.applying(weight: weight)
+        } else {
+            baseFont = UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
+        }
+
+        guard traits.contains(.traitItalic),
+              let descriptor = baseFont.fontDescriptor.withSymbolicTraits(baseFont.fontDescriptor.symbolicTraits.union(.traitItalic))
+        else {
+            return baseFont.dexoMarkAppFontSourcePointSize(sourcePointSize)
+        }
+        return UIFont(descriptor: descriptor, size: pointSize).dexoMarkAppFontSourcePointSize(sourcePointSize)
+    }
+
+    func tabBarItemFont(selected: Bool) -> UIFont {
+        UIFont.dexoOriginalSystemFont(ofSize: 10, weight: selected ? .semibold : .regular)
+    }
+
+    private func activeGlobalAppFontName() -> String? {
+        guard contentFontScope == .global else { return nil }
+        return activeFontName(for: contentFontFamily)
+    }
+
+    private var interfaceFontScaleMultiplier: CGFloat {
+        Self.interfaceFontDefaultVisualMultiplier * CGFloat(interfaceFontScalePercent) / CGFloat(Self.defaultInterfaceFontScalePercent)
+    }
+
+    private func scaledInterfacePointSize(for pointSize: CGFloat) -> CGFloat {
+        max(pointSize * interfaceFontScaleMultiplier, 1)
+    }
+
+    private func refreshVisibleAppFonts(previousInterfaceFontScaleMultiplier: CGFloat? = nil) {
+        let baseMultiplier = previousInterfaceFontScaleMultiplier ?? interfaceFontScaleMultiplier
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                refreshAppFonts(in: window, previousInterfaceFontScaleMultiplier: baseMultiplier)
+                window.setNeedsLayout()
+                window.layoutIfNeeded()
+            }
+        }
+    }
+
+    private func refreshAppFonts(in view: UIView, previousInterfaceFontScaleMultiplier: CGFloat) {
+        if view is UITabBar {
+            return
+        }
+        if let label = view as? UILabel {
+            label.font = appInterfaceFont(
+                matching: baseInterfaceFont(
+                    for: label,
+                    currentFont: label.font,
+                    previousInterfaceFontScaleMultiplier: previousInterfaceFontScaleMultiplier
+                )
+            )
+            invalidateFontLayout(for: label)
+        }
+        if let button = view as? UIButton, let font = button.titleLabel?.font {
+            button.titleLabel?.font = appInterfaceFont(
+                matching: baseInterfaceFont(
+                    for: button,
+                    currentFont: font,
+                    previousInterfaceFontScaleMultiplier: previousInterfaceFontScaleMultiplier
+                )
+            )
+            if let titleLabel = button.titleLabel {
+                invalidateFontLayout(for: titleLabel)
+            }
+            invalidateFontLayout(for: button)
+        }
+        if let textField = view as? UITextField, let font = textField.font {
+            textField.font = appInterfaceFont(
+                matching: baseInterfaceFont(
+                    for: textField,
+                    currentFont: font,
+                    previousInterfaceFontScaleMultiplier: previousInterfaceFontScaleMultiplier
+                )
+            )
+            invalidateFontLayout(for: textField)
+        }
+        if let textView = view as? UITextView,
+           textView.attributedText.length == textView.text.count,
+           let font = textView.font {
+            textView.font = appInterfaceFont(
+                matching: baseInterfaceFont(
+                    for: textView,
+                    currentFont: font,
+                    previousInterfaceFontScaleMultiplier: previousInterfaceFontScaleMultiplier
+                )
+            )
+            invalidateFontLayout(for: textView)
+        }
+        for subview in view.subviews {
+            refreshAppFonts(in: subview, previousInterfaceFontScaleMultiplier: previousInterfaceFontScaleMultiplier)
+        }
+    }
+
+    private func baseInterfaceFont(
+        for view: UIView,
+        currentFont: UIFont,
+        previousInterfaceFontScaleMultiplier: CGFloat
+    ) -> UIFont {
+        if let baseFont = view.dexoBaseInterfaceFont {
+            return baseFont
+        }
+        let safePreviousMultiplier = max(previousInterfaceFontScaleMultiplier, 0.01)
+        let sourcePointSize = currentFont.dexoAppFontSourcePointSize ?? (currentFont.pointSize / safePreviousMultiplier)
+        let baseFont = UIFont(descriptor: currentFont.fontDescriptor, size: sourcePointSize)
+        view.dexoBaseInterfaceFont = baseFont
+        return baseFont
+    }
+
+    private func invalidateFontLayout(for view: UIView) {
+        view.invalidateIntrinsicContentSize()
+        view.setNeedsUpdateConstraints()
+        view.setNeedsLayout()
+        view.superview?.setNeedsUpdateConstraints()
+        view.superview?.setNeedsLayout()
     }
 
     @discardableResult
@@ -646,28 +1180,52 @@ final class AppSettings: DexoObservableObject {
         }
 
         let directory = try contentFontsDirectory()
-        let destination = directory.appendingPathComponent(fontFileName(for: targetFamily, sourceURL: sourceURL))
+        let destination = directory.appendingPathComponent(
+            targetFamily == .custom
+                ? customFontFileName(metadata: metadata, sourceURL: sourceURL)
+                : fontFileName(for: targetFamily, sourceURL: sourceURL)
+        )
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
         try FileManager.default.copyItem(at: sourceURL, to: destination)
         try registerFont(at: destination)
 
+        let importedFont = ImportedContentFont(
+            id: metadata.postScriptName,
+            postScriptName: metadata.postScriptName,
+            displayName: metadata.displayName,
+            fileName: destination.lastPathComponent,
+            importedAt: Date()
+        )
+
         defaults.set(destination.lastPathComponent, forKey: contentFontFileNameKey(for: targetFamily))
         defaults.set(metadata.postScriptName, forKey: contentFontPostScriptNameKey(for: targetFamily))
         defaults.set(metadata.displayName, forKey: contentFontDisplayNameKey(for: targetFamily))
+        if targetFamily == .custom {
+            upsertImportedCustomFont(importedFont)
+            defaults.set(importedFont.id, forKey: selectedImportedContentFontIdKey)
+        }
         contentFontFamily = targetFamily
-        return ImportedContentFont(
-            postScriptName: metadata.postScriptName,
-            displayName: metadata.displayName,
-            fileName: destination.lastPathComponent
-        )
+        return importedFont
     }
 
-    struct ImportedContentFont {
+    @discardableResult
+    func importCustomContentFonts(from sourceURLs: [URL]) throws -> [ImportedContentFont] {
+        var importedFonts: [ImportedContentFont] = []
+        for sourceURL in sourceURLs {
+            let importedFont = try importContentFont(from: sourceURL, targetFamily: .custom)
+            importedFonts.append(importedFont)
+        }
+        return importedFonts
+    }
+
+    struct ImportedContentFont: Codable, Equatable {
+        let id: String
         let postScriptName: String
         let displayName: String
         let fileName: String
+        let importedAt: Date
     }
 
     enum ContentFontImportError: LocalizedError {
@@ -701,6 +1259,7 @@ final class AppSettings: DexoObservableObject {
         registerBundledMiSansIfPresent()
         registerStoredContentFont(for: .miSans)
         registerStoredContentFont(for: .custom)
+        registerImportedCustomContentFonts()
     }
 
     private func registerBundledMiSansIfPresent() {
@@ -735,6 +1294,13 @@ final class AppSettings: DexoObservableObject {
         try? registerFont(at: url)
     }
 
+    private func registerImportedCustomContentFonts() {
+        for font in importedCustomContentFonts {
+            let url = contentFontsDirectoryURL.appendingPathComponent(font.fileName)
+            try? registerFont(at: url)
+        }
+    }
+
     private func activeFontName(for family: ContentFontFamily) -> String? {
         switch family {
         case .system:
@@ -747,13 +1313,25 @@ final class AppSettings: DexoObservableObject {
             let candidates = ["MiSans", "MiSans-Regular", "MiSans-Normal"]
             return candidates.first { UIFont(name: $0, size: 17) != nil }
         case .custom:
+            if let font = activeImportedCustomFont() {
+                return font.postScriptName
+            }
             guard let storedName = defaults.string(forKey: contentFontPostScriptNameKey(for: .custom)),
                   UIFont(name: storedName, size: 17) != nil
-            else {
-                return nil
-            }
+            else { return nil }
             return storedName
         }
+    }
+
+    private func activeImportedCustomFont() -> ImportedContentFont? {
+        let fonts = importedCustomContentFonts
+        guard !fonts.isEmpty else { return nil }
+        if let selectedId = defaults.string(forKey: selectedImportedContentFontIdKey),
+           let selectedFont = fonts.first(where: { $0.id == selectedId }),
+           UIFont(name: selectedFont.postScriptName, size: 17) != nil {
+            return selectedFont
+        }
+        return fonts.first { UIFont(name: $0.postScriptName, size: 17) != nil }
     }
 
     private var contentFontsDirectoryURL: URL {
@@ -777,6 +1355,22 @@ final class AppSettings: DexoObservableObject {
         case .custom:
             return "CustomContentFont.\(fileExtension)"
         }
+    }
+
+    private func customFontFileName(metadata: FontMetadata, sourceURL: URL) -> String {
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "ttf" : sourceURL.pathExtension.lowercased()
+        let name = sanitizedFontFileComponent(metadata.postScriptName)
+        let nonce = UUID().uuidString.prefix(8)
+        return "CustomContentFont-\(name)-\(nonce).\(fileExtension)"
+    }
+
+    private func sanitizedFontFileComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let pieces = value.unicodeScalars.map { scalar -> String in
+            allowed.contains(scalar) ? String(scalar) : "-"
+        }
+        let sanitized = pieces.joined().trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+        return sanitized.isEmpty ? "Imported" : sanitized
     }
 
     private func fontMetadata(from url: URL) throws -> FontMetadata {
@@ -823,6 +1417,74 @@ final class AppSettings: DexoObservableObject {
 
     private func contentFontDisplayNameKey(for family: ContentFontFamily) -> String {
         "contentFont.\(family.rawValue).displayName"
+    }
+
+    private var importedCustomContentFontsKey: String {
+        "contentFont.custom.importedFonts"
+    }
+
+    private var selectedImportedContentFontIdKey: String {
+        "contentFont.custom.selectedImportedFontId"
+    }
+
+    private var legacyCustomFontMigrationKey: String {
+        "contentFont.custom.importedFontsMigrated"
+    }
+
+    private func storedImportedCustomFonts() -> [ImportedContentFont] {
+        guard let data = defaults.data(forKey: importedCustomContentFontsKey),
+              let fonts = try? JSONDecoder().decode([ImportedContentFont].self, from: data)
+        else {
+            return []
+        }
+        return fonts
+    }
+
+    private func saveImportedCustomFonts(_ fonts: [ImportedContentFont]) {
+        guard let data = try? JSONEncoder().encode(fonts) else { return }
+        defaults.set(data, forKey: importedCustomContentFontsKey)
+    }
+
+    private func importedFontFileExists(_ font: ImportedContentFont) -> Bool {
+        let url = contentFontsDirectoryURL.appendingPathComponent(font.fileName)
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private func upsertImportedCustomFont(_ font: ImportedContentFont) {
+        let storedFonts = storedImportedCustomFonts()
+        if let oldFont = storedFonts.first(where: { $0.id == font.id }),
+           oldFont.fileName != font.fileName {
+            let oldURL = contentFontsDirectoryURL.appendingPathComponent(oldFont.fileName)
+            try? FileManager.default.removeItem(at: oldURL)
+        }
+
+        let fonts = storedFonts.filter { $0.id != font.id } + [font]
+        saveImportedCustomFonts(fonts)
+    }
+
+    private func migrateLegacyCustomContentFontIfNeeded() {
+        guard !defaults.bool(forKey: legacyCustomFontMigrationKey) else { return }
+        defer {
+            defaults.set(true, forKey: legacyCustomFontMigrationKey)
+        }
+        guard storedImportedCustomFonts().isEmpty,
+              let fileName = defaults.string(forKey: contentFontFileNameKey(for: .custom)),
+              let postScriptName = defaults.string(forKey: contentFontPostScriptNameKey(for: .custom))
+        else {
+            return
+        }
+        let legacyFont = ImportedContentFont(
+            id: postScriptName,
+            postScriptName: postScriptName,
+            displayName: defaults.string(forKey: contentFontDisplayNameKey(for: .custom)) ?? postScriptName,
+            fileName: fileName,
+            importedAt: Date(timeIntervalSince1970: 0)
+        )
+        guard importedFontFileExists(legacyFont) else { return }
+        saveImportedCustomFonts([legacyFont])
+        if defaults.string(forKey: "contentFontFamily") == ContentFontFamily.custom.rawValue {
+            defaults.set(legacyFont.id, forKey: selectedImportedContentFontIdKey)
+        }
     }
 
     // MARK: - Bottom Bar
@@ -1025,7 +1687,151 @@ final class AppSettings: DexoObservableObject {
     }
 }
 
-private extension UIFont {
+private enum DexoAppFontOverrideState {
+    static var didInstall = false
+    static var didExchangeSystemFont = false
+    static var didExchangeWeightedSystemFont = false
+    static var didExchangeBoldSystemFont = false
+    static var didExchangeItalicSystemFont = false
+}
+
+private enum DexoAppFontAssociatedKeys {
+    static var sourcePointSize: UInt8 = 0
+    static var baseInterfaceFont: UInt8 = 0
+}
+
+fileprivate extension UIView {
+    var dexoBaseInterfaceFont: UIFont? {
+        get {
+            objc_getAssociatedObject(self, &DexoAppFontAssociatedKeys.baseInterfaceFont) as? UIFont
+        }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &DexoAppFontAssociatedKeys.baseInterfaceFont,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+}
+
+fileprivate extension UIFont {
+    var dexoAppFontSourcePointSize: CGFloat? {
+        (objc_getAssociatedObject(self, &DexoAppFontAssociatedKeys.sourcePointSize) as? NSNumber)
+            .map { CGFloat(truncating: $0) }
+    }
+
+    func dexoMarkAppFontSourcePointSize(_ pointSize: CGFloat) -> UIFont {
+        objc_setAssociatedObject(
+            self,
+            &DexoAppFontAssociatedKeys.sourcePointSize,
+            pointSize,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        return self
+    }
+
+    static func installDexoAppFontOverride() {
+        guard !DexoAppFontOverrideState.didInstall else { return }
+        DexoAppFontOverrideState.didInstall = true
+
+        DexoAppFontOverrideState.didExchangeSystemFont = exchangeClassMethod(
+            #selector(UIFont.systemFont(ofSize:)),
+            with: #selector(UIFont.dexo_systemFont(ofSize:))
+        )
+        DexoAppFontOverrideState.didExchangeWeightedSystemFont = exchangeClassMethod(
+            Selector(("systemFontOfSize:weight:")),
+            with: #selector(UIFont.dexo_systemFont(ofSize:weight:))
+        )
+        DexoAppFontOverrideState.didExchangeBoldSystemFont = exchangeClassMethod(
+            #selector(UIFont.boldSystemFont(ofSize:)),
+            with: #selector(UIFont.dexo_boldSystemFont(ofSize:))
+        )
+        DexoAppFontOverrideState.didExchangeItalicSystemFont = exchangeClassMethod(
+            #selector(UIFont.italicSystemFont(ofSize:)),
+            with: #selector(UIFont.dexo_italicSystemFont(ofSize:))
+        )
+        exchangeClassMethod(Selector(("preferredFontForTextStyle:")), with: #selector(UIFont.dexo_preferredFont(forTextStyle:)))
+        exchangeClassMethod(
+            Selector(("preferredFontForTextStyle:compatibleWithTraitCollection:")),
+            with: #selector(UIFont.dexo_preferredFont(forTextStyle:compatibleWith:))
+        )
+    }
+
+    static func dexoOriginalSystemFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
+        if DexoAppFontOverrideState.didExchangeWeightedSystemFont {
+            return UIFont.dexo_systemFont(ofSize: pointSize, weight: weight.rawValue)
+        }
+        if weight.rawValue >= UIFont.Weight.semibold.rawValue,
+           DexoAppFontOverrideState.didExchangeBoldSystemFont {
+            return UIFont.dexo_boldSystemFont(ofSize: pointSize)
+        }
+        if DexoAppFontOverrideState.didExchangeSystemFont {
+            return UIFont.dexo_systemFont(ofSize: pointSize)
+        }
+        return UIFont.systemFont(ofSize: pointSize, weight: weight)
+    }
+
+    var dexoDetectedWeight: UIFont.Weight {
+        if let traits = fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any],
+           let weight = traits[.weight] as? CGFloat {
+            return UIFont.Weight(rawValue: weight)
+        }
+        if fontDescriptor.symbolicTraits.contains(.traitBold) {
+            return .semibold
+        }
+        return .regular
+    }
+
+    @discardableResult
+    private static func exchangeClassMethod(_ originalSelector: Selector, with swizzledSelector: Selector) -> Bool {
+        guard let originalMethod = class_getClassMethod(UIFont.self, originalSelector),
+              let swizzledMethod = class_getClassMethod(UIFont.self, swizzledSelector)
+        else { return false }
+        method_exchangeImplementations(originalMethod, swizzledMethod)
+        return true
+    }
+
+    @objc class func dexo_systemFont(ofSize pointSize: CGFloat) -> UIFont {
+        let original = UIFont.dexo_systemFont(ofSize: pointSize)
+        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+    }
+
+    @objc(dexo_systemFontOfSize:weight:)
+    class func dexo_systemFont(ofSize pointSize: CGFloat, weight rawWeight: CGFloat) -> UIFont {
+        let weight = UIFont.Weight(rawValue: rawWeight)
+        let original = UIFont.dexo_systemFont(ofSize: pointSize, weight: rawWeight)
+        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: weight, fallback: original)
+    }
+
+    @objc class func dexo_boldSystemFont(ofSize pointSize: CGFloat) -> UIFont {
+        let original = UIFont.dexo_boldSystemFont(ofSize: pointSize)
+        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .bold, fallback: original)
+    }
+
+    @objc class func dexo_italicSystemFont(ofSize pointSize: CGFloat) -> UIFont {
+        let original = UIFont.dexo_italicSystemFont(ofSize: pointSize)
+        let font = AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+        guard let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) else {
+            return font
+        }
+        return UIFont(descriptor: descriptor, size: font.pointSize)
+            .dexoMarkAppFontSourcePointSize(pointSize)
+    }
+
+    @objc(dexo_preferredFontForTextStyle:)
+    class func dexo_preferredFont(forTextStyle style: String) -> UIFont {
+        let original = UIFont.dexo_preferredFont(forTextStyle: style)
+        return AppSettings.shared.appInterfaceFont(matching: original)
+    }
+
+    @objc(dexo_preferredFontForTextStyle:compatibleWithTraitCollection:)
+    class func dexo_preferredFont(forTextStyle style: String, compatibleWith traitCollection: UITraitCollection?) -> UIFont {
+        let original = UIFont.dexo_preferredFont(forTextStyle: style, compatibleWith: traitCollection)
+        return AppSettings.shared.appInterfaceFont(matching: original)
+    }
+
     func applying(weight: UIFont.Weight) -> UIFont {
         guard weight.rawValue >= UIFont.Weight.semibold.rawValue,
               let descriptor = fontDescriptor.withSymbolicTraits(fontDescriptor.symbolicTraits.union(.traitBold))

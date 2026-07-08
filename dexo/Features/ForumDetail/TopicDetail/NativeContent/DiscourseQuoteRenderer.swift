@@ -108,7 +108,9 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
             contentWidth: config.contentWidth - 44,
-            baseURL: config.baseURL
+            baseURL: config.baseURL,
+            postId: config.postId,
+            galleryImageURLs: config.galleryImageURLs
         )
 
         let views = NativeContentRenderer.renderBlocks(content, config: quoteConfig, delegate: delegate)

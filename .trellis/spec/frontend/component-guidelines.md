@@ -31,6 +31,7 @@ Questions to answer:
 - Timeline selection should return the selected post id from `stream`; the view controller may map that id back to the existing native floor-jump loader.
 - Do not derive timeline position from visible table rows, loaded batch size, or filtered post arrays except as a temporary fallback for finding the current visible stream index.
 - The progress entry should remain a compact centered capsule (`current / total`) that opens the timeline on tap and keeps gesture actions attached to the same control.
+- Custom-drawn timeline track views must be explicitly transparent (`isOpaque = false`, clear background) and must keep a fixed/natural visual height inside sheet layouts. Do not pin the track stack to both the sheet title and bottom buttons in a way that stretches the track into a full-height rectangle.
 
 ---
 
@@ -46,7 +47,13 @@ Questions to answer:
 
 <!-- How styles are applied (CSS modules, styled-components, Tailwind, etc.) -->
 
-(To be filled by the team)
+### Typography Baseline
+
+- UIKit interface text uses `AppSettings.appInterfaceFont(...)` or the installed `UIFont.systemFont` override. Do not hardcode a separate visual default for the Me tab or other app chrome.
+- The global interface font slider default is `100%`, but the visual baseline intentionally applies `AppSettings.interfaceFontDefaultVisualMultiplier = 0.85`. A `15pt` source label therefore renders at about `12.75pt` by default.
+- Treat `12.75pt` as the default visual interface body size for Me tab ordinary labels and similar chrome. Do not "fix" this by resetting the slider default to `85%`; `85%` is legacy migration input, not the current user-facing default.
+- Tab bar fonts stay outside global interface scaling and must continue to use `AppSettings.tabBarItemFont(selected:)`.
+- Topic Detail post body and post-context identity text are content typography, not app chrome. Author name, username, user title, floor/time metadata, reply-target labels, and adjacent avatar sizing should scale from the content font settings so they stay visually aligned with comments.
 
 ---
 
@@ -79,9 +86,28 @@ Questions to answer:
 - Standard Home cards and Xiaohongshu two-column cards both need explicit top and bottom content spacing in the table inset path; Xiaohongshu uses the larger top spacing so the first grid row does not visually tuck under the filter chip row after refresh or header collapse changes.
 - Theme changes that switch between standard list and Xiaohongshu grid must call the snapshot rebuild path and recompute table insets; `tableView.reloadData()` alone is not enough.
 
+### Forum Tab Bar And Safe Areas
+
+- `ForumTabBarController` must keep native `hidesBottomBarWhenPushed` tab-bar hiding separate from Home scroll-driven tab-bar hiding.
+- Pushed pages such as `TopicDetailViewController` own their bottom-bar visibility through UIKit's native `hidesBottomBarWhenPushed`; do not apply Home scroll-hide expansion or negative `additionalSafeAreaInsets` compensation while such pages are visible.
+- Home scroll-hide may expand the selected root navigation content into the tab-bar area, but it must not mutate child view controllers' `additionalSafeAreaInsets.bottom` to remove the tab bar. Negative safe-area compensation can leave the system bottom safe-area host visible after a Topic Detail pop.
+- When a navigation transition finishes, `ForumTabBarController` should re-apply the current tab-bar layout from the visible controller state so a popped Home view does not keep the transition container's shorter frame.
+
 ### Topic Detail Image Loading
 
 - Topic Detail content images, inline image attachments, onebox thumbnails, video thumbnails, title emoji, and composer emoji must use the shared `ForumImageLoader` / `AvatarImageLoader.context(for:)` path instead of raw `sd_setImage(with:)` or `SDWebImageManager.loadImage(with:)`.
 - The shared path supplies retry, background continuation, large-image downscaling, and `WebCookieStore` Cookie/User-Agent headers. Bypassing it can make Linux.do images fail behind Cloudflare/CDN or stay blank after a transient first failure.
 - `CookedHTML` parsed blocks expose `imageSourceURLs`; Topic Detail controllers should prefetch newly ready posts after parsing/snapshot updates so image downloads run concurrently before cells become visible.
 - Prefetch should be keyed by post id or another stable content id to avoid repeatedly prefetching the same images during `updateUI()`, theme reloads, or diffable snapshot refreshes.
+- Boost strips must not flatten `cooked` content into `UILabel.text` only. They need to preserve inline emoji image nodes and convert raw `:shortcode:` text through `EmojiStore`, then load images with `ForumImageLoader` so custom emoji work behind Cloudflare.
+- Boost and title emoji URL resolution must go through `EmojiStore` / `ForumImageLoader`, including cached `/emojis.json` entries, relative emoji URLs, alias lookup, and `:shortcode:tN` skin-tone suffix normalization. Direct `SDWebImageManager.loadImage` calls bypass Cookie/User-Agent retry behavior and can leave Linux.do emoji blank.
+- Boost renderers must treat standalone small `/emoji` image blocks as inline emoji attachments instead of falling back to alt text, because Discourse can emit custom emoji outside a paragraph node.
+- Boost strips shown inside comments should display the booster avatar and text content only; do not add the rocket/Boost action icon inside the rendered comment strip. Keep the rocket icon reserved for the actual Boost action button.
+
+### Topic Detail Native Content Blocks
+
+- Discourse poll cooked HTML (`<div class="poll" data-poll-name=...>`) must be decoded at the `CookedHTML` boundary as `ContentBlock.poll(PollBlock)`.
+- Poll options live in `PollBlock.options` and are rendered by `PollRenderer`; the inner poll `<ul>/<li>` must not fall through to `ListExtractor` or `ListRenderer`.
+- Poll UI must not be a static card. `PollRenderer` should render selectable controls, submit `postId + pollName + optionIds` through `PostCellDelegate`, call the Discourse `/polls/vote` route from the owning controller/view model, then refresh and re-parse the affected post so vote counts and selected state come from server cooked HTML.
+- If poll HTML changes, update `BlockExtractorTests.testDiscoursePollDoesNotBecomeList` or an equivalent parser test before changing the renderer. A screenshot-only UI check is not enough because this bug happens at the parser boundary.
+- If poll result metadata changes, update parser tests for `votersCount`, option vote count, percentage text, and selected option state before changing `PollRenderer`.

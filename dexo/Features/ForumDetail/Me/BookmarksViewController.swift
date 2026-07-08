@@ -12,7 +12,7 @@ final class BookmarksViewController: ObservableViewController {
         tv.delegate = self
         tv.dataSource = self
         tv.separatorStyle = .none
-        tv.backgroundColor = .systemGroupedBackground
+        tv.backgroundColor = .clear
         tv.rowHeight = UITableView.automaticDimension
         tv.estimatedRowHeight = BookmarkCell.estimatedHeight
         tv.showsVerticalScrollIndicator = false
@@ -102,7 +102,7 @@ final class BookmarksViewController: ObservableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "me.bookmarks")
-        view.backgroundColor = .systemGroupedBackground
+        applyThemeStyle()
 
         tableView.refreshControl = refreshControl
 
@@ -138,6 +138,7 @@ final class BookmarksViewController: ObservableViewController {
 
     override func updateUI() {
         refreshControl.endRefreshing()
+        applyThemeStyle()
 
         let hasBookmarks = !viewModel.bookmarks.isEmpty
         if viewModel.isLoading && !hasBookmarks {
@@ -173,6 +174,19 @@ final class BookmarksViewController: ObservableViewController {
         }
 
         tableView.reloadData()
+    }
+
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        let pageBackground = themeStyle.topicListBackgroundColor
+        view.backgroundColor = pageBackground
+        tableView.backgroundColor = pageBackground
+        view.tintColor = themeStyle.accentColor
+        refreshControl.tintColor = themeStyle.accentColor
+        activityIndicator.color = themeStyle.accentColor
+        stateIconView.tintColor = themeStyle.accentColor.withAlphaComponent(0.78)
+        loginButton.tintColor = themeStyle.accentColor
+        retryButton.tintColor = themeStyle.accentColor
     }
 
     private func configureState(iconName: String, text: String, showLogin: Bool, showRetry: Bool) {

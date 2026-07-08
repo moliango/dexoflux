@@ -11,6 +11,35 @@ enum TopicTagVisualStyle {
     }
 }
 
+private enum TopicListTypography {
+    static func scaledFont(
+        ofSize pointSize: CGFloat,
+        weight: UIFont.Weight,
+        relativeTo textStyle: UIFont.TextStyle
+    ) -> UIFont {
+        let settings = AppSettings.shared
+        let adjustedPointSize = settings.effectiveInterfacePointSize(for: pointSize)
+        let baseFont = UIFont.systemFont(ofSize: adjustedPointSize, weight: weight)
+        let interfaceFont = settings.appInterfaceFont(matching: baseFont)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: interfaceFont)
+    }
+
+    static func fixedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let settings = AppSettings.shared
+        let adjustedPointSize = settings.effectiveInterfacePointSize(for: pointSize)
+        let baseFont = UIFont.systemFont(ofSize: adjustedPointSize, weight: weight)
+        return settings.appInterfaceFont(matching: baseFont)
+    }
+
+    static func topicTitleFont(relativeTo textStyle: UIFont.TextStyle) -> UIFont {
+        let settings = AppSettings.shared
+        let pointSize = settings.sourceInterfacePointSize(
+            matchingEffectivePointSize: AppSettings.topicTitleReferencePointSize
+        )
+        return scaledFont(ofSize: pointSize, weight: .semibold, relativeTo: textStyle)
+    }
+}
+
 struct XiaohongshuTopicCardModel {
     let id: Int
     let title: String
@@ -31,8 +60,8 @@ final class TopicCell: UITableViewCell {
     private var currentAvatarURL: URL?
 
     private enum Metrics {
-        static let titleFontSize: CGFloat = 16
-        static let titleLineHeight: CGFloat = 21
+        static let titleFontSize = AppSettings.topicTitleReferencePointSize
+        static let titleLineHeight: CGFloat = 20
         static let titleMaxLines = 3
         static let titleTopPadding: CGFloat = 9
         static let titleToBadgeMinimumSpacing: CGFloat = 7
@@ -60,9 +89,7 @@ final class TopicCell: UITableViewCell {
 
     private let titleLabel: TopicTitleLabel = {
         let label = TopicTitleLabel()
-        label.font = UIFontMetrics(forTextStyle: .headline).scaledFont(
-            for: .systemFont(ofSize: Metrics.titleFontSize, weight: .semibold)
-        )
+        label.font = TopicListTypography.topicTitleFont(relativeTo: .headline)
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = Metrics.titleMaxLines
         label.lineBreakMode = .byTruncatingTail
@@ -93,7 +120,7 @@ final class TopicCell: UITableViewCell {
 
     private let timeLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 12)
+        label.font = TopicListTypography.fixedFont(ofSize: 12, weight: .regular)
         label.textColor = .secondaryLabel
         label.textAlignment = .right
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -164,6 +191,7 @@ final class TopicCell: UITableViewCell {
     ) {
         let themeStyle = AppSettings.shared.themeStyle
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
+        applyTypography()
         configureTitleWithEmoji(topic.fancyTitle)
 
         let replies = max(topic.postsCount - 1, 0)
@@ -183,6 +211,11 @@ final class TopicCell: UITableViewCell {
             currentAvatarURL = avatarURL
             AvatarImageLoader.setImage(on: avatarImageView, url: avatarURL)
         }
+    }
+
+    private func applyTypography() {
+        titleLabel.font = TopicListTypography.topicTitleFont(relativeTo: .headline)
+        timeLabel.font = TopicListTypography.fixedFont(ofSize: 12, weight: .regular)
     }
 
     override func prepareForReuse() {
@@ -265,7 +298,7 @@ final class TopicCell: UITableViewCell {
     private func loadEmojiImages(in attributedString: NSMutableAttributedString) {
         attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length)) { value, _, _ in
             guard let attachment = value as? EmojiTextAttachment, let url = attachment.emojiURL else { return }
-            SDWebImageManager.shared.loadImage(with: url, options: [.retryFailed], progress: nil) { [weak self] image, _, _, _, _, _ in
+            ForumImageLoader.loadImage(with: url) { [weak self] image in
                 guard let image, let self else { return }
                 attachment.image = image
                 self.titleLabel.setNeedsDisplay()
@@ -436,7 +469,7 @@ private final class XiaohongshuTopicCardView: UIControl {
 
     private let previewLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.font = TopicListTypography.fixedFont(ofSize: 13, weight: .medium)
         label.numberOfLines = 4
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -445,8 +478,10 @@ private final class XiaohongshuTopicCardView: UIControl {
 
     private let titleLabel: TopicTitleLabel = {
         let label = TopicTitleLabel()
-        label.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
-            for: .systemFont(ofSize: 14, weight: .semibold)
+        label.font = TopicListTypography.scaledFont(
+            ofSize: 14,
+            weight: .semibold,
+            relativeTo: .subheadline
         )
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 2
@@ -467,7 +502,7 @@ private final class XiaohongshuTopicCardView: UIControl {
 
     private let usernameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.font = TopicListTypography.fixedFont(ofSize: 11, weight: .medium)
         label.textColor = .secondaryLabel
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -526,7 +561,7 @@ private final class XiaohongshuTopicCardView: UIControl {
 
     override var isHighlighted: Bool {
         didSet {
-            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            DexoMotion.animate(duration: DexoMotion.quick) {
                 self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
                 self.alpha = self.isHighlighted ? 0.86 : 1
             }
@@ -648,6 +683,7 @@ private final class XiaohongshuTopicCardView: UIControl {
         topicId = model.id
         accessibilityLabel = model.title
         accessibilityTraits = [.button]
+        applyTypography()
 
         let seed = model.tags.first ?? model.categoryName ?? model.title
         let accentColor = TopicTagVisualStyle.color(for: seed)
@@ -686,6 +722,7 @@ private final class XiaohongshuTopicCardView: UIControl {
     private func resetContent() {
         topicId = nil
         titleLabel.text = nil
+        titleLabel.attributedText = nil
         previewLabel.text = nil
         usernameLabel.text = nil
         replyCountLabel.text = nil
@@ -697,6 +734,12 @@ private final class XiaohongshuTopicCardView: UIControl {
             badgeStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+    }
+
+    private func applyTypography() {
+        previewLabel.font = TopicListTypography.fixedFont(ofSize: 13, weight: .medium)
+        titleLabel.font = TopicListTypography.topicTitleFont(relativeTo: .headline)
+        usernameLabel.font = TopicListTypography.fixedFont(ofSize: 11, weight: .medium)
     }
 
     private func configureBadges(model: XiaohongshuTopicCardModel) {
@@ -917,7 +960,7 @@ private final class TopicBadgeView: UIView {
 
         let label = UILabel()
         label.text = text
-        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.font = TopicListTypography.fixedFont(ofSize: 10, weight: .medium)
         label.textColor = style.textColor
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)

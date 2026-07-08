@@ -12,6 +12,7 @@ final class MeViewController: ObservableViewController {
     private let profileCard = MeProfileCardView()
     private let statsCard = MeStatsCardView()
     private let actionsCard = MeActionCardView()
+    private let loadingSkeletonView = MeDashboardSkeletonView()
 
     private lazy var scrollView: UIScrollView = {
         let sv = UIScrollView()
@@ -57,7 +58,7 @@ final class MeViewController: ObservableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "tab.me")
-        view.backgroundColor = .systemGroupedBackground
+        applyThemeStyle()
 
         setupLayout()
         setupActions()
@@ -65,13 +66,23 @@ final class MeViewController: ObservableViewController {
     }
 
     override func updateUI() {
-        if viewModel.isLoading {
-            activityIndicator.startAnimating()
-        } else {
-            activityIndicator.stopAnimating()
+        applyThemeStyle()
+        if !viewModel.isLoading, refreshControl.isRefreshing {
+            refreshControl.endRefreshing()
         }
+        activityIndicator.stopAnimating()
+
+        let isLoggedIn = (authGate?.isAuthenticated() ?? false) && !viewModel.requiresLogin
+        let showsInitialSkeleton = viewModel.isLoading
+            && isLoggedIn
+            && viewModel.currentUser == nil
+            && viewModel.userProfile == nil
+        loadingSkeletonView.setSkeletonActive(showsInitialSkeleton, animated: view.window != nil)
+        scrollView.isHidden = showsInitialSkeleton
 
         if let error = viewModel.errorMessage {
+            loadingSkeletonView.setSkeletonActive(false, animated: view.window != nil)
+            scrollView.isHidden = false
             let alert = UIAlertController(title: nil, message: error, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
             present(alert, animated: true)
@@ -79,7 +90,6 @@ final class MeViewController: ObservableViewController {
             return
         }
 
-        let isLoggedIn = authGate?.isAuthenticated() ?? false
         if isLoggedIn {
             profileCard.configure(
                 user: viewModel.currentUser,
@@ -99,6 +109,7 @@ final class MeViewController: ObservableViewController {
         scrollView.refreshControl = refreshControl
 
         view.addSubview(scrollView)
+        view.addSubview(loadingSkeletonView)
         view.addSubview(activityIndicator)
         scrollView.addSubview(contentStackView)
 
@@ -112,6 +123,11 @@ final class MeViewController: ObservableViewController {
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            loadingSkeletonView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
+            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            loadingSkeletonView.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -28),
 
             contentStackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 14),
             contentStackView.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor, constant: 16),
@@ -133,6 +149,15 @@ final class MeViewController: ObservableViewController {
         statsCard.onCustomizeTapped = { [weak self] in
             self?.showStatsCustomizer()
         }
+    }
+
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        view.backgroundColor = themeStyle.topicListBackgroundColor
+        scrollView.backgroundColor = themeStyle.topicListBackgroundColor
+        refreshControl.tintColor = themeStyle.accentColor
+        activityIndicator.color = themeStyle.accentColor
+        loadingSkeletonView.applyThemeStyle()
     }
 
     private func makeAuthButtonContainer() -> UIView {
@@ -217,9 +242,13 @@ final class MeViewController: ObservableViewController {
     }
 
     private func loadData() {
-        guard authGate?.isAuthenticated() == true else { return }
+        guard authGate?.isAuthenticated() == true else {
+            MeProfileCacheStore.clear(baseURL: api.baseURL)
+            viewModel.clearSessionState(requiresLogin: true)
+            return
+        }
         Task {
-            await viewModel.reload()
+            await viewModel.loadProfile()
         }
     }
 
@@ -258,10 +287,7 @@ final class MeViewController: ObservableViewController {
         alert.addAction(UIAlertAction(title: String(localized: "me.logout"), style: .destructive) { [weak self] _ in
             guard let self else { return }
             self.authGate?.performLogout()
-            self.viewModel.currentUser = nil
-            self.viewModel.userProfile = nil
-            self.viewModel.summary = nil
-            self.viewModel.requiresLogin = true
+            self.viewModel.clearSessionState(requiresLogin: true)
             self.updateUI()
         })
         alert.addAction(UIAlertAction(title: String(localized: "cancel"), style: .cancel))
@@ -889,6 +915,203 @@ private final class MeStatsPreferences {
         set {
             defaults.set(newValue.map(\.rawValue), forKey: key)
         }
+    }
+}
+
+private final class MeDashboardSkeletonView: DexoSkeletonPlaceholderView {
+    private var cardSurfaces: [UIView] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        skeletonContentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: skeletonContentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: skeletonContentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: skeletonContentView.trailingAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: skeletonContentView.bottomAnchor),
+        ])
+
+        stack.addArrangedSubview(makeProfileCard())
+        stack.addArrangedSubview(makeStatsCard())
+        stack.addArrangedSubview(makeActionsCard())
+        applyThemeStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        applySkeletonTheme(
+            backgroundColor: .clear,
+            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
+        )
+        cardSurfaces.forEach {
+            $0.backgroundColor = themeStyle.topicCardBackgroundColor
+            $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.20).cgColor
+        }
+    }
+
+    private func makeCardSurface(height: CGFloat) -> UIView {
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = 18
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 0.5
+        cardSurfaces.append(card)
+        card.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return card
+    }
+
+    private func makeProfileCard() -> UIView {
+        let card = makeCardSurface(height: 108)
+        let avatar = makeSkeletonBlock(cornerRadius: 36)
+        let name = makeSkeletonBlock(cornerRadius: 6)
+        let username = makeSkeletonBlock(cornerRadius: 5)
+        let badge = makeSkeletonBlock(cornerRadius: 11)
+
+        [avatar, name, username, badge].forEach { card.addSubview($0) }
+
+        NSLayoutConstraint.activate([
+            avatar.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            avatar.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            avatar.widthAnchor.constraint(equalToConstant: 72),
+            avatar.heightAnchor.constraint(equalToConstant: 72),
+
+            name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 16),
+            name.topAnchor.constraint(equalTo: avatar.topAnchor, constant: 6),
+            name.widthAnchor.constraint(equalToConstant: 156),
+            name.heightAnchor.constraint(equalToConstant: 20),
+
+            username.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+            username.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 10),
+            username.widthAnchor.constraint(equalToConstant: 118),
+            username.heightAnchor.constraint(equalToConstant: 14),
+
+            badge.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+            badge.topAnchor.constraint(equalTo: username.bottomAnchor, constant: 10),
+            badge.widthAnchor.constraint(equalToConstant: 82),
+            badge.heightAnchor.constraint(equalToConstant: 22),
+        ])
+
+        return card
+    }
+
+    private func makeStatsCard() -> UIView {
+        let card = makeCardSurface(height: 142)
+        let title = makeSkeletonBlock(cornerRadius: 6)
+        card.addSubview(title)
+
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            title.widthAnchor.constraint(equalToConstant: 110),
+            title.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        var previous: UIView?
+        for index in 0 ..< 4 {
+            let column = UIView()
+            column.translatesAutoresizingMaskIntoConstraints = false
+            let icon = makeSkeletonBlock(cornerRadius: 12)
+            let value = makeSkeletonBlock(cornerRadius: 5)
+            let label = makeSkeletonBlock(cornerRadius: 4)
+            column.addSubview(icon)
+            column.addSubview(value)
+            column.addSubview(label)
+            card.addSubview(column)
+
+            NSLayoutConstraint.activate([
+                column.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 20),
+                column.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+                column.widthAnchor.constraint(equalTo: card.widthAnchor, multiplier: 0.20),
+
+                icon.topAnchor.constraint(equalTo: column.topAnchor),
+                icon.centerXAnchor.constraint(equalTo: column.centerXAnchor),
+                icon.widthAnchor.constraint(equalToConstant: 34),
+                icon.heightAnchor.constraint(equalToConstant: 34),
+
+                value.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 9),
+                value.centerXAnchor.constraint(equalTo: column.centerXAnchor),
+                value.widthAnchor.constraint(equalToConstant: 44),
+                value.heightAnchor.constraint(equalToConstant: 16),
+
+                label.topAnchor.constraint(equalTo: value.bottomAnchor, constant: 8),
+                label.centerXAnchor.constraint(equalTo: column.centerXAnchor),
+                label.widthAnchor.constraint(equalToConstant: 52),
+                label.heightAnchor.constraint(equalToConstant: 10),
+            ])
+
+            if let previous {
+                column.leadingAnchor.constraint(equalTo: previous.trailingAnchor, constant: 8).isActive = true
+            } else {
+                column.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14).isActive = true
+            }
+            if index == 3 {
+                column.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14).isActive = true
+            }
+            previous = column
+        }
+
+        return card
+    }
+
+    private func makeActionsCard() -> UIView {
+        let card = makeCardSurface(height: 224)
+        let title = makeSkeletonBlock(cornerRadius: 6)
+        card.addSubview(title)
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            title.widthAnchor.constraint(equalToConstant: 128),
+            title.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        var previousRow: UIView = title
+        for _ in 0 ..< 3 {
+            let row = UIView()
+            row.translatesAutoresizingMaskIntoConstraints = false
+            let icon = makeSkeletonBlock(cornerRadius: 11)
+            let rowTitle = makeSkeletonBlock(cornerRadius: 5)
+            let subtitle = makeSkeletonBlock(cornerRadius: 4)
+            row.addSubview(icon)
+            row.addSubview(rowTitle)
+            row.addSubview(subtitle)
+            card.addSubview(row)
+
+            NSLayoutConstraint.activate([
+                row.topAnchor.constraint(equalTo: previousRow.bottomAnchor, constant: previousRow === title ? 14 : 0),
+                row.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                row.heightAnchor.constraint(equalToConstant: 56),
+
+                icon.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+                icon.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                icon.widthAnchor.constraint(equalToConstant: 38),
+                icon.heightAnchor.constraint(equalToConstant: 38),
+
+                rowTitle.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 14),
+                rowTitle.topAnchor.constraint(equalTo: row.topAnchor, constant: 12),
+                rowTitle.widthAnchor.constraint(equalToConstant: 136),
+                rowTitle.heightAnchor.constraint(equalToConstant: 14),
+
+                subtitle.leadingAnchor.constraint(equalTo: rowTitle.leadingAnchor),
+                subtitle.topAnchor.constraint(equalTo: rowTitle.bottomAnchor, constant: 8),
+                subtitle.widthAnchor.constraint(equalToConstant: 188),
+                subtitle.heightAnchor.constraint(equalToConstant: 11),
+            ])
+            previousRow = row
+        }
+
+        return card
     }
 }
 

@@ -11,6 +11,65 @@ public struct ListItem: Sendable, Equatable {
     }
 }
 
+public struct PollOption: Sendable, Equatable {
+    public let id: String?
+    public let text: String
+    public let voteCount: Int?
+    public let percentageText: String?
+    public let isSelected: Bool
+
+    public init(
+        id: String?,
+        text: String,
+        voteCount: Int? = nil,
+        percentageText: String? = nil,
+        isSelected: Bool = false
+    ) {
+        self.id = id
+        self.text = text
+        self.voteCount = voteCount
+        self.percentageText = percentageText
+        self.isSelected = isSelected
+    }
+}
+
+public struct PollBlock: Sendable, Equatable {
+    public let name: String?
+    public let status: String?
+    public let type: String?
+    public let options: [PollOption]
+    public let votersText: String?
+    public let votersCount: Int?
+    public let minSelections: Int?
+    public let maxSelections: Int?
+    public let resultsMode: String?
+    public let isPublic: Bool
+
+    public init(
+        name: String?,
+        status: String?,
+        type: String?,
+        options: [PollOption],
+        votersText: String?,
+        votersCount: Int? = nil,
+        minSelections: Int? = nil,
+        maxSelections: Int? = nil,
+        resultsMode: String? = nil,
+        isPublic: Bool = false
+    ) {
+        self.name = name
+        self.status = status
+        self.type = type
+        self.options = options
+        self.votersText = votersText
+        self.votersCount = votersCount
+        self.minSelections = minSelections
+        self.maxSelections = maxSelections
+        self.resultsMode = resultsMode
+        self.isPublic = isPublic
+    }
+}
+
 /// A content block annotated with its original source HTML.
 public struct AnnotatedBlock: Sendable {
     public let block: ContentBlock
@@ -33,6 +92,7 @@ public enum ContentBlock: Sendable, Equatable {
     case onebox(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String? = nil)
     case video(url: String, thumbnailURL: String?, title: String?, width: Int?, height: Int?, videoId: String?, provider: String?)
     case list(ordered: Bool, items: [ListItem])
+    case poll(PollBlock)
     case table(headers: [[ContentBlock]], rows: [[[ContentBlock]]])
     case details(summary: [InlineNode], content: [ContentBlock])
     case spoiler(blocks: [ContentBlock])
@@ -68,7 +128,7 @@ public extension ContentBlock {
                 + rows.flatMap { row in row.flatMap(\.imageSourceURLs) }
         case .details(let summary, let content):
             return summary.imageSourceURLs + content.imageSourceURLs
-        case .codeBlock, .divider, .rawHTML:
+        case .codeBlock, .poll, .divider, .rawHTML:
             return []
         }
     }

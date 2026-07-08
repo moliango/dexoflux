@@ -31,7 +31,13 @@ final class RepliesViewController: UIViewController {
             return UITableViewCell()
         }
         let postLink = "\(self.baseURL)/t/\(self.topicId)/\(post.postNumber)"
-        let config = NativeRenderConfig.default(contentWidth: tableView.bounds.width - 24, baseURL: self.baseURL)
+        let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
+        let config = NativeRenderConfig.default(
+            contentWidth: tableView.bounds.width - 24,
+            baseURL: self.baseURL,
+            postId: post.id,
+            galleryImageURLs: galleryImageURLs
+        )
         let hasUnsupported = self.unsupportedPostIds.contains(postId)
         cell.configure(
             with: post,
@@ -88,11 +94,19 @@ final class RepliesViewController: UIViewController {
         Task {
             await loadReplies()
         }
+        Task {
+            await api.loadOrFetchEmojiMap()
+            tableView.reloadData()
+        }
     }
 
     // MARK: - Data Loading
 
-    private func loadReplies() async {
+    private func loadReplies(
+        pollVoteResponse: DiscoursePollVoteResponse? = nil,
+        votedPostId: Int? = nil,
+        submittedOptionIds: Set<String> = []
+    ) async {
         activityIndicator.startAnimating()
 
         do {
@@ -101,15 +115,30 @@ final class RepliesViewController: UIViewController {
             parsedBlocks = [:]
             unsupportedPostIds = []
 
-            for post in response {
-                let annotated = CookedHTMLParser.parseAnnotated(html: post.cooked, baseURL: baseURL)
-                parsedBlocks[post.id] = annotated
-                let hasUnsupported = annotated.contains { ab in
-                    !NativeContentRenderer.renderers.contains { $0.canRender(ab.block) }
+            let snapshots = response.map { TopicDetailPostHTML(postId: $0.id, cooked: $0.cooked) }
+            let parsedReplies = await TopicDetailHTMLParsing.parse(posts: snapshots, baseURL: baseURL)
+            let repliesById = Dictionary(uniqueKeysWithValues: response.map { ($0.id, $0) })
+            for parsedReply in parsedReplies {
+                if let reply = repliesById[parsedReply.postId] {
+                    parsedBlocks[parsedReply.postId] = TopicDetailPollResultMerger.mergeInitialPollState(
+                        blocks: parsedReply.annotatedBlocks,
+                        post: reply
+                    )
+                } else {
+                    parsedBlocks[parsedReply.postId] = parsedReply.annotatedBlocks
                 }
-                if hasUnsupported {
-                    unsupportedPostIds.insert(post.id)
+                if parsedReply.hasUnsupportedBlocks {
+                    unsupportedPostIds.insert(parsedReply.postId)
                 }
+            }
+            if let pollVoteResponse,
+               let votedPostId,
+               let blocks = parsedBlocks[votedPostId] {
+                parsedBlocks[votedPostId] = TopicDetailPollResultMerger.merge(
+                    blocks: blocks,
+                    voteResponse: pollVoteResponse,
+                    submittedOptionIds: submittedOptionIds
+                )
             }
             prefetchReplyImages()
 
@@ -145,9 +174,8 @@ extension RepliesViewController: UITableViewDelegate {
 // MARK: - PostCellDelegate
 
 extension RepliesViewController: PostCellDelegate {
-    func postCell(didTapImageURL url: URL) {
-        let safari = SFSafariViewController(url: url)
-        present(safari, animated: true)
+    func postCell(didTapImageURL url: URL, imageURLs: [URL]) {
+        presentTopicImageGallery(currentURL: url, imageURLs: imageURLs)
     }
 
     func postCell(didTapLinkURL url: URL) {
@@ -203,6 +231,25 @@ extension RepliesViewController: PostCellDelegate {
                 do {
                     try await self.api.toggleReaction(postId: post.id, reactionId: reactionId)
                     await self.loadReplies()
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
+    func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String]) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    let voteResponse = try await self.api.votePoll(postId: postId, pollName: pollName, optionIds: optionIds)
+                    let submittedOptionIds = Set(optionIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+                    await self.loadReplies(
+                        pollVoteResponse: voteResponse,
+                        votedPostId: postId,
+                        submittedOptionIds: submittedOptionIds
+                    )
                 } catch {
                     self.showPostActionError(error)
                 }
@@ -343,6 +390,10 @@ extension RepliesViewController: PostCellDelegate {
     }
 
     private func presentSafari(_ url: URL) {
+        guard AppSettings.shared.openExternalLinksInAppBrowser else {
+            UIApplication.shared.open(url)
+            return
+        }
         let safari = SFSafariViewController(url: url)
         present(safari, animated: true)
     }

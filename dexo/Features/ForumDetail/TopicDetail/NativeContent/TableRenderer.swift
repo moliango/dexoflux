@@ -98,7 +98,9 @@ enum TableRenderer: BlockRenderer {
                 codeFont: config.codeFont,
                 codeBackgroundColor: config.codeBackgroundColor,
                 contentWidth: innerWidth,
-                baseURL: config.baseURL
+                baseURL: config.baseURL,
+                postId: config.postId,
+                galleryImageURLs: config.galleryImageURLs
             )
 
             // Rescale images to fill cell width (TappableImageContainer uses 690px reference)

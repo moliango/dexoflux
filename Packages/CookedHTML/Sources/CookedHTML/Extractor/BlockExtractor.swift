@@ -254,6 +254,10 @@ enum BlockExtractor {
     private static func extractDiv(from element: Element, options: ParseOptions) -> [ContentBlock] {
         let classAttr = (try? element.attr("class")) ?? ""
 
+        if hasClassToken("poll", in: classAttr), let poll = extractPoll(from: element) {
+            return [.poll(poll)]
+        }
+
         // Lightbox wrapper
         if classAttr.contains("lightbox-wrapper") {
             if let img = try? element.select("img").first() {
@@ -282,6 +286,125 @@ enum BlockExtractor {
         let inner = extract(from: element, options: options)
         if inner.isEmpty { return [] }
         return inner
+    }
+
+    private static func extractPoll(from element: Element) -> PollBlock? {
+        let options = pollOptions(from: element)
+        guard !options.isEmpty else { return nil }
+
+        let name = nonEmptyAttribute("data-poll-name", from: element)
+        let status = nonEmptyAttribute("data-poll-status", from: element)
+        let type = nonEmptyAttribute("data-poll-type", from: element)
+        let votersText = (try? element.select(".poll-info").first()?.text())
+            .flatMap(normalizedNonEmptyText)
+        let votersCount = pollVotersCount(from: element, votersText: votersText)
+
+        return PollBlock(
+            name: name,
+            status: status,
+            type: type,
+            options: options,
+            votersText: votersText,
+            votersCount: votersCount,
+            minSelections: lossyIntAttribute("data-poll-min", from: element),
+            maxSelections: lossyIntAttribute("data-poll-max", from: element),
+            resultsMode: nonEmptyAttribute("data-poll-results", from: element),
+            isPublic: boolAttribute("data-poll-public", from: element)
+        )
+    }
+
+    private static func pollOptions(from element: Element) -> [PollOption] {
+        let optionElements = (try? element.select("li[data-poll-option-id]")) ?? Elements()
+        return optionElements.array().compactMap { optionElement in
+            let text = pollOptionText(from: optionElement)
+            guard !text.isEmpty else { return nil }
+            return PollOption(
+                id: nonEmptyAttribute("data-poll-option-id", from: optionElement),
+                text: text,
+                voteCount: pollOptionVoteCount(from: optionElement),
+                percentageText: pollOptionPercentageText(from: optionElement),
+                isSelected: pollOptionIsSelected(optionElement)
+            )
+        }
+    }
+
+    private static func pollOptionVoteCount(from element: Element) -> Int? {
+        for name in ["data-poll-option-votes", "data-votes", "data-poll-votes"] {
+            if let value = lossyIntAttribute(name, from: element) {
+                return value
+            }
+        }
+        let selectors = [".poll-option-votes", ".option-votes", ".votes"]
+        for selector in selectors {
+            if let text = (try? element.select(selector).first()?.text()).flatMap(normalizedNonEmptyText),
+               let value = firstInteger(in: text) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func pollOptionPercentageText(from element: Element) -> String? {
+        for name in ["data-poll-option-percentage", "data-percentage"] {
+            if let text = nonEmptyAttribute(name, from: element) {
+                return normalizedPercentageText(text)
+            }
+        }
+        let selectors = [".percentage", ".poll-option-percentage", ".option-percentage"]
+        for selector in selectors {
+            if let text = (try? element.select(selector).first()?.text()).flatMap(normalizedNonEmptyText) {
+                return normalizedPercentageText(text)
+            }
+        }
+        return nil
+    }
+
+    private static func pollOptionIsSelected(_ element: Element) -> Bool {
+        let classAttr = (try? element.attr("class")) ?? ""
+        let selectedTokens = ["chosen", "selected", "voted", "is-selected", "is-chosen"]
+        if selectedTokens.contains(where: { hasClassToken($0, in: classAttr) }) {
+            return true
+        }
+        for name in ["data-poll-option-selected", "data-selected", "aria-checked"] {
+            if boolAttribute(name, from: element) {
+                return true
+            }
+        }
+        if (try? element.select("input[checked]").first()) != nil {
+            return true
+        }
+        return false
+    }
+
+    private static func pollVotersCount(from element: Element, votersText: String?) -> Int? {
+        if let value = lossyIntAttribute("data-poll-voters", from: element) {
+            return value
+        }
+        if let text = (try? element.select(".poll-info .info-number").first()?.text()).flatMap(normalizedNonEmptyText),
+           let value = firstInteger(in: text) {
+            return value
+        }
+        if let votersText {
+            return firstInteger(in: votersText)
+        }
+        return nil
+    }
+
+    private static func pollOptionText(from element: Element) -> String {
+        if let paragraph = try? element.select("p").first(),
+           let text = normalizedNonEmptyText(try? paragraph.text()) {
+            return text
+        }
+        if let label = try? element.select("label").first(),
+           let text = normalizedNonEmptyText(try? label.text()) {
+            return text
+        }
+        return normalizedNonEmptyText(try? element.text()) ?? ""
+    }
+
+    private static func normalizedPercentageText(_ text: String) -> String {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.contains("%") ? normalized : "\(normalized)%"
     }
 
     private static func extractVideo(from element: Element, options: ParseOptions) -> [ContentBlock] {
@@ -332,6 +455,44 @@ enum BlockExtractor {
 
     private static func isBlockElement(_ element: Element) -> Bool {
         blockTags.contains(element.tagName().lowercased())
+    }
+
+    private static func hasClassToken(_ token: String, in classAttr: String) -> Bool {
+        classAttr
+            .split(whereSeparator: { $0.isWhitespace })
+            .contains { $0 == token }
+    }
+
+    private static func nonEmptyAttribute(_ name: String, from element: Element) -> String? {
+        normalizedNonEmptyText(try? element.attr(name))
+    }
+
+    private static func lossyIntAttribute(_ name: String, from element: Element) -> Int? {
+        nonEmptyAttribute(name, from: element).flatMap(firstInteger(in:))
+    }
+
+    private static func boolAttribute(_ name: String, from element: Element) -> Bool {
+        guard let raw = nonEmptyAttribute(name, from: element)?.lowercased() else {
+            return false
+        }
+        return raw == "true" || raw == "1" || raw == "yes" || raw == "checked"
+    }
+
+    private static func firstInteger(in text: String) -> Int? {
+        let pattern = #"-?\d+"#
+        guard let range = text.range(of: pattern, options: .regularExpression) else {
+            return nil
+        }
+        return Int(text[range])
+    }
+
+    private static func normalizedNonEmptyText(_ text: String?) -> String? {
+        guard let normalized = text?
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !normalized.isEmpty
+        else { return nil }
+        return normalized
     }
 
     /// Trim whitespace-only paragraphs.

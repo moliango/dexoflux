@@ -1,7 +1,5 @@
 import CookedHTML
-import Lightbox
 import SafariServices
-import SDWebImage
 import UIKit
 
 enum ForumInternalLinkDestination {
@@ -226,7 +224,10 @@ final class TopicDetailViewController: ObservableViewController {
     private var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
     private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
     private var lastContentFontSize = AppSettings.shared.contentFontSize
+    private var lastContentFontScalePercent = AppSettings.shared.contentFontScalePercent
     private var lastContentFontFamily = AppSettings.shared.contentFontFamily
+    private var lastContentFontScope = AppSettings.shared.contentFontScope
+    private var lastInterfaceFontScalePercent = AppSettings.shared.interfaceFontScalePercent
     private var lastThemeStyle = AppSettings.shared.themeStyle
     private var hasPresentedInitialContent = false
     private var isHandlingBackSwipeFallback = false
@@ -293,7 +294,13 @@ final class TopicDetailViewController: ObservableViewController {
         let renderContentWidth = floorNumber == 1
             ? PostNativeCell.firstPostRenderContentWidth(for: tableView.bounds.width)
             : tableView.bounds.width - 24
-        let config = NativeRenderConfig.default(contentWidth: renderContentWidth, baseURL: self.baseURL)
+        let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
+        let config = NativeRenderConfig.default(
+            contentWidth: renderContentWidth,
+            baseURL: self.baseURL,
+            postId: post.id,
+            galleryImageURLs: galleryImageURLs
+        )
         let hasUnsupported = self.viewModel.unsupportedPostIds.contains(postId)
 
         cell.configure(
@@ -318,11 +325,11 @@ final class TopicDetailViewController: ObservableViewController {
         return ai
     }()
 
+    private let loadingSkeletonView = TopicDetailSkeletonView()
+
     private let titleLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFontMetrics(forTextStyle: .title2).scaledFont(
-            for: .systemFont(ofSize: 22, weight: .semibold)
-        )
+        label.font = TopicDetailTypography.topicTitleFont()
         label.adjustsFontForContentSizeCategory = true
         label.numberOfLines = 0
         return label
@@ -453,9 +460,11 @@ final class TopicDetailViewController: ObservableViewController {
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
         title = String(localized: "topic_detail.default_title")
+        applyTypography()
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
         view.addSubview(tableView)
+        view.addSubview(loadingSkeletonView)
         view.addSubview(activityIndicator)
         view.addSubview(errorLabel)
         view.addSubview(bottomBar)
@@ -470,6 +479,11 @@ final class TopicDetailViewController: ObservableViewController {
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            loadingSkeletonView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingSkeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -499,6 +513,7 @@ final class TopicDetailViewController: ObservableViewController {
             await api.loadOrFetchEmojiMap()
             hasTitleHeader = false
             updateUI()
+            tableView.reloadData()
         }
     }
 
@@ -555,14 +570,21 @@ final class TopicDetailViewController: ObservableViewController {
         let settings = AppSettings.shared
         tableView.showsVerticalScrollIndicator = !settings.hideScrollIndicators
         applyThemeStyle()
+        applyTypography()
         let didChangeThemeStyle = lastThemeStyle != settings.themeStyle
         let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
             || lastContentFontSize != settings.contentFontSize
+            || lastContentFontScalePercent != settings.contentFontScalePercent
             || lastContentFontFamily != settings.contentFontFamily
+            || lastContentFontScope != settings.contentFontScope
+            || lastInterfaceFontScalePercent != settings.interfaceFontScalePercent
             || didChangeThemeStyle
         lastReadingComfortMode = settings.readingComfortMode
         lastContentFontSize = settings.contentFontSize
+        lastContentFontScalePercent = settings.contentFontScalePercent
         lastContentFontFamily = settings.contentFontFamily
+        lastContentFontScope = settings.contentFontScope
+        lastInterfaceFontScalePercent = settings.interfaceFontScalePercent
         lastThemeStyle = settings.themeStyle
         if didChangeThemeStyle {
             hasTitleHeader = false
@@ -579,10 +601,11 @@ final class TopicDetailViewController: ObservableViewController {
         // Loading
         let showsInitialLoading = viewModel.isLoading && !viewModel.isReady && viewModel.errorMessage == nil
         if showsInitialLoading {
-            activityIndicator.startAnimating()
+            activityIndicator.stopAnimating()
         } else {
             activityIndicator.stopAnimating()
         }
+        loadingSkeletonView.setSkeletonActive(showsInitialLoading, animated: view.window != nil)
 
         // Error
         if let error = viewModel.errorMessage {
@@ -603,11 +626,11 @@ final class TopicDetailViewController: ObservableViewController {
 
         // Top loading bar for loading earlier posts
         if viewModel.isLoadingEarlier {
-            UIView.animate(withDuration: 0.25) {
+            DexoMotion.animate(duration: DexoMotion.quick) {
                 self.topLoadingBar.alpha = 1
             }
         } else {
-            UIView.animate(withDuration: 0.25) {
+            DexoMotion.animate(duration: DexoMotion.quick, timingParameters: DexoMotion.easeInCubic) {
                 self.topLoadingBar.alpha = 0
             }
         }
@@ -672,6 +695,11 @@ final class TopicDetailViewController: ObservableViewController {
 
     private func applyThemeStyle() {
         let accentColor = AppSettings.shared.themeStyle.accentColor
+        let themeStyle = AppSettings.shared.themeStyle
+        view.backgroundColor = themeStyle.topicListBackgroundColor
+        tableView.backgroundColor = themeStyle.topicListBackgroundColor
+        topLoadingBar.backgroundColor = themeStyle.topicCardBackgroundColor
+        loadingSkeletonView.applyThemeStyle()
         var replyConfig = floatingReplyButton.configuration ?? UIButton.Configuration.filled()
         replyConfig.baseForegroundColor = accentColor
         replyConfig.baseBackgroundColor = accentColor.withAlphaComponent(0.14)
@@ -679,11 +707,17 @@ final class TopicDetailViewController: ObservableViewController {
         floatingReplyButton.layer.shadowColor = accentColor.cgColor
     }
 
+    private func applyTypography() {
+        titleLabel.font = TopicDetailTypography.topicTitleFont()
+        navTitleLabel.font = TopicDetailTypography.interfaceFont(ofSize: 17, weight: .semibold)
+        errorLabel.font = TopicDetailTypography.interfaceFont(ofSize: 14, weight: .regular)
+    }
+
     private func prepareInitialContentTransition() {
         tableView.alpha = 0
-        tableView.transform = CGAffineTransform(translationX: 0, y: 8)
+        tableView.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.996, y: 0.996)
         bottomBar.alpha = 0
-        bottomBar.transform = CGAffineTransform(translationX: 0, y: 6)
+        bottomBar.transform = CGAffineTransform(translationX: 0, y: 8)
     }
 
     private func animateInitialContentTransition() {
@@ -694,14 +728,9 @@ final class TopicDetailViewController: ObservableViewController {
             self.bottomBar.alpha = 1
             self.bottomBar.transform = .identity
         }
-        if UIAccessibility.isReduceMotionEnabled {
-            animations()
-            return
-        }
-        UIView.animate(
-            withDuration: 0.22,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
+        DexoMotion.animate(
+            duration: DexoMotion.standard,
+            timingParameters: DexoMotion.easeOutCubic,
             animations: animations
         )
     }
@@ -782,7 +811,7 @@ final class TopicDetailViewController: ObservableViewController {
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
 
         let valueLabel = UILabel()
-        valueLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        valueLabel.font = TopicDetailTypography.interfaceFont(ofSize: 13, weight: .medium)
         valueLabel.textColor = .secondaryLabel
         valueLabel.text = value
 
@@ -794,7 +823,7 @@ final class TopicDetailViewController: ObservableViewController {
 
         if let label {
             let labelView = UILabel()
-            labelView.font = .systemFont(ofSize: 13, weight: .regular)
+            labelView.font = TopicDetailTypography.interfaceFont(ofSize: 13, weight: .regular)
             labelView.textColor = .tertiaryLabel
             labelView.text = label
             stack.addArrangedSubview(labelView)
@@ -908,7 +937,7 @@ final class TopicDetailViewController: ObservableViewController {
             return
         }
 
-        let headerResult = buildEmojiAttributedString(title, font: titleLabel.font ?? .systemFont(ofSize: 22, weight: .semibold))
+        let headerResult = buildEmojiAttributedString(title, font: titleLabel.font ?? TopicDetailTypography.topicTitleFont())
         let navResult = buildEmojiAttributedString(title, font: navTitleLabel.font ?? .systemFont(ofSize: 17, weight: .semibold))
 
         titleLabel.attributedText = headerResult
@@ -953,12 +982,7 @@ final class TopicDetailViewController: ObservableViewController {
     private func loadTitleEmojiImages(in attributedString: NSMutableAttributedString, label: UILabel) {
         attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length)) { value, _, _ in
             guard let attachment = value as? EmojiTextAttachment, let url = attachment.emojiURL else { return }
-            SDWebImageManager.shared.loadImage(
-                with: url,
-                options: AvatarImageLoader.options,
-                context: AvatarImageLoader.context(for: url),
-                progress: nil
-            ) { [weak self] image, _, _, _, _, _ in
+            ForumImageLoader.loadImage(with: url) { [weak self] image in
                 guard let image, let self else { return }
                 attachment.image = image
                 label.setNeedsDisplay()
@@ -1162,8 +1186,165 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
     private func presentSafari(_ url: URL) {
+        guard AppSettings.shared.openExternalLinksInAppBrowser else {
+            UIApplication.shared.open(url)
+            return
+        }
         let safari = SFSafariViewController(url: url)
         present(safari, animated: true)
+    }
+}
+
+private final class TopicDetailSkeletonView: DexoSkeletonPlaceholderView {
+    private var cardSurfaces: [UIView] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        skeletonContentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: skeletonContentView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: skeletonContentView.leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: skeletonContentView.trailingAnchor, constant: -10),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: skeletonContentView.bottomAnchor),
+        ])
+
+        stack.addArrangedSubview(makeTitleCard())
+        for _ in 0 ..< 4 {
+            stack.addArrangedSubview(makePostCard())
+        }
+        applyThemeStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        applySkeletonTheme(
+            backgroundColor: themeStyle.topicListBackgroundColor,
+            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
+        )
+        cardSurfaces.forEach {
+            $0.backgroundColor = themeStyle.topicCardBackgroundColor
+            $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.20).cgColor
+        }
+    }
+
+    private func makeCard(height: CGFloat, cornerRadius: CGFloat = 16) -> UIView {
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = cornerRadius
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 0.5
+        cardSurfaces.append(card)
+        card.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return card
+    }
+
+    private func makeTitleCard() -> UIView {
+        let card = makeCard(height: 118)
+        let title = makeSkeletonBlock(cornerRadius: 6)
+        let titleShort = makeSkeletonBlock(cornerRadius: 6)
+        let chipOne = makeSkeletonBlock(cornerRadius: 11)
+        let chipTwo = makeSkeletonBlock(cornerRadius: 11)
+        let meta = makeSkeletonBlock(cornerRadius: 5)
+
+        [title, titleShort, chipOne, chipTwo, meta].forEach { card.addSubview($0) }
+
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            title.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -26),
+            title.heightAnchor.constraint(equalToConstant: 20),
+
+            titleShort.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 9),
+            titleShort.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            titleShort.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -94),
+            titleShort.heightAnchor.constraint(equalToConstant: 20),
+
+            chipOne.topAnchor.constraint(equalTo: titleShort.bottomAnchor, constant: 14),
+            chipOne.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            chipOne.widthAnchor.constraint(equalToConstant: 72),
+            chipOne.heightAnchor.constraint(equalToConstant: 22),
+
+            chipTwo.leadingAnchor.constraint(equalTo: chipOne.trailingAnchor, constant: 8),
+            chipTwo.centerYAnchor.constraint(equalTo: chipOne.centerYAnchor),
+            chipTwo.widthAnchor.constraint(equalToConstant: 56),
+            chipTwo.heightAnchor.constraint(equalTo: chipOne.heightAnchor),
+
+            meta.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            meta.topAnchor.constraint(equalTo: chipOne.bottomAnchor, constant: 12),
+            meta.widthAnchor.constraint(equalToConstant: 188),
+            meta.heightAnchor.constraint(equalToConstant: 12),
+        ])
+
+        return card
+    }
+
+    private func makePostCard() -> UIView {
+        let card = makeCard(height: 132)
+        let avatar = makeSkeletonBlock(cornerRadius: 16)
+        let name = makeSkeletonBlock(cornerRadius: 5)
+        let time = makeSkeletonBlock(cornerRadius: 4)
+        let lineOne = makeSkeletonBlock(cornerRadius: 5)
+        let lineTwo = makeSkeletonBlock(cornerRadius: 5)
+        let lineThree = makeSkeletonBlock(cornerRadius: 5)
+        let actionOne = makeSkeletonBlock(cornerRadius: 10)
+        let actionTwo = makeSkeletonBlock(cornerRadius: 10)
+
+        [avatar, name, time, lineOne, lineTwo, lineThree, actionOne, actionTwo].forEach { card.addSubview($0) }
+
+        NSLayoutConstraint.activate([
+            avatar.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            avatar.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            avatar.widthAnchor.constraint(equalToConstant: 32),
+            avatar.heightAnchor.constraint(equalToConstant: 32),
+
+            name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 10),
+            name.topAnchor.constraint(equalTo: avatar.topAnchor, constant: 2),
+            name.widthAnchor.constraint(equalToConstant: 126),
+            name.heightAnchor.constraint(equalToConstant: 14),
+
+            time.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+            time.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 7),
+            time.widthAnchor.constraint(equalToConstant: 82),
+            time.heightAnchor.constraint(equalToConstant: 11),
+
+            lineOne.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            lineOne.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            lineOne.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 18),
+            lineOne.heightAnchor.constraint(equalToConstant: 13),
+
+            lineTwo.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
+            lineTwo.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -52),
+            lineTwo.topAnchor.constraint(equalTo: lineOne.bottomAnchor, constant: 9),
+            lineTwo.heightAnchor.constraint(equalToConstant: 13),
+
+            lineThree.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
+            lineThree.widthAnchor.constraint(equalToConstant: 190),
+            lineThree.topAnchor.constraint(equalTo: lineTwo.bottomAnchor, constant: 9),
+            lineThree.heightAnchor.constraint(equalToConstant: 13),
+
+            actionOne.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
+            actionOne.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            actionOne.widthAnchor.constraint(equalToConstant: 52),
+            actionOne.heightAnchor.constraint(equalToConstant: 20),
+
+            actionTwo.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            actionTwo.centerYAnchor.constraint(equalTo: actionOne.centerYAnchor),
+            actionTwo.widthAnchor.constraint(equalToConstant: 84),
+            actionTwo.heightAnchor.constraint(equalTo: actionOne.heightAnchor),
+        ])
+
+        return card
     }
 }
 
@@ -1581,8 +1762,8 @@ private final class TopicTimelineSheetViewController: UIViewController {
         let contentRow = UIStackView(arrangedSubviews: [infoStack, trackView])
         contentRow.translatesAutoresizingMaskIntoConstraints = false
         contentRow.axis = .horizontal
-        contentRow.alignment = .fill
-        contentRow.spacing = 24
+        contentRow.alignment = .center
+        contentRow.spacing = 20
 
         let cancelButton = UIButton(type: .system)
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
@@ -1626,7 +1807,7 @@ private final class TopicTimelineSheetViewController: UIViewController {
             contentRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: titleText == nil ? 8 : 24),
             contentRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             contentRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            contentRow.bottomAnchor.constraint(equalTo: buttonRow.topAnchor, constant: -20),
+            contentRow.bottomAnchor.constraint(lessThanOrEqualTo: buttonRow.topAnchor, constant: -20),
 
             floorTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
             floorTextField.heightAnchor.constraint(greaterThanOrEqualToConstant: 62),
@@ -1634,7 +1815,8 @@ private final class TopicTimelineSheetViewController: UIViewController {
             editIconView.heightAnchor.constraint(equalToConstant: 16),
             statusLabel.heightAnchor.constraint(equalToConstant: 28),
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
-            trackView.widthAnchor.constraint(equalToConstant: 88),
+            trackView.widthAnchor.constraint(equalToConstant: 64),
+            trackView.heightAnchor.constraint(equalToConstant: 228),
 
             buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
@@ -1736,15 +1918,37 @@ private final class TopicTimelineTrackView: UIControl {
 
     private var totalCountValue = 1
     private var selectedIndexValue = 1
-    private let trackInset: CGFloat = 30
-    private let handleSize: CGFloat = 46
+    private let trackInset: CGFloat = 24
+    private let handleSize: CGFloat = 36
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: 88, height: 240)
+        CGSize(width: 64, height: 228)
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        backgroundColor = .clear
+        isOpaque = false
+        contentMode = .redraw
+        accessibilityTraits = [.adjustable]
+    }
+
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        setNeedsDisplay()
     }
 
     override func draw(_ rect: CGRect) {
-        let trackWidth: CGFloat = 6
+        let trackWidth: CGFloat = 5
         let top = trackInset
         let bottom = bounds.height - trackInset
         let height = max(bottom - top, 1)
@@ -1773,16 +1977,26 @@ private final class TopicTimelineTrackView: UIControl {
         tintColor.setFill()
         UIBezierPath(ovalIn: handleRect).fill()
 
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 15, weight: .bold)
         let image = UIImage(systemName: "arrow.up.arrow.down", withConfiguration: symbolConfig)?
             .withTintColor(.white, renderingMode: .alwaysOriginal)
-        let imageSize = CGSize(width: 22, height: 22)
+        let imageSize = CGSize(width: 18, height: 18)
         image?.draw(in: CGRect(
             x: handleRect.midX - imageSize.width / 2,
             y: handleRect.midY - imageSize.height / 2,
             width: imageSize.width,
             height: imageSize.height
         ))
+    }
+
+    override func accessibilityIncrement() {
+        selectedIndex = clampedIndex(selectedIndex + 1)
+        sendActions(for: .valueChanged)
+    }
+
+    override func accessibilityDecrement() {
+        selectedIndex = clampedIndex(selectedIndex - 1)
+        sendActions(for: .valueChanged)
     }
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -1951,19 +2165,8 @@ private final class TopicReadingTracker {
 // MARK: - PostCellDelegate
 
 extension TopicDetailViewController: PostCellDelegate {
-    func postCell(didTapImageURL url: URL) {
-        SDWebImageManager.shared.loadImage(
-            with: url,
-            options: AvatarImageLoader.options,
-            context: AvatarImageLoader.context(for: url),
-            progress: nil
-        ) { [weak self] image, _, _, _, _, _ in
-            guard let self, let image else { return }
-            let controller = LightboxController(images: [LightboxImage(image: image)])
-            controller.dynamicBackground = true
-            controller.modalPresentationStyle = .fullScreen
-            self.present(controller, animated: true)
-        }
+    func postCell(didTapImageURL url: URL, imageURLs: [URL]) {
+        presentTopicImageGallery(currentURL: url, imageURLs: imageURLs)
     }
 
     func postCell(didTapLinkURL url: URL) {
@@ -2015,6 +2218,7 @@ extension TopicDetailViewController: PostCellDelegate {
                         self.viewModel.updatePostReaction(
                             postId: post.id,
                             reactions: response.reactions,
+                            reactionUsersCount: response.reactionUsersCount,
                             currentUserReaction: response.currentUserReaction
                         )
                         self.reloadPostCell(postId: post.id)
@@ -2023,6 +2227,21 @@ extension TopicDetailViewController: PostCellDelegate {
                     }
                 } catch {
                     self.reloadPostCell(postId: post.id)
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
+    func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String]) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.viewModel.submitPollVote(postId: postId, pollName: pollName, optionIds: optionIds)
+                    self.reloadPostCell(postId: postId)
+                } catch {
+                    self.reloadPostCell(postId: postId)
                     self.showPostActionError(error)
                 }
             }

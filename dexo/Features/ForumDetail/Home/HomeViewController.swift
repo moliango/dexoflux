@@ -12,8 +12,6 @@ final class HomeViewController: ObservableViewController {
     private static let categoryRowHeight: CGFloat = 36
     private static let filterRowHeight: CGFloat = 36
     private static let incomingTopicsBannerHeight: CGFloat = 64
-    private static let cloudflareShieldSuppressionDuration: TimeInterval = 6
-    private static let cloudflareForegroundAutoPresentationCooldown: TimeInterval = 10
     private static let headerVerticalSpacing: CGFloat = 8 + 6
     private static let headerBottomPadding: CGFloat = 8
     private static let baseTableTopSpacing: CGFloat = 16
@@ -36,8 +34,6 @@ final class HomeViewController: ObservableViewController {
     private var lastHomeScrollY: CGFloat?
     private var incomingTopicsPollTimer: Timer?
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
-    private var cloudflareChallengeObservationToken: NSObjectProtocol?
-    private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
     private var authObservationToken: NSObjectProtocol?
     private var settingsObservationToken: NSObjectProtocol?
     private var foregroundObservationToken: NSObjectProtocol?
@@ -46,16 +42,10 @@ final class HomeViewController: ObservableViewController {
     private var incomingTopicsRetryTask: Task<Void, Never>?
     private var reloadSequence = 0
     private var lastAuthenticatedState: Bool?
-    private var shouldShowCloudflareShieldButton = false
     private var isIncomingTopicsBannerVisible = false
     private var incomingTopicsUsesTopSpace = false
-    private var cloudflareShieldSuppressedUntil: Date?
-    private var cloudflareChallengeReloadSequence: Int?
-    private var isPresentingCloudflareForegroundVerification = false
-    private var pendingCloudflareForegroundVerification = false
     private var isTopRefreshGeometryLocked = false
     private var topRefreshGeometryLockID = 0
-    private var lastAutomaticCloudflareForegroundPresentationAt: Date?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
     private var lastNetworkStatus: NWPath.Status?
@@ -302,6 +292,8 @@ final class HomeViewController: ObservableViewController {
         return ai
     }()
 
+    private let loadingSkeletonView = HomeTopicListSkeletonView()
+
     private let footerSpinner: UIActivityIndicatorView = {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.hidesWhenStopped = true
@@ -343,24 +335,6 @@ final class HomeViewController: ObservableViewController {
         button.layer.shadowRadius = 10
         button.layer.shadowOffset = CGSize(width: 0, height: 4)
         button.accessibilityLabel = String(localized: "new_topic.title")
-        return button
-    }()
-
-    private let cloudflareShieldButton: UIButton = {
-        let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        button.setImage(UIImage(systemName: "shield.lefthalf.filled", withConfiguration: config), for: .normal)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.tintColor = .white
-        button.backgroundColor = UIColor.black.withAlphaComponent(0.82)
-        button.layer.cornerRadius = 22
-        button.layer.cornerCurve = .continuous
-        button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.18
-        button.layer.shadowRadius = 9
-        button.layer.shadowOffset = CGSize(width: 0, height: 4)
-        button.accessibilityLabel = String(localized: "settings.network.cloudflare_verify")
-        button.isHidden = true
         return button
     }()
 
@@ -421,6 +395,7 @@ final class HomeViewController: ObservableViewController {
         tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
         incomingTopicsHeaderView.addSubview(incomingTopicsButton)
         view.addSubview(tableView)
+        view.addSubview(loadingSkeletonView)
         view.addSubview(headerContainer)
         view.addSubview(incomingTopicsHeaderView)
 
@@ -428,7 +403,6 @@ final class HomeViewController: ObservableViewController {
         view.addSubview(errorLabel)
         view.addSubview(loginButton)
         view.addSubview(floatingActionButton)
-        view.addSubview(cloudflareShieldButton)
 
         setupHeader()
         applyThemeStyle()
@@ -436,17 +410,17 @@ final class HomeViewController: ObservableViewController {
 
         let fabBottomConstraint = floatingActionButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -currentBottomChromeHeight - 20)
         floatingActionButtonBottomConstraint = fabBottomConstraint
-        let shieldCenterYConstraint = cloudflareShieldButton.centerYAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.centerYAnchor,
-            constant: 72
-        )
-        shieldCenterYConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            loadingSkeletonView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: Self.baseTableTopSpacing),
+            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingSkeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             headerContainer.topAnchor.constraint(equalTo: view.topAnchor),
             headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -477,12 +451,6 @@ final class HomeViewController: ObservableViewController {
             fabBottomConstraint,
             floatingActionButton.widthAnchor.constraint(equalToConstant: 56),
             floatingActionButton.heightAnchor.constraint(equalToConstant: 56),
-
-            cloudflareShieldButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            shieldCenterYConstraint,
-            cloudflareShieldButton.bottomAnchor.constraint(lessThanOrEqualTo: floatingActionButton.topAnchor, constant: -28),
-            cloudflareShieldButton.widthAnchor.constraint(equalToConstant: 50),
-            cloudflareShieldButton.heightAnchor.constraint(equalToConstant: 44),
         ])
         headerHeightConstraint = headerContainer.heightAnchor.constraint(equalToConstant: expandedHeaderHeight)
         headerHeightConstraint?.isActive = true
@@ -492,7 +460,6 @@ final class HomeViewController: ObservableViewController {
         categoryManagerButton.addTarget(self, action: #selector(categoryManagerTapped), for: .touchUpInside)
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
         floatingActionButton.addTarget(self, action: #selector(fabTapped), for: .touchUpInside)
-        cloudflareShieldButton.addTarget(self, action: #selector(cloudflareShieldTapped), for: .touchUpInside)
         incomingTopicsButton.addTarget(self, action: #selector(incomingTopicsTapped), for: .touchUpInside)
         lastAuthenticatedState = AuthManager.shared.isAuthenticated(for: api.baseURL)
         startObservingCloudflareVerification()
@@ -510,12 +477,6 @@ final class HomeViewController: ObservableViewController {
     @MainActor deinit {
         if let cloudflareCompletionObservationToken {
             NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
-        }
-        if let cloudflareChallengeObservationToken {
-            NotificationCenter.default.removeObserver(cloudflareChallengeObservationToken)
-        }
-        if let cloudflareNeedsUserObservationToken {
-            NotificationCenter.default.removeObserver(cloudflareNeedsUserObservationToken)
         }
         if let authObservationToken {
             NotificationCenter.default.removeObserver(authObservationToken)
@@ -537,21 +498,30 @@ final class HomeViewController: ObservableViewController {
         navigationController?.setNavigationBarHidden(true, animated: animated)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
         updateTabBarVisibilityForCurrentScroll(animated: false)
-        reconcileCloudflareShieldButtonVisibility(animated: false)
         startIncomingTopicsPolling()
         reloadAfterBecomingVisibleIfNeeded()
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        presentPendingCloudflareVerificationIfNeeded()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
-        setHomeTabBarHidden(false, animated: animated)
+        if !isNavigatingToControllerThatOwnsBottomBarVisibility {
+            setHomeTabBarHidden(false, animated: animated)
+        }
         stopIncomingTopicsPolling()
+    }
+
+    private var isNavigatingToControllerThatOwnsBottomBarVisibility: Bool {
+        if let destination = transitionCoordinator?.viewController(forKey: .to),
+           destination !== self {
+            return destination.hidesBottomBarWhenPushed
+        }
+        guard let topViewController = navigationController?.topViewController,
+              topViewController !== self
+        else {
+            return false
+        }
+        return topViewController.hidesBottomBarWhenPushed
     }
 
     private func startObservingCloudflareVerification() {
@@ -561,20 +531,6 @@ final class HomeViewController: ObservableViewController {
             queue: .main
         ) { [weak self] notification in
             self?.handleCloudflareVerificationCompleted(notification)
-        }
-        cloudflareChallengeObservationToken = NotificationCenter.default.addObserver(
-            forName: DiscourseAPI.cloudflareChallengeDetectedNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handleCloudflareChallengeDetected(notification)
-        }
-        cloudflareNeedsUserObservationToken = NotificationCenter.default.addObserver(
-            forName: CloudflareBackgroundVerificationService.needsUserInteractionNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handleCloudflareNeedsUserInteraction(notification)
         }
     }
 
@@ -622,162 +578,8 @@ final class HomeViewController: ObservableViewController {
         guard normalizedBaseURL(baseURL) == normalizedBaseURL(api.baseURL) else { return }
         let shouldReloadTopics = shouldReloadTopicsAfterCloudflareVerification()
         logCloudflareState("verification completed base=\(baseURL) reloadTopics=\(shouldReloadTopics)")
-        isPresentingCloudflareForegroundVerification = false
-        pendingCloudflareForegroundVerification = false
-        if shouldReloadTopics {
-            cloudflareShieldSuppressedUntil = nil
-        } else {
-            suppressCloudflareShieldTemporarily()
-        }
-        cloudflareChallengeReloadSequence = nil
-        setCloudflareShieldButtonVisible(false, animated: true)
         reloadTopicsAfterCloudflareVerificationIfNeeded(shouldReloadTopics)
         retryIncomingTopicsAfterCloudflareIfNeeded()
-    }
-
-    private func handleCloudflareChallengeDetected(_ notification: Notification) {
-        guard let baseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
-        guard normalizedBaseURL(baseURL) == normalizedBaseURL(api.baseURL) else { return }
-        guard !isCloudflareShieldSuppressed() else {
-            logCloudflareState("challenge ignored while shield is suppressed base=\(baseURL)")
-            cloudflareChallengeReloadSequence = nil
-            setCloudflareShieldButtonVisible(false, animated: true)
-            return
-        }
-        if isPresentingCloudflareForegroundVerification {
-            logCloudflareState("challenge ignored because foreground verification is already presented base=\(baseURL)")
-            return
-        }
-        cloudflareChallengeReloadSequence = nil
-        setCloudflareShieldButtonVisible(false, animated: true)
-        let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
-        logCloudflareState(
-            "challenge detected base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")"
-        )
-        if shouldAutomaticallyPresentCloudflareVerification() {
-            requestAutomaticCloudflareForegroundVerification(reason: "challenge_detected")
-            return
-        }
-        CloudflareBackgroundVerificationService.shared.ensureInBackground(
-            baseURL: baseURL,
-            reason: "home_challenge",
-            responseURL: responseURL
-        )
-    }
-
-    private func handleCloudflareNeedsUserInteraction(_ notification: Notification) {
-        guard let baseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
-        guard normalizedBaseURL(baseURL) == normalizedBaseURL(api.baseURL) else { return }
-        guard !isCloudflareShieldSuppressed() else {
-            logCloudflareState("needs-user ignored while shield is suppressed base=\(baseURL)")
-            cloudflareChallengeReloadSequence = nil
-            setCloudflareShieldButtonVisible(false, animated: true)
-            return
-        }
-        if isPresentingCloudflareForegroundVerification {
-            logCloudflareState("needs-user ignored because foreground verification is already presented base=\(baseURL)")
-            return
-        }
-        let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
-        logCloudflareState(
-            "background verification needs user; showing shield base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")"
-        )
-        if shouldAutomaticallyPresentCloudflareVerification() {
-            requestAutomaticCloudflareForegroundVerification(reason: "needs_user_interaction")
-            return
-        }
-        cloudflareChallengeReloadSequence = reloadSequence
-        setCloudflareShieldButtonVisible(true, animated: true)
-    }
-
-    private func suppressCloudflareShieldTemporarily() {
-        cloudflareShieldSuppressedUntil = Date().addingTimeInterval(Self.cloudflareShieldSuppressionDuration)
-    }
-
-    private func isCloudflareShieldSuppressed(now: Date = Date()) -> Bool {
-        guard let suppressedUntil = cloudflareShieldSuppressedUntil else { return false }
-        if now < suppressedUntil {
-            return true
-        }
-        cloudflareShieldSuppressedUntil = nil
-        return false
-    }
-
-    private func setCloudflareShieldButtonVisible(_ visible: Bool, animated: Bool) {
-        guard shouldShowCloudflareShieldButton != visible else {
-            updateCloudflareShieldButtonVisibility(animated: animated)
-            return
-        }
-        logCloudflareState("shield visibility changed visible=\(visible) animated=\(animated)")
-        shouldShowCloudflareShieldButton = visible
-        updateCloudflareShieldButtonVisibility(animated: animated)
-    }
-
-    private func updateCloudflareShieldButtonVisibility(animated: Bool) {
-        let isVisible = shouldShowCloudflareShieldButton
-        let updates = {
-            self.cloudflareShieldButton.alpha = isVisible ? 1 : 0
-        }
-        let completion: (Bool) -> Void = { _ in
-            self.cloudflareShieldButton.isHidden = !self.shouldShowCloudflareShieldButton
-        }
-
-        if isVisible {
-            cloudflareShieldButton.isHidden = false
-        }
-
-        guard animated else {
-            updates()
-            completion(true)
-            return
-        }
-
-        UIView.animate(
-            withDuration: 0.18,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
-            animations: updates,
-            completion: completion
-        )
-    }
-
-    private func reconcileCloudflareShieldButtonVisibility(animated: Bool) {
-        if viewModel.requiresLogin {
-            if shouldShowCloudflareShieldButton {
-                logCloudflareState("shield hidden because login is required")
-            }
-            cloudflareChallengeReloadSequence = nil
-            setCloudflareShieldButtonVisible(false, animated: animated)
-            return
-        }
-
-        if isCloudflareShieldSuppressed() {
-            if shouldShowCloudflareShieldButton {
-                logCloudflareState("shield hidden because success suppression window is active")
-            }
-            cloudflareChallengeReloadSequence = nil
-            setCloudflareShieldButtonVisible(false, animated: animated)
-            return
-        }
-
-        guard !viewModel.isLoading else {
-            updateCloudflareShieldButtonVisibility(animated: animated)
-            return
-        }
-
-        let hasCurrentChallenge = shouldShowCloudflareShieldButton
-            && cloudflareChallengeReloadSequence == reloadSequence
-        if hasCurrentChallenge {
-            updateCloudflareShieldButtonVisibility(animated: animated)
-        } else {
-            if shouldShowCloudflareShieldButton {
-                logCloudflareState(
-                    "shield hidden because challenge sequence is stale current=\(reloadSequence) challenge=\(cloudflareChallengeReloadSequence.map(String.init) ?? "none")"
-                )
-            }
-            cloudflareChallengeReloadSequence = nil
-            setCloudflareShieldButtonVisible(false, animated: animated)
-        }
     }
 
     private func logCloudflareState(_ message: String) {
@@ -875,7 +677,7 @@ final class HomeViewController: ObservableViewController {
 
     private func applyThemeStyle() {
         let themeStyle = AppSettings.shared.themeStyle
-        let pageBackground: UIColor = themeStyle == .systemDefault ? .systemGroupedBackground : themeStyle.mutedContentBackgroundColor
+        let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
         tableView.estimatedRowHeight = usesXiaohongshuCardLayout
@@ -886,6 +688,7 @@ final class HomeViewController: ObservableViewController {
         floatingActionButton.backgroundColor = themeStyle.accentColor
         floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
         incomingTopicsButton.applyThemeStyle()
+        loadingSkeletonView.applyThemeStyle()
     }
 
     private func setupFilterBar() {
@@ -947,16 +750,20 @@ final class HomeViewController: ObservableViewController {
             headerContainer.isHidden = true
             floatingActionButton.isHidden = true
             setIncomingTopicsBannerVisible(false, animated: false)
-            reconcileCloudflareShieldButtonVisibility(animated: false)
+            loadingSkeletonView.setSkeletonActive(false, animated: false)
             activityIndicator.stopAnimating()
             return
         }
 
         loginButton.isHidden = true
-        tableView.isHidden = false
         headerContainer.isHidden = false
         floatingActionButton.isHidden = false
-        reconcileCloudflareShieldButtonVisibility(animated: false)
+
+        let showsInitialSkeleton = viewModel.isLoading
+            && viewModel.topics.isEmpty
+            && viewModel.errorMessage == nil
+        loadingSkeletonView.setSkeletonActive(showsInitialSkeleton, animated: view.window != nil)
+        tableView.isHidden = showsInitialSkeleton
 
         categoryButton.menu = UIMenu(title: "", children: buildCategoryMenuElements())
         updateCategoryButton()
@@ -970,13 +777,9 @@ final class HomeViewController: ObservableViewController {
         } else {
             errorLabel.isHidden = true
         }
-        if viewModel.isBlockedByCloudflare, viewModel.topics.isEmpty {
-            requestAutomaticCloudflareForegroundVerification(reason: "home_error_state")
-        }
-
         applyTopicSnapshot()
 
-        if viewModel.isLoading {
+        if viewModel.isLoading && !showsInitialSkeleton && viewModel.topics.isEmpty {
             activityIndicator.startAnimating()
         } else {
             activityIndicator.stopAnimating()
@@ -1081,7 +884,6 @@ final class HomeViewController: ObservableViewController {
             refreshControl.endRefreshing()
         }
         finishTopRefreshGeometryLockIfNeeded()
-        reconcileCloudflareShieldButtonVisibility(animated: false)
     }
 
     private func finishReload(sequence: Int) {
@@ -1093,7 +895,6 @@ final class HomeViewController: ObservableViewController {
             refreshControl.endRefreshing()
         }
         finishTopRefreshGeometryLockIfNeeded()
-        reconcileCloudflareShieldButtonVisibility(animated: true)
     }
 
     private func selectListMode(_ mode: HomeListMode) {
@@ -1229,141 +1030,6 @@ final class HomeViewController: ObservableViewController {
         }
     }
 
-    @objc private func cloudflareShieldTapped() {
-        logCloudflareState("shield tapped; presenting foreground verification")
-        presentCloudflareVerification(autoTriggered: false)
-    }
-
-    private func shouldAutomaticallyPresentCloudflareVerification(now: Date = Date()) -> Bool {
-        guard viewModel.topics.isEmpty,
-              !viewModel.requiresLogin,
-              !isCloudflareShieldSuppressed(now: now)
-        else { return false }
-        if let lastAutomaticCloudflareForegroundPresentationAt,
-           now.timeIntervalSince(lastAutomaticCloudflareForegroundPresentationAt) < Self.cloudflareForegroundAutoPresentationCooldown {
-            return false
-        }
-        return true
-    }
-
-    private func presentPendingCloudflareVerificationIfNeeded() {
-        guard pendingCloudflareForegroundVerification else { return }
-        guard shouldAutomaticallyPresentCloudflareVerification() else {
-            pendingCloudflareForegroundVerification = false
-            return
-        }
-        presentCloudflareVerification(autoTriggered: true)
-    }
-
-    @discardableResult
-    private func requestAutomaticCloudflareForegroundVerification(reason: String) -> Bool {
-        guard shouldAutomaticallyPresentCloudflareVerification() else { return false }
-        cloudflareChallengeReloadSequence = reloadSequence
-        if pendingCloudflareForegroundVerification {
-            schedulePendingCloudflareVerificationRetry()
-            return true
-        }
-        pendingCloudflareForegroundVerification = true
-        logCloudflareState("foreground verification requested reason=\(reason)")
-        schedulePendingCloudflareVerificationRetry()
-        return true
-    }
-
-    private func schedulePendingCloudflareVerificationRetry() {
-        DispatchQueue.main.async { [weak self] in
-            self?.presentPendingCloudflareVerificationIfNeeded()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.presentPendingCloudflareVerificationIfNeeded()
-        }
-    }
-
-    @discardableResult
-    private func presentCloudflareVerification(autoTriggered: Bool) -> Bool {
-        guard !isPresentingCloudflareForegroundVerification else {
-            logCloudflareState("foreground verification skipped because verification is already presented")
-            return false
-        }
-        guard let presenter = topMostCloudflareVerificationPresenter(),
-              !presenter.isBeingDismissed,
-              presenter.view.window != nil
-        else {
-            logCloudflareState("foreground verification deferred because presenter is unavailable")
-            if autoTriggered {
-                pendingCloudflareForegroundVerification = true
-            }
-            return false
-        }
-        guard let baseURL = URL(string: api.baseURL) else {
-            logCloudflareState("foreground verification skipped because base URL is invalid")
-            return false
-        }
-        guard view.window != nil else {
-            logCloudflareState("foreground verification deferred because Home is not in a window")
-            if autoTriggered {
-                pendingCloudflareForegroundVerification = true
-            }
-            return false
-        }
-        pendingCloudflareForegroundVerification = false
-        isPresentingCloudflareForegroundVerification = true
-        setCloudflareShieldButtonVisible(false, animated: true)
-        let vc = CloudflareVerificationViewController(
-            baseURL: baseURL,
-            autoDismissOnSuccess: true,
-            onFinish: { [weak self] in
-                self?.isPresentingCloudflareForegroundVerification = false
-                self?.pendingCloudflareForegroundVerification = false
-            }
-        )
-        let nav = UINavigationController(rootViewController: vc)
-        nav.modalPresentationStyle = .pageSheet
-        nav.presentationController?.delegate = self
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 20
-        }
-        presenter.present(nav, animated: true) { [weak self] in
-            if autoTriggered {
-                self?.lastAutomaticCloudflareForegroundPresentationAt = Date()
-            }
-        }
-        return true
-    }
-
-    private func topMostCloudflareVerificationPresenter() -> UIViewController? {
-        guard view.window != nil else { return nil }
-
-        var presenter: UIViewController = self
-        while let parent = presenter.parent {
-            presenter = parent
-        }
-
-        while let presented = presenter.presentedViewController {
-            if isCloudflareVerificationPresentation(presented) {
-                return nil
-            }
-            if presented.isBeingDismissed {
-                break
-            }
-            presenter = presented
-        }
-
-        return presenter
-    }
-
-    private func isCloudflareVerificationPresentation(_ controller: UIViewController) -> Bool {
-        if controller is CloudflareVerificationViewController {
-            return true
-        }
-        if let nav = controller as? UINavigationController,
-           nav.viewControllers.first is CloudflareVerificationViewController {
-            return true
-        }
-        return false
-    }
-
     private func openNewTopicComposer() {
         let presentComposer = { [weak self] in
             guard let self else { return }
@@ -1484,13 +1150,12 @@ final class HomeViewController: ObservableViewController {
             return
         }
 
-        UIView.animate(
-            withDuration: 0.18,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
-            animations: updates,
-            completion: completion
-        )
+        DexoMotion.animate(
+            duration: DexoMotion.quick,
+            animations: updates
+        ) { _ in
+            completion(true)
+        }
     }
 
     private func updateIncomingTopicsPlacement(animated: Bool) {
@@ -1499,11 +1164,7 @@ final class HomeViewController: ObservableViewController {
         incomingTopicsButton.setFloating(false)
 
         guard animated else { return }
-        UIView.animate(
-            withDuration: 0.18,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]
-        ) {
+        DexoMotion.animate(duration: DexoMotion.quick) {
             self.view.layoutIfNeeded()
         }
     }
@@ -1612,12 +1273,7 @@ final class HomeViewController: ObservableViewController {
         }
 
         if animated {
-            UIView.animate(
-                withDuration: 0.18,
-                delay: 0,
-                options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
-                animations: updates
-            )
+            DexoMotion.animate(duration: DexoMotion.quick, animations: updates)
         } else {
             updates()
         }
@@ -1831,7 +1487,7 @@ final class HomeViewController: ObservableViewController {
             self.updateTableInsets()
         }
         if animated {
-            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut, .beginFromCurrentState], animations: updates)
+            DexoMotion.animate(duration: DexoMotion.short, animations: updates)
         } else {
             updates()
         }
@@ -1866,7 +1522,7 @@ final class HomeViewController: ObservableViewController {
         if animated {
             UIView.transition(
                 with: floatingActionButton,
-                duration: 0.18,
+                duration: DexoMotion.quick,
                 options: [.transitionCrossDissolve, .beginFromCurrentState],
                 animations: updates
             )
@@ -1906,6 +1562,105 @@ final class HomeViewController: ObservableViewController {
     private func openTopic(_ topicId: Int) {
         let detailVC = TopicDetailViewController(api: api, topicId: topicId)
         navigationController?.pushViewController(detailVC, animated: true)
+    }
+}
+
+private final class HomeTopicListSkeletonView: DexoSkeletonPlaceholderView {
+    private var cardSurfaces: [UIView] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        skeletonContentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: skeletonContentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: skeletonContentView.leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: skeletonContentView.trailingAnchor, constant: -10),
+        ])
+
+        for _ in 0 ..< 7 {
+            stack.addArrangedSubview(makeTopicRow())
+        }
+        applyThemeStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        applySkeletonTheme(
+            backgroundColor: themeStyle.topicListBackgroundColor,
+            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
+        )
+        cardSurfaces.forEach {
+            $0.backgroundColor = themeStyle.topicCardBackgroundColor
+            $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.18).cgColor
+        }
+    }
+
+    private func makeTopicRow() -> UIView {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = 16
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 0.5
+        cardSurfaces.append(card)
+
+        let title = makeSkeletonBlock(cornerRadius: 5)
+        let titleShort = makeSkeletonBlock(cornerRadius: 5)
+        let avatar = makeSkeletonBlock(cornerRadius: 16)
+        let meta = makeSkeletonBlock(cornerRadius: 4)
+        let count = makeSkeletonBlock(cornerRadius: 8)
+
+        container.addSubview(card)
+        [title, titleShort, avatar, meta, count].forEach { card.addSubview($0) }
+
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(equalToConstant: 104),
+
+            card.topAnchor.constraint(equalTo: container.topAnchor),
+            card.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            card.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            title.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -70),
+            title.heightAnchor.constraint(equalToConstant: 16),
+
+            titleShort.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
+            titleShort.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            titleShort.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -118),
+            titleShort.heightAnchor.constraint(equalToConstant: 16),
+
+            avatar.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            avatar.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            avatar.widthAnchor.constraint(equalToConstant: 32),
+            avatar.heightAnchor.constraint(equalToConstant: 32),
+
+            meta.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 10),
+            meta.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+            meta.widthAnchor.constraint(equalToConstant: 148),
+            meta.heightAnchor.constraint(equalToConstant: 12),
+
+            count.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            count.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+            count.widthAnchor.constraint(equalToConstant: 46),
+            count.heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        return container
     }
 }
 
@@ -1966,7 +1721,7 @@ private final class IncomingTopicsBannerView: UIControl {
 
     override var isHighlighted: Bool {
         didSet {
-            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            DexoMotion.animate(duration: DexoMotion.quick) {
                 self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
                 self.alpha = self.isHighlighted ? 0.82 : 1
             }
@@ -2377,19 +2132,6 @@ private final class CategoryManagerCell: UITableViewCell {
             modeImageView.tintColor = .systemRed
             accessibilityHint = String(localized: "home.category_manager.remove_hint")
         }
-    }
-}
-
-extension HomeViewController: UIAdaptivePresentationControllerDelegate {
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        isPresentingCloudflareForegroundVerification = false
-        pendingCloudflareForegroundVerification = false
-        guard viewModel.topics.isEmpty,
-              !viewModel.requiresLogin,
-              !isCloudflareShieldSuppressed()
-        else { return }
-        cloudflareChallengeReloadSequence = reloadSequence
-        setCloudflareShieldButtonVisible(true, animated: true)
     }
 }
 

@@ -2,13 +2,41 @@ import UIKit
 import WebKit
 
 final class ForumContainerViewController: UIViewController, AuthGating {
+    private static let cloudflareShieldSuppressionDuration: TimeInterval = 6
+
     private(set) var forum: ForumInstance
     private let api: DiscourseAPI
     private let authManager = AuthManager.shared
     private let showsDismissButton: Bool
     private var authObservationToken: NSObjectProtocol?
     private var cloudflareChallengeObservationToken: NSObjectProtocol?
+    private var cloudflareCompletionObservationToken: NSObjectProtocol?
+    private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
     private var isPresentingCloudflareVerification = false
+    private var shouldShowCloudflareShieldButton = false
+    private var cloudflareShieldSuppressedUntil: Date?
+    private var pendingCloudflareBaseURL: URL?
+    private var cloudflareShieldButtonConstraints: [NSLayoutConstraint] = []
+    private weak var cloudflareShieldButtonHostView: UIView?
+
+    private let cloudflareShieldButton: UIButton = {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        button.setImage(UIImage(systemName: "shield.lefthalf.filled", withConfiguration: config), for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.tintColor = .white
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.82)
+        button.layer.cornerRadius = 22
+        button.layer.cornerCurve = .continuous
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.18
+        button.layer.shadowRadius = 9
+        button.layer.shadowOffset = CGSize(width: 0, height: 4)
+        button.accessibilityLabel = String(localized: "settings.network.cloudflare_verify")
+        button.alpha = 0
+        button.isHidden = true
+        return button
+    }()
 
     init(forum: ForumInstance, showsDismissButton: Bool = true) {
         self.forum = forum
@@ -32,9 +60,17 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
 
         setupTabBar()
+        setupCloudflareShieldButton()
         configureNavItems()
         startObservingAuth()
         startObservingCloudflareChallenges()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if shouldShowCloudflareShieldButton {
+            installCloudflareShieldButtonIfNeeded()
+        }
     }
 
     private func startObservingAuth() {
@@ -55,6 +91,20 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         ) { [weak self] notification in
             self?.handleCloudflareChallengeNotification(notification)
         }
+        cloudflareCompletionObservationToken = NotificationCenter.default.addObserver(
+            forName: DiscourseAPI.cloudflareVerificationCompletedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleCloudflareVerificationCompleted(notification)
+        }
+        cloudflareNeedsUserObservationToken = NotificationCenter.default.addObserver(
+            forName: CloudflareBackgroundVerificationService.needsUserInteractionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleCloudflareNeedsUserInteraction(notification)
+        }
     }
 
     @MainActor deinit {
@@ -64,6 +114,14 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let cloudflareChallengeObservationToken {
             NotificationCenter.default.removeObserver(cloudflareChallengeObservationToken)
         }
+        if let cloudflareCompletionObservationToken {
+            NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
+        }
+        if let cloudflareNeedsUserObservationToken {
+            NotificationCenter.default.removeObserver(cloudflareNeedsUserObservationToken)
+        }
+        NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
+        cloudflareShieldButton.removeFromSuperview()
     }
 
     private func setupTabBar() {
@@ -85,6 +143,39 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         tabBarVC.configureTabBarSurface()
 
         tabBarVC.didMove(toParent: self)
+    }
+
+    private func setupCloudflareShieldButton() {
+        cloudflareShieldButton.addTarget(self, action: #selector(cloudflareShieldTapped), for: .touchUpInside)
+        installCloudflareShieldButtonIfNeeded()
+    }
+
+    private func installCloudflareShieldButtonIfNeeded() {
+        let hostView: UIView = view.window ?? view
+        if cloudflareShieldButtonHostView === hostView {
+            hostView.bringSubviewToFront(cloudflareShieldButton)
+            return
+        }
+
+        NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
+        cloudflareShieldButton.removeFromSuperview()
+        hostView.addSubview(cloudflareShieldButton)
+        cloudflareShieldButtonHostView = hostView
+
+        let centerYConstraint = cloudflareShieldButton.centerYAnchor.constraint(
+            equalTo: hostView.safeAreaLayoutGuide.centerYAnchor,
+            constant: 72
+        )
+        centerYConstraint.priority = UILayoutPriority.defaultHigh
+        cloudflareShieldButtonConstraints = [
+            cloudflareShieldButton.trailingAnchor.constraint(equalTo: hostView.safeAreaLayoutGuide.trailingAnchor, constant: -14),
+            centerYConstraint,
+            cloudflareShieldButton.bottomAnchor.constraint(lessThanOrEqualTo: hostView.safeAreaLayoutGuide.bottomAnchor, constant: -96),
+            cloudflareShieldButton.widthAnchor.constraint(equalToConstant: 50),
+            cloudflareShieldButton.heightAnchor.constraint(equalToConstant: 44),
+        ]
+        NSLayoutConstraint.activate(cloudflareShieldButtonConstraints)
+        hostView.bringSubviewToFront(cloudflareShieldButton)
     }
 
     private func configureNavItems() {
@@ -132,13 +223,32 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         ForumOverlayManager.shared.minimize()
     }
 
+    @objc private func cloudflareShieldTapped() {
+        let baseURL = pendingCloudflareBaseURL
+            ?? URL(string: forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        guard let baseURL else {
+            logCloudflareState("shield tap ignored because base URL is invalid")
+            return
+        }
+        logCloudflareState("shield tapped; presenting foreground verification")
+        presentCloudflareVerification(baseURL: baseURL)
+    }
+
     private func handleCloudflareChallengeNotification(_ notification: Notification) {
-        guard !isPresentingCloudflareVerification else { return }
         guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
         guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
         let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
-        DohDebugLog.record("container challenge detected; starting background verification", subsystem: "CF")
+        pendingCloudflareBaseURL = baseURL
+        guard !isCloudflareShieldSuppressed() else {
+            logCloudflareState("challenge ignored while shield is suppressed base=\(baseURLString)")
+            setCloudflareShieldButtonVisible(false, animated: true)
+            return
+        }
+        logCloudflareState("challenge detected; starting background verification base=\(baseURLString)")
+        if !isPresentingCloudflareVerification {
+            setCloudflareShieldButtonVisible(true, animated: true)
+        }
         CloudflareBackgroundVerificationService.shared.ensureInBackground(
             baseURL: baseURL,
             reason: "container_challenge",
@@ -146,24 +256,116 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         )
     }
 
+    private func handleCloudflareNeedsUserInteraction(_ notification: Notification) {
+        guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
+        guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
+        guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
+        pendingCloudflareBaseURL = baseURL
+        guard !isCloudflareShieldSuppressed() else {
+            logCloudflareState("needs-user ignored while shield is suppressed base=\(baseURLString)")
+            setCloudflareShieldButtonVisible(false, animated: true)
+            return
+        }
+        guard !isPresentingCloudflareVerification else {
+            logCloudflareState("needs-user ignored because foreground verification is already presented base=\(baseURLString)")
+            return
+        }
+        logCloudflareState("background verification needs user; showing global shield base=\(baseURLString)")
+        setCloudflareShieldButtonVisible(true, animated: true)
+    }
+
+    private func handleCloudflareVerificationCompleted(_ notification: Notification) {
+        guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
+        guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
+        logCloudflareState("verification completed base=\(baseURLString)")
+        isPresentingCloudflareVerification = false
+        pendingCloudflareBaseURL = nil
+        suppressCloudflareShieldTemporarily()
+        setCloudflareShieldButtonVisible(false, animated: true)
+    }
+
+    private func suppressCloudflareShieldTemporarily() {
+        cloudflareShieldSuppressedUntil = Date().addingTimeInterval(Self.cloudflareShieldSuppressionDuration)
+    }
+
+    private func isCloudflareShieldSuppressed(now: Date = Date()) -> Bool {
+        guard let suppressedUntil = cloudflareShieldSuppressedUntil else { return false }
+        if now < suppressedUntil {
+            return true
+        }
+        cloudflareShieldSuppressedUntil = nil
+        return false
+    }
+
+    private func setCloudflareShieldButtonVisible(_ visible: Bool, animated: Bool) {
+        guard shouldShowCloudflareShieldButton != visible else {
+            updateCloudflareShieldButtonVisibility(animated: animated)
+            return
+        }
+        shouldShowCloudflareShieldButton = visible
+        updateCloudflareShieldButtonVisibility(animated: animated)
+    }
+
+    private func updateCloudflareShieldButtonVisibility(animated: Bool) {
+        let isVisible = shouldShowCloudflareShieldButton
+        let updates = {
+            self.cloudflareShieldButton.alpha = isVisible ? 1 : 0
+        }
+        let completion: (Bool) -> Void = { _ in
+            self.cloudflareShieldButton.isHidden = !self.shouldShowCloudflareShieldButton
+        }
+
+        if isVisible {
+            installCloudflareShieldButtonIfNeeded()
+            cloudflareShieldButton.isHidden = false
+        }
+
+        guard animated else {
+            updates()
+            completion(true)
+            return
+        }
+
+        DexoMotion.animate(
+            duration: DexoMotion.quick,
+            animations: updates
+        ) { _ in
+            completion(true)
+        }
+    }
+
     private func presentCloudflareVerification(baseURL: URL) {
+        guard !isPresentingCloudflareVerification else {
+            logCloudflareState("foreground verification skipped because verification is already presented")
+            return
+        }
         guard view.window != nil else { return }
         guard let presenter = topMostPresenter(), !presenter.isBeingDismissed else { return }
 
+        pendingCloudflareBaseURL = baseURL
         isPresentingCloudflareVerification = true
+        setCloudflareShieldButtonVisible(false, animated: true)
         let vc = CloudflareVerificationViewController(
             baseURL: baseURL,
             autoDismissOnSuccess: true
         ) { [weak self] in
-            self?.isPresentingCloudflareVerification = false
+            self?.handleCloudflareVerificationClosed()
         }
         let nav = UINavigationController(rootViewController: vc)
+        nav.modalPresentationStyle = .pageSheet
         nav.presentationController?.delegate = self
         if let sheet = nav.sheetPresentationController {
             sheet.detents = [.large()]
             sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 20
         }
         presenter.present(nav, animated: true)
+    }
+
+    private func handleCloudflareVerificationClosed() {
+        isPresentingCloudflareVerification = false
+        guard pendingCloudflareBaseURL != nil, !isCloudflareShieldSuppressed() else { return }
+        setCloudflareShieldButtonVisible(true, animated: true)
     }
 
     private func topMostPresenter() -> UIViewController? {
@@ -180,6 +382,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func normalizedBaseURL(_ value: String) -> String {
         value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    }
+
+    private func logCloudflareState(_ message: String) {
+        DohDebugLog.record("container \(message)", subsystem: "CF")
     }
 
     // MARK: - Auth Actions
@@ -258,7 +464,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
 extension ForumContainerViewController: UIAdaptivePresentationControllerDelegate {
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        isPresentingCloudflareVerification = false
+        handleCloudflareVerificationClosed()
     }
 }
 

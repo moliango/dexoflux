@@ -8,7 +8,7 @@ struct DiscourseUserSummaryResponse: Decodable {
     }
 }
 
-struct DiscourseUserSummary: Decodable {
+struct DiscourseUserSummary: Codable {
     let topicCount: Int
     let postCount: Int
     let likesGiven: Int

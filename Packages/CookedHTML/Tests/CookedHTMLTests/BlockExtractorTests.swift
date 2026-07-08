@@ -217,6 +217,81 @@ final class BlockExtractorTests: XCTestCase {
         }
     }
 
+    // MARK: - Poll
+
+    func testDiscoursePollDoesNotBecomeList() {
+        let html = """
+        <div class="poll" data-poll-name="poll" data-poll-type="regular" data-poll-status="open">
+          <div class="poll-container">
+            <ul>
+              <li data-poll-option-id="18-23"><p>18-23</p></li>
+              <li data-poll-option-id="24-29"><p>24-29</p></li>
+              <li data-poll-option-id="30-35"><p>30-35</p></li>
+              <li data-poll-option-id="35+"><p>35+</p></li>
+            </ul>
+          </div>
+          <div class="poll-info">
+            <span class="info-number">0</span>
+            <span class="info-label">投票人</span>
+          </div>
+        </div>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .poll(let poll) = blocks[0] {
+            XCTAssertEqual(poll.name, "poll")
+            XCTAssertEqual(poll.options.map(\.text), ["18-23", "24-29", "30-35", "35+"])
+            XCTAssertEqual(poll.votersText, "0 投票人")
+            XCTAssertEqual(poll.status, "open")
+        } else {
+            XCTFail("Expected poll block, got \(blocks)")
+        }
+    }
+
+    func testDiscoursePollParsesVoteMetadata() {
+        let html = """
+        <div class="poll" data-poll-name="poll" data-poll-type="regular" data-poll-status="open" data-poll-public="true" data-poll-results="always" data-poll-min="1" data-poll-max="1">
+          <div class="poll-container">
+            <ul>
+              <li class="chosen" data-poll-option-id="alpha" data-poll-option-votes="8">
+                <p>Alpha</p>
+                <span class="percentage">80%</span>
+              </li>
+              <li data-poll-option-id="beta" data-poll-option-votes="2">
+                <p>Beta</p>
+                <span class="percentage">20%</span>
+              </li>
+            </ul>
+          </div>
+          <div class="poll-info">
+            <span class="info-number">10</span>
+            <span class="info-label">投票人</span>
+          </div>
+        </div>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .poll(let poll) = blocks[0] {
+            XCTAssertEqual(poll.name, "poll")
+            XCTAssertEqual(poll.votersText, "10 投票人")
+            XCTAssertEqual(poll.votersCount, 10)
+            XCTAssertEqual(poll.minSelections, 1)
+            XCTAssertEqual(poll.maxSelections, 1)
+            XCTAssertEqual(poll.resultsMode, "always")
+            XCTAssertTrue(poll.isPublic)
+            XCTAssertEqual(poll.options[0].id, "alpha")
+            XCTAssertEqual(poll.options[0].voteCount, 8)
+            XCTAssertEqual(poll.options[0].percentageText, "80%")
+            XCTAssertTrue(poll.options[0].isSelected)
+            XCTAssertEqual(poll.options[1].id, "beta")
+            XCTAssertEqual(poll.options[1].voteCount, 2)
+            XCTAssertEqual(poll.options[1].percentageText, "20%")
+            XCTAssertFalse(poll.options[1].isSelected)
+        } else {
+            XCTFail("Expected poll block, got \(blocks)")
+        }
+    }
+
     // MARK: - Lightbox + inline text
 
     func testLightboxFollowedByTextAndEmoji() {

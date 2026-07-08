@@ -7,6 +7,7 @@ import UIKit
 final class TappableImageContainer: UIView {
     /// URL used when tapped — prefers the full-size href over the img src.
     var imageURL: URL?
+    var galleryImageURLs: [URL] = []
     weak var delegate: PostCellDelegate?
 
     private let imageView: SDAnimatedImageView = {
@@ -24,8 +25,9 @@ final class TappableImageContainer: UIView {
     /// Images narrower than this are displayed proportionally smaller on screen.
     private static let referenceWidth: CGFloat = 690
 
-    init(url: URL, width: Int?, height: Int?, containerWidth: CGFloat, href: URL? = nil) {
+    init(url: URL, width: Int?, height: Int?, containerWidth: CGFloat, href: URL? = nil, galleryImageURLs: [URL] = []) {
         imageURL = href ?? url
+        self.galleryImageURLs = galleryImageURLs
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -99,7 +101,8 @@ final class TappableImageContainer: UIView {
 
     @objc private func imageTapped() {
         guard let imageURL else { return }
-        delegate?.postCell(didTapImageURL: imageURL)
+        let imageURLs = galleryImageURLs.isEmpty ? [imageURL] : galleryImageURLs
+        delegate?.postCell(didTapImageURL: imageURL, imageURLs: imageURLs)
     }
 
     func cancelImageLoad() {
@@ -151,7 +154,8 @@ enum ImageRenderer: BlockRenderer {
             width: width,
             height: height,
             containerWidth: config.contentWidth,
-            href: hrefURL
+            href: hrefURL,
+            galleryImageURLs: config.galleryImageURLs
         )
         container.delegate = delegate
         return container

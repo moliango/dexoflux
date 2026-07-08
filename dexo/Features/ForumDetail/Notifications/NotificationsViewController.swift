@@ -15,9 +15,9 @@ final class NotificationsViewController: ObservableViewController {
         table.dataSource = self
         table.delegate = self
         table.separatorStyle = .none
-        table.backgroundColor = .systemBackground
+        table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = 76
+        table.estimatedRowHeight = 84
         table.refreshControl = refreshControl
         return table
     }()
@@ -89,7 +89,7 @@ final class NotificationsViewController: ObservableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "notifications.title")
-        view.backgroundColor = .systemBackground
+        applyThemeStyle()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "checkmark.circle"),
             style: .plain,
@@ -137,6 +137,7 @@ final class NotificationsViewController: ObservableViewController {
 
     override func updateUI() {
         refreshControl.endRefreshing()
+        applyThemeStyle()
 
         let hasNotifications = !viewModel.notifications.isEmpty
         let showSkeleton = viewModel.isLoading && !hasNotifications
@@ -169,6 +170,19 @@ final class NotificationsViewController: ObservableViewController {
         }
 
         tableView.reloadData()
+    }
+
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        let pageBackground = themeStyle.topicListBackgroundColor
+        view.backgroundColor = pageBackground
+        tableView.backgroundColor = pageBackground
+        view.tintColor = themeStyle.accentColor
+        refreshControl.tintColor = themeStyle.accentColor
+        skeletonView.applyThemeStyle()
+        stateIconView.tintColor = themeStyle.accentColor.withAlphaComponent(0.78)
+        loginButton.tintColor = themeStyle.accentColor
+        retryButton.tintColor = themeStyle.accentColor
     }
 
     private func configureCloseButtonIfNeeded() {
@@ -256,12 +270,21 @@ extension NotificationsViewController: UITableViewDataSource, UITableViewDelegat
 private final class NotificationCell: UITableViewCell {
     static let reuseIdentifier = "NotificationCell"
 
+    private let cardView: UIView = {
+        let view = UIView()
+        view.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        view.layer.cornerRadius = 12
+        view.layer.cornerCurve = .continuous
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
     private let avatarImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 20
-        imageView.backgroundColor = .secondarySystemFill
+        imageView.backgroundColor = AppSettings.shared.themeStyle.topicChipBackgroundColor
         imageView.tintColor = .secondaryLabel
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
@@ -269,7 +292,7 @@ private final class NotificationCell: UITableViewCell {
 
     private let badgeContainer: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = AppSettings.shared.themeStyle.topicChipBackgroundColor
         view.layer.cornerRadius = 11
         view.layer.shadowColor = UIColor.black.cgColor
         view.layer.shadowOpacity = 0.12
@@ -318,7 +341,7 @@ private final class NotificationCell: UITableViewCell {
 
     private let unreadDotView: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemBlue
+        view.backgroundColor = AppSettings.shared.themeStyle.accentColor
         view.layer.cornerRadius = 4
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -336,20 +359,26 @@ private final class NotificationCell: UITableViewCell {
 
     private func setupUI() {
         selectionStyle = .none
-        backgroundColor = .systemBackground
-        contentView.backgroundColor = .systemBackground
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
 
-        contentView.addSubview(avatarImageView)
-        contentView.addSubview(badgeContainer)
+        contentView.addSubview(cardView)
+        cardView.addSubview(avatarImageView)
+        cardView.addSubview(badgeContainer)
         badgeContainer.addSubview(badgeIconView)
-        contentView.addSubview(titleLabel)
-        contentView.addSubview(descriptionLabel)
-        contentView.addSubview(timeLabel)
-        contentView.addSubview(unreadDotView)
+        cardView.addSubview(titleLabel)
+        cardView.addSubview(descriptionLabel)
+        cardView.addSubview(timeLabel)
+        cardView.addSubview(unreadDotView)
 
         NSLayoutConstraint.activate([
-            avatarImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
-            avatarImageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
+
+            avatarImageView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
+            avatarImageView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
             avatarImageView.widthAnchor.constraint(equalToConstant: 40),
             avatarImageView.heightAnchor.constraint(equalToConstant: 40),
 
@@ -363,20 +392,20 @@ private final class NotificationCell: UITableViewCell {
             badgeIconView.widthAnchor.constraint(equalToConstant: 14),
             badgeIconView.heightAnchor.constraint(equalToConstant: 14),
 
-            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 14),
             titleLabel.trailingAnchor.constraint(equalTo: unreadDotView.leadingAnchor, constant: -10),
 
             descriptionLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
             descriptionLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             descriptionLabel.trailingAnchor.constraint(equalTo: timeLabel.leadingAnchor, constant: -8),
-            descriptionLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
+            descriptionLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12),
 
             timeLabel.centerYAnchor.constraint(equalTo: descriptionLabel.centerYAnchor),
-            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
 
             unreadDotView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            unreadDotView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            unreadDotView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
             unreadDotView.widthAnchor.constraint(equalToConstant: 8),
             unreadDotView.heightAnchor.constraint(equalToConstant: 8),
         ])
@@ -392,11 +421,18 @@ private final class NotificationCell: UITableViewCell {
     }
 
     func configure(with notification: DiscourseNotification, baseURL: String) {
+        let themeStyle = AppSettings.shared.themeStyle
         let icon = Self.icon(for: notification.notificationType)
-        let color = Self.color(for: notification.notificationType)
+        let color = Self.color(for: notification.notificationType, themeStyle: themeStyle)
+        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
+        avatarImageView.backgroundColor = themeStyle.topicChipBackgroundColor
+        unreadDotView.backgroundColor = themeStyle.accentColor
         badgeIconView.image = UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         badgeIconView.tintColor = notification.read ? .secondaryLabel : color
-        badgeContainer.backgroundColor = notification.read ? .secondarySystemBackground : .systemBackground
+        badgeContainer.backgroundColor = notification.read
+            ? themeStyle.topicChipBackgroundColor
+            : themeStyle.accentColor.withAlphaComponent(0.12)
+        badgeContainer.layer.shadowColor = themeStyle.accentColor.cgColor
 
         titleLabel.text = notification.displayTitle
         titleLabel.font = .systemFont(ofSize: 15, weight: notification.read ? .regular : .semibold)
@@ -461,7 +497,10 @@ private final class NotificationCell: UITableViewCell {
         }
     }
 
-    private static func color(for type: Int) -> UIColor {
+    private static func color(for type: Int, themeStyle: AppSettings.ThemeStyle) -> UIColor {
+        if themeStyle != .systemDefault {
+            return themeStyle.topicTagColor(for: "notification-\(type)")
+        }
         switch type {
         case 5, 19, 25:
             return .systemRed
@@ -482,10 +521,11 @@ private final class NotificationCell: UITableViewCell {
 }
 
 private final class NotificationListSkeletonView: UIView {
+    private var rows: [NotificationSkeletonRow] = []
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
-        backgroundColor = .systemBackground
         let stack = UIStackView()
         stack.axis = .vertical
         stack.spacing = 0
@@ -497,17 +537,28 @@ private final class NotificationListSkeletonView: UIView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
         for _ in 0 ..< 8 {
-            stack.addArrangedSubview(NotificationSkeletonRow())
+            let row = NotificationSkeletonRow()
+            rows.append(row)
+            stack.addArrangedSubview(row)
         }
+        applyThemeStyle()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        backgroundColor = themeStyle.topicListBackgroundColor
+        rows.forEach { $0.applyThemeStyle(themeStyle) }
+    }
 }
 
 private final class NotificationSkeletonRow: UIView {
+    private var skeletonViews: [UIView] = []
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
@@ -551,9 +602,15 @@ private final class NotificationSkeletonRow: UIView {
 
     private func makeSkeletonView(cornerRadius: CGFloat) -> UIView {
         let view = UIView()
-        view.backgroundColor = .secondarySystemFill
+        view.backgroundColor = AppSettings.shared.themeStyle.topicChipBackgroundColor
         view.layer.cornerRadius = cornerRadius
         view.translatesAutoresizingMaskIntoConstraints = false
+        skeletonViews.append(view)
         return view
+    }
+
+    func applyThemeStyle(_ themeStyle: AppSettings.ThemeStyle) {
+        backgroundColor = .clear
+        skeletonViews.forEach { $0.backgroundColor = themeStyle.topicChipBackgroundColor }
     }
 }

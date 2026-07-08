@@ -12,7 +12,7 @@ final class BookmarkCell: UITableViewCell {
 
     private let cardView: UIView = {
         let view = UIView()
-        view.backgroundColor = .secondarySystemGroupedBackground
+        view.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
         view.layer.cornerRadius = 12
         view.layer.cornerCurve = .continuous
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -24,7 +24,7 @@ final class BookmarkCell: UITableViewCell {
         iv.contentMode = .scaleAspectFill
         iv.clipsToBounds = true
         iv.layer.cornerRadius = 18
-        iv.backgroundColor = .secondarySystemFill
+        iv.backgroundColor = AppSettings.shared.themeStyle.topicChipBackgroundColor
         iv.translatesAutoresizingMaskIntoConstraints = false
         return iv
     }()
@@ -121,6 +121,7 @@ final class BookmarkCell: UITableViewCell {
     }
 
     func configure(with bookmark: DiscourseBookmark, baseURL: String) {
+        applyThemeStyle()
         titleLabel.text = bookmark.title ?? bookmark.name
         let excerpt = bookmark.excerpt.map(Self.cleanedExcerpt).flatMap { $0.nilIfEmpty }
         excerptLabel.text = excerpt
@@ -139,6 +140,13 @@ final class BookmarkCell: UITableViewCell {
             baseURL: baseURL,
             size: 96
         )
+    }
+
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
+        avatarImageView.backgroundColor = themeStyle.topicChipBackgroundColor
+        bookmarkBadge.applyThemeStyle(themeStyle)
     }
 
     override func prepareForReuse() {
@@ -180,7 +188,7 @@ private final class BookmarkMetaBadgeView: UIView {
     private let iconView: UIImageView = {
         let config = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
         let imageView = UIImageView(image: UIImage(systemName: "bookmark.fill", withConfiguration: config))
-        imageView.tintColor = .systemOrange
+        imageView.tintColor = AppSettings.shared.themeStyle.accentColor
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
@@ -189,7 +197,7 @@ private final class BookmarkMetaBadgeView: UIView {
     private let label: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 11, weight: .medium)
-        label.textColor = .systemOrange
+        label.textColor = AppSettings.shared.themeStyle.accentColor
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -218,8 +226,9 @@ private final class BookmarkMetaBadgeView: UIView {
     }
 
     private func setupUI() {
-        backgroundColor = UIColor.systemOrange.withAlphaComponent(0.12)
-        layer.borderColor = UIColor.systemOrange.withAlphaComponent(0.18).cgColor
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+        backgroundColor = accentColor.withAlphaComponent(0.12)
+        layer.borderColor = accentColor.withAlphaComponent(0.18).cgColor
         layer.borderWidth = 1
         layer.cornerRadius = 7
         layer.cornerCurve = .continuous
@@ -241,6 +250,14 @@ private final class BookmarkMetaBadgeView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+    }
+
+    func applyThemeStyle(_ themeStyle: AppSettings.ThemeStyle) {
+        let accentColor = themeStyle.accentColor
+        backgroundColor = accentColor.withAlphaComponent(0.12)
+        layer.borderColor = accentColor.withAlphaComponent(0.18).cgColor
+        iconView.tintColor = accentColor
+        label.textColor = accentColor
     }
 
     func configure(text: String?) {

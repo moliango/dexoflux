@@ -7,8 +7,13 @@ final class ForumTabBarController: UITabBarController {
     var onNavigationControllersChanged: (() -> Void)?
 
     private var isTabBarHiddenByScroll = false
-    private var originalAdditionalSafeAreaInsets: [ObjectIdentifier: UIEdgeInsets] = [:]
+    private var isAnimatingScrollTabBar = false
+    private var scrollTabBarAnimationID = 0
     private var settingsObservationToken: NSObjectProtocol?
+    private var authObservationToken: NSObjectProtocol?
+    private var meAvatarLoadTask: Task<Void, Never>?
+    private var renderedMeAvatarKey: String?
+    private var pendingMeAvatarKey: String?
     private var tabIdentifiers: [String] = []
     private var visibleDynamicTabItems: [AppSettings.ForumDynamicTabItem] = []
     private var renderedLanguage = AppSettings.shared.appLanguage
@@ -26,90 +31,142 @@ final class ForumTabBarController: UITabBarController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = AppSettings.shared.themeStyle.topicListBackgroundColor
 
         rebuildTabs(preservingIdentifier: nil)
         startObservingSettings()
+        startObservingAuth()
         configureTabBarSurface()
+        refreshMeTabAvatarIcon()
     }
 
     deinit {
         if let settingsObservationToken {
             NotificationCenter.default.removeObserver(settingsObservationToken)
         }
+        if let authObservationToken {
+            NotificationCenter.default.removeObserver(authObservationToken)
+        }
+        meAvatarLoadTask?.cancel()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if isTabBarHiddenByScroll || shouldHideTabBarForCurrentContent {
-            applyHiddenTabBarLayout()
-        } else {
-            applyVisibleTabBarLayout()
-        }
+        guard !isAnimatingScrollTabBar else { return }
+        applyCurrentTabBarLayout()
     }
 
     func setTabBarHiddenByScroll(_ hidden: Bool, animated: Bool) {
         guard isTabBarHiddenByScroll != hidden else { return }
         isTabBarHiddenByScroll = hidden
 
-        let updates = {
-            if hidden {
-                self.applyHiddenTabBarLayout()
-            } else {
-                self.applyVisibleTabBarLayout()
-            }
-            self.view.layoutIfNeeded()
+        guard animated else {
+            scrollTabBarAnimationID += 1
+            isAnimatingScrollTabBar = false
+            applyCurrentTabBarLayout()
+            return
         }
-        let completion: (Bool) -> Void = { [weak self] _ in
-            guard let self, self.isTabBarHiddenByScroll == hidden else { return }
+
+        guard !shouldHideTabBarForCurrentContent else {
+            scrollTabBarAnimationID += 1
+            isAnimatingScrollTabBar = false
+            applyCurrentTabBarLayout()
+            return
+        }
+
+        let hiddenTransform = CGAffineTransform(translationX: 0, y: tabBarTotalHeight + 8)
+        isAnimatingScrollTabBar = true
+        scrollTabBarAnimationID += 1
+        let animationID = scrollTabBarAnimationID
+
+        let completion: (UIViewAnimatingPosition) -> Void = { [weak self] _ in
+            guard let self, self.scrollTabBarAnimationID == animationID else { return }
+            self.isAnimatingScrollTabBar = false
+            guard self.isTabBarHiddenByScroll == hidden else { return }
             self.tabBar.isUserInteractionEnabled = !hidden
             if hidden {
-                self.applyHiddenTabBarLayout()
-            }
-            if !hidden {
+                self.applyCurrentTabBarLayout()
+            } else {
                 self.configureTabBarSurface()
-                self.applyVisibleTabBarLayout()
+                self.applyCurrentTabBarLayout()
             }
         }
 
-        if !hidden {
+        if hidden {
             tabBar.isHidden = false
             tabBar.alpha = 1
-            configureTabBarSurface()
-        }
-        tabBar.isUserInteractionEnabled = !hidden
-        if animated {
-            UIView.animate(
-                withDuration: 0.18,
-                delay: 0,
-                options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
-                animations: updates,
+            tabBar.transform = .identity
+            tabBar.frame = tabBarFrame(hidden: false)
+            tabBar.isUserInteractionEnabled = false
+            view.bringSubviewToFront(tabBar)
+
+            DexoMotion.animate(
+                duration: DexoMotion.standard,
+                animations: {
+                    self.tabBar.transform = hiddenTransform
+                    self.expandSelectedContentIntoTabBarArea()
+                    self.view.layoutIfNeeded()
+                },
                 completion: completion
             )
         } else {
-            updates()
-            completion(true)
+            tabBar.isHidden = false
+            tabBar.alpha = 1
+            tabBar.frame = tabBarFrame(hidden: false)
+            tabBar.transform = hiddenTransform
+            configureTabBarSurface()
+            view.bringSubviewToFront(tabBar)
+
+            DexoMotion.animate(
+                duration: DexoMotion.standard,
+                animations: {
+                    self.tabBar.transform = .identity
+                    self.view.layoutIfNeeded()
+                },
+                completion: completion
+            )
         }
     }
 
     func configureTabBarSurface() {
-        let themeStyle = AppSettings.shared.themeStyle
+        let settings = AppSettings.shared
+        let themeStyle = settings.themeStyle
+        view.backgroundColor = themeStyle.topicListBackgroundColor
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = themeStyle == .systemDefault ? .systemBackground : themeStyle.contentBackgroundColor
         appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
+        let normalTitleAttributes: [NSAttributedString.Key: Any] = [
+            .font: settings.tabBarItemFont(selected: false),
+            .foregroundColor: UIColor.secondaryLabel,
+        ]
+        let selectedTitleAttributes: [NSAttributedString.Key: Any] = [
+            .font: settings.tabBarItemFont(selected: true),
+            .foregroundColor: themeStyle.accentColor,
+        ]
+        [
+            appearance.stackedLayoutAppearance,
+            appearance.inlineLayoutAppearance,
+            appearance.compactInlineLayoutAppearance,
+        ].forEach { itemAppearance in
+            itemAppearance.normal.titleTextAttributes = normalTitleAttributes
+            itemAppearance.selected.titleTextAttributes = selectedTitleAttributes
+            itemAppearance.normal.iconColor = UIColor.secondaryLabel.withAlphaComponent(0.78)
+            itemAppearance.selected.iconColor = themeStyle.accentColor
+        }
         tabBar.standardAppearance = appearance
         tabBar.scrollEdgeAppearance = appearance
         tabBar.backgroundColor = appearance.backgroundColor
         tabBar.barTintColor = appearance.backgroundColor
         tabBar.tintColor = themeStyle.accentColor
+        tabBar.unselectedItemTintColor = UIColor.secondaryLabel.withAlphaComponent(0.78)
         tabBar.isOpaque = true
         tabBar.isTranslucent = false
-        tabBar.alpha = isTabBarHiddenByScroll ? 0 : 1
+        tabBar.alpha = 1
     }
 
     var visibleTabBarHeight: CGFloat {
-        guard !isTabBarHiddenByScroll else { return 0 }
+        guard !isTabBarHiddenByScroll, !shouldHideTabBarForCurrentContent, !tabBar.isHidden else { return 0 }
         return tabBarTotalHeight
     }
 
@@ -127,14 +184,25 @@ final class ForumTabBarController: UITabBarController {
         return visibleViewController.hidesBottomBarWhenPushed
     }
 
-    private func applyHiddenTabBarLayout() {
-        tabBar.isHidden = false
-        tabBar.alpha = 0
+    private func applyCurrentTabBarLayout() {
+        if shouldHideTabBarForCurrentContent {
+            applyHiddenTabBarLayout(expandsSelectedContent: false)
+        } else if isTabBarHiddenByScroll {
+            applyHiddenTabBarLayout(expandsSelectedContent: true)
+        } else {
+            applyVisibleTabBarLayout()
+        }
+    }
+
+    private func applyHiddenTabBarLayout(expandsSelectedContent: Bool) {
+        tabBar.isHidden = true
+        tabBar.alpha = 1
         tabBar.transform = .identity
         tabBar.frame = tabBarFrame(hidden: true)
         tabBar.isUserInteractionEnabled = false
-        applyBottomSafeAreaCompensation(hidden: true)
-        expandSelectedContentIntoTabBarArea()
+        if expandsSelectedContent {
+            expandSelectedContentIntoTabBarArea()
+        }
     }
 
     private func applyVisibleTabBarLayout() {
@@ -144,7 +212,6 @@ final class ForumTabBarController: UITabBarController {
         tabBar.frame = tabBarFrame(hidden: false)
         tabBar.isUserInteractionEnabled = true
         view.bringSubviewToFront(tabBar)
-        applyBottomSafeAreaCompensation(hidden: false)
     }
 
     private func tabBarFrame(hidden: Bool) -> CGRect {
@@ -186,28 +253,6 @@ final class ForumTabBarController: UITabBarController {
         contentView.layoutIfNeeded()
     }
 
-    private func applyBottomSafeAreaCompensation(hidden: Bool) {
-        for navigationController in navigationControllers {
-            applyBottomSafeAreaCompensation(hidden: hidden, to: navigationController)
-            navigationController.viewControllers.forEach {
-                applyBottomSafeAreaCompensation(hidden: hidden, to: $0)
-            }
-        }
-    }
-
-    private func applyBottomSafeAreaCompensation(hidden: Bool, to viewController: UIViewController) {
-        let key = ObjectIdentifier(viewController)
-        if hidden {
-            if originalAdditionalSafeAreaInsets[key] == nil {
-                originalAdditionalSafeAreaInsets[key] = viewController.additionalSafeAreaInsets
-            }
-            var compensatedInsets = originalAdditionalSafeAreaInsets[key] ?? .zero
-            compensatedInsets.bottom -= tabBarTotalHeight
-            viewController.additionalSafeAreaInsets = compensatedInsets
-        } else if let originalInsets = originalAdditionalSafeAreaInsets.removeValue(forKey: key) {
-            viewController.additionalSafeAreaInsets = originalInsets
-        }
-    }
 }
 
 private extension ForumTabBarController {
@@ -228,6 +273,16 @@ private extension ForumTabBarController {
         }
     }
 
+    func startObservingAuth() {
+        authObservationToken = NotificationCenter.default.addObserver(
+            forName: DexoObservableObject.didChangeNotification,
+            object: AuthManager.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshMeTabAvatarIcon(forceRefresh: true)
+        }
+    }
+
     func handleSettingsChanged() {
         configureTabBarSurface()
         let currentLanguage = AppSettings.shared.appLanguage
@@ -245,8 +300,6 @@ private extension ForumTabBarController {
     }
 
     func rebuildTabs(preservingIdentifier preferredIdentifier: String?) {
-        applyBottomSafeAreaCompensation(hidden: false)
-
         let specs = buildTabSpecs()
         var controllers: [UINavigationController] = []
         var identifiers: [String] = []
@@ -257,11 +310,22 @@ private extension ForumTabBarController {
 
             let navigationController = UINavigationController(rootViewController: rootViewController)
             navigationController.delegate = self
-            navigationController.tabBarItem = UITabBarItem(
+            let tabBarItem = UITabBarItem(
                 title: spec.title,
-                image: UIImage(systemName: spec.symbolName),
-                tag: index
+                image: DexoTabBarIconStyle.image(
+                    identifier: spec.identifier,
+                    fallbackSymbolName: spec.symbolName,
+                    selected: false
+                ),
+                selectedImage: DexoTabBarIconStyle.image(
+                    identifier: spec.identifier,
+                    fallbackSymbolName: spec.symbolName,
+                    selected: true
+                )
             )
+            tabBarItem.tag = index
+            tabBarItem.imageInsets = UIEdgeInsets(top: -1, left: 0, bottom: 1, right: 0)
+            navigationController.tabBarItem = tabBarItem
             navigationController.tabBarItem.accessibilityIdentifier = "forum.tab.\(spec.identifier)"
             controllers.append(navigationController)
             identifiers.append(spec.identifier)
@@ -275,7 +339,11 @@ private extension ForumTabBarController {
             self.tabs = zip(specs, controllers).map { spec, navigationController in
                 UITab(
                     title: spec.title,
-                    image: UIImage(systemName: spec.symbolName),
+                    image: DexoTabBarIconStyle.image(
+                        identifier: spec.identifier,
+                        fallbackSymbolName: spec.symbolName,
+                        selected: false
+                    ),
                     identifier: spec.identifier
                 ) { _ in
                     navigationController
@@ -293,12 +361,136 @@ private extension ForumTabBarController {
         }
 
         configureTabBarSurface()
+        refreshMeTabAvatarIcon()
         onNavigationControllersChanged?()
     }
 
     func selectedTabIdentifier() -> String? {
         guard selectedIndex >= 0, selectedIndex < tabIdentifiers.count else { return nil }
         return tabIdentifiers[selectedIndex]
+    }
+
+    func refreshMeTabAvatarIcon(forceRefresh: Bool = false) {
+        guard let meIndex = tabIdentifiers.firstIndex(of: "me"),
+              meIndex < navigationControllers.count
+        else { return }
+
+        let authManager = AuthManager.shared
+        guard authManager.isAuthenticated(for: api.baseURL) else {
+            meAvatarLoadTask?.cancel()
+            meAvatarLoadTask = nil
+            pendingMeAvatarKey = nil
+            renderedMeAvatarKey = nil
+            applyDefaultMeTabIcon(at: meIndex)
+            return
+        }
+
+        let username = authManager.username(for: api.baseURL)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let avatarKey = meAvatarKey(username: username)
+
+        if !forceRefresh, renderedMeAvatarKey == avatarKey {
+            return
+        }
+
+        if let username, !username.isEmpty,
+           let cachedEntry = MeProfileCacheStore.cachedProfile(baseURL: api.baseURL, username: username) {
+            let avatarTemplate = cachedEntry.userProfile.avatarTemplate ?? cachedEntry.currentUser.avatarTemplate
+            applyMeTabAvatar(template: avatarTemplate, at: meIndex, avatarKey: avatarKey)
+            return
+        }
+
+        guard pendingMeAvatarKey != avatarKey else { return }
+        pendingMeAvatarKey = avatarKey
+        meAvatarLoadTask?.cancel()
+        meAvatarLoadTask = Task { [weak self, api] in
+            do {
+                let currentUser = try await api.fetchCurrentUser()
+                await MainActor.run {
+                    guard let self else { return }
+                    self.pendingMeAvatarKey = nil
+                    self.meAvatarLoadTask = nil
+                    guard AuthManager.shared.isAuthenticated(for: self.api.baseURL) else {
+                        self.renderedMeAvatarKey = nil
+                        self.applyDefaultMeTabIcon(at: meIndex)
+                        return
+                    }
+                    self.applyMeTabAvatar(
+                        template: currentUser.avatarTemplate,
+                        at: meIndex,
+                        avatarKey: self.meAvatarKey(username: currentUser.username)
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.pendingMeAvatarKey = nil
+                    self.meAvatarLoadTask = nil
+                    if !AuthManager.shared.isAuthenticated(for: self.api.baseURL) {
+                        self.renderedMeAvatarKey = nil
+                        self.applyDefaultMeTabIcon(at: meIndex)
+                    }
+                }
+            }
+        }
+    }
+
+    func applyMeTabAvatar(template: String?, at index: Int, avatarKey: String) {
+        guard let url = AvatarImageLoader.url(from: template, baseURL: api.baseURL, size: 96) else {
+            renderedMeAvatarKey = nil
+            applyDefaultMeTabIcon(at: index)
+            return
+        }
+
+        let requestedKey = avatarKey
+        ForumImageLoader.loadImage(with: url) { [weak self] image in
+            guard let self, let image else { return }
+            guard AuthManager.shared.isAuthenticated(for: self.api.baseURL) else { return }
+            let currentUsername = AuthManager.shared.username(for: self.api.baseURL)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let currentUsername, !currentUsername.isEmpty,
+               self.meAvatarKey(username: currentUsername) != requestedKey {
+                return
+            }
+            let normalImage = DexoTabBarIconStyle.avatarImage(
+                image,
+                selected: false,
+                accentColor: AppSettings.shared.themeStyle.accentColor
+            )
+            let selectedImage = DexoTabBarIconStyle.avatarImage(
+                image,
+                selected: true,
+                accentColor: AppSettings.shared.themeStyle.accentColor
+            )
+            self.applyMeTabImages(normalImage: normalImage, selectedImage: selectedImage, at: index)
+            self.renderedMeAvatarKey = requestedKey
+        }
+    }
+
+    func applyDefaultMeTabIcon(at index: Int) {
+        let normalImage = DexoTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: false)
+        let selectedImage = DexoTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: true)
+        applyMeTabImages(normalImage: normalImage, selectedImage: selectedImage, at: index)
+    }
+
+    func applyMeTabImages(normalImage: UIImage?, selectedImage: UIImage?, at index: Int) {
+        guard index >= 0, index < navigationControllers.count else { return }
+        guard let tabBarItem = navigationControllers[index].tabBarItem else { return }
+        tabBarItem.image = normalImage
+        tabBarItem.selectedImage = selectedImage
+        tabBarItem.imageInsets = UIEdgeInsets(top: -1, left: 0, bottom: 1, right: 0)
+        if #available(iOS 18.0, *), index < tabs.count {
+            tabs[index].image = normalImage
+        }
+        tabBar.setNeedsLayout()
+    }
+
+    func meAvatarKey(username: String?) -> String {
+        let baseURL = api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        let userPart = username?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return "\(baseURL)|\(userPart?.isEmpty == false ? userPart! : "_authenticated")"
     }
 
     func refreshLocalizedTabTitles() {
@@ -308,6 +500,7 @@ private extension ForumTabBarController {
             navigationController.tabBarItem.title = spec.title
             navigationController.viewControllers.first?.title = spec.title
         }
+        refreshMeTabAvatarIcon()
         if #available(iOS 18.0, *) {
             for (index, tab) in tabs.enumerated() where index < specs.count {
                 tab.title = specs[index].title
@@ -366,6 +559,96 @@ private extension ForumTabBarController {
     }
 }
 
+enum DexoTabBarIconStyle {
+    private static let normalConfiguration = UIImage.SymbolConfiguration(
+        pointSize: 18,
+        weight: .bold,
+        scale: .large
+    )
+    private static let selectedConfiguration = UIImage.SymbolConfiguration(
+        pointSize: 19,
+        weight: .heavy,
+        scale: .large
+    )
+
+    static func image(identifier: String, fallbackSymbolName: String, selected: Bool) -> UIImage? {
+        let symbolName = filledSymbolName(for: identifier, fallback: fallbackSymbolName)
+        return image(named: symbolName, fallbackSymbolName: fallbackSymbolName, selected: selected)
+    }
+
+    static func image(named symbolName: String, selected: Bool) -> UIImage? {
+        image(named: symbolName, fallbackSymbolName: symbolName, selected: selected)
+    }
+
+    static func avatarImage(_ source: UIImage, selected: Bool, accentColor: UIColor) -> UIImage {
+        let canvasSize = CGSize(width: 26, height: 26)
+        let ringWidth: CGFloat = selected ? 2.0 : 1.0
+        let avatarRect = CGRect(x: 2.5, y: 2.5, width: 21, height: 21)
+        let renderer = UIGraphicsImageRenderer(size: canvasSize)
+
+        return renderer.image { context in
+            let cgContext = context.cgContext
+            let avatarPath = UIBezierPath(ovalIn: avatarRect)
+            UIColor.secondarySystemFill.setFill()
+            avatarPath.fill()
+
+            cgContext.saveGState()
+            avatarPath.addClip()
+            drawAspectFill(source, in: avatarRect)
+            cgContext.restoreGState()
+
+            let strokeColor = selected
+                ? accentColor
+                : UIColor.separator.withAlphaComponent(0.55)
+            strokeColor.setStroke()
+            avatarPath.lineWidth = ringWidth
+            avatarPath.stroke()
+        }.withRenderingMode(.alwaysOriginal)
+    }
+
+    private static func image(named symbolName: String, fallbackSymbolName: String, selected: Bool) -> UIImage? {
+        let configuration = selected ? selectedConfiguration : normalConfiguration
+        return UIImage(systemName: symbolName, withConfiguration: configuration)?
+            .withRenderingMode(.alwaysTemplate)
+            ?? UIImage(systemName: fallbackSymbolName, withConfiguration: configuration)?
+            .withRenderingMode(.alwaysTemplate)
+    }
+
+    private static func filledSymbolName(for identifier: String, fallback: String) -> String {
+        switch identifier {
+        case "home":
+            return "house.fill"
+        case "history":
+            return "clock.fill"
+        case "search":
+            return "magnifyingglass.circle.fill"
+        case "notifications":
+            return "bell.fill"
+        case "messages":
+            return "envelope.fill"
+        case "bookmarks":
+            return "bookmark.fill"
+        case "me":
+            return "person.crop.circle.fill"
+        default:
+            return fallback
+        }
+    }
+
+    private static func drawAspectFill(_ image: UIImage, in rect: CGRect) {
+        guard image.size.width > 0, image.size.height > 0 else { return }
+        let scale = max(rect.width / image.size.width, rect.height / image.size.height)
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let drawRect = CGRect(
+            x: rect.midX - drawSize.width / 2,
+            y: rect.midY - drawSize.height / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        image.draw(in: drawRect)
+    }
+}
+
 extension ForumTabBarController: UINavigationControllerDelegate {
     func navigationController(
         _ navigationController: UINavigationController,
@@ -384,6 +667,8 @@ extension ForumTabBarController: UINavigationControllerDelegate {
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
+        isAnimatingScrollTabBar = false
+        applyCurrentTabBarLayout()
     }
 }
 
@@ -548,7 +833,7 @@ final class BrowsingHistoryViewController: ObservableViewController {
         table.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
         table.delegate = self
         table.separatorStyle = .none
-        table.backgroundColor = .systemGroupedBackground
+        table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
         table.estimatedRowHeight = TopicCell.estimatedHeight
         table.showsVerticalScrollIndicator = false
@@ -664,7 +949,7 @@ final class BrowsingHistoryViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        applyThemeStyle()
         tableView.tableFooterView = emptyFooterView
         tableView.refreshControl = refreshControl
 
@@ -700,6 +985,7 @@ final class BrowsingHistoryViewController: ObservableViewController {
 
     override func updateUI() {
         refreshControl.endRefreshing()
+        applyThemeStyle()
 
         var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
         snapshot.appendSections([0])
@@ -709,6 +995,11 @@ final class BrowsingHistoryViewController: ObservableViewController {
             return topic.id
         }
         snapshot.appendItems(uniqueIds, toSection: 0)
+        let currentIds = Set(dataSource.snapshot().itemIdentifiers)
+        let reconfigurableIds = uniqueIds.filter { currentIds.contains($0) }
+        if !reconfigurableIds.isEmpty {
+            snapshot.reconfigureItems(reconfigurableIds)
+        }
         dataSource.apply(snapshot, animatingDifferences: view.window != nil)
 
         let hasTopics = !viewModel.topics.isEmpty
@@ -751,6 +1042,20 @@ final class BrowsingHistoryViewController: ObservableViewController {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
         }
+    }
+
+    private func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        let pageBackground = themeStyle.topicListBackgroundColor
+        view.backgroundColor = pageBackground
+        tableView.backgroundColor = pageBackground
+        view.tintColor = themeStyle.accentColor
+        refreshControl.tintColor = themeStyle.accentColor
+        activityIndicator.color = themeStyle.accentColor
+        footerSpinner.color = themeStyle.accentColor
+        stateIconView.tintColor = themeStyle.accentColor.withAlphaComponent(0.78)
+        loginButton.tintColor = themeStyle.accentColor
+        retryButton.tintColor = themeStyle.accentColor
     }
 
     private func configureState(iconName: String, text: String, showLogin: Bool, showRetry: Bool) {
@@ -818,99 +1123,127 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
     private let operation: UINavigationController.Operation
     private let detailOffset: CGFloat = 34
     private let listParallaxOffset: CGFloat = 12
+    private var runningAnimator: UIViewPropertyAnimator?
 
     init(operation: UINavigationController.Operation) {
         self.operation = operation
     }
 
     func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-        0.24
+        DexoMotion.emphasized
     }
 
     func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+        let animator = interruptibleAnimator(using: transitionContext)
+        animator.startAnimation()
+    }
+
+    func interruptibleAnimator(using transitionContext: UIViewControllerContextTransitioning) -> UIViewImplicitlyAnimating {
+        if let runningAnimator {
+            return runningAnimator
+        }
+
         guard let fromView = transitionContext.view(forKey: .from),
               let toView = transitionContext.view(forKey: .to)
         else {
             transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
-            return
+            return DexoMotion.propertyAnimator(duration: 0)
         }
 
+        let animator: UIViewPropertyAnimator
         switch operation {
         case .push:
-            animatePush(fromView: fromView, toView: toView, context: transitionContext)
+            animator = makePushAnimator(fromView: fromView, toView: toView, context: transitionContext)
         case .pop:
-            animatePop(fromView: fromView, toView: toView, context: transitionContext)
+            animator = makePopAnimator(fromView: fromView, toView: toView, context: transitionContext)
         default:
             transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+            animator = DexoMotion.propertyAnimator(duration: 0)
         }
+
+        runningAnimator = animator
+        return animator
     }
 
-    private func animatePush(
+    func animationEnded(_ transitionCompleted: Bool) {
+        runningAnimator = nil
+    }
+
+    private func makePushAnimator(
         fromView: UIView,
         toView: UIView,
         context: UIViewControllerContextTransitioning
-    ) {
+    ) -> UIViewPropertyAnimator {
         let container = context.containerView
         guard let toViewController = context.viewController(forKey: .to) else {
             context.completeTransition(false)
-            return
+            return DexoMotion.propertyAnimator(duration: 0)
         }
         toView.frame = context.finalFrame(for: toViewController)
-        toView.alpha = 0.96
-        toView.transform = CGAffineTransform(translationX: detailOffset, y: 0)
+        toView.alpha = 0.94
+        toView.transform = CGAffineTransform(translationX: detailOffset, y: 6)
+            .scaledBy(x: 0.992, y: 0.992)
         container.addSubview(toView)
 
-        UIView.animate(
-            withDuration: transitionDuration(using: context),
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]
-        ) {
+        let animator = DexoMotion.propertyAnimator(
+            duration: transitionDuration(using: context),
+            timingParameters: DexoMotion.softSpring
+        )
+        animator.addAnimations {
             fromView.alpha = 0.98
             fromView.transform = CGAffineTransform(translationX: -self.listParallaxOffset, y: 0)
+                .scaledBy(x: 0.992, y: 0.992)
             toView.alpha = 1
             toView.transform = .identity
-        } completion: { _ in
-            let completed = !context.transitionWasCancelled
+        }
+        animator.addCompletion { [weak self] position in
+            let completed = position == .end && !context.transitionWasCancelled
             fromView.alpha = 1
             fromView.transform = .identity
             if !completed {
                 toView.removeFromSuperview()
             }
             context.completeTransition(completed)
+            self?.runningAnimator = nil
         }
+        return animator
     }
 
-    private func animatePop(
+    private func makePopAnimator(
         fromView: UIView,
         toView: UIView,
         context: UIViewControllerContextTransitioning
-    ) {
+    ) -> UIViewPropertyAnimator {
         let container = context.containerView
         guard let toViewController = context.viewController(forKey: .to) else {
             context.completeTransition(false)
-            return
+            return DexoMotion.propertyAnimator(duration: 0)
         }
         toView.frame = context.finalFrame(for: toViewController)
         toView.alpha = 0.98
         toView.transform = CGAffineTransform(translationX: -listParallaxOffset, y: 0)
         container.insertSubview(toView, belowSubview: fromView)
 
-        UIView.animate(
-            withDuration: transitionDuration(using: context),
-            delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
-        ) {
+        let animator = DexoMotion.propertyAnimator(
+            duration: transitionDuration(using: context),
+            timingParameters: DexoMotion.softSpring
+        )
+        animator.addAnimations {
             fromView.alpha = 0.96
             fromView.transform = CGAffineTransform(translationX: self.detailOffset, y: 0)
+                .scaledBy(x: 0.992, y: 0.992)
             toView.alpha = 1
             toView.transform = .identity
-        } completion: { _ in
-            let completed = !context.transitionWasCancelled
+        }
+        animator.addCompletion { [weak self] position in
+            let completed = position == .end && !context.transitionWasCancelled
             fromView.alpha = 1
             fromView.transform = .identity
             toView.alpha = 1
             toView.transform = .identity
             context.completeTransition(completed)
+            self?.runningAnimator = nil
         }
+        return animator
     }
 }

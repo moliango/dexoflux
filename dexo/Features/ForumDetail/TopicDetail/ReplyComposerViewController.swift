@@ -1,5 +1,4 @@
 import PhotosUI
-import SDWebImage
 import UIKit
 import UniformTypeIdentifiers
 
@@ -215,7 +214,16 @@ final class BoostInputViewController: UIViewController {
     private func loadForumEmojisIfNeeded() {
         guard !hasLoadedForumEmojis else { return }
         hasLoadedForumEmojis = true
-        emojiPickerView.showLoading()
+        let cachedEntries = EmojiStore.cachedEntries(for: api.baseURL) ?? []
+        if cachedEntries.isEmpty {
+            emojiPickerView.showLoading()
+        } else {
+            EmojiStore.load(for: api.baseURL)
+            emojiPickerView.setEmojiGroups(
+                [DiscourseEmojiGroup(key: "custom", emojis: cachedEntries)],
+                baseURL: api.baseURL
+            )
+        }
         Task {
             do {
                 let groups = try await api.fetchEmojiGroups()
@@ -224,7 +232,9 @@ final class BoostInputViewController: UIViewController {
                 }
             } catch {
                 await MainActor.run {
-                    self.emojiPickerView.showError()
+                    if cachedEntries.isEmpty {
+                        self.emojiPickerView.showError()
+                    }
                 }
             }
         }
@@ -847,12 +857,7 @@ final class ReplyComposerViewController: UIViewController {
                   let url = attachment.emojiURL
             else { return }
 
-            SDWebImageManager.shared.loadImage(
-                with: url,
-                options: AvatarImageLoader.options,
-                context: AvatarImageLoader.context(for: url),
-                progress: nil
-            ) { [weak self, weak attachment] image, _, _, _, _, _ in
+            ForumImageLoader.loadImage(with: url) { [weak self, weak attachment] image in
                 guard let self, let attachment, let image else { return }
                 DispatchQueue.main.async {
                     attachment.image = image

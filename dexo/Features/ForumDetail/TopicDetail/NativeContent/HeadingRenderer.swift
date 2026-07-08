@@ -33,7 +33,9 @@ enum HeadingRenderer: BlockRenderer {
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
             contentWidth: config.contentWidth,
-            baseURL: config.baseURL
+            baseURL: config.baseURL,
+            postId: config.postId,
+            galleryImageURLs: config.galleryImageURLs
         )
 
         let attributedText = headingConfig.styledAttributedString(

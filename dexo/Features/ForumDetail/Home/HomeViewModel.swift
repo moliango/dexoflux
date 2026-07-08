@@ -108,7 +108,7 @@ final class HomeViewModel: DexoObservableObject {
         return categoryIndex[id]
     }
 
-    func loadTopics() async {
+    func loadTopics(retryingExplicitCancellation: Bool = false) async {
         isLoading = true
         errorMessage = nil
         requiresLogin = false
@@ -127,6 +127,9 @@ final class HomeViewModel: DexoObservableObject {
             clearProtectedContentForLoginRequired(invalidateSession: true)
             return
         case .unavailable(let error):
+            if await handleExplicitCancellationIfNeeded(error, retryingExplicitCancellation: retryingExplicitCancellation) {
+                return
+            }
             isBlockedByCloudflare = isCloudflareChallenge(error)
             errorMessage = error.localizedDescription
             return
@@ -147,6 +150,9 @@ final class HomeViewModel: DexoObservableObject {
         } catch is CancellationError {
             errorMessage = nil
         } catch {
+            if await handleExplicitCancellationIfNeeded(error, retryingExplicitCancellation: retryingExplicitCancellation) {
+                return
+            }
             if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
@@ -350,6 +356,24 @@ final class HomeViewModel: DexoObservableObject {
 
     private func isCloudflareChallenge(_ error: Error) -> Bool {
         (error as? DiscourseAPIError)?.isCloudflareChallenge == true
+    }
+
+    private func handleExplicitCancellationIfNeeded(
+        _ error: Error,
+        retryingExplicitCancellation: Bool
+    ) async -> Bool {
+        guard DiscourseAPI.isExplicitlyCancelledRequest(error) else { return false }
+        errorMessage = nil
+        isBlockedByCloudflare = false
+        guard !retryingExplicitCancellation, !Task.isCancelled else { return true }
+        do {
+            try await Task.sleep(nanoseconds: 250_000_000)
+        } catch {
+            return true
+        }
+        guard !Task.isCancelled else { return true }
+        await loadTopics(retryingExplicitCancellation: true)
+        return true
     }
 
     private func fetchTopics(page: Int) async throws -> DiscourseTopicList {

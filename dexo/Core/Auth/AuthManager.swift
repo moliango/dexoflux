@@ -38,12 +38,17 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
     func refreshWebSessionUserIfPossible(forum: ForumInstance) async -> Bool {
         let baseURL = normalizedBaseURL(forum.baseURL)
         guard hasRecoverableWebSession(for: baseURL) else { return false }
+        let previousUsername = usernameCache[baseURL] ?? forum.username
 
         _ = await WebSessionRefreshService.shared.ensureSynced(forum: forum, reason: "refresh_user")
 
         let api = DiscourseAPI(baseURL: baseURL)
         do {
             let currentUser = try await api.fetchCurrentUser()
+            if let previousUsername,
+               previousUsername.caseInsensitiveCompare(currentUser.username) != .orderedSame {
+                MeProfileCacheStore.clear(baseURL: baseURL)
+            }
             usernameCache[baseURL] = currentUser.username
             var forumToUpdate = forum
             forumToUpdate.username = currentUser.username
@@ -98,6 +103,7 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
         KeychainHelper.deleteLegacyCredential(for: baseURL)
         KeychainHelper.deleteLegacyRSAKeyPair(for: baseURL)
         WebCookieStore.shared.clearCookies(for: baseURL)
+        MeProfileCacheStore.clear(baseURL: baseURL)
         usernameCache.removeValue(forKey: baseURL)
 
         // Clear username from DB
@@ -112,6 +118,7 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
         KeychainHelper.deleteLegacyCredential(for: baseURL)
         KeychainHelper.deleteLegacyRSAKeyPair(for: baseURL)
         WebCookieStore.shared.clearCookies(for: baseURL)
+        MeProfileCacheStore.clear(baseURL: baseURL)
         usernameCache.removeValue(forKey: baseURL)
         notifyChanged()
     }

@@ -168,6 +168,21 @@ enum AvatarImageLoader {
 }
 
 enum ForumImageLoader {
+    @discardableResult
+    static func loadImage(
+        with url: URL,
+        completed: @escaping (UIImage?) -> Void
+    ) -> SDWebImageOperation? {
+        SDWebImageManager.shared.loadImage(
+            with: url,
+            options: AvatarImageLoader.options,
+            context: AvatarImageLoader.context(for: url),
+            progress: nil
+        ) { image, _, _, _, _, _ in
+            completed(image)
+        }
+    }
+
     static func setImage(
         on imageView: UIImageView,
         url: URL?,

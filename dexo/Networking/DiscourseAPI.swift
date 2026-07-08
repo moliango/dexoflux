@@ -47,11 +47,23 @@ private func shouldMergeWebCookieResponseHeaders(baseURL: String, responseURL: U
 
 struct DiscourseReactionToggleResponse: Decodable {
     let reactions: [DiscourseTopicDetail.Reaction]
+    let reactionUsersCount: Int?
     let currentUserReaction: DiscourseTopicDetail.Reaction?
 
     enum CodingKeys: String, CodingKey {
         case reactions
+        case reactionUsersCount = "reaction_users_count"
         case currentUserReaction = "current_user_reaction"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reactions = (try? container.decodeIfPresent([DiscourseTopicDetail.Reaction].self, forKey: .reactions)) ?? []
+        reactionUsersCount = container.decodeLossyInt(forKey: .reactionUsersCount)
+        currentUserReaction = try? container.decodeIfPresent(
+            DiscourseTopicDetail.Reaction.self,
+            forKey: .currentUserReaction
+        )
     }
 }
 
@@ -135,6 +147,18 @@ final class DiscourseAPI {
 
         oldSession?.cancelAllRequests()
         interceptor.invalidateCSRFToken()
+    }
+
+    static func isExplicitlyCancelledRequest(_ error: Error) -> Bool {
+        if let afError = error as? AFError,
+           case .explicitlyCancelled = afError {
+            return true
+        }
+        let message = error.localizedDescription.lowercased()
+        return message.contains("request explicitly cancelled")
+            || message.contains("request explicitly canceled")
+            || message.contains("explicitly cancelled")
+            || message.contains("explicitly canceled")
     }
 
     // MARK: - Public API
@@ -552,6 +576,62 @@ final class DiscourseAPI {
     }
 
     @discardableResult
+    func votePoll(postId: Int, pollName: String, optionIds: [String]) async throws -> DiscoursePollVoteResponse {
+        let cleanedOptions = optionIds
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard postId > 0, !pollName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !cleanedOptions.isEmpty else {
+            throw DiscourseAPIError(messages: [String(localized: "post.poll.invalid_selection")], errorType: "invalid_poll_vote")
+        }
+
+        let route = DiscourseRouter.votePoll
+        let url = baseURL + route.path
+        let parameters: Parameters = [
+            "post_id": postId,
+            "poll_name": pollName,
+            "options": cleanedOptions,
+        ]
+        let response = await session.request(
+            url,
+            method: route.method,
+            parameters: parameters,
+            encoding: URLEncoding.httpBody
+        )
+        .serializingData()
+        .response
+
+        if let newToken = response.response?.value(forHTTPHeaderField: "X-CSRF-Token") {
+            interceptor.updateCSRFToken(newToken)
+        }
+        if let httpResponse = response.response, let responseURL = httpResponse.url,
+           shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: responseURL) {
+            WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: responseURL)
+        }
+        if Self.isCloudflareChallengeResponse(response.response, data: response.data) {
+            Self.postCloudflareChallengeDetected(baseURL: baseURL, responseURL: response.response?.url)
+            throw Self.cloudflareChallengeError()
+        }
+        if let statusCode = response.response?.statusCode, !(200 ..< 300).contains(statusCode) {
+            if statusCode == 429 {
+                throw DiscourseAPIError(messages: [String(localized: "error.rate_limited")], errorType: "rate_limited")
+            }
+            if let data = response.data,
+               let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data),
+               !errBody.errors.isEmpty {
+                throw DiscourseAPIError(messages: errBody.errors, errorType: errBody.errorType)
+            }
+            throw DiscourseAPIError(messages: [String(localized: "post.poll.vote_failed")], errorType: nil)
+        }
+        if let error = response.error {
+            throw error
+        }
+        guard let data = response.data, !data.isEmpty else {
+            return DiscoursePollVoteResponse()
+        }
+        return (try? JSONDecoder().decode(DiscoursePollVoteResponse.self, from: data)) ?? DiscoursePollVoteResponse()
+    }
+
+    @discardableResult
     func sendTopicTimings(topicId: Int, topicTime: Int, timings: [Int: Int]) async -> Int? {
         let url = baseURL + "/topics/timings"
         guard URL(string: url).map({ discourseRequestHasAuthCredentials(baseURL: baseURL, url: $0) }) == true else {
@@ -676,9 +756,7 @@ final class DiscourseAPI {
             return
         }
         do {
-            let groups: [String: [DiscourseEmojiEntry]] = try await request(route: .emojis)
-            let entries = groups.values.flatMap { $0 }
-            EmojiStore.save(entries, for: baseURL)
+            _ = try await fetchEmojiGroups()
             emojiReady = true
         } catch {
             // Silent failure — reactions won't show emoji images but functionality is unaffected
@@ -913,6 +991,21 @@ final class DiscourseAPI {
             preview += "..."
         }
         return preview
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeLossyInt(forKey key: Key) -> Int? {
+        if let value = try? decodeIfPresent(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            return Int(value)
+        }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            return Int(value)
+        }
+        return nil
     }
 }
 

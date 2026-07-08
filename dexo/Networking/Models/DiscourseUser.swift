@@ -9,7 +9,7 @@ struct DiscourseCurrentUserResponse: Decodable {
     }
 }
 
-struct DiscourseCurrentUser: Decodable {
+struct DiscourseCurrentUser: Codable {
     let id: Int
     let username: String
     let name: String?
@@ -25,7 +25,7 @@ struct DiscourseUserProfileResponse: Decodable {
     let user: DiscourseUserProfile
 }
 
-struct DiscourseUserProfile: Decodable {
+struct DiscourseUserProfile: Codable {
     let id: Int
     let username: String
     let name: String?

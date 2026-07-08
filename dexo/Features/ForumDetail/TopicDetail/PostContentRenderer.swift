@@ -146,7 +146,8 @@ final class PostContentRenderer: NSObject {
 
     private static var currentWebRenderStyle: WebRenderStyle {
         let settings = AppSettings.shared
-        let fontSize = Int(settings.contentFontSize.basePointSize) + (settings.readingComfortMode ? 1 : 0)
+        let rawFontSize = settings.contentFontSize.basePointSize + (settings.readingComfortMode ? 1 : 0)
+        let fontSize = Int(settings.effectiveContentPointSize(for: rawFontSize).rounded())
         let themeStyle = settings.themeStyle
         return WebRenderStyle(
             bodyFontSize: fontSize,

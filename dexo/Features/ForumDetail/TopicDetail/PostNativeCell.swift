@@ -2,53 +2,83 @@ import CookedHTML
 import SDWebImage
 import UIKit
 
+enum TopicDetailTypography {
+    static func interfaceFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let settings = AppSettings.shared
+        let adjustedPointSize = settings.effectiveInterfacePointSize(for: pointSize)
+        let baseFont = UIFont.systemFont(ofSize: adjustedPointSize, weight: weight)
+        return settings.appInterfaceFont(matching: baseFont)
+    }
+
+    static func scaledInterfaceFont(
+        ofSize pointSize: CGFloat,
+        weight: UIFont.Weight,
+        relativeTo textStyle: UIFont.TextStyle
+    ) -> UIFont {
+        UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: interfaceFont(ofSize: pointSize, weight: weight)
+        )
+    }
+
+    static func topicTitleFont(relativeTo textStyle: UIFont.TextStyle = .headline) -> UIFont {
+        let settings = AppSettings.shared
+        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
+        let pointSize = settings.effectiveContentPointSize(
+            for: settings.contentFontSize.basePointSize + comfortFontDelta
+        )
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: settings.contentFont(ofSize: pointSize, weight: .semibold)
+        )
+    }
+
+    static func contentContextFont(
+        offsetFromBody offset: CGFloat,
+        weight: UIFont.Weight,
+        relativeTo textStyle: UIFont.TextStyle
+    ) -> UIFont {
+        let settings = AppSettings.shared
+        let pointSize = contentContextPointSize(offsetFromBody: offset)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: settings.contentFont(ofSize: pointSize, weight: weight)
+        )
+    }
+
+    static func contentContextMonospacedFont(
+        offsetFromBody offset: CGFloat,
+        weight: UIFont.Weight,
+        relativeTo textStyle: UIFont.TextStyle
+    ) -> UIFont {
+        let settings = AppSettings.shared
+        let pointSize = contentContextPointSize(offsetFromBody: offset)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: settings.contentMonospacedFont(ofSize: pointSize, weight: weight)
+        )
+    }
+
+    static func contentVisualScale() -> CGFloat {
+        let settings = AppSettings.shared
+        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
+        let bodySourceSize = settings.contentFontSize.basePointSize + comfortFontDelta
+        let bodySizeRatio = bodySourceSize / AppSettings.ContentFontSize.standard.basePointSize
+        let scaleRatio = CGFloat(settings.contentFontScalePercent) / CGFloat(AppSettings.defaultFontScalePercent)
+        return max(bodySizeRatio * scaleRatio, 0.75)
+    }
+
+    private static func contentContextPointSize(offsetFromBody offset: CGFloat) -> CGFloat {
+        let settings = AppSettings.shared
+        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
+        let sourcePointSize = max(settings.contentFontSize.basePointSize + comfortFontDelta + offset, 8)
+        return settings.effectiveContentPointSize(for: sourcePointSize)
+    }
+}
+
 final class PostNativeCell: UITableViewCell {
     static let reuseIdentifier = "PostNativeCell"
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
     fileprivate static let boostIconImage: UIImage = {
-        let size = CGSize(width: 24, height: 24)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { context in
-            UIColor.black.setFill()
-
-            let leftFin = UIBezierPath()
-            leftFin.move(to: CGPoint(x: 8.2, y: 13.8))
-            leftFin.addLine(to: CGPoint(x: 4.8, y: 18.8))
-            leftFin.addCurve(to: CGPoint(x: 10.1, y: 17.1), controlPoint1: CGPoint(x: 6.7, y: 18.0), controlPoint2: CGPoint(x: 8.5, y: 17.4))
-            leftFin.close()
-            leftFin.fill()
-
-            let rightFin = UIBezierPath()
-            rightFin.move(to: CGPoint(x: 15.8, y: 13.8))
-            rightFin.addLine(to: CGPoint(x: 19.2, y: 18.8))
-            rightFin.addCurve(to: CGPoint(x: 13.9, y: 17.1), controlPoint1: CGPoint(x: 17.3, y: 18.0), controlPoint2: CGPoint(x: 15.5, y: 17.4))
-            rightFin.close()
-            rightFin.fill()
-
-            let body = UIBezierPath()
-            body.move(to: CGPoint(x: 12, y: 2.4))
-            body.addCurve(to: CGPoint(x: 16.7, y: 13.9), controlPoint1: CGPoint(x: 16.0, y: 5.1), controlPoint2: CGPoint(x: 17.4, y: 10.0))
-            body.addCurve(to: CGPoint(x: 12, y: 18.5), controlPoint1: CGPoint(x: 15.5, y: 16.5), controlPoint2: CGPoint(x: 13.9, y: 18.0))
-            body.addCurve(to: CGPoint(x: 7.3, y: 13.9), controlPoint1: CGPoint(x: 10.1, y: 18.0), controlPoint2: CGPoint(x: 8.5, y: 16.5))
-            body.addCurve(to: CGPoint(x: 12, y: 2.4), controlPoint1: CGPoint(x: 6.6, y: 10.0), controlPoint2: CGPoint(x: 8.0, y: 5.1))
-            body.close()
-            body.fill()
-
-            let flame = UIBezierPath()
-            flame.move(to: CGPoint(x: 12, y: 17.5))
-            flame.addCurve(to: CGPoint(x: 14.1, y: 21.2), controlPoint1: CGPoint(x: 13.3, y: 18.6), controlPoint2: CGPoint(x: 14.2, y: 19.8))
-            flame.addCurve(to: CGPoint(x: 12, y: 23.0), controlPoint1: CGPoint(x: 13.8, y: 22.1), controlPoint2: CGPoint(x: 12.9, y: 22.8))
-            flame.addCurve(to: CGPoint(x: 9.9, y: 21.2), controlPoint1: CGPoint(x: 11.1, y: 22.8), controlPoint2: CGPoint(x: 10.2, y: 22.1))
-            flame.addCurve(to: CGPoint(x: 12, y: 17.5), controlPoint1: CGPoint(x: 9.8, y: 19.8), controlPoint2: CGPoint(x: 10.7, y: 18.6))
-            flame.close()
-            flame.fill()
-
-            context.cgContext.setBlendMode(.clear)
-            UIBezierPath(ovalIn: CGRect(x: 9.7, y: 7.0, width: 4.6, height: 4.6)).fill()
-            context.cgContext.setBlendMode(.normal)
-        }
-        return image.withRenderingMode(.alwaysTemplate)
+        (UIImage(named: "BoostRocket") ?? UIImage(systemName: "paperplane.fill") ?? UIImage())
+            .withRenderingMode(.alwaysTemplate)
     }()
     private static let firstPostPaperBackgroundColor = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -76,8 +106,8 @@ final class PostNativeCell: UITableViewCell {
         static let contentTop: CGFloat = 10
         static let firstPostContentInset: CGFloat = 12
         static let actionTop: CGFloat = 10
-        static let actionButtonWidth: CGFloat = 36
-        static let actionSpacing: CGFloat = 8
+        static let actionButtonWidth: CGFloat = 32
+        static let actionSpacing: CGFloat = 2
         static let minimumReplyCardHeight: CGFloat = 80
     }
 
@@ -100,6 +130,11 @@ final class PostNativeCell: UITableViewCell {
         return view
     }()
     private var cardMinHeightConstraint: NSLayoutConstraint?
+    private var avatarWidthConstraint: NSLayoutConstraint?
+    private var avatarHeightConstraint: NSLayoutConstraint?
+    private var flairWidthConstraint: NSLayoutConstraint?
+    private var flairHeightConstraint: NSLayoutConstraint?
+    private var currentAvatarTemplateSize = 96
 
     // MARK: - Header UI
 
@@ -297,6 +332,7 @@ final class PostNativeCell: UITableViewCell {
         let button = UIButton(type: .system)
         button.setImage(PostNativeCell.boostIconImage, for: .normal)
         button.tintColor = .tertiaryLabel
+        button.imageView?.contentMode = .scaleAspectFit
         button.translatesAutoresizingMaskIntoConstraints = false
         button.accessibilityLabel = String(localized: "post.boost")
         return button
@@ -390,7 +426,17 @@ final class PostNativeCell: UITableViewCell {
         contentStackLeadingConstraint = contentLeadingConstraint
         contentStackTrailingConstraint = contentTrailingConstraint
         contentStackBottomConstraint = contentBottomConstraint
-        let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(equalToConstant: 48)
+        let avatarWidthConstraint = avatarImageView.widthAnchor.constraint(equalToConstant: Metrics.avatarSize)
+        let avatarHeightConstraint = avatarImageView.heightAnchor.constraint(equalToConstant: Metrics.avatarSize)
+        let flairWidthConstraint = flairImageView.widthAnchor.constraint(equalToConstant: 14)
+        let flairHeightConstraint = flairImageView.heightAnchor.constraint(equalToConstant: 14)
+        self.avatarWidthConstraint = avatarWidthConstraint
+        self.avatarHeightConstraint = avatarHeightConstraint
+        self.flairWidthConstraint = flairWidthConstraint
+        self.flairHeightConstraint = flairHeightConstraint
+        let contentCardTopConstraint = contentCardView.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop)
+        contentCardTopConstraint.priority = .defaultHigh
+        let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(equalToConstant: 42)
         self.reactionPillWidthConstraint = reactionPillWidthConstraint
 
         NSLayoutConstraint.activate([
@@ -401,13 +447,13 @@ final class PostNativeCell: UITableViewCell {
 
             avatarImageView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
             avatarImageView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
-            avatarImageView.widthAnchor.constraint(equalToConstant: Metrics.avatarSize),
-            avatarImageView.heightAnchor.constraint(equalToConstant: Metrics.avatarSize),
+            avatarWidthConstraint,
+            avatarHeightConstraint,
 
             flairImageView.bottomAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 2),
             flairImageView.trailingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 2),
-            flairImageView.widthAnchor.constraint(equalToConstant: 14),
-            flairImageView.heightAnchor.constraint(equalToConstant: 14),
+            flairWidthConstraint,
+            flairHeightConstraint,
 
             nameLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
             nameLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: Metrics.avatarToText),
@@ -433,7 +479,10 @@ final class PostNativeCell: UITableViewCell {
             timeLabel.topAnchor.constraint(equalTo: floorLabel.bottomAnchor, constant: 2),
             timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
 
-            contentCardView.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop),
+            contentCardTopConstraint,
+            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop),
+            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: usernameLabel.bottomAnchor, constant: Metrics.contentTop),
+            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: timeLabel.bottomAnchor, constant: Metrics.contentTop),
             contentCardView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
             contentCardView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             contentTopConstraint,
@@ -443,7 +492,7 @@ final class PostNativeCell: UITableViewCell {
 
             bottomLeftStack.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
             bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
-            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -12),
+            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
             bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
 
             actionStackView.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
@@ -452,8 +501,8 @@ final class PostNativeCell: UITableViewCell {
             { let c = actionStackView.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -8); c.priority = .init(999); return c }(),
 
             reactionPillStack.centerYAnchor.constraint(equalTo: reactionPillControl.centerYAnchor),
-            reactionPillStack.leadingAnchor.constraint(equalTo: reactionPillControl.leadingAnchor, constant: 8),
-            reactionPillStack.trailingAnchor.constraint(equalTo: reactionPillControl.trailingAnchor, constant: -4),
+            reactionPillStack.leadingAnchor.constraint(equalTo: reactionPillControl.leadingAnchor, constant: 6),
+            reactionPillStack.trailingAnchor.constraint(equalTo: reactionPillControl.trailingAnchor, constant: -3),
             reactionPillControl.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             reactionPillWidthConstraint,
 
@@ -513,6 +562,7 @@ final class PostNativeCell: UITableViewCell {
         self.validReactions = validReactions
         isBookmarked = post.bookmarked
         sourceButton.isHidden = !hasUnsupportedBlocks
+        applyTypography()
         applyCardStyle(isFirstPost: floorNumber == 1)
 
         nameLabel.text = post.name
@@ -541,11 +591,23 @@ final class PostNativeCell: UITableViewCell {
         }
 
         if let replyUser = post.replyToUser {
+            let replyFont = replyToLabel.font ?? TopicDetailTypography.contentContextFont(
+                offsetFromBody: -3,
+                weight: .regular,
+                relativeTo: .caption1
+            )
+            let symbolPointSize = max(replyFont.pointSize - 2, 10)
             let attachment = NSTextAttachment()
-            let symbolConfig = UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            let symbolConfig = UIImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .medium)
             attachment.image = UIImage(systemName: "arrowshape.turn.up.left.fill", withConfiguration: symbolConfig)?.withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
             let attrStr = NSMutableAttributedString(attachment: attachment)
-            attrStr.append(NSAttributedString(string: " @\(replyUser.username)"))
+            attrStr.append(NSAttributedString(
+                string: " @\(replyUser.username)",
+                attributes: [
+                    .font: replyFont,
+                    .foregroundColor: UIColor.secondaryLabel,
+                ]
+            ))
             replyToLabel.attributedText = attrStr
             replyToLabel.isHidden = false
         } else {
@@ -587,7 +649,7 @@ final class PostNativeCell: UITableViewCell {
             on: avatarImageView,
             template: post.avatarTemplate,
             baseURL: baseURL,
-            size: 96
+            size: currentAvatarTemplateSize
         )
     }
 
@@ -636,12 +698,59 @@ final class PostNativeCell: UITableViewCell {
         }
     }
 
+    private func applyTypography() {
+        nameLabel.font = TopicDetailTypography.contentContextFont(
+            offsetFromBody: -1,
+            weight: .semibold,
+            relativeTo: .subheadline
+        )
+        usernameLabel.font = TopicDetailTypography.contentContextFont(
+            offsetFromBody: -3,
+            weight: .regular,
+            relativeTo: .caption1
+        )
+        userTitleLabel.font = TopicDetailTypography.contentContextFont(
+            offsetFromBody: -3,
+            weight: .regular,
+            relativeTo: .caption1
+        )
+        floorLabel.font = TopicDetailTypography.contentContextMonospacedFont(
+            offsetFromBody: -3,
+            weight: .regular,
+            relativeTo: .caption1
+        )
+        timeLabel.font = TopicDetailTypography.contentContextFont(
+            offsetFromBody: -3,
+            weight: .regular,
+            relativeTo: .caption1
+        )
+        replyToLabel.font = TopicDetailTypography.contentContextFont(
+            offsetFromBody: -3,
+            weight: .regular,
+            relativeTo: .caption1
+        )
+        showRepliesButton.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .medium)
+        reactionCountLabel.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .semibold)
+
+        let avatarSize = min(max(Metrics.avatarSize * TopicDetailTypography.contentVisualScale(), 28), 44)
+        avatarWidthConstraint?.constant = avatarSize
+        avatarHeightConstraint?.constant = avatarSize
+        avatarImageView.layer.cornerRadius = avatarSize / 2
+
+        let flairSize = min(max(avatarSize * 0.44, 12), 18)
+        flairWidthConstraint?.constant = flairSize
+        flairHeightConstraint?.constant = flairSize
+        flairImageView.layer.cornerRadius = flairSize / 2
+
+        currentAvatarTemplateSize = max(96, Int(ceil(avatarSize * UIScreen.main.scale)))
+    }
+
     private func configureRepliesButton(count: Int) {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "bubble.left.fill", withConfiguration: Self.actionSymbolConfig(pointSize: 13))
         config.title = "\(count)"
-        config.imagePadding = 6
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
+        config.imagePadding = 4
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
         config.baseForegroundColor = .secondaryLabel
         config.background.backgroundColor = Self.actionBackgroundColor
         config.background.cornerRadius = Self.bottomBarHeight / 2
@@ -653,7 +762,7 @@ final class PostNativeCell: UITableViewCell {
         guard !reactions.isEmpty else {
             reactionStackView.isHidden = true
             reactionCountLabel.isHidden = true
-            reactionPillWidthConstraint?.constant = 48
+            reactionPillWidthConstraint?.constant = 42
             return
         }
 
@@ -684,8 +793,8 @@ final class PostNativeCell: UITableViewCell {
 
         reactionStackView.isHidden = false
         let visibleEmojiWidth = CGFloat(min(reactions.count, 3)) * 16 + CGFloat(max(0, min(reactions.count, 3) - 1)) * 2
-        let countWidth = count > 0 ? reactionCountLabel.intrinsicContentSize.width + 6 : 0
-        reactionPillWidthConstraint?.constant = min(max(48, 48 + visibleEmojiWidth + countWidth), 122)
+        let countWidth = count > 0 ? reactionCountLabel.intrinsicContentSize.width + 4 : 0
+        reactionPillWidthConstraint?.constant = min(max(42, 42 + visibleEmojiWidth + countWidth), 112)
     }
 
     private func configureReactionButton(for post: DiscourseTopicDetail.Post) {
@@ -785,6 +894,7 @@ final class PostNativeCell: UITableViewCell {
         config.background.cornerRadius = Self.bottomBarHeight / 2
         button.configuration = config
         button.tintColor = tintColor
+        button.imageView?.contentMode = .scaleAspectFit
         button.accessibilityLabel = accessibilityLabel
         button.clipsToBounds = true
     }
@@ -840,12 +950,7 @@ final class PostNativeCell: UITableViewCell {
         }
 
         for entry in entries {
-            SDWebImageManager.shared.loadImage(
-                with: entry.url,
-                options: AvatarImageLoader.options,
-                context: AvatarImageLoader.context(for: entry.url),
-                progress: nil
-            ) { [weak textView] image, _, _, _, _, _ in
+            ForumImageLoader.loadImage(with: entry.url) { [weak textView] image in
                 guard let textView, let image else { return }
                 entry.attachment.image = image
                 // Keep the bounds already set by the attributed string builder
@@ -1050,7 +1155,7 @@ final class PostNativeCell: UITableViewCell {
         reactionCountLabel.isHidden = true
         validReactions = []
         isBookmarked = false
-        reactionPillWidthConstraint?.constant = 48
+        reactionPillWidthConstraint?.constant = 42
         configureActionButton(
             reactButton,
             symbolName: "heart",
@@ -1127,7 +1232,7 @@ private final class RelatedLinksCardView: UIView {
 
     private let links: [RelatedLink]
     private let baseURL: String
-    private var isExpanded = false
+    private var isExpanded = AppSettings.shared.defaultExpandRelatedLinks
     private var showsAllLinks = false
 
     private let stackView: UIStackView = {
@@ -1187,6 +1292,7 @@ private final class RelatedLinksCardView: UIView {
 
         stackView.addArrangedSubview(makeHeader())
         stackView.addArrangedSubview(linksStackView)
+        chevronView.transform = isExpanded ? CGAffineTransform(rotationAngle: .pi) : .identity
         rebuildLinks()
     }
 
@@ -1204,7 +1310,7 @@ private final class RelatedLinksCardView: UIView {
 
         let titleLabel = UILabel()
         titleLabel.text = String(localized: "post.related_links")
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.font = TopicDetailTypography.interfaceFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = accentColor
 
         let countLabel = UILabel()
@@ -1275,7 +1381,7 @@ private final class RelatedLinksCardView: UIView {
 
             let label = UILabel()
             label.text = String.localizedStringWithFormat(String(localized: "post.more_links %lld"), Int64(remaining))
-            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .medium)
             label.textColor = AppSettings.shared.themeStyle.accentColor
             label.textAlignment = .center
             label.translatesAutoresizingMaskIntoConstraints = false
@@ -1307,7 +1413,7 @@ private final class RelatedLinksCardView: UIView {
 
         let titleLabel = UILabel()
         titleLabel.text = link.title
-        titleLabel.font = .systemFont(ofSize: 13)
+        titleLabel.font = TopicDetailTypography.interfaceFont(ofSize: 13, weight: .regular)
         titleLabel.textColor = AppSettings.shared.themeStyle.accentColor
         titleLabel.numberOfLines = 2
 
@@ -1419,6 +1525,8 @@ private struct RelatedLink: Hashable {
 // MARK: - Boost Strip
 
 private final class BoostStripView: UIView {
+    private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":([^\\s:]+(?::t\\d)?):")
+
     private let groups: [BoostGroup]
     private let baseURL: String
 
@@ -1488,17 +1596,6 @@ private final class BoostStripView: UIView {
         container.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let iconContainer = UIView()
-        iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
-        iconContainer.layer.cornerRadius = 10
-        iconContainer.layer.cornerCurve = .continuous
-        iconContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        let iconView = UIImageView(image: PostNativeCell.boostIconImage)
-        iconView.tintColor = accentColor
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-
         let avatarView = UIImageView()
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
@@ -1512,9 +1609,11 @@ private final class BoostStripView: UIView {
             placeholder: UIImage(systemName: "person.crop.circle.fill")
         )
 
+        let titleFont = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .regular)
+        let titleText = attributedDisplayText(for: group, font: titleFont)
         let titleLabel = UILabel()
-        titleLabel.text = group.displayText.isEmpty ? String(localized: "post.boost") : group.displayText
-        titleLabel.font = .systemFont(ofSize: 12)
+        titleLabel.attributedText = titleText
+        titleLabel.font = titleFont
         titleLabel.textColor = .label
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -1530,25 +1629,13 @@ private final class BoostStripView: UIView {
         countLabel.clipsToBounds = true
         countLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        container.addSubview(iconContainer)
-        iconContainer.addSubview(iconView)
         container.addSubview(avatarView)
         container.addSubview(titleLabel)
 
         NSLayoutConstraint.activate([
             container.heightAnchor.constraint(equalToConstant: 28),
 
-            iconContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
-            iconContainer.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 20),
-            iconContainer.heightAnchor.constraint(equalToConstant: 20),
-
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 12),
-            iconView.heightAnchor.constraint(equalToConstant: 12),
-
-            avatarView.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 4),
+            avatarView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 5),
             avatarView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             avatarView.widthAnchor.constraint(equalToConstant: 20),
             avatarView.heightAnchor.constraint(equalToConstant: 20),
@@ -1571,6 +1658,7 @@ private final class BoostStripView: UIView {
             titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8).isActive = true
         }
 
+        loadInlineImages(in: titleLabel, attributedString: titleText)
         return container
     }
 
@@ -1578,11 +1666,65 @@ private final class BoostStripView: UIView {
         AvatarImageLoader.url(from: template, baseURL: baseURL, size: 48)
     }
 
+    private func attributedDisplayText(for group: BoostGroup, font: UIFont) -> NSMutableAttributedString {
+        let fallbackText = group.displayText.isEmpty ? String(localized: "post.boost") : group.displayText
+        let inlines = Self.displayInlines(from: group.cookedHTML, baseURL: baseURL)
+        let attributed: NSMutableAttributedString
+        if inlines.isEmpty {
+            attributed = NSMutableAttributedString(string: fallbackText, attributes: [
+                .font: font,
+                .foregroundColor: UIColor.label,
+            ])
+        } else {
+            attributed = NSMutableAttributedString(attributedString: inlines.attributedString(config: AttributedStringConfig(
+                baseFont: font,
+                baseColor: .label,
+                linkColor: AppSettings.shared.themeStyle.accentColor,
+                codeFont: .monospacedSystemFont(ofSize: max(font.pointSize - 1, 10), weight: .regular),
+                codeBackgroundColor: .clear
+            )))
+        }
+        return Self.replacingEmojiShortcodes(in: attributed, font: font, textColor: .label)
+    }
+
+    private func loadInlineImages(in label: UILabel, attributedString: NSMutableAttributedString) {
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        guard fullRange.length > 0 else { return }
+
+        var entries: [(attachment: NSTextAttachment, url: URL)] = []
+        attributedString.enumerateAttributes(in: fullRange) { attributes, _, _ in
+            guard let attachment = attributes[.attachment] as? NSTextAttachment else { return }
+
+            if let emojiAttachment = attachment as? EmojiTextAttachment,
+               let url = emojiAttachment.emojiURL {
+                entries.append((attachment, url))
+                return
+            }
+
+            guard let urlString = attributes[.cookedHTMLImageURL] as? String,
+                  let url = URL(string: urlString)
+            else { return }
+            entries.append((attachment, url))
+        }
+
+        for entry in entries {
+            ForumImageLoader.loadImage(with: entry.url) { [weak label, attributedString] image in
+                guard let image else { return }
+                DispatchQueue.main.async {
+                    entry.attachment.image = image
+                    label?.attributedText = attributedString
+                    label?.setNeedsDisplay()
+                }
+            }
+        }
+    }
+
     private static func makeGroups(from boosts: [DiscourseTopicDetail.Boost]) -> [BoostGroup] {
         var seenIds = Set<Int>()
         var order: [String] = []
         var grouped: [String: [DiscourseTopicDetail.Boost]] = [:]
         var displayTextByKey: [String: String] = [:]
+        var cookedHTMLByKey: [String: String] = [:]
 
         for boost in boosts {
             guard seenIds.insert(boost.id).inserted else { continue }
@@ -1595,14 +1737,179 @@ private final class BoostStripView: UIView {
                 order.append(key)
                 grouped[key] = []
                 displayTextByKey[key] = displayText
+                cookedHTMLByKey[key] = boost.cooked
             }
             grouped[key]?.append(boost)
         }
 
         return order.compactMap { key in
             guard let boosts = grouped[key], !boosts.isEmpty else { return nil }
-            return BoostGroup(displayText: displayTextByKey[key] ?? "", boosts: boosts)
+            return BoostGroup(displayText: displayTextByKey[key] ?? "", cookedHTML: cookedHTMLByKey[key] ?? "", boosts: boosts)
         }
+    }
+
+    private static func displayInlines(from html: String, baseURL: String) -> [InlineNode] {
+        let chunks = CookedHTMLParser.parse(html: html, baseURL: baseURL).map(displayInlines(from:))
+        return joinedInlines(chunks).trimmedWhitespace()
+    }
+
+    private static func displayInlines(from block: ContentBlock) -> [InlineNode] {
+        switch block {
+        case .paragraph(let inlines), .heading(_, let inlines):
+            return normalizedDisplayInlines(inlines)
+        case .blockquote(let blocks), .spoiler(let blocks):
+            return joinedInlines(blocks.map(displayInlines(from:)))
+        case .discourseQuote(_, _, _, _, _, _, let content):
+            return joinedInlines(content.map(displayInlines(from:)))
+        case .list(_, let items):
+            return joinedInlines(items.map { item in
+                normalizedDisplayInlines(item.content) + joinedInlines(item.children.map(displayInlines(from:)))
+            })
+        case .poll(let poll):
+            return joinedInlines(poll.options.map { [.text($0.text)] })
+        case .details(let summary, let content):
+            return normalizedDisplayInlines(summary) + joinedInlines(content.map(displayInlines(from:)))
+        case .image(let src, let alt, let width, let height, _):
+            if isLikelyEmojiImage(src: src, width: width, height: height) {
+                return [.image(src: src, alt: alt, width: width, height: height, isEmoji: true)]
+            }
+            return alt.flatMap { $0.isEmpty ? nil : [.text($0)] } ?? []
+        case .onebox(_, let title, let description, _, _, _, _):
+            return [title, description]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { InlineNode.text($0) }
+        case .video(_, _, let title, _, _, _, _):
+            return title.flatMap { $0.isEmpty ? nil : [.text($0)] } ?? []
+        case .codeBlock(_, let code):
+            return code.isEmpty ? [] : [.text(code)]
+        case .table(let headers, let rows):
+            let headerInlines = headers.flatMap { $0.map(displayInlines(from:)) }
+            let rowInlines = rows.flatMap { row in row.flatMap { $0.map(displayInlines(from:)) } }
+            return joinedInlines(headerInlines + rowInlines)
+        case .divider:
+            return []
+        case .rawHTML(let html):
+            let text = plainText(from: html)
+            return text.isEmpty ? [] : [.text(text)]
+        }
+    }
+
+    private static func isLikelyEmojiImage(src: String, width: Int?, height: Int?) -> Bool {
+        let lowercasedSource = src.lowercased()
+        if lowercasedSource.contains("/emoji") || lowercasedSource.contains("emoji/") {
+            return true
+        }
+        guard let width, let height, width > 0, height > 0 else {
+            return false
+        }
+        return width <= 32 && height <= 32
+    }
+
+    private static func normalizedDisplayInlines(_ inlines: [InlineNode]) -> [InlineNode] {
+        inlines.map { inline in
+            switch inline {
+            case .lineBreak:
+                return .text(" ")
+            case .link(let href, let children):
+                return .link(href: href, children: normalizedDisplayInlines(children))
+            case .spoiler(let children):
+                return .spoiler(children: normalizedDisplayInlines(children))
+            default:
+                return inline
+            }
+        }
+    }
+
+    private static func joinedInlines(_ chunks: [[InlineNode]]) -> [InlineNode] {
+        var result: [InlineNode] = []
+        for chunk in chunks where !chunk.isEmpty {
+            if !result.isEmpty {
+                result.append(.text(" "))
+            }
+            result.append(contentsOf: chunk)
+        }
+        return result
+    }
+
+    private static func replacingEmojiShortcodes(
+        in attributed: NSAttributedString,
+        font: UIFont,
+        textColor: UIColor
+    ) -> NSMutableAttributedString {
+        let result = NSMutableAttributedString()
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        guard fullRange.length > 0 else { return result }
+
+        attributed.enumerateAttributes(in: fullRange) { attributes, range, _ in
+            if attributes[.attachment] != nil {
+                result.append(attributed.attributedSubstring(from: range))
+                return
+            }
+
+            let text = attributed.attributedSubstring(from: range).string
+            guard text.contains(":") else {
+                result.append(attributed.attributedSubstring(from: range))
+                return
+            }
+
+            var textAttributes = attributes
+            textAttributes[.font] = textAttributes[.font] ?? font
+            textAttributes[.foregroundColor] = textAttributes[.foregroundColor] ?? textColor
+            result.append(emojiAttributedString(from: text, attributes: textAttributes, font: font))
+        }
+        return result
+    }
+
+    private static func emojiAttributedString(
+        from text: String,
+        attributes: [NSAttributedString.Key: Any],
+        font: UIFont
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let matches = emojiShortcodeRegex.matches(in: text, range: fullRange)
+        var lastLocation = 0
+
+        for match in matches {
+            let plainLength = match.range.location - lastLocation
+            if plainLength > 0 {
+                result.append(NSAttributedString(
+                    string: nsText.substring(with: NSRange(location: lastLocation, length: plainLength)),
+                    attributes: attributes
+                ))
+            }
+
+            let shortcode = nsText.substring(with: match.range)
+            let code = nsText.substring(with: match.range(at: 1))
+            if let urlString = EmojiStore.url(for: code), let url = URL(string: urlString) {
+                let emojiSize = font.pointSize
+                let attachment = EmojiTextAttachment()
+                attachment.emojiURL = url
+                attachment.shortcode = shortcode
+                attachment.image = UIImage()
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: (font.capHeight - emojiSize) / 2,
+                    width: emojiSize,
+                    height: emojiSize
+                )
+                result.append(NSAttributedString(attachment: attachment))
+            } else {
+                result.append(NSAttributedString(string: shortcode, attributes: attributes))
+            }
+
+            lastLocation = match.range.location + match.range.length
+        }
+
+        if lastLocation < nsText.length {
+            result.append(NSAttributedString(
+                string: nsText.substring(from: lastLocation),
+                attributes: attributes
+            ))
+        }
+        return result
     }
 
     private static func plainText(from html: String) -> String {
@@ -1637,5 +1944,6 @@ private final class BoostStripView: UIView {
 
 private struct BoostGroup {
     let displayText: String
+    let cookedHTML: String
     let boosts: [DiscourseTopicDetail.Boost]
 }

@@ -1,8 +1,543 @@
+import CookedHTML
 import UIKit
 import SDWebImage
 
+enum TopicImageGallerySources {
+    static func urls(from annotatedBlocks: [AnnotatedBlock]) -> [URL] {
+        uniqueImageURLs(annotatedBlocks.flatMap { $0.block.galleryImageURLStrings.compactMap(URL.init(string:)) })
+    }
+
+    static func uniqueImageURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        var result: [URL] = []
+        for url in urls {
+            let key = url.absoluteString
+            guard seen.insert(key).inserted else { continue }
+            result.append(url)
+        }
+        return result
+    }
+}
+
+private extension ContentBlock {
+    var galleryImageURLStrings: [String] {
+        switch self {
+        case .paragraph(let inlines), .heading(_, let inlines):
+            return inlines.galleryImageURLStrings
+        case .blockquote(let blocks), .spoiler(let blocks):
+            return blocks.flatMap(\.galleryImageURLStrings)
+        case .discourseQuote(_, _, _, _, _, _, let content):
+            return content.flatMap(\.galleryImageURLStrings)
+        case .image(let src, _, _, _, let href):
+            if let href, !href.isEmpty {
+                return [href]
+            }
+            return [src]
+        case .onebox(_, _, _, let imageURL, _, _, _):
+            return [imageURL].compactMap { $0 }
+        case .list(_, let items):
+            return items.flatMap(\.galleryImageURLStrings)
+        case .table(let headers, let rows):
+            return headers.flatMap { $0.flatMap(\.galleryImageURLStrings) }
+                + rows.flatMap { row in row.flatMap { $0.flatMap(\.galleryImageURLStrings) } }
+        case .details(let summary, let content):
+            return summary.galleryImageURLStrings + content.flatMap(\.galleryImageURLStrings)
+        case .codeBlock, .poll, .video, .divider, .rawHTML:
+            return []
+        }
+    }
+}
+
+private extension ListItem {
+    var galleryImageURLStrings: [String] {
+        content.galleryImageURLStrings + children.flatMap(\.galleryImageURLStrings)
+    }
+}
+
+private extension Array where Element == InlineNode {
+    var galleryImageURLStrings: [String] {
+        flatMap(\.galleryImageURLStrings)
+    }
+}
+
+private extension InlineNode {
+    var galleryImageURLStrings: [String] {
+        switch self {
+        case .image(let src, _, _, _, let isEmoji):
+            return isEmoji ? [] : [src]
+        case .link(_, let children), .spoiler(let children):
+            return children.galleryImageURLStrings
+        case .text, .styledText, .code, .lineBreak, .mention, .mentionGroup, .hashtag:
+            return []
+        }
+    }
+}
+
+extension UIViewController {
+    func presentTopicImageGallery(currentURL: URL, imageURLs: [URL]) {
+        var galleryURLs = TopicImageGallerySources.uniqueImageURLs(imageURLs)
+        if !galleryURLs.contains(where: { $0.absoluteString == currentURL.absoluteString }) {
+            galleryURLs.insert(currentURL, at: 0)
+        }
+        guard !galleryURLs.isEmpty else { return }
+
+        let controller = TopicImageGalleryViewController(urls: galleryURLs, initialURL: currentURL)
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true)
+    }
+}
+
+final class TopicImageGalleryViewController: UIViewController {
+    private let urls: [URL]
+    private var currentIndex: Int
+    private var didScrollToInitialIndex = false
+
+    private lazy var collectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.minimumInteritemSpacing = 0
+        layout.minimumLineSpacing = 0
+
+        let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .black
+        view.dataSource = self
+        view.delegate = self
+        view.isPagingEnabled = true
+        view.showsHorizontalScrollIndicator = false
+        view.showsVerticalScrollIndicator = false
+        view.contentInsetAdjustmentBehavior = .never
+        view.register(TopicImageGalleryCell.self, forCellWithReuseIdentifier: TopicImageGalleryCell.reuseIdentifier)
+        return view
+    }()
+
+    private let downloadButton = TopicImageGalleryViewController.makeToolbarButton(
+        symbolName: "arrow.down.to.line.compact",
+        fallbackSymbolName: "square.and.arrow.down",
+        accessibilityLabel: String(localized: "image_viewer.action.save")
+    )
+
+    private let shareButton = TopicImageGalleryViewController.makeToolbarButton(
+        symbolName: "square.and.arrow.up",
+        fallbackSymbolName: "square.and.arrow.up",
+        accessibilityLabel: String(localized: "topic_detail.action.share")
+    )
+
+    private let closeButton = TopicImageGalleryViewController.makeToolbarButton(
+        symbolName: "xmark",
+        fallbackSymbolName: "xmark",
+        accessibilityLabel: String(localized: "image_viewer.action.close")
+    )
+
+    private let counterLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedDigitSystemFont(ofSize: 17, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.24)
+        label.layer.cornerRadius = 14
+        label.layer.cornerCurve = .continuous
+        label.clipsToBounds = true
+        label.isAccessibilityElement = true
+        return label
+    }()
+
+    private let toastLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        label.layer.cornerRadius = 18
+        label.layer.cornerCurve = .continuous
+        label.clipsToBounds = true
+        label.alpha = 0
+        return label
+    }()
+
+    private let actionActivityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.color = .white
+        indicator.hidesWhenStopped = true
+        return indicator
+    }()
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        .lightContent
+    }
+
+    init(urls: [URL], initialURL: URL) {
+        let uniqueURLs = TopicImageGallerySources.uniqueImageURLs(urls)
+        self.urls = uniqueURLs
+        self.currentIndex = uniqueURLs.firstIndex { $0.absoluteString == initialURL.absoluteString } ?? 0
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationCapturesStatusBarAppearance = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        setupUI()
+        updateCounter()
+        ForumImageLoader.prefetch(urls: urls)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard !didScrollToInitialIndex, !urls.isEmpty else { return }
+        didScrollToInitialIndex = true
+        collectionView.scrollToItem(
+            at: IndexPath(item: currentIndex, section: 0),
+            at: .centeredHorizontally,
+            animated: false
+        )
+    }
+
+    private func setupUI() {
+        view.addSubview(collectionView)
+        view.addSubview(downloadButton)
+        view.addSubview(shareButton)
+        view.addSubview(closeButton)
+        view.addSubview(counterLabel)
+        view.addSubview(toastLabel)
+        view.addSubview(actionActivityIndicator)
+
+        NSLayoutConstraint.activate([
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            downloadButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
+            downloadButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            downloadButton.widthAnchor.constraint(equalToConstant: 44),
+            downloadButton.heightAnchor.constraint(equalToConstant: 44),
+
+            shareButton.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
+            shareButton.leadingAnchor.constraint(equalTo: downloadButton.trailingAnchor, constant: 18),
+            shareButton.widthAnchor.constraint(equalToConstant: 44),
+            shareButton.heightAnchor.constraint(equalToConstant: 44),
+
+            closeButton.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+
+            counterLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            counterLabel.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
+            counterLabel.heightAnchor.constraint(equalToConstant: 28),
+            counterLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 58),
+
+            toastLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toastLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -42),
+            toastLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+            toastLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 132),
+
+            actionActivityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            actionActivityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+
+        downloadButton.addTarget(self, action: #selector(downloadTapped), for: .touchUpInside)
+        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+    }
+
+    private static func makeToolbarButton(
+        symbolName: String,
+        fallbackSymbolName: String,
+        accessibilityLabel: String
+    ) -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.tintColor = .white
+        button.accessibilityLabel = accessibilityLabel
+        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        let image = UIImage(systemName: symbolName, withConfiguration: configuration)
+            ?? UIImage(systemName: fallbackSymbolName, withConfiguration: configuration)
+        button.setImage(image, for: .normal)
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.08)
+        button.layer.cornerRadius = 22
+        button.layer.cornerCurve = .continuous
+        return button
+    }
+
+    private func updateCounter() {
+        counterLabel.isHidden = urls.count <= 1
+        counterLabel.text = "\(currentIndex + 1) / \(urls.count)"
+        counterLabel.accessibilityLabel = counterLabel.text
+    }
+
+    private func currentCell() -> TopicImageGalleryCell? {
+        collectionView.cellForItem(at: IndexPath(item: currentIndex, section: 0)) as? TopicImageGalleryCell
+    }
+
+    private func loadCurrentImage(completion: @escaping (UIImage?) -> Void) {
+        if let image = currentCell()?.loadedImage {
+            completion(image)
+            return
+        }
+
+        guard urls.indices.contains(currentIndex) else {
+            completion(nil)
+            return
+        }
+
+        actionActivityIndicator.startAnimating()
+        ForumImageLoader.loadImage(with: urls[currentIndex]) { [weak self] image in
+            self?.actionActivityIndicator.stopAnimating()
+            completion(image)
+        }
+    }
+
+    @objc private func downloadTapped() {
+        loadCurrentImage { [weak self] image in
+            guard let self, let image else {
+                self?.showToast(String(localized: "image_viewer.save.failed"))
+                return
+            }
+            UIImageWriteToSavedPhotosAlbum(
+                image,
+                self,
+                #selector(TopicImageGalleryViewController.image(_:didFinishSavingWithError:contextInfo:)),
+                nil
+            )
+        }
+    }
+
+    @objc private func shareTapped() {
+        loadCurrentImage { [weak self] image in
+            guard let self, let image else {
+                self?.showToast(String(localized: "image_viewer.share.failed"))
+                return
+            }
+            let activity = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+            activity.popoverPresentationController?.sourceView = self.shareButton
+            activity.popoverPresentationController?.sourceRect = self.shareButton.bounds
+            self.present(activity, animated: true)
+        }
+    }
+
+    @objc private func closeTapped() {
+        dismiss(animated: true)
+    }
+
+    @objc private func image(_ image: UIImage, didFinishSavingWithError error: NSError?, contextInfo: UnsafeRawPointer) {
+        showToast(String(localized: error == nil ? "image_viewer.save.success" : "image_viewer.save.failed"))
+    }
+
+    private func showToast(_ text: String) {
+        toastLabel.text = "  \(text)  "
+        toastLabel.alpha = 0
+        UIView.animate(withDuration: 0.18) {
+            self.toastLabel.alpha = 1
+        } completion: { _ in
+            UIView.animate(withDuration: 0.20, delay: 1.2, options: [.curveEaseInOut]) {
+                self.toastLabel.alpha = 0
+            }
+        }
+    }
+}
+
+extension TopicImageGalleryViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        urls.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        guard let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: TopicImageGalleryCell.reuseIdentifier,
+            for: indexPath
+        ) as? TopicImageGalleryCell else {
+            return UICollectionViewCell()
+        }
+        cell.configure(url: urls[indexPath.item])
+        return cell
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        collectionView.bounds.size
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        updateCurrentIndex(from: scrollView)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            updateCurrentIndex(from: scrollView)
+        }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        updateCurrentIndex(from: scrollView)
+    }
+
+    private func updateCurrentIndex(from scrollView: UIScrollView) {
+        let width = max(scrollView.bounds.width, 1)
+        currentIndex = min(max(Int(round(scrollView.contentOffset.x / width)), 0), max(urls.count - 1, 0))
+        updateCounter()
+    }
+}
+
+private final class TopicImageGalleryCell: UICollectionViewCell, UIScrollViewDelegate {
+    static let reuseIdentifier = "TopicImageGalleryCell"
+
+    private var representedURL: URL?
+
+    var loadedImage: UIImage? {
+        imageView.image
+    }
+
+    private let scrollView: UIScrollView = {
+        let view = UIScrollView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.minimumZoomScale = 1
+        view.maximumZoomScale = 4
+        view.showsVerticalScrollIndicator = false
+        view.showsHorizontalScrollIndicator = false
+        view.backgroundColor = .black
+        view.contentInsetAdjustmentBehavior = .never
+        return view
+    }()
+
+    private let imageView: SDAnimatedImageView = {
+        let view = SDAnimatedImageView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.contentMode = .scaleAspectFit
+        view.clipsToBounds = true
+        view.backgroundColor = .black
+        view.autoPlayAnimatedImage = true
+        return view
+    }()
+
+    private let activityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.color = .white
+        indicator.hidesWhenStopped = true
+        return indicator
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.backgroundColor = .black
+        scrollView.delegate = self
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        representedURL = nil
+        imageView.sd_cancelCurrentImageLoad()
+        imageView.image = nil
+        scrollView.zoomScale = 1
+        scrollView.contentInset = .zero
+        activityIndicator.stopAnimating()
+    }
+
+    func configure(url: URL) {
+        representedURL = url
+        scrollView.zoomScale = 1
+        scrollView.contentInset = .zero
+        imageView.image = nil
+        activityIndicator.startAnimating()
+
+        ForumImageLoader.setImage(on: imageView, url: url) { [weak self] image, _, _, _ in
+            guard let self, self.representedURL == url else { return }
+            self.activityIndicator.stopAnimating()
+            if image != nil {
+                self.centerZoomedContent()
+            }
+        }
+    }
+
+    private func setupUI() {
+        contentView.addSubview(scrollView)
+        scrollView.addSubview(imageView)
+        contentView.addSubview(activityIndicator)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            imageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+
+            activityIndicator.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+        ])
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        imageView
+    }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        centerZoomedContent()
+    }
+
+    private func centerZoomedContent() {
+        let horizontalInset = max((scrollView.bounds.width - scrollView.contentSize.width) / 2, 0)
+        let verticalInset = max((scrollView.bounds.height - scrollView.contentSize.height) / 2, 0)
+        scrollView.contentInset = UIEdgeInsets(
+            top: verticalInset,
+            left: horizontalInset,
+            bottom: verticalInset,
+            right: horizontalInset
+        )
+    }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if scrollView.zoomScale > 1 {
+            scrollView.setZoomScale(1, animated: true)
+            return
+        }
+
+        let point = gesture.location(in: imageView)
+        let targetScale = min(scrollView.maximumZoomScale, 2.4)
+        let size = CGSize(
+            width: scrollView.bounds.width / targetScale,
+            height: scrollView.bounds.height / targetScale
+        )
+        let rect = CGRect(
+            x: point.x - size.width / 2,
+            y: point.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        scrollView.zoom(to: rect, animated: true)
+    }
+}
+
 protocol PostCellDelegate: AnyObject {
-    func postCell(didTapImageURL url: URL)
+    func postCell(didTapImageURL url: URL, imageURLs: [URL])
     func postCell(didTapLinkURL url: URL)
     func postCell(didTapShowRepliesForPostId postId: Int)
     func postCell(didTapToggleDetails detailsIndex: Int, postId: Int)
@@ -11,6 +546,7 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post)
+    func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String])
 }
 
 final class PostWebViewCell: UITableViewCell {
@@ -170,13 +706,13 @@ final class PostWebViewCell: UITableViewCell {
             copyLinkButton.topAnchor.constraint(equalTo: snapshotImageView.bottomAnchor),
             copyLinkButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             copyLinkButton.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
-            copyLinkButton.widthAnchor.constraint(equalToConstant: 28),
+            copyLinkButton.widthAnchor.constraint(equalToConstant: 26),
             copyLinkButton.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -6),
 
             replyButton.topAnchor.constraint(equalTo: snapshotImageView.bottomAnchor),
             replyButton.trailingAnchor.constraint(equalTo: copyLinkButton.leadingAnchor),
             replyButton.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
-            replyButton.widthAnchor.constraint(equalToConstant: 28),
+            replyButton.widthAnchor.constraint(equalToConstant: 26),
 
             separatorLine.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             separatorLine.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -304,7 +840,13 @@ final class PostWebViewCell: UITableViewCell {
             if region.frame.contains(location) {
                 switch region.kind {
                 case .image(let url):
-                    delegate?.postCell(didTapImageURL: url)
+                    let imageURLs = TopicImageGallerySources.uniqueImageURLs(interactiveRegions.compactMap { region in
+                        if case .image(let imageURL) = region.kind {
+                            return imageURL
+                        }
+                        return nil
+                    })
+                    delegate?.postCell(didTapImageURL: url, imageURLs: imageURLs)
                 case .link(let url):
                     delegate?.postCell(didTapLinkURL: url)
                 case .details(let index):

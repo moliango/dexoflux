@@ -9,6 +9,8 @@ struct NativeRenderConfig {
     let codeBackgroundColor: UIColor
     let contentWidth: CGFloat
     let baseURL: String?
+    let postId: Int?
+    let galleryImageURLs: [URL]
     let defaultLineSpacing: CGFloat
     let defaultParagraphSpacing: CGFloat
 
@@ -20,6 +22,8 @@ struct NativeRenderConfig {
         codeBackgroundColor: UIColor,
         contentWidth: CGFloat,
         baseURL: String?,
+        postId: Int? = nil,
+        galleryImageURLs: [URL] = [],
         defaultLineSpacing: CGFloat = 3,
         defaultParagraphSpacing: CGFloat = 6
     ) {
@@ -30,6 +34,8 @@ struct NativeRenderConfig {
         self.codeBackgroundColor = codeBackgroundColor
         self.contentWidth = contentWidth
         self.baseURL = baseURL
+        self.postId = postId
+        self.galleryImageURLs = galleryImageURLs
         self.defaultLineSpacing = defaultLineSpacing
         self.defaultParagraphSpacing = defaultParagraphSpacing
     }
@@ -44,17 +50,24 @@ struct NativeRenderConfig {
         )
     }
 
-    static func `default`(contentWidth: CGFloat, baseURL: String? = nil) -> NativeRenderConfig {
+    static func `default`(
+        contentWidth: CGFloat,
+        baseURL: String? = nil,
+        postId: Int? = nil,
+        galleryImageURLs: [URL] = []
+    ) -> NativeRenderConfig {
         let settings = AppSettings.shared
         let comfortMode = settings.readingComfortMode
         let themeStyle = settings.themeStyle
-        let basePointSize = settings.contentFontSize.basePointSize
         let comfortFontDelta: CGFloat = comfortMode ? 1 : 0
+        let basePointSize = settings.effectiveContentPointSize(
+            for: settings.contentFontSize.basePointSize + comfortFontDelta
+        )
         let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentFont(ofSize: basePointSize + comfortFontDelta)
+            for: settings.contentFont(ofSize: basePointSize)
         )
         let codeFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 14) + comfortFontDelta)
+            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 13))
         )
         return NativeRenderConfig(
             baseFont: bodyFont,
@@ -64,6 +77,8 @@ struct NativeRenderConfig {
             codeBackgroundColor: themeStyle.mutedContentBackgroundColor,
             contentWidth: contentWidth,
             baseURL: baseURL,
+            postId: postId,
+            galleryImageURLs: galleryImageURLs,
             defaultLineSpacing: comfortMode ? 6 : 5,
             defaultParagraphSpacing: comfortMode ? 12 : 9
         )
@@ -156,6 +171,7 @@ enum NativeContentRenderer {
         ParagraphRenderer.self,
         HeadingRenderer.self,
         DividerRenderer.self,
+        PollRenderer.self,
         ListRenderer.self,
         BlockquoteRenderer.self,
         ImageRenderer.self,
@@ -203,5 +219,362 @@ enum NativeContentRenderer {
                 baseURL: config.baseURL ?? ""
             )
         }
+    }
+}
+
+enum PollRenderer: BlockRenderer {
+    static func canRender(_ block: ContentBlock) -> Bool {
+        if case .poll = block { return true }
+        return false
+    }
+
+    static func render(_ block: ContentBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) -> UIView {
+        guard case .poll(let poll) = block else { return UIView() }
+        return PollBlockView(poll: poll, config: config, delegate: delegate)
+    }
+}
+
+private final class PollBlockView: UIView {
+    private let poll: PollBlock
+    private let config: NativeRenderConfig
+    private weak var delegate: PostCellDelegate?
+    private var selectedOptionIds: Set<String>
+    private var optionControls: [PollOptionControl] = []
+    private weak var submitButton: UIButton?
+    private var isSubmitting = false
+
+    private var isOpen: Bool {
+        let status = poll.status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return status == nil || status == "open"
+    }
+
+    private var minSelections: Int {
+        max(1, poll.minSelections ?? 1)
+    }
+
+    private var maxSelections: Int {
+        max(minSelections, poll.maxSelections ?? 1)
+    }
+
+    private var canSubmitVote: Bool {
+        isOpen && config.postId != nil && poll.name != nil && poll.options.contains { $0.id != nil }
+    }
+
+    init(poll: PollBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) {
+        self.poll = poll
+        self.config = config
+        self.delegate = delegate
+        self.selectedOptionIds = Set(poll.options.compactMap { option in
+            option.isSelected ? option.id : nil
+        })
+        super.init(frame: .zero)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        TopicDetailContentStyle.applySurface(
+            to: self,
+            backgroundColor: TopicDetailContentStyle.mutedBackground,
+            cornerRadius: 16,
+            borderAlpha: 0.2
+        )
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+        ])
+
+        stack.addArrangedSubview(makeHeader())
+        for option in poll.options {
+            let control = PollOptionControl(option: option, config: config)
+            control.addTarget(self, action: #selector(optionTapped(_:)), for: .touchUpInside)
+            optionControls.append(control)
+            stack.addArrangedSubview(control)
+        }
+        if let votersText = votersDisplayText() {
+            stack.addArrangedSubview(makeVotersLabel(votersText))
+        }
+        if canSubmitVote {
+            let button = makeSubmitButton()
+            submitButton = button
+            stack.addArrangedSubview(button)
+        }
+        updateOptionStates()
+
+        accessibilityLabel = [String(localized: "post.poll"), votersDisplayText()]
+            .compactMap { $0 }
+            .joined(separator: "，")
+    }
+
+    private func makeHeader() -> UIView {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let iconView = UIImageView(image: UIImage(systemName: "chart.bar.fill"))
+        iconView.tintColor = accentColor
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = UILabel()
+        titleLabel.text = String(localized: "post.poll")
+        titleLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 14, weight: .semibold)
+        )
+        titleLabel.textColor = .secondaryLabel
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let statusLabel = UILabel()
+        statusLabel.text = headerStatusText()
+        statusLabel.font = TopicDetailTypography.scaledInterfaceFont(ofSize: 12, weight: .semibold, relativeTo: .caption1)
+        statusLabel.textColor = accentColor
+        statusLabel.textAlignment = .right
+        statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(iconView)
+        container.addSubview(titleLabel)
+        container.addSubview(statusLabel)
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iconView.topAnchor.constraint(equalTo: container.topAnchor),
+            iconView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            iconView.heightAnchor.constraint(equalToConstant: 18),
+
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusLabel.leadingAnchor, constant: -8),
+
+            statusLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            statusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        return container
+    }
+
+    private func makeVotersLabel(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+            for: .systemFont(ofSize: 12, weight: .medium)
+        )
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 1
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }
+
+    private func makeSubmitButton() -> UIButton {
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = selectedOptionIds.isEmpty ? String(localized: "post.poll.submit") : String(localized: "post.poll.update")
+        configuration.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
+        configuration.baseForegroundColor = .white
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 9, leading: 16, bottom: 9, trailing: 16)
+
+        let button = UIButton(configuration: configuration)
+        button.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 14, weight: .semibold)
+        button.addTarget(self, action: #selector(submitTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
+    private func headerStatusText() -> String? {
+        if isOpen {
+            return votersDisplayText()
+        }
+        return String(localized: "post.poll.closed")
+    }
+
+    private func votersDisplayText() -> String? {
+        if let count = poll.votersCount {
+            return String(format: String(localized: "post.poll.voters_count"), count)
+        }
+        return poll.votersText
+    }
+
+    private func updateOptionStates() {
+        let accentColor = AppSettings.shared.themeStyle.accentColor
+        for control in optionControls {
+            let optionId = control.option.id
+            let isSelected = optionId.map { selectedOptionIds.contains($0) } ?? false
+            control.apply(isSelected: isSelected, canVote: canSubmitVote && !isSubmitting, accentColor: accentColor)
+        }
+
+        guard var configuration = submitButton?.configuration else { return }
+        configuration.title = selectedOptionIds.isEmpty ? String(localized: "post.poll.submit") : String(localized: "post.poll.update")
+        submitButton?.configuration = configuration
+        submitButton?.isEnabled = canSubmitVote && !isSubmitting && selectedOptionIds.count >= minSelections
+    }
+
+    @objc private func optionTapped(_ sender: UIControl) {
+        guard canSubmitVote,
+              !isSubmitting,
+              let control = sender as? PollOptionControl,
+              let optionId = control.option.id
+        else { return }
+
+        if selectedOptionIds.contains(optionId) {
+            if maxSelections > 1 {
+                selectedOptionIds.remove(optionId)
+            }
+        } else if maxSelections <= 1 {
+            selectedOptionIds = [optionId]
+        } else if selectedOptionIds.count < maxSelections {
+            selectedOptionIds.insert(optionId)
+        }
+        updateOptionStates()
+    }
+
+    @objc private func submitTapped() {
+        guard canSubmitVote,
+              !isSubmitting,
+              selectedOptionIds.count >= minSelections,
+              let postId = config.postId,
+              let pollName = poll.name
+        else { return }
+
+        isSubmitting = true
+        updateOptionStates()
+        let optionIds = poll.options.compactMap { option -> String? in
+            guard let id = option.id, selectedOptionIds.contains(id) else { return nil }
+            return id
+        }
+        delegate?.postCell(didSubmitPollVoteForPostId: postId, pollName: pollName, optionIds: optionIds)
+    }
+}
+
+private final class PollOptionControl: UIControl {
+    let option: PollOption
+
+    private let indicatorView = UIImageView()
+    private let titleLabel = UILabel()
+    private let metaLabel = UILabel()
+    private let progressView = UIProgressView(progressViewStyle: .bar)
+
+    override var isHighlighted: Bool {
+        didSet {
+            alpha = isHighlighted ? 0.72 : 1
+        }
+    }
+
+    init(option: PollOption, config: NativeRenderConfig) {
+        self.option = option
+        super.init(frame: .zero)
+        setupUI(config: config)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(isSelected: Bool, canVote: Bool, accentColor: UIColor) {
+        isEnabled = canVote && option.id != nil
+        backgroundColor = isSelected ? accentColor.withAlphaComponent(0.12) : TopicDetailContentStyle.cardBackground
+        layer.borderColor = (isSelected ? accentColor : UIColor.separator.withAlphaComponent(0.18)).cgColor
+        indicatorView.image = UIImage(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+        indicatorView.tintColor = isSelected ? accentColor : .tertiaryLabel
+        progressView.progressTintColor = accentColor.withAlphaComponent(isSelected ? 0.7 : 0.45)
+
+        var traits: UIAccessibilityTraits = isEnabled ? [.button] : [.staticText]
+        if isSelected {
+            traits.insert(.selected)
+        }
+        accessibilityTraits = traits
+        accessibilityLabel = [option.text, metaLabel.text].compactMap { $0 }.joined(separator: "，")
+    }
+
+    private func setupUI(config: NativeRenderConfig) {
+        backgroundColor = TopicDetailContentStyle.cardBackground
+        layer.cornerRadius = 12
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1.0 / UIScreen.main.scale
+        layer.borderColor = UIColor.separator.withAlphaComponent(0.18).cgColor
+        translatesAutoresizingMaskIntoConstraints = false
+        isAccessibilityElement = true
+
+        indicatorView.image = UIImage(systemName: "circle")
+        indicatorView.tintColor = .tertiaryLabel
+        indicatorView.contentMode = .scaleAspectFit
+        indicatorView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.text = option.text
+        titleLabel.font = config.baseFont
+        titleLabel.textColor = config.baseColor
+        titleLabel.numberOfLines = 0
+
+        metaLabel.text = metaText()
+        metaLabel.font = TopicDetailTypography.scaledInterfaceFont(ofSize: 12, weight: .medium, relativeTo: .caption1)
+        metaLabel.textColor = .secondaryLabel
+        metaLabel.numberOfLines = 1
+        metaLabel.isHidden = metaLabel.text == nil
+
+        progressView.trackTintColor = UIColor.separator.withAlphaComponent(0.16)
+        progressView.layer.cornerRadius = 2
+        progressView.clipsToBounds = true
+        progressView.isHidden = progressValue() == nil
+        if let value = progressValue() {
+            progressView.setProgress(value, animated: false)
+        }
+        progressView.translatesAutoresizingMaskIntoConstraints = false
+        progressView.heightAnchor.constraint(equalToConstant: 4).isActive = true
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, metaLabel, progressView])
+        textStack.axis = .vertical
+        textStack.spacing = 5
+        textStack.alignment = .fill
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(indicatorView)
+        addSubview(textStack)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
+
+            indicatorView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            indicatorView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            indicatorView.widthAnchor.constraint(equalToConstant: 18),
+            indicatorView.heightAnchor.constraint(equalToConstant: 18),
+
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            textStack.leadingAnchor.constraint(equalTo: indicatorView.trailingAnchor, constant: 10),
+            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+        ])
+    }
+
+    private func metaText() -> String? {
+        var pieces: [String] = []
+        if let percentageText = option.percentageText {
+            pieces.append(percentageText)
+        }
+        if let voteCount = option.voteCount {
+            pieces.append(String(format: String(localized: "post.poll.vote_count"), voteCount))
+        }
+        guard !pieces.isEmpty else { return nil }
+        return pieces.joined(separator: " · ")
+    }
+
+    private func progressValue() -> Float? {
+        guard let percentageText = option.percentageText else { return nil }
+        let allowed = CharacterSet(charactersIn: "0123456789.")
+        let number = String(percentageText.unicodeScalars.filter { allowed.contains($0) })
+        guard let value = Float(number) else { return nil }
+        return min(max(value / 100, 0), 1)
     }
 }

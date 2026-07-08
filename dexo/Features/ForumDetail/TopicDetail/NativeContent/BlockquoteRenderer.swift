@@ -39,7 +39,9 @@ enum BlockquoteRenderer: BlockRenderer {
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
             contentWidth: config.contentWidth - 32,
-            baseURL: config.baseURL
+            baseURL: config.baseURL,
+            postId: config.postId,
+            galleryImageURLs: config.galleryImageURLs
         )
 
         let views = NativeContentRenderer.renderBlocks(inner, config: quoteConfig, delegate: delegate)

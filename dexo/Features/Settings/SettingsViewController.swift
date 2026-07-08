@@ -134,8 +134,16 @@ extension SettingsViewController: UITableViewDelegate {
             navigationController?.pushViewController(AppearanceSettingsViewController(), animated: true)
             return
         }
+        if category == .reading {
+            navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
+            return
+        }
         if category == .bottomBar {
             navigationController?.pushViewController(BottomBarLayoutViewController(), animated: true)
+            return
+        }
+        if category == .dataManagement {
+            navigationController?.pushViewController(DataManagementSettingsViewController(), animated: true)
             return
         }
         let vc = SettingsCategoryViewController(category: category)
@@ -143,15 +151,29 @@ extension SettingsViewController: UITableViewDelegate {
     }
 }
 
+private enum AppearanceFontOption: Hashable {
+    case system
+    case miSans
+    case importedCustom(String)
+    case importCustom
+}
+
+private enum PendingFontImportTarget: Equatable {
+    case miSans
+    case custom
+}
+
 private final class AppearanceSettingsViewController: ObservableViewController {
     private let settings = AppSettings.shared
     private var modeCards: [AppSettings.AppearanceMode: AppearanceModeCardView] = [:]
     private var styleCards: [AppSettings.ThemeStyle: ThemeStyleCardView] = [:]
     private var iconCards: [AppSettings.AppIconStyle: AppIconCardView] = [:]
-    private var fontRows: [AppSettings.ContentFontFamily: AppearanceFontOptionRow] = [:]
+    private var fontRows: [AppearanceFontOption: AppearanceFontOptionRow] = [:]
     private var sectionIconViews: [UIImageView] = []
+    private let interfaceFontSizeCard = FontScaleCardView()
+    private let fontScopeRow = ReadingToggleRowView()
     private var renderedLanguage: AppSettings.AppLanguage?
-    private var pendingFontImportTarget: AppSettings.ContentFontFamily?
+    private var pendingFontImportTarget: PendingFontImportTarget?
 
     private let scrollView: UIScrollView = {
         let scroll = UIScrollView()
@@ -228,16 +250,25 @@ private final class AppearanceSettingsViewController: ObservableViewController {
                 cardBackgroundColor: cardBackground
             )
         }
-        fontRows.forEach { family, row in
-            row.configure(
-                title: family.title,
-                subtitle: settings.contentFontSubtitle(for: family),
-                selected: family == settings.contentFontFamily,
-                available: settings.isContentFontFamilyAvailable(family),
-                accentColor: accentColor,
-                backgroundColor: cardBackground
-            )
-        }
+        configureFontRows(accentColor: accentColor, backgroundColor: cardBackground)
+        interfaceFontSizeCard.configure(
+            title: String(localized: "settings.interface_font_size"),
+            resetTitle: String(localized: "settings.reading.reset"),
+            sliderValue: settings.interfaceFontScalePercent,
+            minimumValue: AppSettings.minimumFontScalePercent,
+            maximumValue: AppSettings.maximumFontScalePercent,
+            defaultValue: AppSettings.defaultInterfaceFontScalePercent,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
+        fontScopeRow.configure(
+            title: String(localized: "settings.font.scope.global"),
+            subtitle: String(localized: "settings.font.scope.global.subtitle"),
+            symbolName: "textformat.size",
+            isOn: settings.contentFontScope == .global,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
     }
 
     private func setupUI() {
@@ -256,6 +287,22 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         ])
 
         languageRow.addTarget(self, action: #selector(languageTapped), for: .touchUpInside)
+        fontScopeRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.contentFontScope = isOn ? .global : .readingOnly
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
+        interfaceFontSizeCard.onValueChanged = { [weak self] value in
+            guard let self else { return }
+            settings.interfaceFontScalePercent = value
+            updateUI()
+        }
+        interfaceFontSizeCard.onReset = { [weak self] in
+            guard let self else { return }
+            settings.interfaceFontScalePercent = AppSettings.defaultInterfaceFontScalePercent
+            updateUI()
+        }
         rebuildContent()
         renderedLanguage = settings.appLanguage
     }
@@ -309,7 +356,9 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             title: String(localized: "settings.appearance.font"),
             symbolName: "textformat"
         )
+        fontSection.addArrangedSubview(interfaceFontSizeCard)
         fontSection.addArrangedSubview(makeFontOptionsCard())
+        fontSection.addArrangedSubview(fontScopeRow)
         contentStack.addArrangedSubview(fontSection)
     }
 
@@ -423,13 +472,74 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         card.isLayoutMarginsRelativeArrangement = true
         card.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0)
 
-        for family in AppSettings.ContentFontFamily.allCases {
-            let row = AppearanceFontOptionRow(family: family)
+        var options: [AppearanceFontOption] = [.system, .miSans]
+        options.append(contentsOf: settings.importedCustomContentFonts.map { .importedCustom($0.id) })
+        options.append(.importCustom)
+
+        for option in options {
+            let row = AppearanceFontOptionRow(option: option)
             row.addTarget(self, action: #selector(fontFamilyTapped(_:)), for: .touchUpInside)
             card.addArrangedSubview(row)
-            fontRows[family] = row
+            fontRows[option] = row
         }
         return card
+    }
+
+    private func configureFontRows(accentColor: UIColor, backgroundColor: UIColor) {
+        var importedFontsById: [String: AppSettings.ImportedContentFont] = [:]
+        settings.importedCustomContentFonts.forEach { font in
+            importedFontsById[font.id] = font
+        }
+        for (option, row) in fontRows {
+            switch option {
+            case .system:
+                row.configure(
+                    title: AppSettings.ContentFontFamily.system.title,
+                    subtitle: settings.contentFontSubtitle(for: .system),
+                    selected: settings.contentFontFamily == .system,
+                    available: true,
+                    showsUploadIcon: false,
+                    showsSelectionControl: true,
+                    accentColor: accentColor,
+                    backgroundColor: backgroundColor
+                )
+            case .miSans:
+                let available = settings.isContentFontFamilyAvailable(.miSans)
+                row.configure(
+                    title: AppSettings.ContentFontFamily.miSans.title,
+                    subtitle: settings.contentFontSubtitle(for: .miSans),
+                    selected: settings.contentFontFamily == .miSans,
+                    available: available,
+                    showsUploadIcon: !available,
+                    showsSelectionControl: true,
+                    accentColor: accentColor,
+                    backgroundColor: backgroundColor
+                )
+            case .importedCustom(let fontId):
+                guard let font = importedFontsById[fontId] else { continue }
+                row.configure(
+                    title: font.displayName,
+                    subtitle: settings.importedCustomContentFontSubtitle(for: font),
+                    selected: settings.contentFontFamily == .custom && settings.selectedImportedCustomContentFont?.id == font.id,
+                    available: true,
+                    showsUploadIcon: false,
+                    showsSelectionControl: true,
+                    accentColor: accentColor,
+                    backgroundColor: backgroundColor
+                )
+            case .importCustom:
+                row.configure(
+                    title: String(localized: "settings.font.custom.add"),
+                    subtitle: String(localized: "settings.font.custom.add.subtitle"),
+                    selected: false,
+                    available: true,
+                    showsUploadIcon: true,
+                    showsSelectionControl: false,
+                    accentColor: accentColor,
+                    backgroundColor: backgroundColor
+                )
+            }
+        }
     }
 
     @objc private func languageTapped() {
@@ -461,7 +571,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     }
 
     @objc private func fontFamilyTapped(_ sender: AppearanceFontOptionRow) {
-        switch sender.family {
+        switch sender.option {
         case .system:
             settings.contentFontFamily = .system
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -474,14 +584,12 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             } else {
                 presentFontImporter(for: .miSans)
             }
-        case .custom:
-            if settings.isContentFontFamilyAvailable(.custom), settings.contentFontFamily != .custom {
-                settings.contentFontFamily = .custom
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                updateUI()
-            } else {
-                presentFontImporter(for: .custom)
-            }
+        case .importedCustom(let fontId):
+            settings.selectImportedContentFont(id: fontId)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        case .importCustom:
+            presentFontImporter(for: .custom)
         }
     }
 
@@ -505,8 +613,8 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func presentFontImporter(for family: AppSettings.ContentFontFamily) {
-        pendingFontImportTarget = family
+    private func presentFontImporter(for target: PendingFontImportTarget) {
+        pendingFontImportTarget = target
         let fontTypes = [
             UTType(filenameExtension: "ttf"),
             UTType(filenameExtension: "otf"),
@@ -514,7 +622,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         ].compactMap { $0 }
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: fontTypes, asCopy: true)
         picker.delegate = self
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = target == .custom
         present(picker, animated: true)
     }
 
@@ -531,10 +639,17 @@ private final class AppearanceSettingsViewController: ObservableViewController {
 
 extension AppearanceSettingsViewController: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let target = pendingFontImportTarget, let url = urls.first else { return }
+        guard let target = pendingFontImportTarget, !urls.isEmpty else { return }
         pendingFontImportTarget = nil
         do {
-            try settings.importContentFont(from: url, targetFamily: target)
+            switch target {
+            case .miSans:
+                guard let url = urls.first else { return }
+                try settings.importContentFont(from: url, targetFamily: .miSans)
+            case .custom:
+                try settings.importCustomContentFonts(from: urls)
+                rebuildContent()
+            }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             updateUI()
         } catch {
@@ -1087,7 +1202,7 @@ private final class DexoFluxIconPreviewView: UIView {
 }
 
 private final class AppearanceFontOptionRow: UIControl {
-    let family: AppSettings.ContentFontFamily
+    let option: AppearanceFontOption
 
     private let radioView = UIView()
     private let radioDotView = UIView()
@@ -1103,8 +1218,8 @@ private final class AppearanceFontOptionRow: UIControl {
         }
     }
 
-    init(family: AppSettings.ContentFontFamily) {
-        self.family = family
+    init(option: AppearanceFontOption) {
+        self.option = option
         super.init(frame: .zero)
         setupUI()
     }
@@ -1178,17 +1293,20 @@ private final class AppearanceFontOptionRow: UIControl {
         subtitle: String,
         selected: Bool,
         available: Bool,
+        showsUploadIcon: Bool,
+        showsSelectionControl: Bool,
         accentColor: UIColor,
         backgroundColor: UIColor
     ) {
         self.backgroundColor = backgroundColor
         titleLabel.text = title
         subtitleLabel.text = subtitle
+        radioView.isHidden = !showsSelectionControl
         radioView.layer.borderColor = (selected ? accentColor : UIColor.secondaryLabel).withAlphaComponent(selected ? 1 : 0.65).cgColor
         radioDotView.backgroundColor = selected ? accentColor : .clear
-        titleLabel.textColor = available || family == .system ? .label : .secondaryLabel
+        titleLabel.textColor = available ? .label : .secondaryLabel
         uploadIconView.tintColor = accentColor
-        uploadIconView.isHidden = family == .system || (family == .miSans && available)
+        uploadIconView.isHidden = !showsUploadIcon
         accessibilityLabel = "\(title)，\(subtitle)"
         accessibilityTraits = selected ? [.button, .selected] : [.button]
     }
@@ -1353,6 +1471,726 @@ private extension AppSettings.ThemeStyle {
     }
 }
 
+private final class ReadingSettingsViewController: ObservableViewController {
+    private enum ToggleOption: CaseIterable {
+        case readingComfort
+        case defaultExpandRelatedLinks
+        case bottomBarAutoHide
+        case openExternalLinksInAppBrowser
+        case hideScrollIndicators
+
+        var title: String {
+            switch self {
+            case .readingComfort: return String(localized: "settings.reading.comfort")
+            case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links")
+            case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation")
+            case .openExternalLinksInAppBrowser: return String(localized: "settings.reading.in_app_browser")
+            case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators")
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .readingComfort: return String(localized: "settings.reading.comfort.subtitle")
+            case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links.subtitle")
+            case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation.subtitle")
+            case .openExternalLinksInAppBrowser: return String(localized: "settings.reading.in_app_browser.subtitle")
+            case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators.subtitle")
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .readingComfort: return "wand.and.stars"
+            case .defaultExpandRelatedLinks: return "link"
+            case .bottomBarAutoHide: return "arrow.up.and.down"
+            case .openExternalLinksInAppBrowser: return "rectangle.portrait.and.arrow.right"
+            case .hideScrollIndicators: return "scroll"
+            }
+        }
+    }
+
+    private let settings = AppSettings.shared
+    private let previewCard = ReadingPreviewHeroView()
+    private let fontSizeCard = FontScaleCardView()
+    private var toggleRows: [ToggleOption: ReadingToggleRowView] = [:]
+
+    private let scrollView: UIScrollView = {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.alwaysBounceVertical = true
+        scroll.showsVerticalScrollIndicator = false
+        return scroll
+    }()
+
+    private let contentStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 22
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 32, trailing: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = String(localized: "settings.reading_design")
+        configureRootView()
+        rebuildContent()
+        refreshDataViews()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        enableSettingsInteractiveBackSwipe()
+        refreshDataViews()
+    }
+
+    override func updateUI() {
+        title = String(localized: "settings.reading_design")
+        rebuildContent()
+        refreshDataViews()
+    }
+
+    private func configureRootView() {
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+        ])
+    }
+
+    private func rebuildContent() {
+        contentStack.arrangedSubviews.forEach { view in
+            contentStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        toggleRows.removeAll()
+
+        contentStack.addArrangedSubview(previewCard)
+        contentStack.addArrangedSubview(makeReadingSection())
+        contentStack.addArrangedSubview(makeBasicSection())
+    }
+
+    private func makeReadingSection() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(fontSizeCard)
+        stack.addArrangedSubview(makeToggleRow(for: .readingComfort))
+        stack.addArrangedSubview(makeToggleRow(for: .defaultExpandRelatedLinks))
+        return makeSection(
+            title: String(localized: "settings.reading.section.reading"),
+            symbolName: "book.pages",
+            body: stack
+        )
+    }
+
+    private func makeBasicSection() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(makeToggleRow(for: .bottomBarAutoHide))
+        stack.addArrangedSubview(makeToggleRow(for: .openExternalLinksInAppBrowser))
+        stack.addArrangedSubview(makeToggleRow(for: .hideScrollIndicators))
+        return makeSection(
+            title: String(localized: "settings.reading.section.basic"),
+            symbolName: "hand.tap",
+            body: stack
+        )
+    }
+
+    private func makeToggleRow(for option: ToggleOption) -> ReadingToggleRowView {
+        let row = ReadingToggleRowView()
+        row.onValueChanged = { [weak self] isOn in
+            self?.setToggle(option, isOn: isOn)
+        }
+        toggleRows[option] = row
+        return row
+    }
+
+    private func makeSection(title: String, symbolName: String, body: UIView) -> UIView {
+        let section = UIStackView()
+        section.axis = .vertical
+        section.spacing = 12
+        section.translatesAutoresizingMaskIntoConstraints = false
+        section.addArrangedSubview(DataManagementSectionHeaderView(title: title, symbolName: symbolName, tintColor: settings.themeStyle.accentColor))
+        section.addArrangedSubview(body)
+        return section
+    }
+
+    private func refreshDataViews() {
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+        let cardBackground = settings.themeStyle.topicCardBackgroundColor
+        let accentColor = settings.themeStyle.accentColor
+        previewCard.configure(
+            title: String(localized: "settings.reading.preview.title"),
+            subtitle: String(localized: "settings.reading.preview.subtitle"),
+            sampleTitle: String(localized: "settings.reading.preview.sample_title"),
+            sampleBody: String(localized: "settings.reading.preview.sample_body"),
+            fontSize: settings.contentFontSize,
+            accentColor: accentColor
+        )
+        fontSizeCard.configure(
+            title: String(localized: "settings.content_font_size"),
+            resetTitle: String(localized: "settings.reading.reset"),
+            sliderValue: settings.contentFontScalePercent,
+            minimumValue: AppSettings.minimumFontScalePercent,
+            maximumValue: AppSettings.maximumFontScalePercent,
+            defaultValue: AppSettings.defaultFontScalePercent,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
+        fontSizeCard.onValueChanged = { [weak self] value in
+            guard let self else { return }
+            if settings.contentFontSize != .standard {
+                settings.contentFontSize = .standard
+            }
+            settings.contentFontScalePercent = value
+            refreshDataViews()
+        }
+        fontSizeCard.onReset = { [weak self] in
+            guard let self else { return }
+            settings.contentFontSize = .standard
+            settings.contentFontScalePercent = AppSettings.defaultFontScalePercent
+            refreshDataViews()
+        }
+
+        for option in ToggleOption.allCases {
+            toggleRows[option]?.configure(
+                title: option.title,
+                subtitle: option.subtitle,
+                symbolName: option.symbolName,
+                isOn: isToggleOn(option),
+                accentColor: accentColor,
+                backgroundColor: cardBackground
+            )
+        }
+    }
+
+    private func isToggleOn(_ option: ToggleOption) -> Bool {
+        switch option {
+        case .readingComfort:
+            return settings.readingComfortMode
+        case .defaultExpandRelatedLinks:
+            return settings.defaultExpandRelatedLinks
+        case .bottomBarAutoHide:
+            return settings.bottomBarAutoHideEnabled
+        case .openExternalLinksInAppBrowser:
+            return settings.openExternalLinksInAppBrowser
+        case .hideScrollIndicators:
+            return settings.hideScrollIndicators
+        }
+    }
+
+    private func setToggle(_ option: ToggleOption, isOn: Bool) {
+        switch option {
+        case .readingComfort:
+            settings.readingComfortMode = isOn
+        case .defaultExpandRelatedLinks:
+            settings.defaultExpandRelatedLinks = isOn
+        case .bottomBarAutoHide:
+            settings.bottomBarAutoHideEnabled = isOn
+        case .openExternalLinksInAppBrowser:
+            settings.openExternalLinksInAppBrowser = isOn
+        case .hideScrollIndicators:
+            settings.hideScrollIndicators = isOn
+        }
+        refreshDataViews()
+    }
+
+}
+
+private final class ReadingPreviewHeroView: UIView {
+    private let gradientLayer = CAGradientLayer()
+    private var accentColor = DataManagementPalette.dataBlue
+
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 22, weight: .heavy)
+        label.textColor = .white
+        return label
+    }()
+
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = UIColor.white.withAlphaComponent(0.72)
+        label.numberOfLines = 2
+        return label
+    }()
+
+    private let sampleContainer = UIView()
+    private let sampleTitleLabel = UILabel()
+    private let sampleBodyLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
+        gradientLayer.cornerRadius = layer.cornerRadius
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        layer.cornerRadius = 28
+        layer.cornerCurve = .continuous
+        clipsToBounds = true
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
+        layer.insertSublayer(gradientLayer, at: 0)
+
+        sampleContainer.backgroundColor = UIColor.white.withAlphaComponent(0.14)
+        sampleContainer.layer.cornerRadius = 18
+        sampleContainer.layer.cornerCurve = .continuous
+        sampleContainer.translatesAutoresizingMaskIntoConstraints = false
+        sampleContainer.isUserInteractionEnabled = false
+
+        sampleTitleLabel.font = .systemFont(ofSize: 17, weight: .bold)
+        sampleTitleLabel.textColor = .white
+        sampleTitleLabel.numberOfLines = 1
+        sampleTitleLabel.isUserInteractionEnabled = false
+
+        sampleBodyLabel.font = .systemFont(ofSize: 14, weight: .regular)
+        sampleBodyLabel.textColor = UIColor.white.withAlphaComponent(0.78)
+        sampleBodyLabel.numberOfLines = 3
+        sampleBodyLabel.isUserInteractionEnabled = false
+
+        let sampleStack = UIStackView(arrangedSubviews: [sampleTitleLabel, sampleBodyLabel])
+        sampleStack.axis = .vertical
+        sampleStack.spacing = 7
+        sampleStack.isLayoutMarginsRelativeArrangement = true
+        sampleStack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14)
+        sampleStack.translatesAutoresizingMaskIntoConstraints = false
+        sampleStack.isUserInteractionEnabled = false
+        sampleContainer.addSubview(sampleStack)
+
+        let headerStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        headerStack.axis = .vertical
+        headerStack.spacing = 5
+        headerStack.isUserInteractionEnabled = false
+
+        let stack = UIStackView(arrangedSubviews: [headerStack, sampleContainer])
+        stack.axis = .vertical
+        stack.spacing = 18
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 22, leading: 22, bottom: 20, trailing: 22)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isUserInteractionEnabled = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            sampleStack.topAnchor.constraint(equalTo: sampleContainer.topAnchor),
+            sampleStack.leadingAnchor.constraint(equalTo: sampleContainer.leadingAnchor),
+            sampleStack.trailingAnchor.constraint(equalTo: sampleContainer.trailingAnchor),
+            sampleStack.bottomAnchor.constraint(equalTo: sampleContainer.bottomAnchor),
+        ])
+    }
+
+    func configure(
+        title: String,
+        subtitle: String,
+        sampleTitle: String,
+        sampleBody: String,
+        fontSize: AppSettings.ContentFontSize,
+        accentColor: UIColor
+    ) {
+        self.accentColor = accentColor
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
+        sampleTitleLabel.text = sampleTitle
+        sampleBodyLabel.text = sampleBody
+        let settings = AppSettings.shared
+        let titleSize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 1, 16))
+        let bodySize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 3, 14))
+        sampleTitleLabel.font = settings.contentFont(ofSize: titleSize, weight: .bold)
+        sampleBodyLabel.font = settings.contentFont(ofSize: bodySize, weight: .regular)
+        updateGradient()
+    }
+
+    private func updateGradient() {
+        let resolvedAccent = accentColor.resolvedColor(with: traitCollection)
+        gradientLayer.colors = [
+            resolvedAccent.cgColor,
+            DataManagementPalette.dataBlue.resolvedColor(with: traitCollection).cgColor,
+            DataManagementPalette.deepBlue.resolvedColor(with: traitCollection).cgColor,
+        ]
+        gradientLayer.locations = [0, 0.55, 1]
+    }
+}
+
+private final class FontScaleCardView: UIView {
+    var onValueChanged: ((Int) -> Void)?
+    var onReset: (() -> Void)?
+
+    private let iconContainer = UIView()
+    private let iconLabel = UILabel()
+    private let titleLabel = UILabel()
+    private let percentLabel = UILabel()
+    private let resetButton = UIButton(type: .system)
+    private let decreaseButton = UIButton(type: .system)
+    private let increaseButton = UIButton(type: .system)
+    private let slider = UISlider()
+    private var currentValue = AppSettings.defaultFontScalePercent
+    private var defaultValue = AppSettings.defaultFontScalePercent
+    private var minimumValue = AppSettings.minimumFontScalePercent
+    private var maximumValue = AppSettings.maximumFontScalePercent
+    private var stepValue = AppSettings.fontScaleStepPercent
+    private var accentColor = UIColor.systemBlue
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        layer.cornerRadius = 24
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = DataManagementPalette.borderColor.cgColor
+        layer.shadowOpacity = 0.07
+        layer.shadowRadius = 14
+        layer.shadowOffset = CGSize(width: 0, height: 8)
+
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.isUserInteractionEnabled = false
+
+        iconLabel.text = "Tt"
+        iconLabel.font = .systemFont(ofSize: 23, weight: .black)
+        iconLabel.textAlignment = .center
+        iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        iconLabel.isUserInteractionEnabled = false
+        iconContainer.addSubview(iconLabel)
+
+        titleLabel.font = .systemFont(ofSize: 17, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.isUserInteractionEnabled = false
+
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
+        percentLabel.textColor = .secondaryLabel
+        percentLabel.isUserInteractionEnabled = false
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, percentLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 3
+        textStack.isUserInteractionEnabled = false
+
+        resetButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        resetButton.addAction(UIAction { [weak self] _ in
+            self?.onReset?()
+        }, for: .touchUpInside)
+
+        let topRow = UIStackView(arrangedSubviews: [iconContainer, textStack, resetButton])
+        topRow.axis = .horizontal
+        topRow.alignment = .center
+        topRow.spacing = 14
+        topRow.translatesAutoresizingMaskIntoConstraints = false
+
+        slider.minimumValue = Float(AppSettings.minimumFontScalePercent)
+        slider.maximumValue = Float(AppSettings.maximumFontScalePercent)
+        slider.isContinuous = true
+        slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
+        slider.translatesAutoresizingMaskIntoConstraints = false
+
+        configureStepButton(decreaseButton, title: "-")
+        configureStepButton(increaseButton, title: "+")
+        decreaseButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            adjustValue(by: -stepValue)
+        }, for: .touchUpInside)
+        increaseButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            adjustValue(by: stepValue)
+        }, for: .touchUpInside)
+
+        let sliderRow = UIStackView(arrangedSubviews: [decreaseButton, slider, increaseButton])
+        sliderRow.axis = .horizontal
+        sliderRow.alignment = .center
+        sliderRow.spacing = 10
+        sliderRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = UIStackView(arrangedSubviews: [topRow, sliderRow])
+        stack.axis = .vertical
+        stack.spacing = 24
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 20, trailing: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 48),
+            iconContainer.heightAnchor.constraint(equalToConstant: 48),
+            iconLabel.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconLabel.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            decreaseButton.widthAnchor.constraint(equalToConstant: 44),
+            decreaseButton.heightAnchor.constraint(equalToConstant: 44),
+            increaseButton.widthAnchor.constraint(equalToConstant: 44),
+            increaseButton.heightAnchor.constraint(equalToConstant: 44),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    private func configureStepButton(_ button: UIButton, title: String) {
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 22, weight: .bold)
+        button.layer.cornerRadius = 14
+        button.layer.cornerCurve = .continuous
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityTraits.insert(.button)
+    }
+
+    func configure(
+        title: String,
+        resetTitle: String,
+        sliderValue: Int,
+        minimumValue: Int,
+        maximumValue: Int,
+        defaultValue: Int,
+        stepValue: Int = AppSettings.fontScaleStepPercent,
+        accentColor: UIColor,
+        backgroundColor: UIColor
+    ) {
+        self.backgroundColor = backgroundColor
+        self.defaultValue = defaultValue
+        self.minimumValue = minimumValue
+        self.maximumValue = maximumValue
+        self.stepValue = max(stepValue, 1)
+        self.accentColor = accentColor
+        currentValue = min(max(sliderValue, minimumValue), maximumValue)
+        layer.shadowColor = accentColor.cgColor
+        layer.borderColor = accentColor.withAlphaComponent(0.14).cgColor
+        iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
+        iconLabel.textColor = accentColor
+        titleLabel.text = title
+        percentLabel.text = "\(currentValue)%"
+        resetButton.setTitle(resetTitle, for: .normal)
+        resetButton.setTitleColor(currentValue == defaultValue ? .tertiaryLabel : accentColor, for: .normal)
+        resetButton.isEnabled = currentValue != defaultValue
+        slider.minimumValue = Float(minimumValue)
+        slider.maximumValue = Float(maximumValue)
+        slider.minimumTrackTintColor = accentColor
+        slider.maximumTrackTintColor = UIColor.tertiaryLabel.withAlphaComponent(0.35)
+        slider.thumbTintColor = accentColor
+        slider.setValue(Float(currentValue), animated: false)
+        applyStepButtonStyle()
+        accessibilityLabel = "\(title)，\(currentValue)%"
+    }
+
+    @objc private func sliderChanged(_ sender: UISlider) {
+        let value = snappedValue(Int(round(sender.value)))
+        setCurrentValue(value, animated: false, notify: true)
+    }
+
+    private func adjustValue(by delta: Int) {
+        setCurrentValue(currentValue + delta, animated: true, notify: true)
+    }
+
+    private func setCurrentValue(_ rawValue: Int, animated: Bool, notify: Bool) {
+        let value = snappedValue(rawValue)
+        slider.setValue(Float(value), animated: animated)
+        guard value != currentValue else {
+            applyStepButtonStyle()
+            return
+        }
+        currentValue = value
+        percentLabel.text = "\(value)%"
+        resetButton.setTitleColor(value == defaultValue ? .tertiaryLabel : accentColor, for: .normal)
+        resetButton.isEnabled = value != defaultValue
+        applyStepButtonStyle()
+        UISelectionFeedbackGenerator().selectionChanged()
+        if notify {
+            onValueChanged?(value)
+        }
+    }
+
+    private func snappedValue(_ rawValue: Int) -> Int {
+        let clamped = min(max(rawValue, minimumValue), maximumValue)
+        let offset = clamped - minimumValue
+        let snappedOffset = Int((Double(offset) / Double(stepValue)).rounded()) * stepValue
+        return min(max(minimumValue + snappedOffset, minimumValue), maximumValue)
+    }
+
+    private func applyStepButtonStyle() {
+        decreaseButton.isEnabled = currentValue > minimumValue
+        increaseButton.isEnabled = currentValue < maximumValue
+        for button in [decreaseButton, increaseButton] {
+            button.backgroundColor = accentColor.withAlphaComponent(button.isEnabled ? 0.12 : 0.06)
+            button.setTitleColor(button.isEnabled ? accentColor : .tertiaryLabel, for: .normal)
+        }
+    }
+}
+
+private final class ReadingToggleRowView: UIControl {
+    var onValueChanged: ((Bool) -> Void)?
+
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let toggle = UISwitch()
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.99, y: 0.99) : .identity
+            }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
+        layer.cornerRadius = 22
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = DataManagementPalette.borderColor.cgColor
+        layer.shadowOpacity = 0.07
+        layer.shadowRadius = 12
+        layer.shadowOffset = CGSize(width: 0, height: 7)
+        addTarget(self, action: #selector(rowTapped), for: .touchUpInside)
+
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.isUserInteractionEnabled = false
+
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.isUserInteractionEnabled = false
+        iconContainer.addSubview(iconView)
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 2
+        titleLabel.isUserInteractionEnabled = false
+
+        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 2
+        subtitleLabel.isUserInteractionEnabled = false
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.isUserInteractionEnabled = false
+
+        toggle.translatesAutoresizingMaskIntoConstraints = false
+        toggle.addTarget(self, action: #selector(toggleChanged(_:)), for: .valueChanged)
+
+        addSubview(iconContainer)
+        addSubview(textStack)
+        addSubview(toggle)
+        NSLayoutConstraint.activate([
+            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconContainer.widthAnchor.constraint(equalToConstant: 46),
+            iconContainer.heightAnchor.constraint(equalToConstant: 46),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 23),
+            iconView.heightAnchor.constraint(equalToConstant: 23),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -14),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        accessibilityTraits = [.button]
+    }
+
+    func configure(
+        title: String,
+        subtitle: String,
+        symbolName: String,
+        isOn: Bool,
+        accentColor: UIColor,
+        backgroundColor: UIColor
+    ) {
+        self.backgroundColor = backgroundColor
+        layer.shadowColor = accentColor.cgColor
+        layer.borderColor = accentColor.withAlphaComponent(0.14).cgColor
+        iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+        iconView.tintColor = accentColor
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
+        toggle.onTintColor = accentColor
+        toggle.setOn(isOn, animated: false)
+        accessibilityLabel = "\(title)，\(subtitle)"
+        accessibilityValue = isOn ? String(localized: "common.on") : String(localized: "common.off")
+    }
+
+    @objc private func rowTapped() {
+        toggle.setOn(!toggle.isOn, animated: true)
+        onValueChanged?(toggle.isOn)
+    }
+
+    @objc private func toggleChanged(_ sender: UISwitch) {
+        onValueChanged?(sender.isOn)
+    }
+}
+
 private final class SettingsCategoryViewController: ObservableViewController {
     private let settings = AppSettings.shared
     private let category: SettingsViewController.Category
@@ -1468,7 +2306,7 @@ extension SettingsCategoryViewController: UITableViewDataSource {
         case .readingComfort:
             return switchCell(title: String(localized: "settings.reading.comfort"), isOn: settings.readingComfortMode, action: #selector(readingComfortChanged(_:)))
         case .contentFontSize:
-            return valueCell(title: String(localized: "settings.content_font_size"), detail: settings.contentFontSize.title)
+            return valueCell(title: String(localized: "settings.content_font_size"), detail: "\(settings.contentFontScalePercent)%")
         case .hideScrollIndicators:
             return switchCell(title: String(localized: "settings.reading.hide_scroll_indicators"), isOn: settings.hideScrollIndicators, action: #selector(hideScrollIndicatorsChanged(_:)))
         case .dohToggle:
@@ -1665,13 +2503,15 @@ private extension SettingsCategoryViewController {
 
     func showContentFontSizePicker(sourceView: UIView?) {
         let alert = UIAlertController(title: String(localized: "settings.content_font_size"), message: nil, preferredStyle: .actionSheet)
-        for size in AppSettings.ContentFontSize.allCases {
-            let action = UIAlertAction(title: size.title, style: .default) { [weak self] _ in
+        let presetValues = [30, 50, 70, 90, 100, 110, 120, 150]
+        for value in presetValues {
+            let action = UIAlertAction(title: "\(value)%", style: .default) { [weak self] _ in
                 guard let self else { return }
-                settings.contentFontSize = size
+                settings.contentFontSize = .standard
+                settings.contentFontScalePercent = value
                 tableView.reloadData()
             }
-            action.setValue(size == settings.contentFontSize, forKey: "checked")
+            action.setValue(value == settings.contentFontScalePercent, forKey: "checked")
             alert.addAction(action)
         }
         alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
@@ -1761,6 +2601,1147 @@ private extension SettingsCategoryViewController {
         present(alert, animated: true)
     }
     #endif
+}
+
+private final class DataManagementSettingsViewController: ObservableViewController {
+    private enum CacheRow: Int, CaseIterable {
+        case image
+        case aiChat
+        case cookie
+        case all
+
+        var title: String {
+            switch self {
+            case .image: return String(localized: "settings.data.image_cache")
+            case .aiChat: return String(localized: "settings.data.ai_chat")
+            case .cookie: return String(localized: "settings.data.cookie_cache")
+            case .all: return String(localized: "settings.data.clear_all_cache")
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .image: return "photo"
+            case .aiChat: return "ellipsis.bubble"
+            case .cookie: return "globe.badge.chevron.backward"
+            case .all: return "trash"
+            }
+        }
+
+    }
+
+    private enum BackupRow: Int, CaseIterable {
+        case export
+        case `import`
+
+        var title: String {
+            switch self {
+            case .export: return String(localized: "settings.data.export")
+            case .import: return String(localized: "settings.data.import")
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .export: return String(localized: "settings.data.export.subtitle")
+            case .import: return String(localized: "settings.data.import.subtitle")
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .export: return "square.and.arrow.up"
+            case .import: return "square.and.arrow.down"
+            }
+        }
+    }
+
+    private let settings = AppSettings.shared
+    private var imageCacheSize: Int64 = 0
+    private weak var heroCard: DataManagementHeroCardView?
+    private weak var autoClearCard: DataManagementToggleCardView?
+    private var cacheCards: [CacheRow: DataManagementCacheTileView] = [:]
+    private var backupRows: [BackupRow: DataManagementActionRowView] = [:]
+
+    private let scrollView: UIScrollView = {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.alwaysBounceVertical = true
+        scroll.showsVerticalScrollIndicator = false
+        return scroll
+    }()
+
+    private let contentStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 22
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 32, trailing: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private var cookieCacheSize: Int64 {
+        WebCookieStore.shared.persistedDataSize()
+    }
+
+    private var appLocalCacheSize: Int64 {
+        MeProfileCacheStore.cacheSize() + EmojiStore.cacheSize()
+    }
+
+    private var allCacheSize: Int64 {
+        imageCacheSize + cookieCacheSize + appLocalCacheSize
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = String(localized: "settings.data_management")
+        configureRootView()
+        rebuildContent()
+        reloadCacheSizes()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        enableSettingsInteractiveBackSwipe()
+        reloadCacheSizes()
+    }
+
+    override func updateUI() {
+        title = String(localized: "settings.data_management")
+        rebuildContent()
+        refreshDataViews()
+    }
+
+    private func configureRootView() {
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+        ])
+    }
+
+    private func rebuildContent() {
+        contentStack.arrangedSubviews.forEach { view in
+            contentStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        cacheCards.removeAll()
+        backupRows.removeAll()
+        heroCard = nil
+        autoClearCard = nil
+
+        let hero = DataManagementHeroCardView()
+        heroCard = hero
+        contentStack.addArrangedSubview(hero)
+        contentStack.addArrangedSubview(makeCacheSection())
+        contentStack.addArrangedSubview(makeAutomaticSection())
+        contentStack.addArrangedSubview(makeBackupSection())
+    }
+
+    private func makeCacheSection() -> UIView {
+        let grid = UIStackView()
+        grid.axis = .vertical
+        grid.spacing = 12
+        grid.translatesAutoresizingMaskIntoConstraints = false
+
+        let rows: [[CacheRow]] = [
+            [.image, .cookie],
+            [.aiChat, .all],
+        ]
+        for rowItems in rows {
+            let rowStack = UIStackView()
+            rowStack.axis = .horizontal
+            rowStack.spacing = 12
+            rowStack.distribution = .fillEqually
+            rowStack.translatesAutoresizingMaskIntoConstraints = false
+            for item in rowItems {
+                let card = DataManagementCacheTileView()
+                card.heightAnchor.constraint(greaterThanOrEqualToConstant: 136).isActive = true
+                card.addAction(UIAction { [weak self] _ in
+                    guard let self, self.canClear(item) else { return }
+                    self.handleCacheRow(item)
+                }, for: .touchUpInside)
+                rowStack.addArrangedSubview(card)
+                cacheCards[item] = card
+            }
+            grid.addArrangedSubview(rowStack)
+        }
+        return makeSection(
+            title: String(localized: "settings.data.cache_management"),
+            symbolName: "externaldrive.badge.icloud",
+            body: grid
+        )
+    }
+
+    private func makeAutomaticSection() -> UIView {
+        let card = DataManagementToggleCardView()
+        card.addAction(UIAction { [weak self, weak card] _ in
+            guard let self, let card else { return }
+            let newValue = !self.settings.clearImageCacheOnLaunch
+            card.setOn(newValue, animated: true)
+            self.settings.clearImageCacheOnLaunch = newValue
+        }, for: .touchUpInside)
+        card.onValueChanged = { [weak self] isOn in
+            self?.settings.clearImageCacheOnLaunch = isOn
+        }
+        autoClearCard = card
+        return makeSection(
+            title: String(localized: "settings.data.automatic_management"),
+            symbolName: "trash.circle",
+            body: card
+        )
+    }
+
+    private func makeBackupSection() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        for row in BackupRow.allCases {
+            let actionRow = DataManagementActionRowView()
+            actionRow.addAction(UIAction { [weak self] _ in
+                switch row {
+                case .export:
+                    self?.exportPreferences()
+                case .import:
+                    self?.importPreferences()
+                }
+            }, for: .touchUpInside)
+            stack.addArrangedSubview(actionRow)
+            backupRows[row] = actionRow
+        }
+        return makeSection(
+            title: String(localized: "settings.data.backup"),
+            symbolName: "icloud.and.arrow.up",
+            body: stack
+        )
+    }
+
+    private func makeSection(title: String, symbolName: String, body: UIView) -> UIView {
+        let section = UIStackView()
+        section.axis = .vertical
+        section.spacing = 12
+        section.translatesAutoresizingMaskIntoConstraints = false
+        section.addArrangedSubview(DataManagementSectionHeaderView(title: title, symbolName: symbolName, tintColor: settings.themeStyle.accentColor))
+        section.addArrangedSubview(body)
+        return section
+    }
+
+    private func reloadCacheSizes() {
+        SDImageCache.shared.calculateSize { [weak self] _, totalSize in
+            DispatchQueue.main.async {
+                self?.imageCacheSize = Int64(totalSize)
+                self?.refreshDataViews()
+            }
+        }
+    }
+
+    private func refreshDataViews() {
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+        let cardBackground = settings.themeStyle.topicCardBackgroundColor
+        heroCard?.configure(
+            title: String(localized: "settings.data.hero.title"),
+            subtitle: String(localized: "settings.data.hero.subtitle"),
+            totalTitle: String(localized: "settings.data.cache_footprint"),
+            totalSize: formattedSize(allCacheSize),
+            imageTitle: String(localized: "settings.data.image_cache"),
+            imageSize: formattedSize(imageCacheSize),
+            cookieTitle: String(localized: "settings.data.cookie_cache"),
+            cookieSize: formattedSize(cookieCacheSize),
+            localTitle: String(localized: "settings.data.local_cache"),
+            localSize: formattedSize(appLocalCacheSize),
+            accentColor: settings.themeStyle.accentColor
+        )
+
+        for row in CacheRow.allCases {
+            cacheCards[row]?.configure(
+                title: row.title,
+                detail: cacheDetailText(for: row),
+                actionTitle: String(localized: "settings.data.clear"),
+                symbolName: row.symbolName,
+                tintColor: tintColor(for: row),
+                backgroundColor: cardBackground,
+                enabled: canClear(row),
+                destructive: row == .all
+            )
+        }
+
+        autoClearCard?.configure(
+            title: String(localized: "settings.data.clear_image_on_launch"),
+            subtitle: String(localized: "settings.data.clear_image_on_launch.subtitle"),
+            symbolName: "trash.circle",
+            isOn: settings.clearImageCacheOnLaunch,
+            accentColor: settings.themeStyle.accentColor,
+            backgroundColor: cardBackground
+        )
+
+        for row in BackupRow.allCases {
+            backupRows[row]?.configure(
+                title: row.title,
+                subtitle: row.subtitle,
+                symbolName: row.symbolName,
+                tintColor: settings.themeStyle.accentColor,
+                backgroundColor: cardBackground
+            )
+        }
+    }
+}
+
+private extension DataManagementSettingsViewController {
+    private func cacheDetailText(for row: CacheRow) -> String {
+        switch row {
+        case .image:
+            return formattedSize(imageCacheSize)
+        case .aiChat:
+            return String(localized: "settings.data.no_cache")
+        case .cookie:
+            return formattedSize(cookieCacheSize)
+        case .all:
+            return formattedSize(allCacheSize)
+        }
+    }
+
+    private func tintColor(for row: CacheRow) -> UIColor {
+        switch row {
+        case .image:
+            return DataManagementPalette.secondaryBlue
+        case .aiChat:
+            return .systemIndigo
+        case .cookie:
+            return .systemTeal
+        case .all:
+            return .systemRed
+        }
+    }
+
+    private func canClear(_ row: CacheRow) -> Bool {
+        switch row {
+        case .image:
+            return imageCacheSize > 0
+        case .aiChat:
+            return false
+        case .cookie:
+            return cookieCacheSize > 0
+        case .all:
+            return allCacheSize > 0
+        }
+    }
+
+    private func formattedSize(_ size: Int64) -> String {
+        guard size > 0 else {
+            return String(localized: "settings.data.no_cache")
+        }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        return formatter.string(fromByteCount: size)
+    }
+
+    private func handleCacheRow(_ row: CacheRow) {
+        switch row {
+        case .image:
+            clearImageCache(showCompletion: true)
+        case .aiChat:
+            break
+        case .cookie:
+            confirm(
+                title: String(localized: "settings.data.clear_cookie.confirm.title"),
+                message: String(localized: "settings.data.clear_cookie.confirm.message"),
+                destructiveTitle: String(localized: "settings.data.clear")
+            ) { [weak self] in
+                self?.clearCookieCache(showCompletion: true)
+            }
+        case .all:
+            confirm(
+                title: String(localized: "settings.data.clear_all.confirm.title"),
+                message: String(localized: "settings.data.clear_all.confirm.message"),
+                destructiveTitle: String(localized: "settings.data.clear")
+            ) { [weak self] in
+                self?.clearAllCaches()
+            }
+        }
+    }
+
+    func clearImageCache(showCompletion: Bool, completion: (() -> Void)? = nil) {
+        SDImageCache.shared.clearMemory()
+        SDImageCache.shared.clearDisk { [weak self] in
+            DispatchQueue.main.async {
+                self?.reloadCacheSizes()
+                if showCompletion {
+                    self?.showMessage(String(localized: "settings.data.image_cache_cleared"))
+                }
+                completion?()
+            }
+        }
+    }
+
+    func clearCookieCache(showCompletion: Bool, completion: (() -> Void)? = nil) {
+        Task { @MainActor [weak self] in
+            AuthManager.shared.invalidateWebSession(for: ForumInstance.linuxDoBaseURL)
+            await WebCookieStore.shared.clearWebViewCookies(for: ForumInstance.linuxDoBaseURL)
+            self?.reloadCacheSizes()
+            if showCompletion {
+                self?.showMessage(String(localized: "settings.data.cookie_cache_cleared"))
+            }
+            completion?()
+        }
+    }
+
+    func clearAllCaches() {
+        clearImageCache(showCompletion: false) { [weak self] in
+            MeProfileCacheStore.clearAll()
+            EmojiStore.clearCache()
+            self?.clearCookieCache(showCompletion: false) {
+                self?.reloadCacheSizes()
+                self?.showMessage(String(localized: "settings.data.all_cache_cleared"))
+            }
+        }
+    }
+
+    func confirm(title: String, message: String, destructiveTitle: String, action: @escaping () -> Void) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: destructiveTitle, style: .destructive) { _ in
+            action()
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        present(alert, animated: true)
+    }
+
+    func exportPreferences() {
+        do {
+            let data = try settings.makePreferencesBackupData()
+            let fileURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Dexo-Preferences-\(Self.backupTimestamp()).json")
+            try data.write(to: fileURL, options: .atomic)
+            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+            activity.popoverPresentationController?.sourceView = view
+            activity.popoverPresentationController?.sourceRect = view.bounds
+            present(activity, animated: true)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    func importPreferences() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json], asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    func showMessage(_ message: String) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+        present(alert, animated: true)
+    }
+
+    func showError(_ message: String) {
+        let alert = UIAlertController(
+            title: String(localized: "settings.operation_failed"),
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+        present(alert, animated: true)
+    }
+
+    static func backupTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
+    }
+}
+
+private enum DataManagementPalette {
+    static let dataBlue = UIColor(red: 0.12, green: 0.25, blue: 0.69, alpha: 1)
+    static let secondaryBlue = UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1)
+    static let deepBlue = UIColor(red: 0.06, green: 0.12, blue: 0.27, alpha: 1)
+    static let amber = UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1)
+
+    static var screenBackground: UIColor {
+        UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(red: 0.04, green: 0.07, blue: 0.12, alpha: 1)
+                : UIColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1)
+        }
+    }
+
+    static var borderColor: UIColor {
+        UIColor.separator.withAlphaComponent(0.22)
+    }
+}
+
+private final class DataManagementSectionHeaderView: UIView {
+    private let iconView: UIImageView = {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFit
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 17, weight: .bold)
+        label.textColor = .label
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isUserInteractionEnabled = false
+        return label
+    }()
+
+    init(title: String, symbolName: String, tintColor: UIColor) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = title
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold))
+        iconView.tintColor = tintColor
+        addSubview(iconView)
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            iconView.heightAnchor.constraint(equalToConstant: 24),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 9),
+            titleLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+private final class DataManagementHeroCardView: UIView {
+    private let gradientLayer = CAGradientLayer()
+    private var accentColor = DataManagementPalette.dataBlue
+
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 22, weight: .heavy)
+        label.textColor = .white
+        label.adjustsFontForContentSizeCategory = true
+        return label
+    }()
+
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = UIColor.white.withAlphaComponent(0.72)
+        label.numberOfLines = 2
+        return label
+    }()
+
+    private let badgeLabel: UILabel = {
+        let label = UILabel()
+        label.text = "DexoFlux"
+        label.font = .systemFont(ofSize: 11, weight: .bold)
+        label.textColor = UIColor(red: 0.18, green: 0.12, blue: 0.02, alpha: 1)
+        label.textAlignment = .center
+        label.backgroundColor = DataManagementPalette.amber
+        label.layer.cornerRadius = 12
+        label.layer.cornerCurve = .continuous
+        label.clipsToBounds = true
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        return label
+    }()
+
+    private let totalTitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = UIColor.white.withAlphaComponent(0.70)
+        return label
+    }()
+
+    private let totalSizeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 36, weight: .black)
+        label.textColor = .white
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.56
+        return label
+    }()
+
+    private let imageMetric = DataManagementMetricPillView()
+    private let cookieMetric = DataManagementMetricPillView()
+    private let localMetric = DataManagementMetricPillView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
+        gradientLayer.cornerRadius = layer.cornerRadius
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateGradient()
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 216).isActive = true
+        layer.cornerRadius = 28
+        layer.cornerCurve = .continuous
+        clipsToBounds = true
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
+        layer.insertSublayer(gradientLayer, at: 0)
+        updateGradient()
+
+        let titleStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        titleStack.axis = .vertical
+        titleStack.spacing = 4
+        titleStack.isUserInteractionEnabled = false
+
+        let topRow = UIStackView(arrangedSubviews: [titleStack, badgeLabel])
+        topRow.axis = .horizontal
+        topRow.alignment = .top
+        topRow.spacing = 12
+        topRow.isUserInteractionEnabled = false
+        badgeLabel.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        badgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
+
+        let totalStack = UIStackView(arrangedSubviews: [totalTitleLabel, totalSizeLabel])
+        totalStack.axis = .vertical
+        totalStack.spacing = 3
+        totalStack.isUserInteractionEnabled = false
+
+        let metricStack = UIStackView(arrangedSubviews: [imageMetric, cookieMetric, localMetric])
+        metricStack.axis = .horizontal
+        metricStack.spacing = 8
+        metricStack.distribution = .fillEqually
+        metricStack.isUserInteractionEnabled = false
+
+        let contentStack = UIStackView(arrangedSubviews: [topRow, totalStack, metricStack])
+        contentStack.axis = .vertical
+        contentStack.spacing = 18
+        contentStack.isLayoutMarginsRelativeArrangement = true
+        contentStack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 22, leading: 22, bottom: 18, trailing: 22)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.isUserInteractionEnabled = false
+        addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    func configure(
+        title: String,
+        subtitle: String,
+        totalTitle: String,
+        totalSize: String,
+        imageTitle: String,
+        imageSize: String,
+        cookieTitle: String,
+        cookieSize: String,
+        localTitle: String,
+        localSize: String,
+        accentColor: UIColor
+    ) {
+        self.accentColor = accentColor
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
+        totalTitleLabel.text = totalTitle
+        totalSizeLabel.text = totalSize
+        imageMetric.configure(title: imageTitle, value: imageSize)
+        cookieMetric.configure(title: cookieTitle, value: cookieSize)
+        localMetric.configure(title: localTitle, value: localSize)
+        updateGradient()
+    }
+
+    private func updateGradient() {
+        let resolvedAccent = accentColor.resolvedColor(with: traitCollection)
+        let resolvedBlue = DataManagementPalette.dataBlue.resolvedColor(with: traitCollection)
+        let resolvedDeep = DataManagementPalette.deepBlue.resolvedColor(with: traitCollection)
+        gradientLayer.colors = [
+            resolvedAccent.cgColor,
+            resolvedBlue.cgColor,
+            resolvedDeep.cgColor,
+        ]
+        gradientLayer.locations = [0, 0.52, 1]
+    }
+}
+
+private final class DataManagementMetricPillView: UIView {
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = UIColor.white.withAlphaComponent(0.68)
+        label.numberOfLines = 1
+        return label
+    }()
+
+    private let valueLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .bold)
+        label.textColor = .white
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.72
+        return label
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        backgroundColor = UIColor.white.withAlphaComponent(0.13)
+        layer.cornerRadius = 16
+        layer.cornerCurve = .continuous
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 9, leading: 10, bottom: 9, trailing: 10)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isUserInteractionEnabled = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    func configure(title: String, value: String) {
+        titleLabel.text = title
+        valueLabel.text = value
+    }
+}
+
+private final class DataManagementCacheTileView: UIControl {
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let detailLabel = UILabel()
+    private let actionLabel = UILabel()
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
+            }
+        }
+    }
+
+    override var isEnabled: Bool {
+        didSet {
+            alpha = isEnabled ? 1 : 0.68
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        layer.cornerRadius = 22
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = DataManagementPalette.borderColor.cgColor
+        layer.shadowOpacity = 0.08
+        layer.shadowRadius = 14
+        layer.shadowOffset = CGSize(width: 0, height: 8)
+        accessibilityTraits = [.button]
+
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.layer.cornerRadius = 14
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.isUserInteractionEnabled = false
+
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.isUserInteractionEnabled = false
+        iconContainer.addSubview(iconView)
+        NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 42),
+            iconContainer.heightAnchor.constraint(equalToConstant: 42),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22),
+        ])
+
+        actionLabel.font = .systemFont(ofSize: 12, weight: .bold)
+        actionLabel.textAlignment = .center
+        actionLabel.layer.cornerRadius = 12
+        actionLabel.layer.cornerCurve = .continuous
+        actionLabel.clipsToBounds = true
+        actionLabel.isUserInteractionEnabled = false
+        actionLabel.setContentHuggingPriority(.required, for: .horizontal)
+        actionLabel.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        actionLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 54).isActive = true
+
+        let spacer = UIView()
+        spacer.isUserInteractionEnabled = false
+        let topRow = UIStackView(arrangedSubviews: [iconContainer, spacer, actionLabel])
+        topRow.axis = .horizontal
+        topRow.alignment = .center
+        topRow.spacing = 8
+        topRow.isUserInteractionEnabled = false
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 2
+        titleLabel.isUserInteractionEnabled = false
+
+        detailLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.adjustsFontSizeToFitWidth = true
+        detailLabel.minimumScaleFactor = 0.78
+        detailLabel.isUserInteractionEnabled = false
+
+        let stack = UIStackView(arrangedSubviews: [topRow, titleLabel, detailLabel])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isUserInteractionEnabled = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
+        ])
+    }
+
+    func configure(
+        title: String,
+        detail: String,
+        actionTitle: String,
+        symbolName: String,
+        tintColor: UIColor,
+        backgroundColor: UIColor,
+        enabled: Bool,
+        destructive: Bool
+    ) {
+        self.backgroundColor = backgroundColor
+        isEnabled = enabled
+        layer.shadowColor = tintColor.cgColor
+        layer.borderColor = (enabled ? tintColor.withAlphaComponent(0.22) : DataManagementPalette.borderColor).cgColor
+
+        let actionColor = destructive ? UIColor.systemRed : tintColor
+        iconContainer.backgroundColor = actionColor.withAlphaComponent(enabled ? 0.16 : 0.10)
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
+        iconView.tintColor = actionColor
+        titleLabel.text = title
+        detailLabel.text = detail
+        actionLabel.text = enabled ? actionTitle : String(localized: "settings.data.no_cache")
+        actionLabel.textColor = enabled ? actionColor : .secondaryLabel
+        actionLabel.backgroundColor = (enabled ? actionColor : UIColor.secondaryLabel).withAlphaComponent(enabled ? 0.14 : 0.10)
+        accessibilityLabel = "\(title)，\(detail)"
+        accessibilityHint = enabled ? actionTitle : nil
+        accessibilityTraits = enabled ? [.button] : [.staticText]
+    }
+}
+
+private final class DataManagementToggleCardView: UIControl {
+    var onValueChanged: ((Bool) -> Void)?
+
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let toggle = UISwitch()
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.99, y: 0.99) : .identity
+            }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
+        layer.cornerRadius = 22
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = DataManagementPalette.borderColor.cgColor
+        layer.shadowOpacity = 0.07
+        layer.shadowRadius = 12
+        layer.shadowOffset = CGSize(width: 0, height: 7)
+
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.isUserInteractionEnabled = false
+
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.isUserInteractionEnabled = false
+        iconContainer.addSubview(iconView)
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 2
+        titleLabel.isUserInteractionEnabled = false
+
+        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 2
+        subtitleLabel.isUserInteractionEnabled = false
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.isUserInteractionEnabled = false
+
+        toggle.translatesAutoresizingMaskIntoConstraints = false
+        toggle.addTarget(self, action: #selector(toggleChanged(_:)), for: .valueChanged)
+
+        addSubview(iconContainer)
+        addSubview(textStack)
+        addSubview(toggle)
+        NSLayoutConstraint.activate([
+            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconContainer.widthAnchor.constraint(equalToConstant: 46),
+            iconContainer.heightAnchor.constraint(equalToConstant: 46),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 23),
+            iconView.heightAnchor.constraint(equalToConstant: 23),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -14),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        accessibilityTraits = [.button]
+    }
+
+    func configure(
+        title: String,
+        subtitle: String,
+        symbolName: String,
+        isOn: Bool,
+        accentColor: UIColor,
+        backgroundColor: UIColor
+    ) {
+        self.backgroundColor = backgroundColor
+        layer.shadowColor = accentColor.cgColor
+        layer.borderColor = accentColor.withAlphaComponent(0.16).cgColor
+        iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+        iconView.tintColor = accentColor
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
+        toggle.onTintColor = accentColor
+        setOn(isOn, animated: false)
+        accessibilityLabel = "\(title)，\(subtitle)"
+    }
+
+    func setOn(_ isOn: Bool, animated: Bool) {
+        toggle.setOn(isOn, animated: animated)
+    }
+
+    @objc private func toggleChanged(_ sender: UISwitch) {
+        onValueChanged?(sender.isOn)
+    }
+}
+
+private final class DataManagementActionRowView: UIControl {
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let chevronView = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)))
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.alpha = self.isHighlighted ? 0.76 : 1
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.99, y: 0.99) : .identity
+            }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    private func setupUI() {
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 82).isActive = true
+        layer.cornerRadius = 22
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = DataManagementPalette.borderColor.cgColor
+        layer.shadowOpacity = 0.07
+        layer.shadowRadius = 12
+        layer.shadowOffset = CGSize(width: 0, height: 7)
+
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.isUserInteractionEnabled = false
+
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.isUserInteractionEnabled = false
+        iconContainer.addSubview(iconView)
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.isUserInteractionEnabled = false
+
+        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 2
+        subtitleLabel.isUserInteractionEnabled = false
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.isUserInteractionEnabled = false
+
+        chevronView.tintColor = .tertiaryLabel
+        chevronView.translatesAutoresizingMaskIntoConstraints = false
+        chevronView.isUserInteractionEnabled = false
+
+        addSubview(iconContainer)
+        addSubview(textStack)
+        addSubview(chevronView)
+        NSLayoutConstraint.activate([
+            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconContainer.widthAnchor.constraint(equalToConstant: 46),
+            iconContainer.heightAnchor.constraint(equalToConstant: 46),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 23),
+            iconView.heightAnchor.constraint(equalToConstant: 23),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 15),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
+            textStack.trailingAnchor.constraint(equalTo: chevronView.leadingAnchor, constant: -14),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -15),
+            chevronView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            chevronView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronView.widthAnchor.constraint(equalToConstant: 12),
+            chevronView.heightAnchor.constraint(equalToConstant: 18),
+        ])
+        accessibilityTraits = [.button]
+    }
+
+    func configure(title: String, subtitle: String, symbolName: String, tintColor: UIColor, backgroundColor: UIColor) {
+        self.backgroundColor = backgroundColor
+        layer.shadowColor = tintColor.cgColor
+        layer.borderColor = tintColor.withAlphaComponent(0.14).cgColor
+        iconContainer.backgroundColor = tintColor.withAlphaComponent(0.14)
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+        iconView.tintColor = tintColor
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
+        accessibilityLabel = "\(title)，\(subtitle)"
+    }
+}
+
+extension DataManagementSettingsViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            try settings.importPreferencesBackupData(data)
+            LightweightDohProxyService.shared.configureFromSettings()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            reloadCacheSizes()
+            showMessage(String(localized: "settings.data.import_success"))
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
 }
 
 private final class BottomBarLayoutViewController: ObservableViewController {
@@ -2388,6 +4369,11 @@ final class CloudflareVerificationViewController: UIViewController {
 
     @MainActor
     private func performVerificationCheck() async {
+        if await hasLoadedKnownVerifiedNotFoundPage() {
+            await completeKnownVerifiedLanding(reason: "foreground known verified not-found page")
+            return
+        }
+
         await syncCloudflareCookieFromWebView()
         let clearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
         let hasNewClearance = clearanceValue?.isEmpty == false
@@ -2416,13 +4402,21 @@ final class CloudflareVerificationViewController: UIViewController {
     @MainActor
     private func completeIfKnownVerifiedRedirect(_ url: URL?) async {
         guard isKnownVerifiedRedirectURL(url) else { return }
-        log("foreground known verified redirect url=\(url?.absoluteString ?? "none")")
-        let clearanceValue = await drainCloudflareCookieFromWebView(maxAttempts: 6)
-        guard clearanceValue?.isEmpty == false else {
-            log("foreground known verified redirect without cf_clearance; waiting")
-            scheduleVerificationChecks()
-            return
-        }
+        await completeKnownVerifiedLanding(
+            reason: "foreground known verified redirect url=\(url?.absoluteString ?? "none")"
+        )
+    }
+
+    @MainActor
+    private func completeIfLoadedKnownVerifiedNotFoundPage() async {
+        guard await hasLoadedKnownVerifiedNotFoundPage() else { return }
+        await completeKnownVerifiedLanding(reason: "foreground known verified not-found page")
+    }
+
+    @MainActor
+    private func completeKnownVerifiedLanding(reason: String) async {
+        log(reason)
+        await syncCloudflareCookieFromWebView()
         await updateStoredUserAgentFromWebView()
         completeVerification()
     }
@@ -2434,22 +4428,6 @@ final class CloudflareVerificationViewController: UIViewController {
             names: ["cf_clearance"],
             for: baseURL
         )
-    }
-
-    @MainActor
-    @discardableResult
-    private func drainCloudflareCookieFromWebView(maxAttempts: Int) async -> String? {
-        let attempts = max(maxAttempts, 1)
-        for attempt in 0 ..< attempts {
-            await syncCloudflareCookieFromWebView()
-            if let clearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL),
-               !clearanceValue.isEmpty {
-                return clearanceValue
-            }
-            guard attempt < attempts - 1 else { break }
-            try? await Task.sleep(nanoseconds: 250_000_000)
-        }
-        return nil
     }
 
     @MainActor
@@ -2530,6 +4508,36 @@ final class CloudflareVerificationViewController: UIViewController {
 
         let path = url.path.lowercased()
         return path == "/404" || path == "/404/"
+    }
+
+    @MainActor
+    private func hasLoadedKnownVerifiedNotFoundPage() async -> Bool {
+        guard let currentURL = webView.url,
+              let currentHost = currentURL.host?.lowercased(),
+              let baseHost = baseURL.host?.lowercased()
+        else { return false }
+
+        let hostMatches = currentHost == baseHost || currentHost.hasSuffix(".\(baseHost)")
+        guard hostMatches else { return false }
+
+        let path = currentURL.path.lowercased()
+        guard !path.contains("/cdn-cgi/") else { return false }
+
+        guard let pageText = try? await webView.evaluateJavaScript("""
+            [
+              document.title || '',
+              document.body ? document.body.innerText : ''
+            ].join('\\n')
+            """) as? String else {
+            return false
+        }
+        guard !Self.hasActiveCloudflareChallenge(in: pageText) else { return false }
+
+        let lowerText = pageText.lowercased()
+        return lowerText.contains("该页面不存在")
+            || lowerText.contains("該頁面不存在")
+            || lowerText.contains("that page doesn't exist")
+            || lowerText.contains("that page doesn’t exist")
     }
 
     @MainActor
@@ -2627,6 +4635,7 @@ extension CloudflareVerificationViewController: WKNavigationDelegate, WKUIDelega
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.completeIfKnownVerifiedRedirect(url)
+            await self.completeIfLoadedKnownVerifiedNotFoundPage()
             self.scheduleVerificationChecks()
         }
     }
