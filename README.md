@@ -64,7 +64,7 @@ make generate
 make clean
 ```
 
-Open the generated `dexo.xcodeproj`, select your development team, then build and run.
+Open the generated `dexoflux.xcodeproj`, select your development team, then build and run.
 
 ## Project Structure
 

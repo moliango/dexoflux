@@ -64,7 +64,7 @@ make generate
 make clean
 ```
 
-执行完成后打开生成的 `dexo.xcodeproj`，选择开发团队后即可编译运行。
+执行完成后打开生成的 `dexoflux.xcodeproj`，选择开发团队后即可编译运行。
 
 ## 项目结构
 

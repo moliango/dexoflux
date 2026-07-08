@@ -3,7 +3,7 @@ import ProjectDescription
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 
 let project = Project(
-    name: "dexo",
+    name: "dexoflux",
     options: .options(
         defaultKnownRegions: ["en", "zh-Hans", "zh-Hant", "zh-HK"],
         developmentRegion: "en"
@@ -22,7 +22,7 @@ let project = Project(
     ),
     targets: [
         .target(
-            name: "dexo",
+            name: "dexoflux",
             destinations: .iOS,
             product: .app,
             bundleId: "com.eilgnaw.dexo",
@@ -57,15 +57,15 @@ let project = Project(
                     "CODE_SIGN_STYLE": "Automatic",
                     "CURRENT_PROJECT_VERSION": "1",
                     "GENERATE_INFOPLIST_FILE": "YES",
-                    "INFOPLIST_KEY_CFBundleDisplayName": "Dexo",
+                    "INFOPLIST_KEY_CFBundleDisplayName": "DexoFlux",
                     "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
                     "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations": "UIInterfaceOrientationPortrait",
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad": "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown",
                     "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
                     "OTHER_LDFLAGS": "$(inherited) -ObjC",
-                    "MARKETING_VERSION": "1.0",
-                    "PRODUCT_NAME": "dexo",
+                    "MARKETING_VERSION": "0.1",
+                    "PRODUCT_NAME": "dexoflux",
                     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
                     "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
                     "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
