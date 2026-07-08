@@ -17,6 +17,7 @@ final class ForumTabBarController: UITabBarController {
     private var tabIdentifiers: [String] = []
     private var visibleDynamicTabItems: [AppSettings.ForumDynamicTabItem] = []
     private var renderedLanguage = AppSettings.shared.appLanguage
+    private var scrollExpandedLayoutSnapshots: [ObjectIdentifier: ScrollExpandedLayoutSnapshot] = [:]
 
     init(api: DiscourseAPI, authGate: AuthGating? = nil) {
         self.api = api
@@ -120,6 +121,7 @@ final class ForumTabBarController: UITabBarController {
             DexoMotion.animate(
                 duration: DexoMotion.standard,
                 animations: {
+                    self.restoreScrollExpandedContentLayout()
                     self.tabBar.transform = .identity
                     self.view.layoutIfNeeded()
                 },
@@ -202,10 +204,13 @@ final class ForumTabBarController: UITabBarController {
         tabBar.isUserInteractionEnabled = false
         if expandsSelectedContent {
             expandSelectedContentIntoTabBarArea()
+        } else {
+            restoreScrollExpandedContentLayout()
         }
     }
 
     private func applyVisibleTabBarLayout() {
+        restoreScrollExpandedContentLayout()
         tabBar.isHidden = false
         tabBar.alpha = 1
         tabBar.transform = .identity
@@ -223,11 +228,14 @@ final class ForumTabBarController: UITabBarController {
     private func expandSelectedContentIntoTabBarArea() {
         guard let selectedView = selectedViewController?.view else { return }
         if let contentContainer = selectedView.superview {
+            storeScrollExpandedLayoutSnapshot(for: contentContainer)
+            storeScrollExpandedLayoutSnapshot(for: selectedView)
             contentContainer.clipsToBounds = false
             contentContainer.frame = view.bounds
             view.bringSubviewToFront(contentContainer)
             selectedView.frame = contentContainer.bounds
         } else {
+            storeScrollExpandedLayoutSnapshot(for: selectedView)
             selectedView.frame = view.bounds
         }
         selectedView.clipsToBounds = false
@@ -242,10 +250,13 @@ final class ForumTabBarController: UITabBarController {
 
     private func expandNavigationContentView(_ contentView: UIView, in bounds: CGRect) {
         if let wrapperView = contentView.superview {
+            storeScrollExpandedLayoutSnapshot(for: wrapperView)
+            storeScrollExpandedLayoutSnapshot(for: contentView)
             wrapperView.clipsToBounds = false
             wrapperView.frame = bounds
             contentView.frame = wrapperView.bounds
         } else {
+            storeScrollExpandedLayoutSnapshot(for: contentView)
             contentView.frame = bounds
         }
         contentView.clipsToBounds = false
@@ -253,9 +264,39 @@ final class ForumTabBarController: UITabBarController {
         contentView.layoutIfNeeded()
     }
 
+    private func storeScrollExpandedLayoutSnapshot(for view: UIView) {
+        let identifier = ObjectIdentifier(view)
+        guard scrollExpandedLayoutSnapshots[identifier] == nil else { return }
+        scrollExpandedLayoutSnapshots[identifier] = ScrollExpandedLayoutSnapshot(
+            view: view,
+            frame: view.frame,
+            clipsToBounds: view.clipsToBounds
+        )
+    }
+
+    private func restoreScrollExpandedContentLayout() {
+        guard !scrollExpandedLayoutSnapshots.isEmpty else { return }
+        let snapshots = scrollExpandedLayoutSnapshots.values
+        scrollExpandedLayoutSnapshots.removeAll()
+        for snapshot in snapshots {
+            guard let view = snapshot.view else { continue }
+            view.frame = snapshot.frame
+            view.clipsToBounds = snapshot.clipsToBounds
+            view.setNeedsLayout()
+        }
+        selectedViewController?.view.setNeedsLayout()
+        selectedViewController?.view.layoutIfNeeded()
+    }
+
 }
 
 private extension ForumTabBarController {
+    struct ScrollExpandedLayoutSnapshot {
+        weak var view: UIView?
+        let frame: CGRect
+        let clipsToBounds: Bool
+    }
+
     struct TabSpec {
         let identifier: String
         let title: String
@@ -284,7 +325,9 @@ private extension ForumTabBarController {
     }
 
     func handleSettingsChanged() {
+        resetScrollHiddenTabBarForSettingsChange()
         configureTabBarSurface()
+        applyCurrentTabBarLayout()
         let currentLanguage = AppSettings.shared.appLanguage
         let languageChanged = currentLanguage != renderedLanguage
         renderedLanguage = currentLanguage
@@ -299,33 +342,45 @@ private extension ForumTabBarController {
         }
     }
 
+    func resetScrollHiddenTabBarForSettingsChange() {
+        scrollTabBarAnimationID += 1
+        isAnimatingScrollTabBar = false
+        isTabBarHiddenByScroll = false
+    }
+
     func rebuildTabs(preservingIdentifier preferredIdentifier: String?) {
         let specs = buildTabSpecs()
+        let previousIdentifiers = tabIdentifiers
+        let existingControllers = Dictionary(uniqueKeysWithValues: zip(tabIdentifiers, navigationControllers))
         var controllers: [UINavigationController] = []
         var identifiers: [String] = []
 
         for (index, spec) in specs.enumerated() {
-            let rootViewController = spec.makeViewController()
-            rootViewController.title = spec.title
-
-            let navigationController = UINavigationController(rootViewController: rootViewController)
+            let navigationController: UINavigationController
+            if let existingController = existingControllers[spec.identifier] {
+                navigationController = existingController
+                navigationController.viewControllers.first?.title = spec.title
+            } else {
+                let rootViewController = spec.makeViewController()
+                rootViewController.title = spec.title
+                navigationController = UINavigationController(rootViewController: rootViewController)
+            }
             navigationController.delegate = self
-            let tabBarItem = UITabBarItem(
-                title: spec.title,
-                image: DexoTabBarIconStyle.image(
+            navigationController.tabBarItem.title = spec.title
+            if spec.identifier != "me" || renderedMeAvatarKey == nil {
+                navigationController.tabBarItem.image = DexoTabBarIconStyle.image(
                     identifier: spec.identifier,
                     fallbackSymbolName: spec.symbolName,
                     selected: false
-                ),
-                selectedImage: DexoTabBarIconStyle.image(
+                )
+                navigationController.tabBarItem.selectedImage = DexoTabBarIconStyle.image(
                     identifier: spec.identifier,
                     fallbackSymbolName: spec.symbolName,
                     selected: true
                 )
-            )
-            tabBarItem.tag = index
-            tabBarItem.imageInsets = UIEdgeInsets(top: -1, left: 0, bottom: 1, right: 0)
-            navigationController.tabBarItem = tabBarItem
+            }
+            navigationController.tabBarItem.tag = index
+            navigationController.tabBarItem.imageInsets = UIEdgeInsets(top: -1, left: 0, bottom: 1, right: 0)
             navigationController.tabBarItem.accessibilityIdentifier = "forum.tab.\(spec.identifier)"
             controllers.append(navigationController)
             identifiers.append(spec.identifier)
@@ -336,14 +391,28 @@ private extension ForumTabBarController {
         visibleDynamicTabItems = AppSettings.shared.forumVisibleDynamicTabItems
 
         if #available(iOS 18.0, *) {
+            let existingTabs = Dictionary(uniqueKeysWithValues: zip(previousIdentifiers, tabs))
             self.tabs = zip(specs, controllers).map { spec, navigationController in
-                UITab(
-                    title: spec.title,
-                    image: DexoTabBarIconStyle.image(
+                let tabImage: UIImage? = {
+                    if spec.identifier == "me", renderedMeAvatarKey != nil {
+                        return navigationController.tabBarItem.image
+                    }
+                    return DexoTabBarIconStyle.image(
                         identifier: spec.identifier,
                         fallbackSymbolName: spec.symbolName,
                         selected: false
-                    ),
+                    )
+                }()
+
+                if let existingTab = existingTabs[spec.identifier] {
+                    existingTab.title = spec.title
+                    existingTab.image = tabImage
+                    return existingTab
+                }
+
+                return UITab(
+                    title: spec.title,
+                    image: tabImage,
                     identifier: spec.identifier
                 ) { _ in
                     navigationController
@@ -667,6 +736,9 @@ extension ForumTabBarController: UINavigationControllerDelegate {
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
+        if navigationController.viewControllers.count > 1 {
+            isTabBarHiddenByScroll = false
+        }
         isAnimatingScrollTabBar = false
         applyCurrentTabBarLayout()
     }

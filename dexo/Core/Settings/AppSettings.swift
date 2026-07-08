@@ -423,6 +423,14 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var xiaohongshuCardsStaggered: Bool {
+        get { bool(forKey: "xiaohongshuCardsStaggered", defaultValue: false) }
+        set {
+            defaults.set(newValue, forKey: "xiaohongshuCardsStaggered")
+            notifyChanged()
+        }
+    }
+
     var appIconStyle: AppIconStyle {
         get {
             if let activeName = UIApplication.shared.alternateIconName,
@@ -544,6 +552,7 @@ final class AppSettings: DexoObservableObject {
                 appearanceMode: appearanceMode.rawValue,
                 appLanguage: appLanguage.rawValue,
                 themeStyle: themeStyle.rawValue,
+                xiaohongshuCardsStaggered: xiaohongshuCardsStaggered,
                 autoOpenLastForum: autoOpenLastForum,
                 lastOpenedForumId: lastOpenedForumId,
                 hasShownAutoOpenPrompt: hasShownAutoOpenPrompt,
@@ -554,6 +563,7 @@ final class AppSettings: DexoObservableObject {
                 contentFontFamily: contentFontFamily.rawValue,
                 contentFontScope: contentFontScope.rawValue,
                 interfaceFontScalePercent: interfaceFontScalePercent,
+                homeIncomingTopicsBannerFloatingEnabled: homeIncomingTopicsBannerFloatingEnabled,
                 openExternalLinksInAppBrowser: openExternalLinksInAppBrowser,
                 defaultExpandRelatedLinks: defaultExpandRelatedLinks,
                 bottomBarAutoHideEnabled: bottomBarAutoHideEnabled,
@@ -592,6 +602,9 @@ final class AppSettings: DexoObservableObject {
            let value = ThemeStyle(rawValue: rawValue) {
             themeStyle = value
         }
+        if let value = preferences.xiaohongshuCardsStaggered {
+            xiaohongshuCardsStaggered = value
+        }
         if let value = preferences.autoOpenLastForum {
             autoOpenLastForum = value
         }
@@ -629,6 +642,9 @@ final class AppSettings: DexoObservableObject {
         }
         if let value = preferences.interfaceFontScalePercent {
             interfaceFontScalePercent = value
+        }
+        if let value = preferences.homeIncomingTopicsBannerFloatingEnabled {
+            homeIncomingTopicsBannerFloatingEnabled = value
         }
         if let value = preferences.openExternalLinksInAppBrowser {
             openExternalLinksInAppBrowser = value
@@ -687,6 +703,7 @@ final class AppSettings: DexoObservableObject {
         let appearanceMode: Int?
         let appLanguage: String?
         let themeStyle: Int?
+        let xiaohongshuCardsStaggered: Bool?
         let autoOpenLastForum: Bool?
         let lastOpenedForumId: Int64?
         let hasShownAutoOpenPrompt: Bool?
@@ -697,6 +714,7 @@ final class AppSettings: DexoObservableObject {
         let contentFontFamily: String?
         let contentFontScope: Int?
         let interfaceFontScalePercent: Int?
+        let homeIncomingTopicsBannerFloatingEnabled: Bool?
         let openExternalLinksInAppBrowser: Bool?
         let defaultExpandRelatedLinks: Bool?
         let bottomBarAutoHideEnabled: Bool?
@@ -722,6 +740,14 @@ final class AppSettings: DexoObservableObject {
         get { bool(forKey: "hideScrollIndicators", defaultValue: true) }
         set {
             defaults.set(newValue, forKey: "hideScrollIndicators")
+            notifyChanged()
+        }
+    }
+
+    var homeIncomingTopicsBannerFloatingEnabled: Bool {
+        get { bool(forKey: "homeIncomingTopicsBannerFloatingEnabled", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "homeIncomingTopicsBannerFloatingEnabled")
             notifyChanged()
         }
     }
@@ -1534,7 +1560,7 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
-    static let minimumConfiguredForumDynamicTabItems = 1
+    static let minimumConfiguredForumDynamicTabItems = 0
     static let maximumConfiguredForumDynamicTabItems = 5
     static let maximumVisibleForumDynamicTabItems = 3
     static let defaultForumDynamicTabItems: [ForumDynamicTabItem] = [

@@ -349,11 +349,14 @@ final class TopicCell: UITableViewCell {
 final class XiaohongshuTopicGridCell: UITableViewCell {
     static let reuseIdentifier = "XiaohongshuTopicGridCell"
     static let estimatedHeight: CGFloat = 274
+    static let staggeredEstimatedHeight: CGFloat = 292
+    private static let staggerOffset: CGFloat = 18
 
     var onTopicSelected: ((Int) -> Void)?
 
     private let leftCard = XiaohongshuTopicCardView()
     private let rightCard = XiaohongshuTopicCardView()
+    private var stackBottomConstraint: NSLayoutConstraint?
 
     private let stackView: UIStackView = {
         let stack = UIStackView()
@@ -378,7 +381,9 @@ final class XiaohongshuTopicGridCell: UITableViewCell {
     private func setupUI() {
         selectionStyle = .none
         backgroundColor = .clear
+        clipsToBounds = false
         contentView.backgroundColor = .clear
+        contentView.clipsToBounds = false
 
         leftCard.addTarget(self, action: #selector(leftCardTapped), for: .touchUpInside)
         rightCard.addTarget(self, action: #selector(rightCardTapped), for: .touchUpInside)
@@ -387,24 +392,49 @@ final class XiaohongshuTopicGridCell: UITableViewCell {
         stackView.addArrangedSubview(rightCard)
         contentView.addSubview(stackView)
 
+        let bottomConstraint = stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
+        stackBottomConstraint = bottomConstraint
         NSLayoutConstraint.activate([
             stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
             stackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
             stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            bottomConstraint,
         ])
     }
 
-    func configure(left: XiaohongshuTopicCardModel?, right: XiaohongshuTopicCardModel?) {
+    func configure(
+        left: XiaohongshuTopicCardModel?,
+        right: XiaohongshuTopicCardModel?,
+        staggered: Bool,
+        rowIndex: Int
+    ) {
         leftCard.configure(with: left)
         rightCard.configure(with: right)
+        applyStaggeredLayout(staggered: staggered, rowIndex: rowIndex)
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
         onTopicSelected = nil
+        applyStaggeredLayout(staggered: false, rowIndex: 0)
         leftCard.prepareForReuse()
         rightCard.prepareForReuse()
+    }
+
+    private func applyStaggeredLayout(staggered: Bool, rowIndex: Int) {
+        guard staggered else {
+            leftCard.transform = .identity
+            rightCard.transform = .identity
+            stackBottomConstraint?.constant = -6
+            return
+        }
+
+        let offset = Self.staggerOffset
+        let leftOffset = rowIndex.isMultiple(of: 2) ? CGFloat(0) : offset
+        let rightOffset = rowIndex.isMultiple(of: 2) ? offset : CGFloat(0)
+        leftCard.transform = CGAffineTransform(translationX: 0, y: leftOffset)
+        rightCard.transform = CGAffineTransform(translationX: 0, y: rightOffset)
+        stackBottomConstraint?.constant = -(6 + offset)
     }
 
     @objc private func leftCardTapped() {

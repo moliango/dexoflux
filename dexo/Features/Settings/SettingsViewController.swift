@@ -10,9 +10,6 @@ final class SettingsViewController: ObservableViewController {
         case network
         case bottomBar
         case dataManagement
-        #if DEBUG
-        case debug
-        #endif
 
         var title: String {
             switch self {
@@ -21,9 +18,6 @@ final class SettingsViewController: ObservableViewController {
             case .network: return String(localized: "settings.network")
             case .bottomBar: return String(localized: "settings.bottom_bar")
             case .dataManagement: return String(localized: "settings.data_management")
-            #if DEBUG
-            case .debug: return "Debug"
-            #endif
             }
         }
 
@@ -34,9 +28,6 @@ final class SettingsViewController: ObservableViewController {
             case .network: return String(localized: "settings.network.subtitle")
             case .bottomBar: return String(localized: "settings.bottom_bar.subtitle")
             case .dataManagement: return String(localized: "settings.data_management.subtitle")
-            #if DEBUG
-            case .debug: return "Render preview"
-            #endif
             }
         }
 
@@ -47,9 +38,6 @@ final class SettingsViewController: ObservableViewController {
             case .network: return "network"
             case .bottomBar: return "rectangle.bottomthird.inset.filled"
             case .dataManagement: return "externaldrive.fill"
-            #if DEBUG
-            case .debug: return "hammer.fill"
-            #endif
             }
         }
 
@@ -60,9 +48,6 @@ final class SettingsViewController: ObservableViewController {
             case .network: return .systemBlue
             case .bottomBar: return .systemPurple
             case .dataManagement: return .systemBrown
-            #if DEBUG
-            case .debug: return .systemRed
-            #endif
             }
         }
     }
@@ -170,9 +155,13 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     private var iconCards: [AppSettings.AppIconStyle: AppIconCardView] = [:]
     private var fontRows: [AppearanceFontOption: AppearanceFontOptionRow] = [:]
     private var sectionIconViews: [UIImageView] = []
+    private var sectionHeaderViews: [DataManagementSectionHeaderView] = []
     private let interfaceFontSizeCard = FontScaleCardView()
     private let fontScopeRow = ReadingToggleRowView()
+    private let incomingTopicsFloatingRow = ReadingToggleRowView()
+    private let xiaohongshuStaggeredCardsRow = ReadingToggleRowView()
     private var renderedLanguage: AppSettings.AppLanguage?
+    private var renderedThemeStyle: AppSettings.ThemeStyle?
     private var pendingFontImportTarget: PendingFontImportTarget?
 
     private let scrollView: UIScrollView = {
@@ -209,13 +198,15 @@ private final class AppearanceSettingsViewController: ObservableViewController {
 
     override func updateUI() {
         let currentLanguage = settings.appLanguage
-        if renderedLanguage != currentLanguage {
+        let currentThemeStyle = settings.themeStyle
+        if renderedLanguage != currentLanguage || renderedThemeStyle != currentThemeStyle {
             rebuildContent()
             renderedLanguage = currentLanguage
+            renderedThemeStyle = currentThemeStyle
         }
         title = String(localized: "settings.section.appearance")
 
-        let themeStyle = settings.themeStyle
+        let themeStyle = currentThemeStyle
         let accentColor = themeStyle.accentColor
         let pageBackground = themeStyle == .systemDefault ? UIColor.systemGroupedBackground : themeStyle.mutedContentBackgroundColor
         let cardBackground = themeStyle.topicCardBackgroundColor
@@ -224,6 +215,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         scrollView.backgroundColor = pageBackground
         view.tintColor = accentColor
         sectionIconViews.forEach { $0.tintColor = accentColor }
+        sectionHeaderViews.forEach { $0.setTintColor(accentColor) }
         languageRow.configure(
             languageTitle: settings.appLanguage.title,
             accentColor: accentColor,
@@ -269,6 +261,22 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             accentColor: accentColor,
             backgroundColor: cardBackground
         )
+        incomingTopicsFloatingRow.configure(
+            title: String(localized: "settings.appearance.incoming_topics_floating"),
+            subtitle: String(localized: "settings.appearance.incoming_topics_floating.subtitle"),
+            symbolName: "rectangle.topthird.inset.filled",
+            isOn: settings.homeIncomingTopicsBannerFloatingEnabled,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
+        xiaohongshuStaggeredCardsRow.configure(
+            title: String(localized: "settings.appearance.xiaohongshu_staggered_cards"),
+            subtitle: String(localized: "settings.appearance.xiaohongshu_staggered_cards.subtitle"),
+            symbolName: "square.grid.2x2",
+            isOn: settings.xiaohongshuCardsStaggered,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
     }
 
     private func setupUI() {
@@ -293,6 +301,18 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             updateUI()
         }
+        incomingTopicsFloatingRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.homeIncomingTopicsBannerFloatingEnabled = isOn
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
+        xiaohongshuStaggeredCardsRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.xiaohongshuCardsStaggered = isOn
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
         interfaceFontSizeCard.onValueChanged = { [weak self] value in
             guard let self else { return }
             settings.interfaceFontScalePercent = value
@@ -305,6 +325,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         }
         rebuildContent()
         renderedLanguage = settings.appLanguage
+        renderedThemeStyle = settings.themeStyle
     }
 
     private func rebuildContent() {
@@ -317,6 +338,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         iconCards.removeAll()
         fontRows.removeAll()
         sectionIconViews.removeAll()
+        sectionHeaderViews.removeAll()
 
         let languageSection = verticalSection(
             title: String(localized: "settings.language"),
@@ -343,7 +365,17 @@ private final class AppearanceSettingsViewController: ObservableViewController {
         styleSection.addArrangedSubview(subtitle)
         styleSection.setCustomSpacing(12, after: subtitle)
         styleSection.addArrangedSubview(makeStyleGrid())
+        if settings.themeStyle == .xiaohongshu {
+            styleSection.addArrangedSubview(xiaohongshuStaggeredCardsRow)
+        }
         contentStack.addArrangedSubview(styleSection)
+
+        let homeSection = verticalSection(
+            title: String(localized: "settings.appearance.home_display"),
+            symbolName: "house"
+        )
+        homeSection.addArrangedSubview(incomingTopicsFloatingRow)
+        contentStack.addArrangedSubview(homeSection)
 
         let iconSection = verticalSection(
             title: String(localized: "settings.app_icon"),
@@ -365,30 +397,9 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     private func verticalSection(title: String, symbolName: String) -> UIStackView {
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 14
-
-        let header = UIStackView()
-        header.axis = .horizontal
-        header.alignment = .center
-        header.spacing = 10
-
-        let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
-        icon.tintColor = AppSettings.shared.themeStyle.accentColor
-        icon.contentMode = .scaleAspectFit
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        sectionIconViews.append(icon)
-        NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 24),
-            icon.heightAnchor.constraint(equalToConstant: 24),
-        ])
-
-        let label = UILabel()
-        label.text = title
-        label.font = .systemFont(ofSize: 20, weight: .semibold)
-        label.textColor = .label
-
-        header.addArrangedSubview(icon)
-        header.addArrangedSubview(label)
+        stack.spacing = 12
+        let header = DataManagementSectionHeaderView(title: title, symbolName: symbolName, tintColor: settings.themeStyle.accentColor)
+        sectionHeaderViews.append(header)
         stack.addArrangedSubview(header)
         return stack
     }
@@ -555,6 +566,8 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     @objc private func styleTapped(_ sender: ThemeStyleCardView) {
         settings.themeStyle = sender.style
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        rebuildContent()
+        renderedThemeStyle = settings.themeStyle
         updateUI()
     }
 
@@ -2098,18 +2111,18 @@ private final class ReadingToggleRowView: UIControl {
 
     private func setupUI() {
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
-        layer.cornerRadius = 22
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 68).isActive = true
+        layer.cornerRadius = 18
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
         layer.borderColor = DataManagementPalette.borderColor.cgColor
         layer.shadowOpacity = 0.07
-        layer.shadowRadius = 12
-        layer.shadowOffset = CGSize(width: 0, height: 7)
+        layer.shadowRadius = 10
+        layer.shadowOffset = CGSize(width: 0, height: 5)
         addTarget(self, action: #selector(rowTapped), for: .touchUpInside)
 
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerRadius = 13
         iconContainer.layer.cornerCurve = .continuous
         iconContainer.isUserInteractionEnabled = false
 
@@ -2118,12 +2131,12 @@ private final class ReadingToggleRowView: UIControl {
         iconView.isUserInteractionEnabled = false
         iconContainer.addSubview(iconView)
 
-        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
         titleLabel.textColor = .label
         titleLabel.numberOfLines = 2
         titleLabel.isUserInteractionEnabled = false
 
-        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 2
         subtitleLabel.isUserInteractionEnabled = false
@@ -2141,18 +2154,18 @@ private final class ReadingToggleRowView: UIControl {
         addSubview(textStack)
         addSubview(toggle)
         NSLayoutConstraint.activate([
-            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 46),
-            iconContainer.heightAnchor.constraint(equalToConstant: 46),
+            iconContainer.widthAnchor.constraint(equalToConstant: 40),
+            iconContainer.heightAnchor.constraint(equalToConstant: 40),
             iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 23),
-            iconView.heightAnchor.constraint(equalToConstant: 23),
-            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 12),
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -14),
-            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -2171,7 +2184,7 @@ private final class ReadingToggleRowView: UIControl {
         layer.shadowColor = accentColor.cgColor
         layer.borderColor = accentColor.withAlphaComponent(0.14).cgColor
         iconContainer.backgroundColor = accentColor.withAlphaComponent(0.14)
-        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold))
         iconView.tintColor = accentColor
         titleLabel.text = title
         subtitleLabel.text = subtitle
@@ -2266,21 +2279,11 @@ private final class SettingsCategoryViewController: ObservableViewController {
         case .reading:
             return [.readingComfort, .contentFontSize, .hideScrollIndicators]
         case .network:
-            var rows: [Row] = [.cloudflareVerify, .dohToggle, .dohDebugLog]
-            if settings.dohEnabled {
-                rows.append(.dohStatus)
-                rows.append(.dohProvider)
-                rows.append(.dohCustomURL)
-            }
-            return rows
+            return [.cloudflareVerify]
         case .bottomBar:
             return [.bottomBarLayout, .bottomAutoHide]
         case .dataManagement:
             return [.clearImageCache, .autoOpen]
-        #if DEBUG
-        case .debug:
-            return [.renderPreview]
-        #endif
         }
     }
 }
@@ -3123,6 +3126,10 @@ private final class DataManagementSectionHeaderView: UIView {
         ])
     }
 
+    func setTintColor(_ color: UIColor) {
+        iconView.tintColor = color
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -3646,17 +3653,17 @@ private final class DataManagementActionRowView: UIControl {
 
     private func setupUI() {
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(greaterThanOrEqualToConstant: 82).isActive = true
-        layer.cornerRadius = 22
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 66).isActive = true
+        layer.cornerRadius = 18
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
         layer.borderColor = DataManagementPalette.borderColor.cgColor
         layer.shadowOpacity = 0.07
-        layer.shadowRadius = 12
-        layer.shadowOffset = CGSize(width: 0, height: 7)
+        layer.shadowRadius = 10
+        layer.shadowOffset = CGSize(width: 0, height: 5)
 
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.layer.cornerRadius = 15
+        iconContainer.layer.cornerRadius = 13
         iconContainer.layer.cornerCurve = .continuous
         iconContainer.isUserInteractionEnabled = false
 
@@ -3665,11 +3672,11 @@ private final class DataManagementActionRowView: UIControl {
         iconView.isUserInteractionEnabled = false
         iconContainer.addSubview(iconView)
 
-        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
         titleLabel.textColor = .label
         titleLabel.isUserInteractionEnabled = false
 
-        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 2
         subtitleLabel.isUserInteractionEnabled = false
@@ -3688,18 +3695,18 @@ private final class DataManagementActionRowView: UIControl {
         addSubview(textStack)
         addSubview(chevronView)
         NSLayoutConstraint.activate([
-            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 46),
-            iconContainer.heightAnchor.constraint(equalToConstant: 46),
+            iconContainer.widthAnchor.constraint(equalToConstant: 40),
+            iconContainer.heightAnchor.constraint(equalToConstant: 40),
             iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 23),
-            iconView.heightAnchor.constraint(equalToConstant: 23),
-            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 15),
-            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 12),
             textStack.trailingAnchor.constraint(equalTo: chevronView.leadingAnchor, constant: -14),
-            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -15),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             chevronView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             chevronView.centerYAnchor.constraint(equalTo: centerYAnchor),
             chevronView.widthAnchor.constraint(equalToConstant: 12),
@@ -3713,12 +3720,13 @@ private final class DataManagementActionRowView: UIControl {
         layer.shadowColor = tintColor.cgColor
         layer.borderColor = tintColor.withAlphaComponent(0.14).cgColor
         iconContainer.backgroundColor = tintColor.withAlphaComponent(0.14)
-        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+        iconView.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold))
         iconView.tintColor = tintColor
         titleLabel.text = title
         subtitleLabel.text = subtitle
         accessibilityLabel = "\(title)，\(subtitle)"
     }
+
 }
 
 extension DataManagementSettingsViewController: UIDocumentPickerDelegate {
@@ -3744,66 +3752,82 @@ extension DataManagementSettingsViewController: UIDocumentPickerDelegate {
     }
 }
 
-private final class BottomBarLayoutViewController: ObservableViewController {
-    private enum Section: Int, CaseIterable {
-        case enabled
-        case available
-        case behavior
-
-        var title: String {
-            switch self {
-            case .enabled: return "底栏布局"
-            case .available: return "可添加"
-            case .behavior: return "行为"
-            }
+private final class PaddingLabel: UILabel {
+    var contentInsets = UIEdgeInsets.zero {
+        didSet {
+            invalidateIntrinsicContentSize()
+            setNeedsDisplay()
         }
     }
 
-    private let settings = AppSettings.shared
+    override var intrinsicContentSize: CGSize {
+        let size = super.intrinsicContentSize
+        return CGSize(
+            width: size.width + contentInsets.left + contentInsets.right,
+            height: size.height + contentInsets.top + contentInsets.bottom
+        )
+    }
 
-    private lazy var tableView: UITableView = {
-        let table = UITableView(frame: .zero, style: .insetGrouped)
-        table.translatesAutoresizingMaskIntoConstraints = false
-        table.backgroundColor = .systemGroupedBackground
-        table.dataSource = self
-        table.delegate = self
-        table.isEditing = true
-        table.allowsSelectionDuringEditing = true
-        return table
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: contentInsets))
+    }
+}
+
+private final class BottomBarLayoutViewController: ObservableViewController {
+    private let settings = AppSettings.shared
+    private let autoHideRow = ReadingToggleRowView()
+
+    private let scrollView: UIScrollView = {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.alwaysBounceVertical = true
+        scroll.showsVerticalScrollIndicator = false
+        return scroll
+    }()
+
+    private let contentStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 22
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 32, trailing: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "底栏"
-        view.backgroundColor = .systemGroupedBackground
+        title = String(localized: "settings.bottom_bar")
+        configureRootView()
+        rebuildContent()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "恢复默认",
             style: .plain,
             target: self,
             action: #selector(restoreDefaultTapped)
         )
-
-        view.addSubview(tableView)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
+        autoHideRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.bottomBarAutoHideEnabled = isOn
+            refreshDataViews()
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         enableSettingsInteractiveBackSwipe()
+        refreshDataViews()
     }
 
     override func updateUI() {
-        tableView.reloadData()
+        title = String(localized: "settings.bottom_bar")
+        rebuildContent()
     }
 
     @objc private func restoreDefaultTapped() {
         settings.resetForumDynamicTabItems()
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        rebuildContent()
     }
 
     private var configuredItems: [AppSettings.ForumDynamicTabItem] {
@@ -3815,31 +3839,12 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         return AppSettings.ForumDynamicTabItem.allCases.filter { !configured.contains($0) }
     }
 
-    private func item(for indexPath: IndexPath) -> AppSettings.ForumDynamicTabItem? {
-        guard let section = Section(rawValue: indexPath.section) else { return nil }
-        switch section {
-        case .enabled:
-            guard indexPath.row > 0 else { return nil }
-            let itemIndex = indexPath.row - 1
-            guard itemIndex < configuredItems.count else { return nil }
-            return configuredItems[itemIndex]
-        case .available:
-            guard indexPath.row < availableItems.count else { return nil }
-            return availableItems[indexPath.row]
-        case .behavior:
-            return nil
-        }
-    }
-
     private func setConfiguredItems(_ items: [AppSettings.ForumDynamicTabItem]) {
         settings.forumDynamicTabItems = items
+        rebuildContent()
     }
 
-    private func addAvailableItem(at indexPath: IndexPath) {
-        guard Section(rawValue: indexPath.section) == .available,
-              let item = item(for: indexPath)
-        else { return }
-
+    private func addAvailableItem(_ item: AppSettings.ForumDynamicTabItem) {
         guard configuredItems.count < AppSettings.maximumConfiguredForumDynamicTabItems else {
             showLimitMessage("最多保留 \(AppSettings.maximumConfiguredForumDynamicTabItems) 个功能候选。")
             return
@@ -3847,6 +3852,24 @@ private final class BottomBarLayoutViewController: ObservableViewController {
 
         setConfiguredItems(configuredItems + [item])
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func removeConfiguredItem(at index: Int) {
+        var items = configuredItems
+        guard items.indices.contains(index) else { return }
+        items.remove(at: index)
+        setConfiguredItems(items)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func moveConfiguredItem(from index: Int, by delta: Int) {
+        var items = configuredItems
+        let target = index + delta
+        guard items.indices.contains(index), items.indices.contains(target) else { return }
+        let item = items.remove(at: index)
+        items.insert(item, at: target)
+        setConfiguredItems(items)
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func actualBottomBarSummary() -> String {
@@ -3857,228 +3880,417 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         return "当前实际底栏：首页 + \(visibleTitles.joined(separator: " / ")) + 我的。"
     }
 
+    private func configureRootView() {
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+        ])
+    }
+
+    private func rebuildContent() {
+        contentStack.arrangedSubviews.forEach { view in
+            contentStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        view.backgroundColor = DataManagementPalette.screenBackground
+        view.tintColor = settings.themeStyle.accentColor
+
+        contentStack.addArrangedSubview(makePreviewCard())
+        contentStack.addArrangedSubview(makeEnabledSection())
+        contentStack.addArrangedSubview(makeAvailableSection())
+        contentStack.addArrangedSubview(makeBehaviorSection())
+        refreshDataViews()
+    }
+
+    private func refreshDataViews() {
+        autoHideRow.configure(
+            title: String(localized: "settings.bottom_bar.auto_hide"),
+            subtitle: "首页向上滑动隐藏底栏，向下滑动或回到顶部显示。",
+            symbolName: "arrow.up.and.down",
+            isOn: settings.bottomBarAutoHideEnabled,
+            accentColor: settings.themeStyle.accentColor,
+            backgroundColor: settings.themeStyle.topicCardBackgroundColor
+        )
+    }
+
+    private func makePreviewCard() -> UIView {
+        let card = makeCard()
+        card.layer.shadowOpacity = 0.08
+        card.layer.shadowRadius = 18
+        card.layer.shadowOffset = CGSize(width: 0, height: 10)
+        card.layer.shadowColor = settings.themeStyle.accentColor.cgColor
+
+        let eyebrow = makePillLabel(text: "当前配置", color: settings.themeStyle.accentColor)
+        let title = UILabel()
+        title.text = actualBottomBarSummary()
+        title.font = .systemFont(ofSize: 20, weight: .heavy)
+        title.textColor = .label
+        title.numberOfLines = 0
+
+        let subtitle = UILabel()
+        subtitle.text = "首页固定第一位，我的固定末尾；系统底栏最多 5 个入口，前 \(AppSettings.maximumVisibleForumDynamicTabItems) 个功能项会优先显示。"
+        subtitle.font = .systemFont(ofSize: 13, weight: .medium)
+        subtitle.textColor = .secondaryLabel
+        subtitle.numberOfLines = 0
+
+        let previewRow = UIStackView()
+        previewRow.axis = .horizontal
+        previewRow.alignment = .center
+        previewRow.spacing = 8
+        previewRow.addArrangedSubview(makeMiniTab(title: String(localized: "tab.home"), symbolName: "house.fill", active: true))
+        for (index, item) in settings.forumVisibleDynamicTabItems.enumerated() {
+            previewRow.addArrangedSubview(makeMiniTab(
+                title: item.title,
+                symbolName: item.symbolName,
+                active: true,
+                removeAction: { [weak self] in
+                    self?.removeConfiguredItem(at: index)
+                }
+            ))
+        }
+        previewRow.addArrangedSubview(makeMiniTab(title: String(localized: "tab.me"), symbolName: "person.crop.circle.fill", active: true))
+
+        let eyebrowRow = UIStackView(arrangedSubviews: [eyebrow, UIView()])
+        eyebrowRow.axis = .horizontal
+        let stack = makeCardStack([eyebrowRow, title, subtitle, previewRow])
+        stack.setCustomSpacing(10, after: subtitle)
+        card.addSubview(stack)
+        pin(stack, to: card)
+        return card
+    }
+
+    private func makeEnabledSection() -> UIView {
+        let stack = makeSectionStack(title: "底栏入口", symbolName: "rectangle.bottomthird.inset.filled")
+        stack.addArrangedSubview(makeFixedItemRow(
+            title: String(localized: "tab.home"),
+            subtitle: "固定第一位",
+            symbolName: "house.fill"
+        ))
+        for (index, item) in configuredItems.enumerated() {
+            stack.addArrangedSubview(makeConfiguredItemRow(item: item, index: index))
+        }
+        return stack
+    }
+
+    private func makeAvailableSection() -> UIView {
+        let stack = makeSectionStack(title: "可添加", symbolName: "plus.circle")
+        if availableItems.isEmpty {
+            stack.addArrangedSubview(makeInfoCard(text: "没有更多可添加。"))
+            return stack
+        }
+        if configuredItems.count >= AppSettings.maximumConfiguredForumDynamicTabItems {
+            stack.addArrangedSubview(makeInfoCard(text: "候选已满，先删除一个功能再添加。"))
+        }
+        for item in availableItems {
+            stack.addArrangedSubview(makeAvailableItemRow(item: item))
+        }
+        return stack
+    }
+
+    private func makeBehaviorSection() -> UIView {
+        let stack = makeSectionStack(title: "行为", symbolName: "hand.tap")
+        stack.addArrangedSubview(autoHideRow)
+        return stack
+    }
+
+    private func makeSectionStack(title: String, symbolName: String) -> UIStackView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(DataManagementSectionHeaderView(title: title, symbolName: symbolName, tintColor: settings.themeStyle.accentColor))
+        return stack
+    }
+
+    private func makeFixedItemRow(title: String, subtitle: String, symbolName: String) -> UIView {
+        makeItemRow(
+            title: title,
+            subtitle: subtitle,
+            symbolName: symbolName,
+            tintColor: settings.themeStyle.accentColor,
+            accessory: makeLockBadge()
+        )
+    }
+
+    private func makeConfiguredItemRow(item: AppSettings.ForumDynamicTabItem, index: Int) -> UIView {
+        let accessory = UIStackView()
+        accessory.axis = .horizontal
+        accessory.alignment = .center
+        accessory.spacing = 6
+
+        let isVisible = index < AppSettings.maximumVisibleForumDynamicTabItems
+        accessory.addArrangedSubview(makePillLabel(text: isVisible ? "显示" : "候选", color: isVisible ? settings.themeStyle.accentColor : .secondaryLabel))
+        accessory.addArrangedSubview(makeActionButton(symbolName: "chevron.up", enabled: index > 0) { [weak self] in
+            self?.moveConfiguredItem(from: index, by: -1)
+        })
+        accessory.addArrangedSubview(makeActionButton(symbolName: "chevron.down", enabled: index < configuredItems.count - 1) { [weak self] in
+            self?.moveConfiguredItem(from: index, by: 1)
+        })
+        accessory.addArrangedSubview(makeActionButton(symbolName: "minus", enabled: true, color: .systemRed) { [weak self] in
+            self?.removeConfiguredItem(at: index)
+        })
+
+        return makeItemRow(
+            title: item.title,
+            subtitle: isVisible ? "显示在底栏" : "候选保留，暂不显示",
+            symbolName: item.symbolName,
+            tintColor: isVisible ? settings.themeStyle.accentColor : .secondaryLabel,
+            accessory: accessory
+        )
+    }
+
+    private func makeAvailableItemRow(item: AppSettings.ForumDynamicTabItem) -> UIView {
+        let canAdd = configuredItems.count < AppSettings.maximumConfiguredForumDynamicTabItems
+        let accessory = makeActionButton(symbolName: "plus", enabled: canAdd, color: settings.themeStyle.accentColor) { [weak self] in
+            self?.addAvailableItem(item)
+        }
+        return makeItemRow(
+            title: item.title,
+            subtitle: item.subtitle,
+            symbolName: item.symbolName,
+            tintColor: canAdd ? settings.themeStyle.accentColor : .tertiaryLabel,
+            accessory: accessory,
+            enabled: canAdd
+        )
+    }
+
+    private func makeItemRow(
+        title: String,
+        subtitle: String,
+        symbolName: String,
+        tintColor: UIColor,
+        accessory: UIView,
+        enabled: Bool = true
+    ) -> UIView {
+        let card = makeCard()
+        card.alpha = enabled ? 1 : 0.62
+
+        let iconContainer = UIView()
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.backgroundColor = tintColor.withAlphaComponent(0.14)
+        iconContainer.layer.cornerRadius = 13
+        iconContainer.layer.cornerCurve = .continuous
+
+        let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.contentMode = .scaleAspectFit
+        icon.tintColor = tintColor
+        iconContainer.addSubview(icon)
+        NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 40),
+            iconContainer.heightAnchor.constraint(equalToConstant: 40),
+            icon.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 20),
+            icon.heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+        titleLabel.textColor = enabled ? .label : .secondaryLabel
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = subtitle
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 2
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+
+        let row = UIStackView(arrangedSubviews: [iconContainer, textStack, accessory])
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        row.isLayoutMarginsRelativeArrangement = true
+        row.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        card.addSubview(row)
+        pin(row, to: card)
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        accessory.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return card
+    }
+
+    private func makeInfoCard(text: String) -> UIView {
+        let card = makeCard()
+        let label = UILabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            label.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+        ])
+        return card
+    }
+
+    private func makeCard() -> UIView {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = settings.themeStyle.topicCardBackgroundColor
+        view.layer.cornerRadius = 22
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1
+        view.layer.borderColor = settings.themeStyle.accentColor.withAlphaComponent(0.12).cgColor
+        return view
+    }
+
+    private func makeCardStack(_ views: [UIView]) -> UIStackView {
+        let stack = UIStackView(arrangedSubviews: views)
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    private func makeMiniTab(
+        title: String,
+        symbolName: String,
+        active: Bool,
+        removeAction: (() -> Void)? = nil
+    ) -> UIView {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = active ? settings.themeStyle.accentColor.withAlphaComponent(0.12) : UIColor.tertiarySystemFill
+        view.layer.cornerRadius = 14
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = false
+
+        let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)))
+        icon.tintColor = active ? settings.themeStyle.accentColor : .secondaryLabel
+        icon.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 11, weight: .bold)
+        label.textColor = active ? settings.themeStyle.accentColor : .secondaryLabel
+        label.lineBreakMode = .byTruncatingTail
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 3
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            view.heightAnchor.constraint(equalToConstant: 54),
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 6),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -6),
+        ])
+
+        if let removeAction {
+            var config = UIButton.Configuration.plain()
+            config.image = UIImage(
+                systemName: "xmark",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 8, weight: .heavy)
+            )
+            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+
+            let removeButton = UIButton(configuration: config)
+            removeButton.translatesAutoresizingMaskIntoConstraints = false
+            removeButton.tintColor = .white
+            removeButton.backgroundColor = UIColor.systemRed
+            removeButton.layer.cornerRadius = 9
+            removeButton.layer.cornerCurve = .continuous
+            removeButton.accessibilityLabel = "移除\(title)"
+            removeButton.addAction(UIAction { _ in removeAction() }, for: .touchUpInside)
+            view.addSubview(removeButton)
+            NSLayoutConstraint.activate([
+                removeButton.widthAnchor.constraint(equalToConstant: 18),
+                removeButton.heightAnchor.constraint(equalToConstant: 18),
+                removeButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 4),
+                removeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
+            ])
+        }
+        return view
+    }
+
+    private func makePillLabel(text: String, color: UIColor) -> UILabel {
+        let label = PaddingLabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 12, weight: .bold)
+        label.textColor = color
+        label.backgroundColor = color.withAlphaComponent(0.11)
+        label.layer.cornerRadius = 12
+        label.layer.cornerCurve = .continuous
+        label.clipsToBounds = true
+        label.contentInsets = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
+        return label
+    }
+
+    private func makeLockBadge() -> UIView {
+        let imageView = UIImageView(image: UIImage(systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)))
+        imageView.tintColor = .tertiaryLabel
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: 32),
+            imageView.heightAnchor.constraint(equalToConstant: 32),
+        ])
+        return imageView
+    }
+
+    private func makeActionButton(
+        symbolName: String,
+        enabled: Bool,
+        color: UIColor = .secondaryLabel,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.tintColor = enabled ? color : .tertiaryLabel
+        button.backgroundColor = (enabled ? color : UIColor.tertiaryLabel).withAlphaComponent(enabled ? 0.12 : 0.06)
+        button.layer.cornerRadius = 14
+        button.layer.cornerCurve = .continuous
+        button.isEnabled = enabled
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 32),
+            button.heightAnchor.constraint(equalToConstant: 32),
+        ])
+        return button
+    }
+
+    private func pin(_ view: UIView, to container: UIView) {
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+    }
+
     private func showLimitMessage(_ message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
         present(alert, animated: true)
-    }
-}
-
-extension BottomBarLayoutViewController: UITableViewDataSource {
-    func numberOfSections(in tableView: UITableView) -> Int {
-        Section.allCases.count
-    }
-
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        guard let section = Section(rawValue: section) else { return 0 }
-        switch section {
-        case .enabled:
-            return configuredItems.count + 1
-        case .available:
-            return availableItems.count
-        case .behavior:
-            return 1
-        }
-    }
-
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let section = Section(rawValue: indexPath.section) else {
-            return UITableViewCell()
-        }
-
-        switch section {
-        case .enabled where indexPath.row == 0:
-            return fixedHomeCell()
-        case .enabled:
-            guard let item = item(for: indexPath) else { return UITableViewCell() }
-            return configuredCell(for: item, itemIndex: indexPath.row - 1)
-        case .available:
-            guard let item = item(for: indexPath) else { return UITableViewCell() }
-            return availableCell(for: item)
-        case .behavior:
-            return behaviorCell()
-        }
-    }
-
-    private func fixedHomeCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: "house")
-        content.imageProperties.tintColor = .systemBlue
-        content.text = String(localized: "tab.home")
-        content.secondaryText = "固定第一位"
-        content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
-        content.secondaryTextProperties.color = .secondaryLabel
-        cell.contentConfiguration = content
-        let lockView = UIImageView(image: UIImage(systemName: "lock.fill"))
-        lockView.tintColor = .tertiaryLabel
-        cell.accessoryView = lockView
-        cell.selectionStyle = .none
-        return cell
-    }
-
-    private func configuredCell(for item: AppSettings.ForumDynamicTabItem, itemIndex: Int) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: item.symbolName)
-        content.imageProperties.tintColor = itemIndex < AppSettings.maximumVisibleForumDynamicTabItems ? .systemBlue : .secondaryLabel
-        content.text = item.title
-        content.secondaryText = itemIndex < AppSettings.maximumVisibleForumDynamicTabItems ? "显示在底栏" : "候选保留，暂不显示"
-        content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
-        content.secondaryTextProperties.color = .secondaryLabel
-        cell.contentConfiguration = content
-        cell.showsReorderControl = true
-        return cell
-    }
-
-    private func availableCell(for item: AppSettings.ForumDynamicTabItem) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        let canAdd = configuredItems.count < AppSettings.maximumConfiguredForumDynamicTabItems
-        var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: item.symbolName)
-        content.imageProperties.tintColor = canAdd ? .systemBlue : .tertiaryLabel
-        content.text = item.title
-        content.secondaryText = item.subtitle
-        content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
-        content.textProperties.color = canAdd ? .label : .tertiaryLabel
-        content.secondaryTextProperties.color = .secondaryLabel
-        cell.contentConfiguration = content
-        cell.selectionStyle = canAdd ? .default : .none
-        return cell
-    }
-
-    private func behaviorCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.textLabel?.text = String(localized: "settings.bottom_bar.auto_hide")
-        cell.selectionStyle = .none
-        let toggle = UISwitch()
-        toggle.isOn = settings.bottomBarAutoHideEnabled
-        toggle.addTarget(self, action: #selector(bottomAutoHideChanged(_:)), for: .valueChanged)
-        cell.accessoryView = toggle
-        return cell
-    }
-
-    @objc private func bottomAutoHideChanged(_ sender: UISwitch) {
-        settings.bottomBarAutoHideEnabled = sender.isOn
-    }
-}
-
-extension BottomBarLayoutViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section)?.title
-    }
-
-    func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        guard let section = Section(rawValue: section) else { return nil }
-        switch section {
-        case .enabled:
-            return "\(actualBottomBarSummary())\n首页固定第一位，我的固定在底栏末尾但不显示在这个配置列表里。系统底栏最多 5 个入口，所以优先显示前 \(AppSettings.maximumVisibleForumDynamicTabItems) 个功能项。"
-        case .available:
-            if availableItems.isEmpty {
-                return "没有更多可添加。"
-            }
-            return configuredItems.count >= AppSettings.maximumConfiguredForumDynamicTabItems
-                ? "候选已满，先删除一个功能再添加。"
-                : "最多保留 \(AppSettings.maximumConfiguredForumDynamicTabItems) 个功能候选；拖动已启用项目可调整显示优先级。"
-        case .behavior:
-            return "开启后，首页向上滑动会隐藏底栏，向下滑动或回到顶部会显示底栏。"
-        }
-    }
-
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        addAvailableItem(at: indexPath)
-    }
-
-    func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        guard let section = Section(rawValue: indexPath.section) else { return false }
-        switch section {
-        case .enabled:
-            return indexPath.row > 0
-        case .available:
-            return true
-        case .behavior:
-            return false
-        }
-    }
-
-    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
-        guard let section = Section(rawValue: indexPath.section) else { return .none }
-        switch section {
-        case .enabled:
-            return indexPath.row == 0 ? .none : .delete
-        case .available:
-            return .insert
-        case .behavior:
-            return .none
-        }
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        commit editingStyle: UITableViewCell.EditingStyle,
-        forRowAt indexPath: IndexPath
-    ) {
-        switch editingStyle {
-        case .delete:
-            guard Section(rawValue: indexPath.section) == .enabled, indexPath.row > 0 else { return }
-            guard configuredItems.count > AppSettings.minimumConfiguredForumDynamicTabItems else {
-                showLimitMessage("至少保留 \(AppSettings.minimumConfiguredForumDynamicTabItems) 个功能入口。")
-                return
-            }
-            var items = configuredItems
-            items.remove(at: indexPath.row - 1)
-            setConfiguredItems(items)
-        case .insert:
-            addAvailableItem(at: indexPath)
-        default:
-            break
-        }
-    }
-
-    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        Section(rawValue: indexPath.section) == .enabled && indexPath.row > 0
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        moveRowAt sourceIndexPath: IndexPath,
-        to destinationIndexPath: IndexPath
-    ) {
-        guard Section(rawValue: sourceIndexPath.section) == .enabled,
-              Section(rawValue: destinationIndexPath.section) == .enabled,
-              sourceIndexPath.row > 0
-        else {
-            tableView.reloadData()
-            return
-        }
-
-        var items = configuredItems
-        let sourceIndex = sourceIndexPath.row - 1
-        let destinationIndex = max(destinationIndexPath.row - 1, 0)
-        guard sourceIndex < items.count, destinationIndex <= items.count else {
-            tableView.reloadData()
-            return
-        }
-
-        let item = items.remove(at: sourceIndex)
-        items.insert(item, at: min(destinationIndex, items.count))
-        setConfiguredItems(items)
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
-        toProposedIndexPath proposedDestinationIndexPath: IndexPath
-    ) -> IndexPath {
-        guard Section(rawValue: proposedDestinationIndexPath.section) == .enabled else {
-            return sourceIndexPath
-        }
-        return IndexPath(row: max(proposedDestinationIndexPath.row, 1), section: proposedDestinationIndexPath.section)
-    }
-
-    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
-        Section(rawValue: indexPath.section) == .enabled && indexPath.row > 0
     }
 }
 

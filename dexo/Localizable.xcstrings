@@ -7192,25 +7192,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appearance"
+            "value" : "Appearance Settings"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外观设计"
+            "value" : "外观设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外觀設計"
+            "value" : "外觀設定"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外觀設計"
+            "value" : "外觀設定"
           }
         }
       }
@@ -7239,6 +7239,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字體"
+          }
+        }
+      }
+    },
+    "settings.appearance.home_display" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home Display"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首页显示"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首頁顯示"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首頁顯示"
+          }
+        }
+      }
+    },
+    "settings.appearance.incoming_topics_floating" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Floating New Topic Banner"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新话题提示悬浮"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新話題提示懸浮"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新話題提示懸浮"
+          }
+        }
+      }
+    },
+    "settings.appearance.incoming_topics_floating.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On: the new or updated topics banner stays above the list. Off: it scrolls with the topic list."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后新/更新话题提示悬浮在列表上方；关闭后作为列表内容随帖子滚动。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟後新/更新話題提示懸浮在列表上方；關閉後作為列表內容隨帖子捲動。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟後新/更新話題提示懸浮在列表上方；關閉後作為列表內容隨帖子捲動。"
+          }
+        }
+      }
+    },
+    "settings.appearance.xiaohongshu_staggered_cards" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stagger Cards"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "错落排列卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錯落排列卡片"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錯落排列卡片"
+          }
+        }
+      }
+    },
+    "settings.appearance.xiaohongshu_staggered_cards.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On: cards alternate vertically for a Xiaohongshu-style layout. Off: cards stay aligned in rows."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后左右卡片交替下沉，形成小红书式错落布局；关闭后每行对齐。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟後左右卡片交替下沉，形成小紅書式錯落版面；關閉後每列對齊。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟後左右卡片交替下沉，形成小紅書式錯落版面；關閉後每列對齊。"
           }
         }
       }
@@ -7388,25 +7528,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bottom Bar"
+            "value" : "Bottom Bar Settings"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "底栏设计"
+            "value" : "底栏设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "底欄設計"
+            "value" : "底欄設定"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "底欄設計"
+            "value" : "底欄設定"
           }
         }
       }
@@ -9490,25 +9630,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading"
+            "value" : "Reading Settings"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "阅读设计"
+            "value" : "阅读设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "閱讀設計"
+            "value" : "閱讀設定"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "閱讀設計"
+            "value" : "閱讀設定"
           }
         }
       }
@@ -10022,25 +10162,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appearance"
+            "value" : "Appearance Settings"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外观"
+            "value" : "外观设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外觀"
+            "value" : "外觀設定"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外觀"
+            "value" : "外觀設定"
           }
         }
       }

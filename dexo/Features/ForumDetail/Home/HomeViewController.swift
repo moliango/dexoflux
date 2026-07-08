@@ -43,6 +43,7 @@ final class HomeViewController: ObservableViewController {
     private var reloadSequence = 0
     private var lastAuthenticatedState: Bool?
     private var isIncomingTopicsBannerVisible = false
+    private var isIncomingTopicsInlineBannerVisible = false
     private var incomingTopicsUsesTopSpace = false
     private var isTopRefreshGeometryLocked = false
     private var topRefreshGeometryLockID = 0
@@ -209,7 +210,9 @@ final class HomeViewController: ObservableViewController {
             let pair = self.xiaohongshuTopicPair(at: rowIndex)
             cell.configure(
                 left: pair.left.map { self.xiaohongshuCardModel(for: $0) },
-                right: pair.right.map { self.xiaohongshuCardModel(for: $0) }
+                right: pair.right.map { self.xiaohongshuCardModel(for: $0) },
+                staggered: AppSettings.shared.xiaohongshuCardsStaggered,
+                rowIndex: rowIndex
             )
             cell.onTopicSelected = { [weak self] topicId in
                 self?.openTopic(topicId)
@@ -302,6 +305,7 @@ final class HomeViewController: ObservableViewController {
     }()
 
     private let emptyFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+    private let emptyTableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
     private let errorLabel: UILabel = {
         let label = UILabel()
@@ -354,6 +358,18 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
+    private let incomingTopicsInlineHeaderView: UIView = {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: HomeViewController.incomingTopicsBannerHeight))
+        view.backgroundColor = .clear
+        return view
+    }()
+
+    private let incomingTopicsInlineButton: IncomingTopicsBannerView = {
+        let button = IncomingTopicsBannerView()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     private lazy var refreshControl: UIRefreshControl = {
         let rc = UIRefreshControl()
         rc.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
@@ -378,6 +394,7 @@ final class HomeViewController: ObservableViewController {
         updateHeaderHeight(animated: false)
 
         hideHomeScrollIndicators()
+        updateIncomingTopicsInlineHeaderFrame()
         updateIncomingTopicsHeader()
         updateTableInsets()
         floatingActionButtonBottomConstraint?.constant = -currentBottomChromeHeight - 20
@@ -392,8 +409,9 @@ final class HomeViewController: ObservableViewController {
         tableView.contentInsetAdjustmentBehavior = .never
         hideHomeScrollIndicators()
 
-        tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+        tableView.tableHeaderView = emptyTableHeaderView
         incomingTopicsHeaderView.addSubview(incomingTopicsButton)
+        incomingTopicsInlineHeaderView.addSubview(incomingTopicsInlineButton)
         view.addSubview(tableView)
         view.addSubview(loadingSkeletonView)
         view.addSubview(headerContainer)
@@ -436,6 +454,11 @@ final class HomeViewController: ObservableViewController {
             incomingTopicsButton.trailingAnchor.constraint(equalTo: incomingTopicsHeaderView.trailingAnchor, constant: -18),
             incomingTopicsButton.heightAnchor.constraint(equalToConstant: 52),
 
+            incomingTopicsInlineButton.topAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.topAnchor, constant: 6),
+            incomingTopicsInlineButton.leadingAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.leadingAnchor, constant: 18),
+            incomingTopicsInlineButton.trailingAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.trailingAnchor, constant: -18),
+            incomingTopicsInlineButton.heightAnchor.constraint(equalToConstant: 52),
+
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
 
@@ -461,6 +484,7 @@ final class HomeViewController: ObservableViewController {
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
         floatingActionButton.addTarget(self, action: #selector(fabTapped), for: .touchUpInside)
         incomingTopicsButton.addTarget(self, action: #selector(incomingTopicsTapped), for: .touchUpInside)
+        incomingTopicsInlineButton.addTarget(self, action: #selector(incomingTopicsTapped), for: .touchUpInside)
         lastAuthenticatedState = AuthManager.shared.isAuthenticated(for: api.baseURL)
         startObservingCloudflareVerification()
         startObservingAuthChanges()
@@ -680,14 +704,19 @@ final class HomeViewController: ObservableViewController {
         let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
-        tableView.estimatedRowHeight = usesXiaohongshuCardLayout
-            ? XiaohongshuTopicGridCell.estimatedHeight
-            : TopicCell.estimatedHeight
+        if usesXiaohongshuCardLayout {
+            tableView.estimatedRowHeight = AppSettings.shared.xiaohongshuCardsStaggered
+                ? XiaohongshuTopicGridCell.staggeredEstimatedHeight
+                : XiaohongshuTopicGridCell.estimatedHeight
+        } else {
+            tableView.estimatedRowHeight = TopicCell.estimatedHeight
+        }
         headerContainer.backgroundColor = pageBackground
         searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
         floatingActionButton.backgroundColor = themeStyle.accentColor
         floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
         incomingTopicsButton.applyThemeStyle()
+        incomingTopicsInlineButton.applyThemeStyle()
         loadingSkeletonView.applyThemeStyle()
     }
 
@@ -750,6 +779,7 @@ final class HomeViewController: ObservableViewController {
             headerContainer.isHidden = true
             floatingActionButton.isHidden = true
             setIncomingTopicsBannerVisible(false, animated: false)
+            setIncomingTopicsInlineBannerVisible(false)
             loadingSkeletonView.setSkeletonActive(false, animated: false)
             activityIndicator.stopAnimating()
             return
@@ -1097,16 +1127,19 @@ final class HomeViewController: ObservableViewController {
         let count = viewModel.incomingTopicIds.count
         guard viewModel.listMode == .latest, count > 0 else {
             setIncomingTopicsBannerVisible(false, animated: view.window != nil)
+            setIncomingTopicsInlineBannerVisible(false)
             updateIncomingTopicsPlacement(animated: false)
             return
         }
 
-        incomingTopicsButton.configure(
-            title: String.localizedStringWithFormat(String(localized: "home.incoming_topics %lld"), Int64(count)),
-            isLoading: viewModel.isLoadingIncomingTopics
-        )
+        let title = String.localizedStringWithFormat(String(localized: "home.incoming_topics %lld"), Int64(count))
+        incomingTopicsButton.configure(title: title, isLoading: viewModel.isLoadingIncomingTopics)
+        incomingTopicsInlineButton.configure(title: title, isLoading: viewModel.isLoadingIncomingTopics)
         incomingTopicsButton.isEnabled = !viewModel.isLoadingIncomingTopics
-        setIncomingTopicsBannerVisible(true, animated: view.window != nil)
+        incomingTopicsInlineButton.isEnabled = !viewModel.isLoadingIncomingTopics
+        let usesFloatingBanner = AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled
+        setIncomingTopicsBannerVisible(usesFloatingBanner, animated: view.window != nil)
+        setIncomingTopicsInlineBannerVisible(!usesFloatingBanner)
         updateIncomingTopicsPlacement(animated: view.window != nil)
     }
 
@@ -1159,13 +1192,36 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func updateIncomingTopicsPlacement(animated: Bool) {
-        let shouldUseTopSpace = isIncomingTopicsBannerVisible
+        let shouldUseTopSpace = isIncomingTopicsBannerVisible && AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled
         setIncomingTopicsUsesTopSpace(shouldUseTopSpace)
-        incomingTopicsButton.setFloating(false)
+        incomingTopicsButton.setFloating(AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled)
+        incomingTopicsInlineButton.setFloating(false)
 
         guard animated else { return }
         DexoMotion.animate(duration: DexoMotion.quick) {
             self.view.layoutIfNeeded()
+        }
+    }
+
+    private func setIncomingTopicsInlineBannerVisible(_ visible: Bool) {
+        guard isIncomingTopicsInlineBannerVisible != visible else {
+            updateIncomingTopicsInlineHeaderFrame()
+            return
+        }
+        isIncomingTopicsInlineBannerVisible = visible
+        updateIncomingTopicsInlineHeaderFrame()
+    }
+
+    private func updateIncomingTopicsInlineHeaderFrame() {
+        let headerView = isIncomingTopicsInlineBannerVisible ? incomingTopicsInlineHeaderView : emptyTableHeaderView
+        let height = isIncomingTopicsInlineBannerVisible ? Self.incomingTopicsBannerHeight : CGFloat.leastNormalMagnitude
+        let nextFrame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: height)
+        let needsFrameUpdate = headerView.frame.size != nextFrame.size
+        if needsFrameUpdate {
+            headerView.frame = nextFrame
+        }
+        if tableView.tableHeaderView !== headerView || needsFrameUpdate {
+            tableView.tableHeaderView = headerView
         }
     }
 
@@ -1549,14 +1605,21 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func handleSettingsChanged() {
+        setHomeTabBarHidden(false, animated: false)
         applyThemeStyle()
         updateFilterButton()
         updateCategoryButton()
         updateCategoryTabs()
         updateFloatingActionButton(animated: false)
         incomingTopicsButton.applyThemeStyle()
+        incomingTopicsInlineButton.applyThemeStyle()
+        updateIncomingTopicsHeader()
         updateTableInsets()
         applyTopicSnapshot(animatingDifferences: false)
+        if usesXiaohongshuCardLayout {
+            tableView.beginUpdates()
+            tableView.endUpdates()
+        }
     }
 
     private func openTopic(_ topicId: Int) {

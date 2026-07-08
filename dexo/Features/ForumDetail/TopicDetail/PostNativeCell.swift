@@ -76,9 +76,15 @@ final class PostNativeCell: UITableViewCell {
     static let reuseIdentifier = "PostNativeCell"
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
+    private static let actionIconPointSize: CGFloat = 16
     fileprivate static let boostIconImage: UIImage = {
-        (UIImage(named: "BoostRocket") ?? UIImage(systemName: "paperplane.fill") ?? UIImage())
-            .withRenderingMode(.alwaysTemplate)
+        if let image = UIImage(named: "BoostRocket") {
+            return resizedActionIcon(image)
+        }
+        return UIImage(
+            systemName: "paperplane.fill",
+            withConfiguration: actionSymbolConfig(pointSize: actionIconPointSize)
+        )?.withRenderingMode(.alwaysTemplate) ?? UIImage()
     }()
     private static let firstPostPaperBackgroundColor = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -901,6 +907,15 @@ final class PostNativeCell: UITableViewCell {
 
     private static func actionSymbolConfig(pointSize: CGFloat = 16) -> UIImage.SymbolConfiguration {
         UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+    }
+
+    private static func resizedActionIcon(_ image: UIImage) -> UIImage {
+        let targetSize = CGSize(width: actionIconPointSize, height: actionIconPointSize)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let rendered = renderer.image { _ in
+            image.withRenderingMode(.alwaysOriginal).draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return rendered.withRenderingMode(.alwaysTemplate)
     }
 
     private static var actionBackgroundColor: UIColor {
