@@ -286,9 +286,11 @@ final class MeViewController: ObservableViewController {
         )
         alert.addAction(UIAlertAction(title: String(localized: "me.logout"), style: .destructive) { [weak self] _ in
             guard let self else { return }
-            self.authGate?.performLogout()
-            self.viewModel.clearSessionState(requiresLogin: true)
-            self.updateUI()
+            Task { @MainActor in
+                await self.authGate?.performLogout()
+                self.viewModel.clearSessionState(requiresLogin: true)
+                self.updateUI()
+            }
         })
         alert.addAction(UIAlertAction(title: String(localized: "cancel"), style: .cancel))
         present(alert, animated: true)

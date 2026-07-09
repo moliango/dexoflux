@@ -258,6 +258,23 @@ final class WebCookieStore {
         }
     }
 
+    @MainActor
+    func clearWebViewAuthCookies(for baseURL: String) async {
+        guard let host = URL(string: baseURL)?.host?.lowercased() else { return }
+        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+        let cookies = await withCheckedContinuation { continuation in
+            cookieStore.getAllCookies { continuation.resume(returning: $0) }
+        }
+        for cookie in cookies where Self.domainMatches(host: host, cookieDomain: cookie.domain)
+            && Self.isAuthCookieName(cookie.name) {
+            await withCheckedContinuation { continuation in
+                cookieStore.delete(cookie) {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
     // MARK: - Persistence
 
     private func key(for cookie: HTTPCookie) -> String {

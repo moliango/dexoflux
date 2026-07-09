@@ -3,6 +3,7 @@ import Foundation
 final class UserProfileViewModel: DexoObservableObject {
     var userProfile: DiscourseUserProfile?
     var summary: DiscourseUserSummary?
+    var summaryTopics: [DiscourseUserSummaryTopic] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -20,10 +21,11 @@ final class UserProfileViewModel: DexoObservableObject {
         notifyChanged()
         do {
             async let profileTask = api.fetchUserProfile(username: username)
-            async let summaryTask = api.fetchUserSummary(username: username)
-            let (profile, userSummary) = try await (profileTask, summaryTask)
+            async let summaryTask = api.fetchUserSummaryResponse(username: username)
+            let (profile, summaryResponse) = try await (profileTask, summaryTask)
             userProfile = profile
-            summary = userSummary
+            summary = summaryResponse.userSummary
+            summaryTopics = summaryResponse.topics
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -36,7 +36,16 @@ struct DiscourseUserProfile: Codable {
     let profileViewCount: Int?
     let timeRead: Int?
     let createdAt: String?
+    let lastPostedAt: String?
     let bioExcerpt: String?
+    let location: String?
+    let website: String?
+    let websiteName: String?
+    let profileBackgroundURL: String?
+    let cardBackgroundURL: String?
+    let followingCount: Int?
+    let followerCount: Int?
+    let gamificationScore: Int?
     let flairName: String?
     let flairUrl: String?
 
@@ -48,7 +57,16 @@ struct DiscourseUserProfile: Codable {
         case profileViewCount = "profile_view_count"
         case timeRead = "time_read"
         case createdAt = "created_at"
+        case lastPostedAt = "last_posted_at"
         case bioExcerpt = "bio_excerpt"
+        case location
+        case website
+        case websiteName = "website_name"
+        case profileBackgroundURL = "profile_background_upload_url"
+        case cardBackgroundURL = "card_background_upload_url"
+        case followingCount = "total_following"
+        case followerCount = "total_followers"
+        case gamificationScore = "gamification_score"
         case flairName = "flair_name"
         case flairUrl = "flair_url"
     }
