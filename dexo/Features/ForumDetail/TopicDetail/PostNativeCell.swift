@@ -67,16 +67,77 @@ enum TopicDetailTypography {
     private static func contentContextPointSize(offsetFromBody offset: CGFloat) -> CGFloat {
         let settings = AppSettings.shared
         let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
-        let sourcePointSize = max(settings.contentFontSize.basePointSize + comfortFontDelta + offset, 8)
+        let sourcePointSize = max(settings.contentFontSize.basePointSize + comfortFontDelta + offset, 1)
         return settings.effectiveContentPointSize(for: sourcePointSize)
     }
 }
 
 final class PostNativeCell: UITableViewCell {
+    struct SharedIssueState {
+        let topicId: Int
+        let canCreate: Bool
+        let count: Int
+        let userCreated: Bool
+    }
+
     static let reuseIdentifier = "PostNativeCell"
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
     private static let actionIconPointSize: CGFloat = 16
+    private static let fontAwesomeSolidFontName = "FontAwesome5Free-Solid"
+    private static let fontAwesomeSolidGlyphs: [String: String] = [
+        "award": "\u{f559}",
+        "book": "\u{f02d}",
+        "book-open": "\u{f518}",
+        "bookmark": "\u{f02e}",
+        "bug": "\u{f188}",
+        "bullseye": "\u{f140}",
+        "certificate": "\u{f0a3}",
+        "check": "\u{f00c}",
+        "check-circle": "\u{f058}",
+        "code": "\u{f121}",
+        "comment": "\u{f075}",
+        "comments": "\u{f086}",
+        "crosshairs": "\u{f05b}",
+        "eye": "\u{f06e}",
+        "fire": "\u{f06d}",
+        "flame": "\u{f06d}",
+        "fist-raised": "\u{f6de}",
+        "gavel": "\u{f0e3}",
+        "gem": "\u{f3a5}",
+        "graduation-cap": "\u{f19d}",
+        "hammer": "\u{f6e3}",
+        "hand": "\u{f256}",
+        "hand-fist": "\u{f6de}",
+        "hand-paper": "\u{f256}",
+        "hand-rock": "\u{f255}",
+        "heart": "\u{f004}",
+        "laptop-code": "\u{f5fc}",
+        "lightbulb": "\u{f0eb}",
+        "magnifying-glass": "\u{f002}",
+        "medal": "\u{f5a2}",
+        "palette": "\u{f53f}",
+        "people-group": "\u{f0c0}",
+        "rocket": "\u{f135}",
+        "search": "\u{f002}",
+        "seedling": "\u{f4d8}",
+        "shield": "\u{f3ed}",
+        "shield-alt": "\u{f3ed}",
+        "shield-halved": "\u{f3ed}",
+        "star": "\u{f005}",
+        "target": "\u{f140}",
+        "terminal": "\u{f120}",
+        "thumbs-down": "\u{f165}",
+        "thumbs-up": "\u{f164}",
+        "trophy": "\u{f091}",
+        "user": "\u{f007}",
+        "user-check": "\u{f4fc}",
+        "user-graduate": "\u{f501}",
+        "user-shield": "\u{f505}",
+        "user-tag": "\u{f507}",
+        "users": "\u{f0c0}",
+        "wrench": "\u{f0ad}",
+    ]
     fileprivate static let boostIconImage: UIImage = {
         if let image = UIImage(named: "BoostRocket") {
             return resizedActionIcon(image)
@@ -86,31 +147,28 @@ final class PostNativeCell: UITableViewCell {
             withConfiguration: actionSymbolConfig(pointSize: actionIconPointSize)
         )?.withRenderingMode(.alwaysTemplate) ?? UIImage()
     }()
-    private static let firstPostPaperBackgroundColor = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor.secondarySystemGroupedBackground
-            : UIColor(red: 0.992, green: 0.984, blue: 0.961, alpha: 1)
-    }
-    private static let firstPostPaperBorderColor = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor.separator.withAlphaComponent(0.28)
-            : UIColor(red: 0.855, green: 0.824, blue: 0.753, alpha: 0.72)
-    }
-
-    static func firstPostRenderContentWidth(for tableWidth: CGFloat) -> CGFloat {
-        let horizontalInset = (Metrics.cardOuterHorizontal + Metrics.cardInner + Metrics.firstPostContentInset) * 2
+    static func renderContentWidth(for tableWidth: CGFloat, isFirstPost: Bool) -> CGFloat {
+        let contentInset = isFirstPost ? Metrics.firstPostContentInset : 0
+        let cardOuterHorizontal = isFirstPost ? Metrics.cardOuterHorizontal : Metrics.replyCardOuterHorizontal
+        let horizontalInset = (cardOuterHorizontal + Metrics.cardInner + contentInset) * 2
         return max(tableWidth - horizontalInset, 0)
     }
 
+    static func firstPostRenderContentWidth(for tableWidth: CGFloat) -> CGFloat {
+        renderContentWidth(for: tableWidth, isFirstPost: true)
+    }
+
     private enum Metrics {
-        static let cardOuterVertical: CGFloat = 6
-        static let cardOuterHorizontal: CGFloat = 10
+        static let cardOuterVertical: CGFloat = 0
+        static let cardOuterHorizontal: CGFloat = 0
+        static let replyCardOuterHorizontal: CGFloat = 8
         static let cardInner: CGFloat = 16
         static let headerTop: CGFloat = 14
-        static let avatarSize: CGFloat = 32
+        static let avatarSize: CGFloat = 36
+        static let maximumAvatarSize: CGFloat = 40
         static let avatarToText: CGFloat = 8
         static let contentTop: CGFloat = 10
-        static let firstPostContentInset: CGFloat = 12
+        static let firstPostContentInset: CGFloat = 0
         static let actionTop: CGFloat = 10
         static let actionButtonWidth: CGFloat = 32
         static let actionSpacing: CGFloat = 2
@@ -121,9 +179,14 @@ final class PostNativeCell: UITableViewCell {
     private var postId: Int = 0
     private var postLink: String?
     private var currentPost: DiscourseTopicDetail.Post?
+    private var currentSharedIssueTopicId: Int?
     private var cookedHTML: String = ""
     private var validReactions: [String] = []
     private var isBookmarked = false
+    private var cardTopConstraint: NSLayoutConstraint?
+    private var cardBottomConstraint: NSLayoutConstraint?
+    private var cardLeadingConstraint: NSLayoutConstraint?
+    private var cardTrailingConstraint: NSLayoutConstraint?
 
     private let cardView: UIView = {
         let view = UIView()
@@ -140,6 +203,8 @@ final class PostNativeCell: UITableViewCell {
     private var avatarHeightConstraint: NSLayoutConstraint?
     private var flairWidthConstraint: NSLayoutConstraint?
     private var flairHeightConstraint: NSLayoutConstraint?
+    private var flairImageWidthConstraint: NSLayoutConstraint?
+    private var flairImageHeightConstraint: NSLayoutConstraint?
     private var currentAvatarTemplateSize = 96
 
     // MARK: - Header UI
@@ -149,27 +214,58 @@ final class PostNativeCell: UITableViewCell {
         iv.contentMode = .scaleAspectFill
         iv.clipsToBounds = true
         iv.layer.cornerRadius = 16
+        iv.layer.borderWidth = 1.0 / UIScreen.main.scale
+        iv.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
         iv.backgroundColor = .secondarySystemFill
         iv.translatesAutoresizingMaskIntoConstraints = false
         return iv
     }()
 
+    private let flairBadgeView: UIView = {
+        let view = UIView()
+        view.clipsToBounds = true
+        view.layer.borderWidth = 0
+        view.layer.borderColor = nil
+        view.backgroundColor = .clear
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
     private let flairImageView: UIImageView = {
         let iv = UIImageView()
-        iv.contentMode = .scaleAspectFill
+        iv.contentMode = .scaleAspectFit
         iv.clipsToBounds = true
-        iv.layer.cornerRadius = 7
-        iv.layer.borderWidth = 1
-        iv.layer.borderColor = UIColor.systemBackground.cgColor
+        iv.layer.borderWidth = 0
+        iv.layer.borderColor = nil
+        iv.backgroundColor = .clear
         iv.translatesAutoresizingMaskIntoConstraints = false
-        iv.isHidden = true
         return iv
+    }()
+
+    private let topLineStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 4
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let topBadgesStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 3
+        stack.alignment = .center
+        stack.isHidden = true
+        return stack
     }()
 
     private let nameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .semibold)
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         return label
     }()
 
@@ -184,10 +280,29 @@ final class PostNativeCell: UITableViewCell {
     private let userTitleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = .systemYellow
         label.translatesAutoresizingMaskIntoConstraints = false
         label.isHidden = true
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
+    }()
+
+    private let metaLineStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 6
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let grantedBadgesStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 3
+        stack.alignment = .center
+        stack.isHidden = true
+        return stack
     }()
 
     private let timeLabel: UILabel = {
@@ -256,6 +371,34 @@ final class PostNativeCell: UITableViewCell {
         button.contentHorizontalAlignment = .leading
         button.isHidden = true
         return button
+    }()
+
+    private let sharedIssueButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.titleLabel?.font = TopicDetailTypography.interfaceFont(
+            ofSize: 12.5,
+            weight: .semibold
+        )
+        button.contentHorizontalAlignment = .center
+        button.isHidden = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    private let sharedIssueCountLabel: UILabel = {
+        let label = UILabel()
+        label.font = TopicDetailTypography.interfaceFont(
+            ofSize: 11,
+            weight: .semibold
+        )
+        label.textAlignment = .center
+        label.layer.cornerRadius = 9
+        label.layer.cornerCurve = .continuous
+        label.clipsToBounds = true
+        label.isUserInteractionEnabled = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isHidden = true
+        return label
     }()
 
     private let reactionStackView: UIStackView = {
@@ -395,16 +538,23 @@ final class PostNativeCell: UITableViewCell {
     private func setupViews() {
         contentView.addSubview(cardView)
         cardView.addSubview(avatarImageView)
-        cardView.addSubview(flairImageView)
-        cardView.addSubview(nameLabel)
-        cardView.addSubview(usernameLabel)
-        cardView.addSubview(userTitleLabel)
+        cardView.addSubview(flairBadgeView)
+        flairBadgeView.addSubview(flairImageView)
+        topLineStackView.addArrangedSubview(nameLabel)
+        topLineStackView.addArrangedSubview(topBadgesStackView)
+        topLineStackView.addArrangedSubview(userTitleLabel)
+        topLineStackView.addArrangedSubview(grantedBadgesStackView)
+        metaLineStackView.addArrangedSubview(usernameLabel)
+        cardView.addSubview(topLineStackView)
+        cardView.addSubview(metaLineStackView)
         cardView.addSubview(timeLabel)
         cardView.addSubview(floorLabel)
         cardView.addSubview(sourceButton)
         cardView.addSubview(replyToLabel)
         cardView.addSubview(contentCardView)
         contentCardView.addSubview(contentStackView)
+        sharedIssueButton.addSubview(sharedIssueCountLabel)
+        bottomLeftStack.addArrangedSubview(sharedIssueButton)
         bottomLeftStack.addArrangedSubview(showRepliesButton)
         for iv in reactionImageViews {
             reactionStackView.addArrangedSubview(iv)
@@ -434,42 +584,58 @@ final class PostNativeCell: UITableViewCell {
         contentStackBottomConstraint = contentBottomConstraint
         let avatarWidthConstraint = avatarImageView.widthAnchor.constraint(equalToConstant: Metrics.avatarSize)
         let avatarHeightConstraint = avatarImageView.heightAnchor.constraint(equalToConstant: Metrics.avatarSize)
-        let flairWidthConstraint = flairImageView.widthAnchor.constraint(equalToConstant: 14)
-        let flairHeightConstraint = flairImageView.heightAnchor.constraint(equalToConstant: 14)
+        let flairWidthConstraint = flairBadgeView.widthAnchor.constraint(equalToConstant: 14)
+        let flairHeightConstraint = flairBadgeView.heightAnchor.constraint(equalToConstant: 14)
+        let flairImageWidthConstraint = flairImageView.widthAnchor.constraint(equalToConstant: 14)
+        let flairImageHeightConstraint = flairImageView.heightAnchor.constraint(equalToConstant: 14)
         self.avatarWidthConstraint = avatarWidthConstraint
         self.avatarHeightConstraint = avatarHeightConstraint
         self.flairWidthConstraint = flairWidthConstraint
         self.flairHeightConstraint = flairHeightConstraint
+        self.flairImageWidthConstraint = flairImageWidthConstraint
+        self.flairImageHeightConstraint = flairImageHeightConstraint
         let contentCardTopConstraint = contentCardView.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop)
         contentCardTopConstraint.priority = .defaultHigh
         let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(equalToConstant: 42)
         self.reactionPillWidthConstraint = reactionPillWidthConstraint
 
+        let cardTopConstraint = cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Metrics.cardOuterVertical)
+        let cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Metrics.cardOuterVertical)
+        let cardLeadingConstraint = cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Metrics.cardOuterHorizontal)
+        let cardTrailingConstraint = cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Metrics.cardOuterHorizontal)
+        self.cardTopConstraint = cardTopConstraint
+        self.cardBottomConstraint = cardBottomConstraint
+        self.cardLeadingConstraint = cardLeadingConstraint
+        self.cardTrailingConstraint = cardTrailingConstraint
+
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Metrics.cardOuterVertical),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Metrics.cardOuterHorizontal),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Metrics.cardOuterHorizontal),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Metrics.cardOuterVertical),
+            cardTopConstraint,
+            cardLeadingConstraint,
+            cardTrailingConstraint,
+            cardBottomConstraint,
 
             avatarImageView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
             avatarImageView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
             avatarWidthConstraint,
             avatarHeightConstraint,
 
-            flairImageView.bottomAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 2),
-            flairImageView.trailingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 2),
+            flairBadgeView.bottomAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 2),
+            flairBadgeView.trailingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 4),
             flairWidthConstraint,
             flairHeightConstraint,
 
-            nameLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
-            nameLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: Metrics.avatarToText),
+            flairImageView.centerXAnchor.constraint(equalTo: flairBadgeView.centerXAnchor),
+            flairImageView.centerYAnchor.constraint(equalTo: flairBadgeView.centerYAnchor),
+            flairImageWidthConstraint,
+            flairImageHeightConstraint,
 
-            usernameLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor),
-            usernameLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: Metrics.avatarToText),
+            topLineStackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
+            topLineStackView.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: Metrics.avatarToText),
+            topLineStackView.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -8),
 
-            userTitleLabel.lastBaselineAnchor.constraint(equalTo: nameLabel.lastBaselineAnchor),
-            userTitleLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 4),
-            userTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: replyToLabel.leadingAnchor, constant: -8),
+            metaLineStackView.topAnchor.constraint(equalTo: topLineStackView.bottomAnchor),
+            metaLineStackView.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: Metrics.avatarToText),
+            metaLineStackView.trailingAnchor.constraint(lessThanOrEqualTo: floorLabel.leadingAnchor, constant: -8),
 
             replyToLabel.centerYAnchor.constraint(equalTo: floorLabel.centerYAnchor),
             replyToLabel.trailingAnchor.constraint(equalTo: floorLabel.leadingAnchor, constant: -8),
@@ -479,16 +645,16 @@ final class PostNativeCell: UITableViewCell {
             sourceButton.widthAnchor.constraint(equalToConstant: 24),
             sourceButton.heightAnchor.constraint(equalToConstant: 24),
 
-            floorLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
-            floorLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
-
-            timeLabel.topAnchor.constraint(equalTo: floorLabel.bottomAnchor, constant: 2),
+            timeLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.headerTop),
             timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
+
+            floorLabel.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 2),
+            floorLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
 
             contentCardTopConstraint,
             contentCardView.topAnchor.constraint(greaterThanOrEqualTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop),
-            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: usernameLabel.bottomAnchor, constant: Metrics.contentTop),
-            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: timeLabel.bottomAnchor, constant: Metrics.contentTop),
+            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: metaLineStackView.bottomAnchor, constant: Metrics.contentTop),
+            contentCardView.topAnchor.constraint(greaterThanOrEqualTo: floorLabel.bottomAnchor, constant: Metrics.contentTop),
             contentCardView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
             contentCardView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             contentTopConstraint,
@@ -500,6 +666,11 @@ final class PostNativeCell: UITableViewCell {
             bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
             bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
             bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+
+            sharedIssueCountLabel.centerYAnchor.constraint(equalTo: sharedIssueButton.centerYAnchor),
+            sharedIssueCountLabel.trailingAnchor.constraint(equalTo: sharedIssueButton.trailingAnchor, constant: -7),
+            sharedIssueCountLabel.heightAnchor.constraint(equalToConstant: 18),
+            sharedIssueCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
             actionStackView.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
             actionStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
@@ -532,6 +703,7 @@ final class PostNativeCell: UITableViewCell {
         cardMinHeightConstraint?.isActive = true
 
         showRepliesButton.addTarget(self, action: #selector(repliesButtonTapped), for: .touchUpInside)
+        sharedIssueButton.addTarget(self, action: #selector(sharedIssueButtonTapped), for: .touchUpInside)
         replyButton.addTarget(self, action: #selector(replyButtonTapped), for: .touchUpInside)
         reactButton.addTarget(self, action: #selector(reactButtonTapped), for: .touchUpInside)
         reactionPillControl.addTarget(self, action: #selector(reactButtonTapped), for: .touchUpInside)
@@ -559,6 +731,7 @@ final class PostNativeCell: UITableViewCell {
         hasUnsupportedBlocks: Bool,
         cookedHTML: String,
         validReactions: [String],
+        sharedIssue: SharedIssueState?,
     ) {
         postId = post.id
         self.postLink = postLink
@@ -566,35 +739,29 @@ final class PostNativeCell: UITableViewCell {
         self.delegate = delegate
         self.cookedHTML = cookedHTML
         self.validReactions = validReactions
+        currentSharedIssueTopicId = sharedIssue?.topicId
         isBookmarked = post.bookmarked
         sourceButton.isHidden = !hasUnsupportedBlocks
         applyTypography()
         applyCardStyle(isFirstPost: floorNumber == 1)
 
         nameLabel.text = post.name
-        usernameLabel.text = post.username
+        usernameLabel.text = "@\(post.username)"
         timeLabel.text = Self.formatDate(post.createdAt)
         floorLabel.text = "#\(floorNumber)"
+        nameLabel.textColor = (post.moderator || post.groupModerator || post.admin) ? .systemBlue : .label
 
-        // User title
-        if let userTitle = post.userTitle, !userTitle.isEmpty {
-            userTitleLabel.text = "\u{00B7} \(userTitle)"
+        if let userTitle = displayUserTitle(for: post) {
+            userTitleLabel.text = userTitle
+            userTitleLabel.textColor = .systemYellow
             userTitleLabel.isHidden = false
         } else {
+            userTitleLabel.text = nil
             userTitleLabel.isHidden = true
         }
 
-        // Flair badge
-        if let flairUrl = post.flairUrl, !flairUrl.isEmpty {
-            let urlString = flairUrl.hasPrefix("http") ? flairUrl : baseURL + flairUrl
-            if let url = URL(string: urlString) {
-                if let bgColor = post.flairBgColor, !bgColor.isEmpty {
-                    flairImageView.backgroundColor = UIColor(hex: bgColor)
-                }
-                ForumImageLoader.setImage(on: flairImageView, url: url)
-                flairImageView.isHidden = false
-            }
-        }
+        configureFlairBadge(for: post, baseURL: baseURL)
+        configureHeaderBadges(for: post, baseURL: baseURL)
 
         if let replyUser = post.replyToUser {
             let replyFont = replyToLabel.font ?? TopicDetailTypography.contentContextFont(
@@ -602,7 +769,7 @@ final class PostNativeCell: UITableViewCell {
                 weight: .regular,
                 relativeTo: .caption1
             )
-            let symbolPointSize = max(replyFont.pointSize - 2, 10)
+            let symbolPointSize = max(replyFont.pointSize - 2, 1)
             let attachment = NSTextAttachment()
             let symbolConfig = UIImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .medium)
             attachment.image = UIImage(systemName: "arrowshape.turn.up.left.fill", withConfiguration: symbolConfig)?.withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
@@ -625,6 +792,7 @@ final class PostNativeCell: UITableViewCell {
         if hasReplies {
             configureRepliesButton(count: post.replyCount)
         }
+        configureSharedIssueButton(sharedIssue)
 
         // Reactions
         configureReactions(post.reactions, count: post.reactionUsersCount, baseURL: baseURL)
@@ -641,6 +809,7 @@ final class PostNativeCell: UITableViewCell {
             setupTextViews(in: view)
             contentStackView.addArrangedSubview(view)
         }
+        tightenConsecutiveParagraphSpacing()
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
             contentStackView.addArrangedSubview(boostStripView)
         }
@@ -659,9 +828,28 @@ final class PostNativeCell: UITableViewCell {
         )
     }
 
+    private func tightenConsecutiveParagraphSpacing() {
+        let arrangedSubviews = contentStackView.arrangedSubviews
+        guard arrangedSubviews.count > 1 else { return }
+
+        for index in arrangedSubviews.indices.dropLast() {
+            let current = arrangedSubviews[index]
+            let next = arrangedSubviews[arrangedSubviews.index(after: index)]
+            if current is LinkTextView, next is LinkTextView {
+                contentStackView.setCustomSpacing(0, after: current)
+            }
+        }
+    }
+
     private func applyCardStyle(isFirstPost: Bool) {
-        contentStackView.spacing = isFirstPost ? 12 : 10
+        contentStackView.spacing = isFirstPost ? 5 : 5
         cardMinHeightConstraint?.constant = isFirstPost ? 0 : Metrics.minimumReplyCardHeight
+        let verticalGap: CGFloat = isFirstPost ? 0 : 4
+        let horizontalGap: CGFloat = isFirstPost ? Metrics.cardOuterHorizontal : Metrics.replyCardOuterHorizontal
+        cardTopConstraint?.constant = verticalGap
+        cardBottomConstraint?.constant = -verticalGap
+        cardLeadingConstraint?.constant = horizontalGap
+        cardTrailingConstraint?.constant = -horizontalGap
         let contentInset = isFirstPost ? Metrics.firstPostContentInset : 0
         contentStackTopConstraint?.constant = contentInset
         contentStackLeadingConstraint?.constant = contentInset
@@ -669,55 +857,49 @@ final class PostNativeCell: UITableViewCell {
         contentStackBottomConstraint?.constant = -contentInset
 
         if isFirstPost {
-            cardView.backgroundColor = Self.firstPostPaperBackgroundColor
-            cardView.layer.cornerRadius = 20
-            cardView.layer.borderWidth = 1.0 / UIScreen.main.scale
-            cardView.layer.borderColor = Self.firstPostPaperBorderColor.resolvedColor(with: traitCollection).cgColor
+            cardView.backgroundColor = .clear
+            cardView.layer.cornerRadius = 0
+            cardView.layer.borderWidth = 0
+            cardView.layer.borderColor = nil
             cardView.layer.shadowOpacity = 0
             cardView.layer.shadowOffset = .zero
             cardView.layer.shadowRadius = 0
-            separatorLine.backgroundColor = .clear
-
-            contentCardView.backgroundColor = .clear
-            contentCardView.layer.borderWidth = 0
-            contentCardView.layer.borderColor = nil
-            contentCardView.layer.shadowOpacity = 0
-            contentCardView.layer.shadowOffset = .zero
-            contentCardView.layer.shadowRadius = 0
+            separatorLine.backgroundColor = UIColor.separator.withAlphaComponent(0.25)
         } else {
-            cardView.backgroundColor = .secondarySystemGroupedBackground
-            cardView.layer.cornerRadius = 14
+            cardView.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+            cardView.layer.cornerRadius = 18
+            cardView.layer.cornerCurve = .continuous
             cardView.layer.borderWidth = 1.0 / UIScreen.main.scale
-            cardView.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
+            cardView.layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
             cardView.layer.shadowColor = UIColor.black.cgColor
             cardView.layer.shadowOpacity = 0.035
             cardView.layer.shadowOffset = CGSize(width: 0, height: 2)
             cardView.layer.shadowRadius = 8
-            separatorLine.backgroundColor = UIColor.separator.withAlphaComponent(0.6)
-
-            contentCardView.backgroundColor = .clear
-            contentCardView.layer.borderWidth = 0
-            contentCardView.layer.borderColor = nil
-            contentCardView.layer.shadowOpacity = 0
-            contentCardView.layer.shadowOffset = .zero
-            contentCardView.layer.shadowRadius = 0
+            separatorLine.backgroundColor = .clear
         }
+
+        contentCardView.backgroundColor = .clear
+        contentCardView.layer.borderWidth = 0
+        contentCardView.layer.borderColor = nil
+        contentCardView.layer.shadowOpacity = 0
+        contentCardView.layer.shadowOffset = .zero
+        contentCardView.layer.shadowRadius = 0
     }
 
     private func applyTypography() {
         nameLabel.font = TopicDetailTypography.contentContextFont(
-            offsetFromBody: -1,
+            offsetFromBody: 2,
             weight: .semibold,
             relativeTo: .subheadline
         )
         usernameLabel.font = TopicDetailTypography.contentContextFont(
-            offsetFromBody: -3,
+            offsetFromBody: 0,
             weight: .regular,
             relativeTo: .caption1
         )
         userTitleLabel.font = TopicDetailTypography.contentContextFont(
-            offsetFromBody: -3,
-            weight: .regular,
+            offsetFromBody: 0,
+            weight: .medium,
             relativeTo: .caption1
         )
         floorLabel.font = TopicDetailTypography.contentContextMonospacedFont(
@@ -736,19 +918,407 @@ final class PostNativeCell: UITableViewCell {
             relativeTo: .caption1
         )
         showRepliesButton.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .medium)
+        sharedIssueButton.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 12.5, weight: .semibold)
+        sharedIssueCountLabel.font = TopicDetailTypography.interfaceFont(ofSize: 11, weight: .semibold)
         reactionCountLabel.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .semibold)
 
-        let avatarSize = min(max(Metrics.avatarSize * TopicDetailTypography.contentVisualScale(), 28), 44)
+        let avatarSize = min(
+            max(Metrics.avatarSize * TopicDetailTypography.contentVisualScale(), Metrics.avatarSize),
+            Metrics.maximumAvatarSize
+        )
         avatarWidthConstraint?.constant = avatarSize
         avatarHeightConstraint?.constant = avatarSize
         avatarImageView.layer.cornerRadius = avatarSize / 2
 
-        let flairSize = min(max(avatarSize * 0.44, 12), 18)
+        let flairSize = min(max(avatarSize * 0.42, 14), 17)
         flairWidthConstraint?.constant = flairSize
         flairHeightConstraint?.constant = flairSize
-        flairImageView.layer.cornerRadius = flairSize / 2
+        flairBadgeView.layer.cornerRadius = flairSize / 2
+        applyFlairImageScale(1, badgeSize: flairSize)
 
         currentAvatarTemplateSize = max(96, Int(ceil(avatarSize * UIScreen.main.scale)))
+    }
+
+    private func displayUserTitle(for post: DiscourseTopicDetail.Post) -> String? {
+        [post.userTitle, post.primaryGroupName]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed?.isEmpty == false ? trimmed : nil
+            }
+            .first
+    }
+
+    private func configureHeaderBadges(for post: DiscourseTopicDetail.Post, baseURL: String) {
+        resetHeaderBadgeStack(topBadgesStackView)
+        resetHeaderBadgeStack(grantedBadgesStackView)
+
+        if post.moderator || post.groupModerator || post.admin {
+            let shieldView = makeFontAwesomeBadgeView(
+                icon: "shield-alt",
+                tintColor: .systemBlue,
+                size: 13
+            ) ?? makeHeaderBadgeImageView(
+                image: UIImage(systemName: "shield.fill"),
+                tintColor: .systemBlue,
+                size: 13
+            )
+            topBadgesStackView.addArrangedSubview(shieldView)
+        }
+        topBadgesStackView.isHidden = topBadgesStackView.arrangedSubviews.isEmpty
+
+        if let emoji = post.userStatus?.emoji,
+           let urlString = EmojiStore.url(for: emoji) ?? EmojiStore.lookup(for: emoji),
+           let url = URL(string: urlString) {
+            grantedBadgesStackView.addArrangedSubview(makeHeaderBadgeImageView(url: url, size: 15))
+        }
+
+        for badge in post.badgesGranted.prefix(4) {
+            guard let badgeView = makeGrantedBadgeView(for: badge, baseURL: baseURL) else {
+                continue
+            }
+            grantedBadgesStackView.addArrangedSubview(badgeView)
+        }
+        grantedBadgesStackView.isHidden = grantedBadgesStackView.arrangedSubviews.isEmpty
+    }
+
+    private func resetHeaderBadgeStack(_ stackView: UIStackView) {
+        for view in stackView.arrangedSubviews {
+            stackView.removeArrangedSubview(view)
+            cancelImageLoads(in: view)
+            view.removeFromSuperview()
+        }
+        stackView.isHidden = true
+    }
+
+    private func cancelImageLoads(in view: UIView) {
+        if let imageView = view as? UIImageView {
+            imageView.sd_cancelCurrentImageLoad()
+            imageView.image = nil
+        }
+        for subview in view.subviews {
+            cancelImageLoads(in: subview)
+        }
+    }
+
+    private func makeGrantedBadgeView(for badge: DiscourseTopicDetail.GrantedBadge, baseURL: String) -> UIView? {
+        let color = grantedBadgeColor(for: badge)
+        if let imageUrl = badge.imageUrl,
+           let url = resolveHeaderBadgeURL(imageUrl, baseURL: baseURL) {
+            return makeHeaderBadgeImageView(
+                url: url,
+                placeholder: nil,
+                placeholderTintColor: .clear,
+                size: 14
+            )
+        }
+
+        if let badgeView = makeFontAwesomeBadgeView(icon: badge.icon, tintColor: color, size: 13) {
+            return badgeView
+        }
+
+        return nil
+    }
+
+    private func makeFontAwesomeBadgeView(icon: String?, tintColor: UIColor, size: CGFloat) -> UIView? {
+        guard let glyph = fontAwesomeGlyph(for: icon),
+              let font = UIFont(name: Self.fontAwesomeSolidFontName, size: size)
+        else { return nil }
+
+        let label = UILabel()
+        label.text = glyph
+        label.font = font
+        label.textColor = tintColor
+        label.textAlignment = .center
+        label.adjustsFontForContentSizeCategory = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.widthAnchor.constraint(equalToConstant: size + 1),
+            label.heightAnchor.constraint(equalToConstant: size + 1),
+        ])
+        return label
+    }
+
+    private func fontAwesomeGlyph(for icon: String?) -> String? {
+        guard let rawIcon = icon?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !rawIcon.isEmpty
+        else { return nil }
+
+        let normalizedIcon = rawIcon
+            .replacingOccurrences(of: "fa-solid", with: "fas")
+            .replacingOccurrences(of: "fa-regular", with: "far")
+            .replacingOccurrences(of: "fa-brands", with: "fab")
+        let components = normalizedIcon
+            .split(whereSeparator: { $0 == " " || $0 == "." })
+            .map(String.init)
+
+        let candidates = ([normalizedIcon] + components).map { component in
+            component
+                .replacingOccurrences(of: "fa-", with: "")
+                .replacingOccurrences(of: "fas-", with: "")
+                .replacingOccurrences(of: "far-", with: "")
+                .replacingOccurrences(of: "fab-", with: "")
+                .replacingOccurrences(of: "fas ", with: "")
+                .replacingOccurrences(of: "far ", with: "")
+                .replacingOccurrences(of: "fab ", with: "")
+                .replacingOccurrences(of: "fa ", with: "")
+                .replacingOccurrences(of: "_", with: "-")
+                .trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        }
+
+        for candidate in candidates where !candidate.isEmpty {
+            if let glyph = Self.fontAwesomeSolidGlyphs[fontAwesomeSolidAlias(for: candidate)] {
+                return glyph
+            }
+        }
+        return nil
+    }
+
+    private func fontAwesomeSolidAlias(for icon: String) -> String {
+        let normalized = icon
+            .replacingOccurrences(of: "_", with: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        switch normalized {
+        case "book-open-reader":
+            return "book-open"
+        case "eye-low-vision":
+            return "eye"
+        case "fire-flame-curved", "fire-flame-simple":
+            return "fire"
+        case "hand-back-fist":
+            return "hand-rock"
+        case "magnifying-glass", "magnifying-glass-arrow-right", "magnifying-glass-chart",
+             "magnifying-glass-dollar", "magnifying-glass-location", "magnifying-glass-minus",
+             "magnifying-glass-plus":
+            return "search"
+        case "people-arrows", "people-carry-box", "people-group", "people-line",
+             "people-pulling", "people-roof", "user-group", "users-between-lines",
+             "users-gear", "users-line", "users-rays", "users-rectangle", "users-viewfinder":
+            return "users"
+        case "shield-halved", "shield-heart", "shield-virus":
+            return "shield-alt"
+        case "solid-bookmark":
+            return "bookmark"
+        case "solid-comment":
+            return "comment"
+        case "solid-comments":
+            return "comments"
+        case "solid-eye":
+            return "eye"
+        case "solid-gem":
+            return "gem"
+        case "solid-hand", "hand":
+            return "hand-paper"
+        case "solid-hand-back-fist", "hand-fist":
+            return "fist-raised"
+        case "solid-hand-point-down", "solid-hand-point-left", "solid-hand-point-right",
+             "solid-hand-point-up", "hand-point-down", "hand-point-left", "hand-point-right",
+             "hand-point-up":
+            return "hand"
+        case "solid-heart":
+            return "heart"
+        case "solid-lightbulb":
+            return "lightbulb"
+        case "solid-star":
+            return "star"
+        case "solid-thumbs-down":
+            return "thumbs-down"
+        case "solid-thumbs-up":
+            return "thumbs-up"
+        default:
+            return normalized
+        }
+    }
+
+    private func makeHeaderBadgeImageView(
+        url: URL,
+        placeholder: UIImage?,
+        placeholderTintColor: UIColor,
+        size: CGFloat
+    ) -> UIImageView {
+        let imageView = makeHeaderBadgeImageView(
+            image: placeholder,
+            tintColor: placeholderTintColor,
+            size: size
+        )
+        imageView.isAccessibilityElement = false
+
+        if let cacheKey = SDWebImageManager.shared.cacheKey(for: url),
+           let cachedImage = SDImageCache.shared.imageFromCache(forKey: cacheKey) {
+            imageView.image = cachedImage.withRenderingMode(.alwaysOriginal)
+            imageView.tintColor = nil
+            return imageView
+        }
+
+        ForumImageLoader.setImage(
+            on: imageView,
+            url: url,
+            placeholder: placeholder?.withRenderingMode(.alwaysTemplate)
+        ) { [weak imageView] image, _, _, _ in
+            guard let image else { return }
+            imageView?.image = image.withRenderingMode(.alwaysOriginal)
+            imageView?.tintColor = nil
+        }
+        return imageView
+    }
+
+    private func makeHeaderBadgeImageView(url: URL, size: CGFloat) -> UIImageView {
+        makeHeaderBadgeImageView(url: url, placeholder: nil, placeholderTintColor: .clear, size: size)
+    }
+
+    private func makeHeaderBadgeImageView(image: UIImage?, tintColor: UIColor?, size: CGFloat) -> UIImageView {
+        let imageView = UIImageView(image: image?.withRenderingMode(tintColor == nil ? .alwaysOriginal : .alwaysTemplate))
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = tintColor
+        imageView.isAccessibilityElement = false
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: size),
+            imageView.heightAnchor.constraint(equalToConstant: size),
+        ])
+        return imageView
+    }
+
+    private func resolveHeaderBadgeURL(_ rawURL: String, baseURL: String) -> URL? {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return URL(string: trimmed)
+        }
+        if trimmed.hasPrefix("//") {
+            return URL(string: "https:\(trimmed)")
+        }
+        var normalizedBaseURL = baseURL
+        if normalizedBaseURL.hasSuffix("/") {
+            normalizedBaseURL.removeLast()
+        }
+        let normalizedPath = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
+        return URL(string: normalizedBaseURL + normalizedPath)
+    }
+
+    private func grantedBadgeColor(for badge: DiscourseTopicDetail.GrantedBadge) -> UIColor {
+        switch badge.badgeTypeId {
+        case 1:
+            return UIColor(red: 0.90, green: 0.63, blue: 0.00, alpha: 1)
+        case 2:
+            return UIColor(red: 0.60, green: 0.60, blue: 0.60, alpha: 1)
+        case 3:
+            return UIColor(red: 0.80, green: 0.50, blue: 0.20, alpha: 1)
+        default:
+            return AppSettings.shared.themeStyle.accentColor
+        }
+    }
+
+    private func configureFlairBadge(for post: DiscourseTopicDetail.Post, baseURL: String) {
+        flairImageView.sd_cancelCurrentImageLoad()
+        flairImageView.image = nil
+        flairImageView.layer.borderWidth = 0
+        flairImageView.layer.borderColor = nil
+        let explicitBadgeBackgroundColor = post.flairBgColor.flatMap(UIColor.init(hex:))
+        let badgeBackgroundColor = explicitBadgeBackgroundColor
+        let badgeForegroundColor = post.flairColor.flatMap(UIColor.init(hex:))
+            ?? (badgeBackgroundColor == nil ? .label : .white)
+        flairImageView.tintColor = badgeForegroundColor
+
+        guard let flairUrl = post.flairUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !flairUrl.isEmpty
+        else {
+            flairBadgeView.backgroundColor = .clear
+            flairBadgeView.isHidden = true
+            return
+        }
+
+        flairBadgeView.isHidden = false
+
+        if !isImageFlairURL(flairUrl) {
+            guard let iconImage = makeFontAwesomeGlyphImage(
+                icon: flairUrl,
+                color: badgeForegroundColor,
+                size: max((flairWidthConstraint?.constant ?? 18) * 0.72, 10)
+            ) else {
+                flairBadgeView.backgroundColor = .clear
+                flairBadgeView.isHidden = true
+                return
+            }
+            flairBadgeView.backgroundColor = badgeBackgroundColor ?? .clear
+            flairImageView.tintColor = nil
+            flairImageView.image = iconImage
+            applyFlairImageScale(badgeBackgroundColor == nil ? 0.8 : 0.62)
+            return
+        }
+
+        guard let url = resolveFlairURL(flairUrl, baseURL: baseURL) else {
+            flairBadgeView.backgroundColor = .clear
+            flairBadgeView.isHidden = true
+            return
+        }
+
+        flairBadgeView.backgroundColor = badgeBackgroundColor ?? .clear
+        applyFlairImageScale(badgeBackgroundColor == nil ? 1 : 0.7)
+        ForumImageLoader.setImage(on: flairImageView, url: url)
+    }
+
+    private func applyFlairImageScale(_ scale: CGFloat, badgeSize: CGFloat? = nil) {
+        let resolvedBadgeSize = badgeSize ?? max(flairWidthConstraint?.constant ?? 18, 18)
+        let imageSize = max(resolvedBadgeSize * scale, 1)
+        flairImageWidthConstraint?.constant = imageSize
+        flairImageHeightConstraint?.constant = imageSize
+    }
+
+    private func resolveFlairURL(_ flairUrl: String, baseURL: String) -> URL? {
+        guard isImageFlairURL(flairUrl) else {
+            return nil
+        }
+        if flairUrl.hasPrefix(":") && flairUrl.hasSuffix(":") {
+            let emojiName = String(flairUrl.dropFirst().dropLast())
+            guard let emojiURLString = EmojiStore.url(for: emojiName) ?? EmojiStore.lookup(for: emojiName) else {
+                return nil
+            }
+            return resolveHeaderBadgeURL(emojiURLString, baseURL: baseURL)
+        }
+        if flairUrl.hasPrefix("http") {
+            return URL(string: flairUrl)
+        }
+        var normalizedBaseURL = baseURL
+        if normalizedBaseURL.hasSuffix("/") {
+            normalizedBaseURL.removeLast()
+        }
+        let normalizedPath = flairUrl.hasPrefix("/") ? flairUrl : "/\(flairUrl)"
+        return URL(string: normalizedBaseURL + normalizedPath)
+    }
+
+    private func isImageFlairURL(_ flairUrl: String) -> Bool {
+        if flairUrl.hasPrefix("http://") || flairUrl.hasPrefix("https://") || flairUrl.hasPrefix("/") {
+            return true
+        }
+        if flairUrl.hasPrefix(":") && flairUrl.hasSuffix(":") {
+            return true
+        }
+        let lowercased = flairUrl.lowercased()
+        return lowercased.contains(".png")
+            || lowercased.contains(".jpg")
+            || lowercased.contains(".jpeg")
+            || lowercased.contains(".webp")
+            || lowercased.contains(".gif")
+            || lowercased.contains(".svg")
+    }
+
+    private func makeFontAwesomeGlyphImage(icon: String?, color: UIColor, size: CGFloat) -> UIImage? {
+        guard let glyph = fontAwesomeGlyph(for: icon),
+              let font = UIFont(name: Self.fontAwesomeSolidFontName, size: size)
+        else { return nil }
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { _ in
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color,
+            ]
+            let textSize = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: CGPoint(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2),
+                withAttributes: attributes
+            )
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     private func configureRepliesButton(count: Int) {
@@ -762,6 +1332,82 @@ final class PostNativeCell: UITableViewCell {
         config.background.cornerRadius = Self.bottomBarHeight / 2
         showRepliesButton.configuration = config
         showRepliesButton.clipsToBounds = true
+    }
+
+    private func configureSharedIssueButton(_ state: SharedIssueState?) {
+        guard let state else {
+            currentSharedIssueTopicId = nil
+            sharedIssueButton.isHidden = true
+            sharedIssueButton.isEnabled = false
+            sharedIssueButton.alpha = 1
+            sharedIssueButton.configuration = nil
+            sharedIssueButton.layer.borderWidth = 0
+            sharedIssueButton.layer.borderColor = nil
+            sharedIssueButton.layer.shadowOpacity = 0
+            sharedIssueCountLabel.isHidden = true
+            sharedIssueCountLabel.text = nil
+            sharedIssueButton.accessibilityLabel = nil
+            return
+        }
+
+        let theme = AppSettings.shared.themeStyle
+        let title = state.userCreated
+            ? String(localized: "shared_issue.marked_label")
+            : String(localized: "shared_issue.compact_label")
+        let foregroundColor: UIColor = state.userCreated ? theme.accentColor : .secondaryLabel
+        let backgroundColor: UIColor = state.userCreated
+            ? theme.accentColor.withAlphaComponent(0.14)
+            : UIColor.secondarySystemFill.withAlphaComponent(0.62)
+        let borderColor: UIColor = state.userCreated
+            ? theme.accentColor.withAlphaComponent(0.34)
+            : UIColor.separator.withAlphaComponent(0.28)
+
+        var attributes = AttributeContainer()
+        attributes.font = TopicDetailTypography.interfaceFont(
+            ofSize: 12.5,
+            weight: .semibold
+        )
+
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: state.userCreated ? "hand.raised.fill" : "hand.raised",
+            withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .semibold)
+        )
+        config.imagePadding = 4
+        config.attributedTitle = AttributedString(title, attributes: attributes)
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: 9,
+            bottom: 0,
+            trailing: state.count > 0 ? 32 : 9
+        )
+        config.baseForegroundColor = foregroundColor
+        config.background.backgroundColor = backgroundColor
+        config.background.cornerRadius = Self.bottomBarHeight / 2
+        sharedIssueButton.configuration = config
+        sharedIssueButton.tintColor = foregroundColor
+        sharedIssueButton.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 12.5, weight: .semibold)
+        sharedIssueButton.layer.cornerRadius = Self.bottomBarHeight / 2
+        sharedIssueButton.layer.cornerCurve = .continuous
+        sharedIssueButton.layer.borderWidth = 1.0 / UIScreen.main.scale
+        sharedIssueButton.layer.borderColor = borderColor.cgColor
+        sharedIssueButton.layer.shadowColor = theme.accentColor.cgColor
+        sharedIssueButton.layer.shadowOpacity = state.userCreated ? 0.08 : 0
+        sharedIssueButton.layer.shadowRadius = 6
+        sharedIssueButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        sharedIssueButton.clipsToBounds = true
+        sharedIssueButton.isEnabled = state.canCreate
+        sharedIssueButton.alpha = state.canCreate ? 1 : 0.68
+        sharedIssueButton.isHidden = false
+        sharedIssueCountLabel.text = state.count > 0 ? "\(state.count)" : nil
+        sharedIssueCountLabel.textColor = state.userCreated ? .white : theme.accentColor
+        sharedIssueCountLabel.backgroundColor = state.userCreated
+            ? theme.accentColor.withAlphaComponent(0.86)
+            : theme.accentColor.withAlphaComponent(0.12)
+        sharedIssueCountLabel.isHidden = state.count <= 0
+        sharedIssueButton.accessibilityLabel = state.canCreate
+            ? String(localized: "shared_issue.title")
+            : String(localized: "shared_issue.author_title")
     }
 
     private func configureReactions(_ reactions: [DiscourseTopicDetail.Reaction], count: Int, baseURL: String) {
@@ -842,7 +1488,10 @@ final class PostNativeCell: UITableViewCell {
     private func configureReplyButton() {
         configureActionButton(
             replyButton,
-            symbolName: "arrowshape.turn.up.left.fill",
+            image: UIImage(
+                systemName: "arrowshape.turn.up.left",
+                withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .medium)
+            ),
             tintColor: .secondaryLabel,
             backgroundColor: .clear,
             accessibilityLabel: "回复"
@@ -905,8 +1554,11 @@ final class PostNativeCell: UITableViewCell {
         button.clipsToBounds = true
     }
 
-    private static func actionSymbolConfig(pointSize: CGFloat = 16) -> UIImage.SymbolConfiguration {
-        UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+    private static func actionSymbolConfig(
+        pointSize: CGFloat = 16,
+        weight: UIImage.SymbolWeight = .semibold
+    ) -> UIImage.SymbolConfiguration {
+        UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
     }
 
     private static func resizedActionIcon(_ image: UIImage) -> UIImage {
@@ -979,6 +1631,12 @@ final class PostNativeCell: UITableViewCell {
 
     @objc private func repliesButtonTapped() {
         delegate?.postCell(didTapShowRepliesForPostId: postId)
+    }
+
+    @objc private func sharedIssueButtonTapped() {
+        guard let topicId = currentSharedIssueTopicId else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        delegate?.postCell(didTapToggleSharedIssueForTopicId: topicId)
     }
 
     @objc private func replyButtonTapped() {
@@ -1145,6 +1803,8 @@ final class PostNativeCell: UITableViewCell {
         postLink = nil
         currentPost = nil
         cookedHTML = ""
+        nameLabel.text = nil
+        nameLabel.textColor = .label
         usernameLabel.text = nil
         timeLabel.text = nil
         floorLabel.text = nil
@@ -1152,6 +1812,7 @@ final class PostNativeCell: UITableViewCell {
         replyToLabel.text = nil
         replyToLabel.isHidden = true
         showRepliesButton.isHidden = true
+        configureSharedIssueButton(nil)
         sourceButton.isHidden = true
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
@@ -1159,8 +1820,12 @@ final class PostNativeCell: UITableViewCell {
         userTitleLabel.isHidden = true
         flairImageView.sd_cancelCurrentImageLoad()
         flairImageView.image = nil
+        flairImageView.tintColor = nil
         flairImageView.backgroundColor = nil
-        flairImageView.isHidden = true
+        flairBadgeView.backgroundColor = nil
+        flairBadgeView.isHidden = true
+        resetHeaderBadgeStack(topBadgesStackView)
+        resetHeaderBadgeStack(grantedBadgesStackView)
         reactionStackView.isHidden = true
         for iv in reactionImageViews {
             iv.sd_cancelCurrentImageLoad()
@@ -1695,7 +2360,7 @@ private final class BoostStripView: UIView {
                 baseFont: font,
                 baseColor: .label,
                 linkColor: AppSettings.shared.themeStyle.accentColor,
-                codeFont: .monospacedSystemFont(ofSize: max(font.pointSize - 1, 10), weight: .regular),
+                codeFont: .monospacedSystemFont(ofSize: max(font.pointSize - 1, 1), weight: .regular),
                 codeBackgroundColor: .clear
             )))
         }
@@ -1774,7 +2439,7 @@ private final class BoostStripView: UIView {
             return normalizedDisplayInlines(inlines)
         case .blockquote(let blocks), .spoiler(let blocks):
             return joinedInlines(blocks.map(displayInlines(from:)))
-        case .discourseQuote(_, _, _, _, _, _, let content):
+        case .discourseQuote(_, _, _, _, _, _, _, let content):
             return joinedInlines(content.map(displayInlines(from:)))
         case .list(_, let items):
             return joinedInlines(items.map { item in

@@ -61,7 +61,7 @@ enum TopicDetailHTMLParsing {
             return true
         case .blockquote(let blocks), .spoiler(let blocks):
             return blocks.allSatisfy(canRenderNatively)
-        case .discourseQuote(_, _, _, _, _, _, let content):
+        case .discourseQuote(_, _, _, _, _, _, _, let content):
             return content.allSatisfy(canRenderNatively)
         case .details(_, let content):
             return content.allSatisfy(canRenderNatively)
@@ -136,7 +136,7 @@ enum TopicDetailPollResultMerger {
             return .blockquote(blocks: mergeInitialPollState(blocks: blocks, pollResults: pollResults, pollsVotes: pollsVotes))
         case .spoiler(let blocks):
             return .spoiler(blocks: mergeInitialPollState(blocks: blocks, pollResults: pollResults, pollsVotes: pollsVotes))
-        case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let content):
+        case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let quotePostNumber, let content):
             return .discourseQuote(
                 username: username,
                 avatarURL: avatarURL,
@@ -144,6 +144,7 @@ enum TopicDetailPollResultMerger {
                 topicURL: topicURL,
                 categoryName: categoryName,
                 categoryURL: categoryURL,
+                quotePostNumber: quotePostNumber,
                 content: mergeInitialPollState(blocks: content, pollResults: pollResults, pollsVotes: pollsVotes)
             )
         case .details(let summary, let content):
@@ -201,7 +202,7 @@ enum TopicDetailPollResultMerger {
             return .blockquote(blocks: merge(blocks: blocks, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds))
         case .spoiler(let blocks):
             return .spoiler(blocks: merge(blocks: blocks, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds))
-        case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let content):
+        case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let quotePostNumber, let content):
             return .discourseQuote(
                 username: username,
                 avatarURL: avatarURL,
@@ -209,6 +210,7 @@ enum TopicDetailPollResultMerger {
                 topicURL: topicURL,
                 categoryName: categoryName,
                 categoryURL: categoryURL,
+                quotePostNumber: quotePostNumber,
                 content: merge(blocks: content, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds)
             )
         case .details(let summary, let content):
@@ -727,6 +729,12 @@ final class TopicDetailViewModel: DexoObservableObject {
         guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
         topic?.postStream.posts[index].bookmarked = bookmarked
         topic?.postStream.posts[index].bookmarkId = bookmarked ? bookmarkId : nil
+        notifyChanged()
+    }
+
+    func updateSharedIssue(count: Int, userCreated: Bool) {
+        topic?.sharedIssueCount = count
+        topic?.userCreatedSharedIssue = userCreated
         notifyChanged()
     }
 

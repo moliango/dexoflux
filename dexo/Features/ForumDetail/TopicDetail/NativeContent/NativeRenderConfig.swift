@@ -24,8 +24,8 @@ struct NativeRenderConfig {
         baseURL: String?,
         postId: Int? = nil,
         galleryImageURLs: [URL] = [],
-        defaultLineSpacing: CGFloat = 3,
-        defaultParagraphSpacing: CGFloat = 6
+        defaultLineSpacing: CGFloat = 4,
+        defaultParagraphSpacing: CGFloat = 5
     ) {
         self.baseFont = baseFont
         self.baseColor = baseColor
@@ -67,7 +67,7 @@ struct NativeRenderConfig {
             for: settings.contentFont(ofSize: basePointSize)
         )
         let codeFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 13))
+            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 1))
         )
         return NativeRenderConfig(
             baseFont: bodyFont,
@@ -79,8 +79,8 @@ struct NativeRenderConfig {
             baseURL: baseURL,
             postId: postId,
             galleryImageURLs: galleryImageURLs,
-            defaultLineSpacing: comfortMode ? 6 : 5,
-            defaultParagraphSpacing: comfortMode ? 12 : 9
+            defaultLineSpacing: comfortMode ? 3 : 2,
+            defaultParagraphSpacing: comfortMode ? 5 : 3
         )
     }
 
@@ -97,7 +97,6 @@ struct NativeRenderConfig {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = lineSpacing
         paragraphStyle.paragraphSpacing = paragraphSpacing
-        paragraphStyle.minimumLineHeight = baseFont.lineHeight + lineSpacing
         result.addAttribute(
             .paragraphStyle,
             value: paragraphStyle,
@@ -333,15 +332,13 @@ private final class PollBlockView: UIView {
 
         let titleLabel = UILabel()
         titleLabel.text = String(localized: "post.poll")
-        titleLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
-            for: .systemFont(ofSize: 14, weight: .semibold)
-        )
+        titleLabel.font = config.baseFont.weighted(.semibold)
         titleLabel.textColor = .secondaryLabel
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let statusLabel = UILabel()
         statusLabel.text = headerStatusText()
-        statusLabel.font = TopicDetailTypography.scaledInterfaceFont(ofSize: 12, weight: .semibold, relativeTo: .caption1)
+        statusLabel.font = config.baseFont.withRelativeSize(-1).weighted(.semibold)
         statusLabel.textColor = accentColor
         statusLabel.textAlignment = .right
         statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -370,9 +367,7 @@ private final class PollBlockView: UIView {
     private func makeVotersLabel(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
-        label.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
-            for: .systemFont(ofSize: 12, weight: .medium)
-        )
+        label.font = config.baseFont.withRelativeSize(-1).weighted(.medium)
         label.textColor = .secondaryLabel
         label.numberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -520,7 +515,7 @@ private final class PollOptionControl: UIControl {
         titleLabel.numberOfLines = 0
 
         metaLabel.text = metaText()
-        metaLabel.font = TopicDetailTypography.scaledInterfaceFont(ofSize: 12, weight: .medium, relativeTo: .caption1)
+        metaLabel.font = config.baseFont.withRelativeSize(-1).weighted(.medium)
         metaLabel.textColor = .secondaryLabel
         metaLabel.numberOfLines = 1
         metaLabel.isHidden = metaLabel.text == nil
@@ -576,5 +571,18 @@ private final class PollOptionControl: UIControl {
         let number = String(percentageText.unicodeScalars.filter { allowed.contains($0) })
         guard let value = Float(number) else { return nil }
         return min(max(value / 100, 0), 1)
+    }
+}
+
+private extension UIFont {
+    func withRelativeSize(_ offset: CGFloat) -> UIFont {
+        withSize(max(pointSize + offset, 1))
+    }
+
+    func weighted(_ weight: UIFont.Weight) -> UIFont {
+        let descriptor = fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }

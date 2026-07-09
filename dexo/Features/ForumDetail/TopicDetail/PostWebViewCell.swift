@@ -26,7 +26,7 @@ private extension ContentBlock {
             return inlines.galleryImageURLStrings
         case .blockquote(let blocks), .spoiler(let blocks):
             return blocks.flatMap(\.galleryImageURLStrings)
-        case .discourseQuote(_, _, _, _, _, _, let content):
+        case .discourseQuote(_, _, _, _, _, _, _, let content):
             return content.flatMap(\.galleryImageURLStrings)
         case .image(let src, _, _, _, let href):
             if let href, !href.isEmpty {
@@ -545,7 +545,9 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool)
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
+    func postCell(didTapQuotedPostNumber postNumber: Int)
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post)
+    func postCell(didTapToggleSharedIssueForTopicId topicId: Int)
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String])
 }
 
@@ -686,13 +688,15 @@ final class PostWebViewCell: UITableViewCell {
             usernameLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
             usernameLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 8),
 
-            timeLabel.centerYAnchor.constraint(equalTo: usernameLabel.centerYAnchor),
-            timeLabel.leadingAnchor.constraint(equalTo: usernameLabel.trailingAnchor, constant: 8),
+            usernameLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -8),
+
+            timeLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
             replyToLabel.centerYAnchor.constraint(equalTo: floorLabel.centerYAnchor),
             replyToLabel.trailingAnchor.constraint(equalTo: floorLabel.leadingAnchor, constant: -8),
 
-            floorLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
+            floorLabel.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 2),
             floorLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
             snapshotImageView.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor),

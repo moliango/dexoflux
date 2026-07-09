@@ -3,7 +3,7 @@ import SafariServices
 import UIKit
 
 enum ForumInternalLinkDestination {
-    case topic(id: Int)
+    case topic(id: Int, postNumber: Int?)
     case category(slug: String, id: Int)
     case tag(name: String)
 }
@@ -32,8 +32,8 @@ enum ForumInternalLinkParser {
     }
 
     static func destination(for url: URL) -> ForumInternalLinkDestination? {
-        if let topicId = parseTopicId(from: url) {
-            return .topic(id: topicId)
+        if let topic = parseTopicInfo(from: url) {
+            return .topic(id: topic.id, postNumber: topic.postNumber)
         }
         if let (slug, categoryId) = parseCategoryInfo(from: url) {
             return .category(slug: slug, id: categoryId)
@@ -55,16 +55,18 @@ enum ForumInternalLinkParser {
         return value
     }
 
-    private static func parseTopicId(from url: URL) -> Int? {
+    private static func parseTopicInfo(from url: URL) -> (id: Int, postNumber: Int?)? {
         let components = url.pathComponents
         guard let tIndex = components.firstIndex(of: "t") else { return nil }
+        var numbers: [Int] = []
         for component in components.dropFirst(tIndex + 1) {
             let cleaned = component.replacingOccurrences(of: ".json", with: "")
             if let id = Int(cleaned) {
-                return id
+                numbers.append(id)
             }
         }
-        return nil
+        guard let topicId = numbers.first else { return nil }
+        return (topicId, numbers.dropFirst().first)
     }
 
     private static func parseCategoryInfo(from url: URL) -> (slug: String, id: Int)? {
@@ -213,6 +215,7 @@ final class TopicDetailViewController: ObservableViewController {
     private let viewModel: TopicDetailViewModel
     private let api: DiscourseAPI
     private let topicId: Int
+    private let initialFloor: Int?
     private let baseURL: String
     private var hasTitleHeader = false
     private var isLoadingEarlierLocally = false
@@ -237,6 +240,7 @@ final class TopicDetailViewController: ObservableViewController {
     private var lastBottomBarProgressState: (current: Int, total: Int)?
     private var downloadedAttachmentURLs: Set<URL> = []
     private var prefetchedImagePostIds = Set<Int>()
+    private var pendingSharedIssueTopicIds = Set<Int>()
 
     private enum BackSwipeFallbackMetrics {
         static let edgeActivationWidth: CGFloat = 44
@@ -291,9 +295,10 @@ final class TopicDetailViewController: ObservableViewController {
             }
         }
         let postLink = "\(self.baseURL)/t/\(self.topicId)/\(post.postNumber)"
-        let renderContentWidth = floorNumber == 1
-            ? PostNativeCell.firstPostRenderContentWidth(for: tableView.bounds.width)
-            : tableView.bounds.width - 24
+        let renderContentWidth = PostNativeCell.renderContentWidth(
+            for: tableView.bounds.width,
+            isFirstPost: floorNumber == 1
+        )
         let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
         let config = NativeRenderConfig.default(
             contentWidth: renderContentWidth,
@@ -314,8 +319,23 @@ final class TopicDetailViewController: ObservableViewController {
             hasUnsupportedBlocks: hasUnsupported,
             cookedHTML: post.cooked,
             validReactions: self.viewModel.topic?.validReactions ?? [],
+            sharedIssue: self.sharedIssueState(forFloorNumber: floorNumber),
         )
         return cell
+    }
+
+    private func sharedIssueState(forFloorNumber floorNumber: Int) -> PostNativeCell.SharedIssueState? {
+        guard floorNumber == 1,
+              let topic = viewModel.topic,
+              topic.sharedIssueVisible
+        else { return nil }
+
+        return PostNativeCell.SharedIssueState(
+            topicId: topic.id,
+            canCreate: topic.canCreateSharedIssue,
+            count: topic.sharedIssueCount,
+            userCreated: topic.userCreatedSharedIssue
+        )
     }
 
     private let activityIndicator: UIActivityIndicatorView = {
@@ -436,10 +456,11 @@ final class TopicDetailViewController: ObservableViewController {
         return v
     }()
 
-    init(api: DiscourseAPI, topicId: Int) {
+    init(api: DiscourseAPI, topicId: Int, initialFloor: Int? = nil) {
         self.api = api
         self.viewModel = TopicDetailViewModel(api: api)
         self.topicId = topicId
+        self.initialFloor = initialFloor
         self.baseURL = api.baseURL
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
@@ -508,6 +529,9 @@ final class TopicDetailViewController: ObservableViewController {
 
         Task {
             await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
+            if let initialFloor {
+                jumpToFloor(initialFloor)
+            }
         }
         Task {
             await api.loadOrFetchEmojiMap()
@@ -523,6 +547,7 @@ final class TopicDetailViewController: ObservableViewController {
         navigationController?.interactivePopGestureRecognizer?.isEnabled = false
         installBackSwipeFallbackGesture()
         isHandlingBackSwipeFallback = false
+        syncOwningTabBarVisibility()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -534,12 +559,17 @@ final class TopicDetailViewController: ObservableViewController {
         readingTracker.start(topicId: topicId)
         updateVisibleReadingPosts()
         updateBottomBarProgress()
+        syncOwningTabBarVisibility()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         uninstallBackSwipeFallbackGesture()
         readingTracker.stop()
+    }
+
+    private func syncOwningTabBarVisibility() {
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
     }
 
     override func viewDidLayoutSubviews() {
@@ -1111,8 +1141,12 @@ final class TopicDetailViewController: ObservableViewController {
 
     private func openInternalDestination(_ destination: ForumInternalLinkDestination) {
         switch destination {
-        case let .topic(topicId):
-            let detailVC = TopicDetailViewController(api: api, topicId: topicId)
+        case let .topic(topicId, postNumber):
+            if topicId == self.topicId, let postNumber {
+                jumpToFloor(postNumber)
+                return
+            }
+            let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
             openInternalViewController(detailVC)
         case let .category(slug, categoryId):
             let category = DiscourseCategory(id: categoryId, name: slug, slug: slug)
@@ -1387,6 +1421,9 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
         timeline.onJumpToPostId = { [weak self] postId in
             self?.jumpToPostId(postId)
         }
+        timeline.onDismiss = { [weak self] in
+            self?.syncOwningTabBarVisibility()
+        }
         timeline.modalPresentationStyle = .pageSheet
         if let sheet = timeline.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
@@ -1641,6 +1678,7 @@ extension TopicDetailViewController: UITableViewDelegate {
 
 private final class TopicTimelineSheetViewController: UIViewController {
     var onJumpToPostId: ((Int) -> Void)?
+    var onDismiss: (() -> Void)?
 
     private let initialIndex: Int
     private let stream: [Int]
@@ -1829,6 +1867,11 @@ private final class TopicTimelineSheetViewController: UIViewController {
         }
         feedback.prepare()
         updateFloorDisplay()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDismiss?()
     }
 
     @objc private func trackValueChanged(_ sender: TopicTimelineTrackView) {
@@ -2233,6 +2276,30 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didTapToggleSharedIssueForTopicId topicId: Int) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            guard !self.pendingSharedIssueTopicIds.contains(topicId) else { return }
+            self.pendingSharedIssueTopicIds.insert(topicId)
+
+            Task { @MainActor in
+                defer { self.pendingSharedIssueTopicIds.remove(topicId) }
+                do {
+                    let response = try await self.api.toggleSharedIssue(topicId: topicId)
+                    self.viewModel.updateSharedIssue(
+                        count: response.count,
+                        userCreated: response.userCreatedSharedIssue
+                    )
+                    if let firstPostId = self.viewModel.topic?.postStream.posts.first?.id {
+                        self.reloadPostCell(postId: firstPostId)
+                    }
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String]) {
         performAuthenticated { [weak self] in
             guard let self else { return }
@@ -2255,8 +2322,17 @@ extension TopicDetailViewController: PostCellDelegate {
     }
 
     func postCell(didTapAvatarForUsername username: String) {
-        let vc = UserProfileViewController(api: api, username: username)
-        navigationController?.pushViewController(vc, animated: true)
+        let previewVC = UserProfilePreviewViewController(api: api, username: username)
+        previewVC.onViewProfile = { [weak self] selectedUsername in
+            guard let self else { return }
+            let vc = UserProfileViewController(api: self.api, username: selectedUsername)
+            self.navigationController?.pushViewController(vc, animated: true)
+        }
+        present(previewVC, animated: true)
+    }
+
+    func postCell(didTapQuotedPostNumber postNumber: Int) {
+        jumpToFloor(postNumber)
     }
 
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post) {

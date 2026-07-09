@@ -119,7 +119,7 @@ private class SpoilerBlockView: UIView {
     init(blocks: [ContentBlock], config: NativeRenderConfig, delegate: PostCellDelegate?) {
         let contentStack = UIStackView()
         contentStack.axis = .vertical
-        contentStack.spacing = 8
+        contentStack.spacing = 6
         contentStack.backgroundColor = .systemBackground
         contentStack.isLayoutMarginsRelativeArrangement = true
         contentStack.layoutMargins = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)

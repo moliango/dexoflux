@@ -21,7 +21,8 @@ enum OneboxRenderer: BlockRenderer {
             imageWidth: imageWidth,
             imageHeight: imageHeight,
             faviconURL: faviconURL,
-            containerWidth: config.contentWidth
+            containerWidth: config.contentWidth,
+            config: config
         )
         container.delegate = delegate
         return container
@@ -33,11 +34,13 @@ enum OneboxRenderer: BlockRenderer {
 final class OneboxCardView: UIView {
     weak var delegate: PostCellDelegate?
     private let sourceURL: String?
+    private let config: NativeRenderConfig
     private let imageView = UIImageView()
     private let faviconView = UIImageView()
 
-    init(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String?, containerWidth: CGFloat) {
+    init(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String?, containerWidth: CGFloat, config: NativeRenderConfig) {
         self.sourceURL = sourceURL
+        self.config = config
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -81,7 +84,7 @@ final class OneboxCardView: UIView {
         // Domain label
         let domainLabel = UILabel()
         domainLabel.translatesAutoresizingMaskIntoConstraints = false
-        domainLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        domainLabel.font = config.baseFont.withRelativeSize(-1).weighted(.medium)
         domainLabel.textColor = .secondaryLabel
         if let sourceURL, let url = URL(string: sourceURL), let host = url.host {
             domainLabel.text = host
@@ -141,7 +144,7 @@ final class OneboxCardView: UIView {
 
         if let title, !title.isEmpty {
             let titleLabel = UILabel()
-            titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+            titleLabel.font = config.baseFont.withRelativeSize(1).weighted(.semibold)
             titleLabel.textColor = .label
             titleLabel.numberOfLines = 2
             titleLabel.text = title
@@ -150,7 +153,7 @@ final class OneboxCardView: UIView {
 
         if let description, !description.isEmpty {
             let descLabel = UILabel()
-            descLabel.font = .systemFont(ofSize: 13)
+            descLabel.font = config.baseFont.withRelativeSize(-1)
             descLabel.textColor = .secondaryLabel
             descLabel.numberOfLines = 3
             descLabel.text = description
@@ -158,7 +161,7 @@ final class OneboxCardView: UIView {
         }
         if (title ?? "").isEmpty, (description ?? "").isEmpty, let sourceURL {
             let fallbackLabel = UILabel()
-            fallbackLabel.font = .systemFont(ofSize: 13, weight: .medium)
+            fallbackLabel.font = config.baseFont.withRelativeSize(-1).weighted(.medium)
             fallbackLabel.textColor = .link
             fallbackLabel.numberOfLines = 2
             fallbackLabel.text = sourceURL
@@ -204,5 +207,18 @@ final class OneboxCardView: UIView {
     func cancelImageLoad() {
         imageView.sd_cancelCurrentImageLoad()
         faviconView.sd_cancelCurrentImageLoad()
+    }
+}
+
+private extension UIFont {
+    func withRelativeSize(_ offset: CGFloat) -> UIFont {
+        withSize(max(pointSize + offset, 1))
+    }
+
+    func weighted(_ weight: UIFont.Weight) -> UIFont {
+        let descriptor = fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }

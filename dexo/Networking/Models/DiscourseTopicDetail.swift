@@ -14,6 +14,11 @@ struct DiscourseTopicDetail: Decodable {
     let validReactions: [String]
     let bookmarked: Bool
     let bookmarkId: Int?
+    let userBadges: UserBadges?
+    var sharedIssueVisible: Bool
+    var canCreateSharedIssue: Bool
+    var sharedIssueCount: Int
+    var userCreatedSharedIssue: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, title, tags, bookmarked, views
@@ -25,6 +30,11 @@ struct DiscourseTopicDetail: Decodable {
         case postStream = "post_stream"
         case validReactions = "valid_reactions"
         case bookmarkId = "bookmark_id"
+        case userBadges = "user_badges"
+        case sharedIssueVisible = "shared_issue_visible"
+        case canCreateSharedIssue = "can_create_shared_issue"
+        case sharedIssueCount = "shared_issue_count"
+        case userCreatedSharedIssue = "user_created_shared_issue"
     }
 
     init(from decoder: Decoder) throws {
@@ -42,6 +52,30 @@ struct DiscourseTopicDetail: Decodable {
         validReactions = (try? container.decodeIfPresent([String].self, forKey: .validReactions)) ?? []
         bookmarked = (try? container.decodeIfPresent(Bool.self, forKey: .bookmarked)) ?? false
         bookmarkId = try? container.decodeIfPresent(Int.self, forKey: .bookmarkId)
+        userBadges = try? container.decodeIfPresent(UserBadges.self, forKey: .userBadges)
+        sharedIssueVisible = (try? container.decodeIfPresent(Bool.self, forKey: .sharedIssueVisible)) ?? false
+        canCreateSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .canCreateSharedIssue)) ?? false
+        sharedIssueCount = container.decodeLossyInt(forKey: .sharedIssueCount) ?? 0
+        userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
+        injectGrantedBadges()
+    }
+
+    private mutating func injectGrantedBadges() {
+        guard let userBadges,
+              !userBadges.badgesById.isEmpty,
+              !userBadges.badgeIdsByUserId.isEmpty
+        else { return }
+
+        for index in postStream.posts.indices {
+            guard let userId = postStream.posts[index].userId,
+                  let badgeIds = userBadges.badgeIdsByUserId[userId],
+                  !badgeIds.isEmpty
+            else { continue }
+
+            let injectedBadges = badgeIds.compactMap { userBadges.badgesById[$0] }
+            guard !injectedBadges.isEmpty else { continue }
+            postStream.posts[index].badgesGranted = injectedBadges
+        }
     }
 
     struct PostStream: Decodable {
@@ -62,6 +96,128 @@ struct DiscourseTopicDetail: Decodable {
         enum CodingKeys: String, CodingKey {
             case username
             case avatarTemplate = "avatar_template"
+        }
+    }
+
+    struct UserStatus: Decodable {
+        let emoji: String?
+        let description: String?
+
+        enum CodingKeys: String, CodingKey {
+            case emoji, description
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            emoji = try? container.decodeNonEmptyStringIfPresent(forKey: .emoji)
+            description = try? container.decodeNonEmptyStringIfPresent(forKey: .description)
+        }
+    }
+
+    struct GrantedBadge: Decodable, Hashable {
+        let id: Int
+        let name: String
+        let icon: String?
+        let imageUrl: String?
+        let slug: String
+        let badgeTypeId: Int
+
+        enum CodingKeys: String, CodingKey {
+            case badge
+            case id, name, icon, slug
+            case imageUrl = "image_url"
+            case badgeTypeId = "badge_type_id"
+        }
+
+        init(from decoder: Decoder) throws {
+            let root = try decoder.container(keyedBy: CodingKeys.self)
+            if let nested = try? root.nestedContainer(keyedBy: CodingKeys.self, forKey: .badge) {
+                id = nested.decodeLossyInt(forKey: .id) ?? 0
+                name = (try? nested.decodeNonEmptyStringIfPresent(forKey: .name)) ?? ""
+                icon = try? nested.decodeNonEmptyStringIfPresent(forKey: .icon)
+                imageUrl = try? nested.decodeNonEmptyStringIfPresent(forKey: .imageUrl)
+                slug = (try? nested.decodeNonEmptyStringIfPresent(forKey: .slug)) ?? ""
+                badgeTypeId = nested.decodeLossyInt(forKey: .badgeTypeId) ?? 0
+                return
+            }
+
+            id = root.decodeLossyInt(forKey: .id) ?? 0
+            name = (try? root.decodeNonEmptyStringIfPresent(forKey: .name)) ?? ""
+            icon = try? root.decodeNonEmptyStringIfPresent(forKey: .icon)
+            imageUrl = try? root.decodeNonEmptyStringIfPresent(forKey: .imageUrl)
+            slug = (try? root.decodeNonEmptyStringIfPresent(forKey: .slug)) ?? ""
+            badgeTypeId = root.decodeLossyInt(forKey: .badgeTypeId) ?? 0
+        }
+    }
+
+    struct UserBadges: Decodable {
+        let badgesById: [Int: GrantedBadge]
+        let badgeIdsByUserId: [Int: [Int]]
+
+        enum CodingKeys: String, CodingKey {
+            case badges, users
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            badgesById = Self.decodeBadges(from: container)
+            badgeIdsByUserId = Self.decodeUsers(from: container)
+        }
+
+        private static func decodeBadges(from container: KeyedDecodingContainer<CodingKeys>) -> [Int: GrantedBadge] {
+            if let map = try? container.decode([String: GrantedBadge].self, forKey: .badges) {
+                var result: [Int: GrantedBadge] = [:]
+                for (key, badge) in map {
+                    guard let id = Int(key) else { continue }
+                    result[id] = badge
+                }
+                return result
+            }
+            if let list = try? container.decode([GrantedBadge].self, forKey: .badges) {
+                var result: [Int: GrantedBadge] = [:]
+                for badge in list {
+                    result[badge.id] = badge
+                }
+                return result
+            }
+            return [:]
+        }
+
+        private static func decodeUsers(from container: KeyedDecodingContainer<CodingKeys>) -> [Int: [Int]] {
+            if let map = try? container.decode([String: BadgeUser].self, forKey: .users) {
+                var result: [Int: [Int]] = [:]
+                for (key, user) in map {
+                    guard let id = Int(key), !user.badgeIds.isEmpty else { continue }
+                    result[id] = user.badgeIds
+                }
+                return result
+            }
+            if let list = try? container.decode([BadgeUser].self, forKey: .users) {
+                var result: [Int: [Int]] = [:]
+                for user in list {
+                    guard let id = user.id, !user.badgeIds.isEmpty else { continue }
+                    result[id] = user.badgeIds
+                }
+                return result
+            }
+            return [:]
+        }
+
+        private struct BadgeUser: Decodable {
+            let id: Int?
+            let badgeIds: [Int]
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case badgeIds = "badge_ids"
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                id = container.decodeLossyInt(forKey: .id)
+                badgeIds = ((try? container.decodeIfPresent([LossyIntValue].self, forKey: .badgeIds)) ?? [])
+                    .compactMap(\.value)
+            }
         }
     }
 
@@ -186,6 +342,15 @@ struct DiscourseTopicDetail: Decodable {
         let userTitle: String?
         let flairUrl: String?
         let flairBgColor: String?
+        let flairColor: String?
+        let flairName: String?
+        let primaryGroupName: String?
+        let userId: Int?
+        let userStatus: UserStatus?
+        var badgesGranted: [GrantedBadge]
+        let moderator: Bool
+        let admin: Bool
+        let groupModerator: Bool
         var bookmarked: Bool
         var bookmarkId: Int?
         var reactions: [Reaction]
@@ -210,6 +375,14 @@ struct DiscourseTopicDetail: Decodable {
             case userTitle = "user_title"
             case flairUrl = "flair_url"
             case flairBgColor = "flair_bg_color"
+            case flairColor = "flair_color"
+            case flairName = "flair_name"
+            case primaryGroupName = "primary_group_name"
+            case userId = "user_id"
+            case userStatus = "user_status"
+            case badgesGranted = "badges_granted"
+            case moderator, admin
+            case groupModerator = "group_moderator"
             case bookmarked
             case bookmarkId = "bookmark_id"
             case reactions
@@ -237,9 +410,18 @@ struct DiscourseTopicDetail: Decodable {
             replyToPostNumber = try? container.decodeIfPresent(Int.self, forKey: .replyToPostNumber)
             replyToUser = try? container.decodeIfPresent(ReplyToUser.self, forKey: .replyToUser)
             actionCode = try? container.decodeIfPresent(String.self, forKey: .actionCode)
-            userTitle = try? container.decodeIfPresent(String.self, forKey: .userTitle)
-            flairUrl = try? container.decodeIfPresent(String.self, forKey: .flairUrl)
-            flairBgColor = try? container.decodeIfPresent(String.self, forKey: .flairBgColor)
+            userTitle = try? container.decodeNonEmptyStringIfPresent(forKey: .userTitle)
+            flairUrl = try? container.decodeNonEmptyStringIfPresent(forKey: .flairUrl)
+            flairBgColor = try? container.decodeNonEmptyStringIfPresent(forKey: .flairBgColor)
+            flairColor = try? container.decodeNonEmptyStringIfPresent(forKey: .flairColor)
+            flairName = try? container.decodeNonEmptyStringIfPresent(forKey: .flairName)
+            primaryGroupName = try? container.decodeNonEmptyStringIfPresent(forKey: .primaryGroupName)
+            userId = container.decodeLossyInt(forKey: .userId)
+            userStatus = try? container.decodeIfPresent(UserStatus.self, forKey: .userStatus)
+            badgesGranted = (try? container.decodeIfPresent([GrantedBadge].self, forKey: .badgesGranted)) ?? []
+            moderator = (try? container.decodeIfPresent(Bool.self, forKey: .moderator)) ?? false
+            admin = (try? container.decodeIfPresent(Bool.self, forKey: .admin)) ?? false
+            groupModerator = (try? container.decodeIfPresent(Bool.self, forKey: .groupModerator)) ?? false
             bookmarked = (try? container.decodeIfPresent(Bool.self, forKey: .bookmarked)) ?? false
             bookmarkId = try? container.decodeIfPresent(Int.self, forKey: .bookmarkId)
             reactions = (try? container.decodeIfPresent([Reaction].self, forKey: .reactions)) ?? []
@@ -256,6 +438,12 @@ struct DiscourseTopicDetail: Decodable {
 }
 
 private extension KeyedDecodingContainer {
+    func decodeNonEmptyStringIfPresent(forKey key: Key) throws -> String? {
+        let value = try decodeIfPresent(String.self, forKey: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+
     func decodeLossyInt(forKey key: Key) -> Int? {
         if let value = try? decodeIfPresent(Int.self, forKey: key) {
             return value
@@ -271,14 +459,41 @@ private extension KeyedDecodingContainer {
 }
 
 struct DiscourseTopicPostsResponse: Decodable {
-    let postStream: PostStreamPosts
+    var postStream: PostStreamPosts
+    let userBadges: DiscourseTopicDetail.UserBadges?
 
     enum CodingKeys: String, CodingKey {
         case postStream = "post_stream"
+        case userBadges = "user_badges"
     }
 
     struct PostStreamPosts: Decodable {
-        let posts: [DiscourseTopicDetail.Post]
+        var posts: [DiscourseTopicDetail.Post]
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        postStream = try container.decode(PostStreamPosts.self, forKey: .postStream)
+        userBadges = try? container.decodeIfPresent(DiscourseTopicDetail.UserBadges.self, forKey: .userBadges)
+        injectGrantedBadges()
+    }
+
+    private mutating func injectGrantedBadges() {
+        guard let userBadges,
+              !userBadges.badgesById.isEmpty,
+              !userBadges.badgeIdsByUserId.isEmpty
+        else { return }
+
+        for index in postStream.posts.indices {
+            guard let userId = postStream.posts[index].userId,
+                  let badgeIds = userBadges.badgeIdsByUserId[userId],
+                  !badgeIds.isEmpty
+            else { continue }
+
+            let injectedBadges = badgeIds.compactMap { userBadges.badgesById[$0] }
+            guard !injectedBadges.isEmpty else { continue }
+            postStream.posts[index].badgesGranted = injectedBadges
+        }
     }
 }
 

@@ -10,9 +10,19 @@ final class LinkTextView: UITextView {
     private var blurOverlays: [UIVisualEffectView] = []
     private var blurAnimators: [UIViewPropertyAnimator] = []
     private var needsBlurLayout = false
+    private var lastIntrinsicWidth: CGFloat = 0
 
     /// Blur intensity for inline spoiler (0 = none, 1 = full).
     private static let blurFraction: CGFloat = 0.7
+
+    override var intrinsicContentSize: CGSize {
+        guard !isScrollEnabled, bounds.width > 0 else {
+            return super.intrinsicContentSize
+        }
+        let fittingSize = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        let measured = sizeThatFits(fittingSize)
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height))
+    }
 
     deinit {
         cleanUpAnimators()
@@ -37,6 +47,10 @@ final class LinkTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if abs(bounds.width - lastIntrinsicWidth) > 0.5 {
+            lastIntrinsicWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
         if needsBlurLayout, bounds.width > 0 {
             needsBlurLayout = false
             DispatchQueue.main.async { [weak self] in

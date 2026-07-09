@@ -13,11 +13,11 @@ enum ParagraphRenderer: BlockRenderer {
         let textView = LinkTextView()
         textView.isEditable = false
         textView.isScrollEnabled = false
-        textView.textContainerInset = UIEdgeInsets(top: 2, left: 0, bottom: 2, right: 0)
+        textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.backgroundColor = .clear
         textView.dataDetectorTypes = []
-        textView.attributedText = config.styledAttributedString(from: inlines)
+        textView.attributedText = config.styledAttributedString(from: inlines, paragraphSpacing: 0)
         textView.linkTextAttributes = [
             .foregroundColor: config.linkColor,
         ]

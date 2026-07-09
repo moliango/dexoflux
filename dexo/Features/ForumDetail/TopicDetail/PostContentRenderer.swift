@@ -19,9 +19,9 @@ struct CodeBlockInfo {
 }
 
 private struct WebRenderStyle: Sendable {
-    let bodyFontSize: Int
-    let quoteFontSize: Int
-    let codeFontSize: Int
+    let bodyFontSize: CGFloat
+    let quoteFontSize: CGFloat
+    let codeFontSize: CGFloat
     let accentHex: String
     let backgroundHex: String
     let mutedBackgroundHex: String
@@ -30,9 +30,9 @@ private struct WebRenderStyle: Sendable {
     let bodyFontFamilyCSS: String
 
     static let `default` = WebRenderStyle(
-        bodyFontSize: 18,
-        quoteFontSize: 17,
-        codeFontSize: 16,
+        bodyFontSize: 12.75,
+        quoteFontSize: 11.75,
+        codeFontSize: 10.75,
         accentHex: "#0079d3",
         backgroundHex: "transparent",
         mutedBackgroundHex: "#f6f8ff",
@@ -147,12 +147,12 @@ final class PostContentRenderer: NSObject {
     private static var currentWebRenderStyle: WebRenderStyle {
         let settings = AppSettings.shared
         let rawFontSize = settings.contentFontSize.basePointSize + (settings.readingComfortMode ? 1 : 0)
-        let fontSize = Int(settings.effectiveContentPointSize(for: rawFontSize).rounded())
+        let fontSize = settings.effectiveContentPointSize(for: rawFontSize)
         let themeStyle = settings.themeStyle
         return WebRenderStyle(
             bodyFontSize: fontSize,
-            quoteFontSize: max(fontSize - 1, 14),
-            codeFontSize: max(fontSize - 2, 13),
+            quoteFontSize: max(fontSize - 1, 1),
+            codeFontSize: max(fontSize - 2, 1),
             accentHex: themeStyle.webAccentHex,
             backgroundHex: themeStyle.webBackgroundHex,
             mutedBackgroundHex: themeStyle.webMutedBackgroundHex,
@@ -217,12 +217,12 @@ final class PostContentRenderer: NSObject {
         <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            padding: 12px;
+            padding: 0;
             margin: 0;
             font: -apple-system-body;
             font-size: \(webStyle.bodyFontSize)px;
             font-family: \(webStyle.bodyFontFamilyCSS);
-            line-height: 1.5;
+            line-height: 1.45;
             color: #1a1a1a;
             background: \(webStyle.backgroundHex);
             word-wrap: break-word;
@@ -240,8 +240,8 @@ final class PostContentRenderer: NSObject {
         a { color: \(webStyle.accentHex); text-decoration: none; }
         blockquote {
             border-left: 3px solid \(webStyle.quoteBorderHex);
-            margin: 8px 0;
-            padding: 4px 12px;
+            margin: 7px 0;
+            padding: 6px 12px;
             color: #666;
             background: \(webStyle.blockquoteBackgroundHex);
         }
@@ -250,7 +250,7 @@ final class PostContentRenderer: NSObject {
             border: none;
             border-left: 3px solid \(webStyle.quoteBorderHex);
             border-radius: 0;
-            margin: 8px 0;
+            margin: 7px 0;
             padding: 0 0 0 12px;
             overflow: visible;
         }
@@ -281,7 +281,7 @@ final class PostContentRenderer: NSObject {
         aside.onebox {
             border: 1px solid #ddd;
             border-radius: 8px;
-            margin: 8px 0;
+            margin: 7px 0;
             overflow: hidden;
         }
         aside.onebox header.source {
@@ -308,7 +308,7 @@ final class PostContentRenderer: NSObject {
             margin: 0 0 4px;
         }
         aside.onebox .onebox-body p {
-            font-size: \(max(webStyle.bodyFontSize - 2, 13))px;
+            font-size: \(max(webStyle.bodyFontSize - 2, 1))px;
             color: #666;
             margin: 0;
         }
@@ -331,7 +331,7 @@ final class PostContentRenderer: NSObject {
         details {
             border: 1px solid #ddd;
             border-radius: 6px;
-            margin: 8px 0;
+            margin: 7px 0;
             overflow: hidden;
         }
         details summary {
@@ -363,7 +363,7 @@ final class PostContentRenderer: NSObject {
             padding: 10px;
             border-radius: 6px;
             overflow-x: hidden;
-            margin: 8px 0;
+            margin: 7px 0;
             font-size: \(webStyle.codeFontSize)px;
             white-space: pre;
         }
@@ -376,13 +376,16 @@ final class PostContentRenderer: NSObject {
             padding: 2px 5px;
             border-radius: 3px;
         }
-        p { margin: 8px 0; }
-        h1, h2, h3, h4, h5, h6 { margin: 12px 0 6px; }
-        ul, ol { padding-left: 24px; margin: 8px 0; }
+        p { margin: 0 0 7px; }
+        p:last-child { margin-bottom: 0; }
+        h1, h2, h3, h4, h5, h6 { margin: 10px 0 5px; }
+        ul, ol { padding-left: 22px; margin: 0 0 7px; }
+        li { margin: 0 0 4px; }
+        li:last-child { margin-bottom: 0; }
         table {
             border-collapse: collapse;
             width: 100%;
-            margin: 8px 0;
+            margin: 7px 0;
         }
         th, td {
             border: 1px solid #ddd;

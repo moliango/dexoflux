@@ -37,13 +37,14 @@ enum DiscourseRouter {
     case createBookmark
     case deleteBookmark(id: Int)
     case toggleReaction(postId: Int, reactionId: String)
+    case toggleSharedIssue
     case createBoost(postId: Int)
     case votePoll
     case upload(clientId: String)
     
     var method: HTTPMethod {
         switch self {
-        case .createTopic, .createBookmark, .createInvite, .createBoost, .upload:
+        case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload:
             return .post
         case .toggleReaction, .votePoll:
             return .put
@@ -139,6 +140,8 @@ enum DiscourseRouter {
         case .toggleReaction(let postId, let reactionId):
             let encoded = reactionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? reactionId
             return "/discourse-reactions/posts/\(postId)/custom-reactions/\(encoded)/toggle.json"
+        case .toggleSharedIssue:
+            return "/solution/shared_issue"
         case .createBoost(let postId):
             return "/discourse-boosts/posts/\(postId)/boosts"
         case .votePoll:

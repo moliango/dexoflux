@@ -33,12 +33,9 @@ private class DetailsCardView: UIView {
         self.delegate = delegate
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        TopicDetailContentStyle.applySurface(
-            to: self,
-            backgroundColor: TopicDetailContentStyle.cardBackground,
-            cornerRadius: 14,
-            borderAlpha: 0.26
-        )
+        backgroundColor = .clear
+        layer.cornerRadius = 0
+        layer.borderWidth = 0
         clipsToBounds = true
 
         innerConfig = NativeRenderConfig(
@@ -47,7 +44,7 @@ private class DetailsCardView: UIView {
             linkColor: config.linkColor,
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
-            contentWidth: config.contentWidth - 32,
+            contentWidth: max(config.contentWidth - 16, 0),
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs
@@ -79,9 +76,17 @@ private class DetailsCardView: UIView {
         summaryLabel.attributedText = summaryText
 
         headerView.translatesAutoresizingMaskIntoConstraints = false
-        headerView.backgroundColor = TopicDetailContentStyle.mutedBackground
+        headerView.backgroundColor = TopicDetailContentStyle.warmMutedBackground.withAlphaComponent(0.52)
+        headerView.layer.cornerRadius = 10
+        headerView.layer.cornerCurve = .continuous
+
+        let accentBar = UIView()
+        accentBar.backgroundColor = AppSettings.shared.themeStyle.hotTopicColor.withAlphaComponent(0.90)
+        accentBar.layer.cornerRadius = 1.5
+        accentBar.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(chevron)
         headerView.addSubview(summaryLabel)
+        headerView.addSubview(accentBar)
         addSubview(headerView)
 
         dividerView.translatesAutoresizingMaskIntoConstraints = false
@@ -105,9 +110,14 @@ private class DetailsCardView: UIView {
             dividerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             dividerView.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
 
+            accentBar.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
+            accentBar.topAnchor.constraint(equalTo: headerView.topAnchor),
+            accentBar.bottomAnchor.constraint(equalTo: headerView.bottomAnchor),
+            accentBar.widthAnchor.constraint(equalToConstant: 4),
+
             chevron.widthAnchor.constraint(equalToConstant: 12),
             chevron.heightAnchor.constraint(equalToConstant: 12),
-            chevron.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 12),
+            chevron.leadingAnchor.constraint(equalTo: accentBar.trailingAnchor, constant: 12),
             chevron.centerYAnchor.constraint(equalTo: summaryLabel.centerYAnchor),
 
             summaryLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 10),
@@ -129,7 +139,7 @@ private class DetailsCardView: UIView {
             if contentStack == nil {
                 let stack = UIStackView()
                 stack.axis = .vertical
-                stack.spacing = 8
+                stack.spacing = 6
                 stack.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(stack)
 
@@ -140,11 +150,11 @@ private class DetailsCardView: UIView {
 
                 NSLayoutConstraint.activate([
                     stack.topAnchor.constraint(equalTo: dividerView.bottomAnchor, constant: 10),
-                    stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+                    stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
                     stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
                 ])
 
-                contentBottomConstraint = stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10)
+                contentBottomConstraint = stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
                 contentStack = stack
             }
 

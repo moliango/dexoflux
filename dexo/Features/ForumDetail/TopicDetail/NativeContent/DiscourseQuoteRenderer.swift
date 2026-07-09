@@ -3,24 +3,27 @@ import UIKit
 
 enum DiscourseQuoteRenderer: BlockRenderer {
     static func canRender(_ block: ContentBlock) -> Bool {
-        guard case .discourseQuote(_, _, _, _, _, _, let content) = block else { return false }
+        guard case .discourseQuote(_, _, _, _, _, _, _, let content) = block else { return false }
         return NativeContentRenderer.canRenderNatively(content)
     }
 
     static func render(_ block: ContentBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) -> UIView {
-        guard case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let content) = block else {
+        guard case .discourseQuote(let username, let avatarURL, let topicTitle, let topicURL, let categoryName, let categoryURL, let quotePostNumber, let content) = block else {
             return UIView()
         }
 
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        TopicDetailContentStyle.applySurface(
-            to: container,
-            backgroundColor: TopicDetailContentStyle.mutedBackground,
-            cornerRadius: 14,
-            borderAlpha: 0.24
-        )
+        container.backgroundColor = TopicDetailContentStyle.mutedBackground.withAlphaComponent(0.46)
+        container.layer.cornerRadius = 0
+        container.layer.borderWidth = 0
         container.clipsToBounds = true
+        if quotePostNumber != nil || topicURL != nil {
+            container.isUserInteractionEnabled = true
+            let tap = UITapGestureRecognizer(target: QuoteTapRelay.shared, action: #selector(QuoteTapRelay.handleTap(_:)))
+            container.addGestureRecognizer(tap)
+            QuoteTapRelay.shared.bind(container, quotePostNumber: quotePostNumber, topicURL: topicURL, delegate: delegate)
+        }
 
         // Header: avatar + (username OR topic title + category badge)
         let headerStack = UIStackView()
@@ -54,7 +57,7 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             // Topic-link variant: title button + optional category badge
             let titleButton = UIButton(type: .system)
             titleButton.setTitle(topicTitle, for: .normal)
-            titleButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            titleButton.titleLabel?.font = config.baseFont.withRelativeSize(-1).weighted(.semibold)
             titleButton.titleLabel?.lineBreakMode = .byTruncatingTail
             titleButton.setTitleColor(config.linkColor, for: .normal)
             titleButton.contentHorizontalAlignment = .leading
@@ -67,7 +70,7 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             headerStack.addArrangedSubview(titleButton)
 
             if let categoryName, !categoryName.isEmpty {
-                let badge = CategoryBadgeView(name: categoryName)
+                let badge = CategoryBadgeView(name: categoryName, font: config.baseFont.withRelativeSize(-2).weighted(.semibold))
                 badge.setContentHuggingPriority(.required, for: .horizontal)
                 badge.setContentCompressionResistancePriority(.required, for: .horizontal)
                 if let categoryURL, let url = URL(string: categoryURL) {
@@ -82,7 +85,7 @@ enum DiscourseQuoteRenderer: BlockRenderer {
         } else if let username, !username.isEmpty {
             // Username variant (existing behavior)
             let nameLabel = UILabel()
-            nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+            nameLabel.font = config.baseFont.withRelativeSize(-1).weighted(.semibold)
             nameLabel.textColor = .secondaryLabel
             nameLabel.text = username
             headerStack.addArrangedSubview(nameLabel)
@@ -90,24 +93,23 @@ enum DiscourseQuoteRenderer: BlockRenderer {
 
         // Vertical bar + content
         let bar = UIView()
-        bar.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.72)
+        bar.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.82)
         bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.layer.cornerRadius = 2
         container.addSubview(bar)
 
         let contentStack = UIStackView()
         contentStack.axis = .vertical
-        contentStack.spacing = 6
+        contentStack.spacing = 5
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(contentStack)
 
         let quoteConfig = NativeRenderConfig(
-            baseFont: config.baseFont.withSize(config.baseFont.pointSize - 1),
+            baseFont: config.baseFont.withRelativeSize(-1),
             baseColor: UIColor.label.withAlphaComponent(0.78),
             linkColor: config.linkColor,
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
-            contentWidth: config.contentWidth - 44,
+            contentWidth: max(config.contentWidth - 22, 0),
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs
@@ -119,22 +121,62 @@ enum DiscourseQuoteRenderer: BlockRenderer {
         }
 
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            bar.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            bar.topAnchor.constraint(equalTo: container.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             bar.widthAnchor.constraint(equalToConstant: 4),
 
-            headerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            headerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             headerStack.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 12),
-            { let c = headerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14); c.priority = .init(999); return c }(),
+            { let c = headerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12); c.priority = .init(999); return c }(),
 
             contentStack.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 8),
             contentStack.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 12),
-            { let c = contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14); c.priority = .init(999); return c }(),
-            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            { let c = contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12); c.priority = .init(999); return c }(),
+            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
         ])
 
         return container
+    }
+}
+
+private final class QuoteTapRelay: NSObject {
+    static let shared = QuoteTapRelay()
+
+    private struct Target {
+        weak var delegate: PostCellDelegate?
+        let quotePostNumber: Int?
+        let topicURL: String?
+    }
+
+    private let targets = NSMapTable<UIView, Box>.weakToStrongObjects()
+
+    private final class Box {
+        let target: Target
+
+        init(target: Target) {
+            self.target = target
+        }
+    }
+
+    func bind(_ view: UIView, quotePostNumber: Int?, topicURL: String?, delegate: PostCellDelegate?) {
+        targets.setObject(Box(target: Target(delegate: delegate, quotePostNumber: quotePostNumber, topicURL: topicURL)), forKey: view)
+    }
+
+    @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              let view = gesture.view,
+              let target = targets.object(forKey: view)?.target
+        else { return }
+
+        if let topicURL = target.topicURL, let url = URL(string: topicURL) {
+            target.delegate?.postCell(didTapLinkURL: url)
+            return
+        }
+
+        if let quotePostNumber = target.quotePostNumber {
+            target.delegate?.postCell(didTapQuotedPostNumber: quotePostNumber)
+        }
     }
 }
 
@@ -143,14 +185,14 @@ enum DiscourseQuoteRenderer: BlockRenderer {
 private class CategoryBadgeView: UIView {
     var tapAction: (() -> Void)?
 
-    init(name: String) {
+    init(name: String, font: UIFont) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         let color = TopicTagVisualStyle.categoryColor(for: name, fallback: .secondaryLabel)
 
         let label = UILabel()
         label.text = name
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.font = font
         label.textColor = AppSettings.shared.themeStyle == .systemDefault ? .secondaryLabel : color
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
@@ -175,5 +217,18 @@ private class CategoryBadgeView: UIView {
 
     @objc func handleTap() {
         tapAction?()
+    }
+}
+
+private extension UIFont {
+    func withRelativeSize(_ offset: CGFloat) -> UIFont {
+        withSize(max(pointSize + offset, 1))
+    }
+
+    func weighted(_ weight: UIFont.Weight) -> UIFont {
+        let descriptor = fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }

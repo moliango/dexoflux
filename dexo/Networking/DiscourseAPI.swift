@@ -67,6 +67,22 @@ struct DiscourseReactionToggleResponse: Decodable {
     }
 }
 
+struct DiscourseSharedIssueResponse: Decodable {
+    let count: Int
+    let userCreatedSharedIssue: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case userCreatedSharedIssue = "user_created_shared_issue"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        count = container.decodeLossyInt(forKey: .count) ?? 0
+        userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
+    }
+}
+
 final class DiscourseAPI {
     static let cloudflareChallengeDetectedNotification = Notification.Name("DiscourseAPI.cloudflareChallengeDetected")
     static let cloudflareVerificationCompletedNotification = Notification.Name("DiscourseAPI.cloudflareVerificationCompleted")
@@ -515,6 +531,59 @@ final class DiscourseAPI {
         }
     }
 
+    func toggleSharedIssue(topicId: Int) async throws -> DiscourseSharedIssueResponse {
+        let route = DiscourseRouter.toggleSharedIssue
+        let url = baseURL + route.path
+        let parameters: Parameters = ["topic_id": topicId]
+        let response = await session.request(
+            url,
+            method: route.method,
+            parameters: parameters,
+            encoding: URLEncoding.httpBody
+        )
+        .serializingData()
+        .response
+
+        if let newToken = response.response?.value(forHTTPHeaderField: "X-CSRF-Token") {
+            interceptor.updateCSRFToken(newToken)
+        }
+        if let httpResponse = response.response, let responseURL = httpResponse.url,
+           shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: responseURL) {
+            WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: responseURL)
+        }
+        if Self.isCloudflareChallengeResponse(response.response, data: response.data) {
+            Self.postCloudflareChallengeDetected(baseURL: baseURL, responseURL: response.response?.url)
+            throw Self.cloudflareChallengeError()
+        }
+        if let statusCode = response.response?.statusCode, !(200 ..< 300).contains(statusCode) {
+            if statusCode == 429 {
+                throw DiscourseAPIError(messages: [String(localized: "shared_issue.rate_limited")], errorType: "rate_limited")
+            }
+            if let data = response.data,
+               let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data),
+               !errBody.errors.isEmpty {
+                throw DiscourseAPIError(messages: errBody.errors, errorType: errBody.errorType)
+            }
+            throw DiscourseAPIError(messages: [String(localized: "post.action.failed")], errorType: nil)
+        }
+
+        guard let data = response.data, !data.isEmpty else {
+            throw DiscourseAPIError(messages: [String(localized: "post.action.failed")], errorType: nil)
+        }
+
+        do {
+            return try JSONDecoder().decode(DiscourseSharedIssueResponse.self, from: data)
+        } catch {
+            throw DiscourseDecodingError(
+                route: route,
+                url: url,
+                statusCode: response.response?.statusCode,
+                underlying: error,
+                bodyPreview: Self.bodyPreview(from: data)
+            )
+        }
+    }
+
     func createBoost(postId: Int, raw: String) async throws -> DiscourseTopicDetail.Boost {
         let route = DiscourseRouter.createBoost(postId: postId)
         let url = baseURL + route.path
@@ -723,6 +792,10 @@ final class DiscourseAPI {
         return response.userSummary
     }
 
+    func fetchUserSummaryResponse(username: String) async throws -> DiscourseUserSummaryResponse {
+        try await request(route: .userSummary(username: username))
+    }
+
     func fetchUserProfile(username: String) async throws -> DiscourseUserProfile {
         let response: DiscourseUserProfileResponse = try await request(route: .userProfile(username: username))
         return response.user
@@ -779,7 +852,7 @@ final class DiscourseAPI {
         let url = baseURL + route.path
         let encoding: ParameterEncoding = route.method == .post ? JSONEncoding.default : URLEncoding.default
         let response = await session.request(url, method: route.method, parameters: parameters, encoding: encoding, headers: headers)
-            .serializingDecodable(T.self)
+            .serializingData()
             .response
 
         #if DEBUG
@@ -801,7 +874,8 @@ final class DiscourseAPI {
            await shouldRetryAfterWebSessionRefresh(
                route: route,
                statusCode: response.response?.statusCode,
-               error: response.error
+               error: response.error,
+               data: response.data
            ) {
             return try await request(
                 route: route,
@@ -842,11 +916,22 @@ final class DiscourseAPI {
                     throw DiscourseAPIError(messages: [message], errorType: failBody.failed)
                 }
             }
+            throw Self.serverUnavailableError(statusCode: statusCode)
         }
 
         switch response.result {
-        case .success(let value):
-            return value
+        case .success(let data):
+            do {
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                throw DiscourseDecodingError(
+                    route: route,
+                    url: url,
+                    statusCode: response.response?.statusCode,
+                    underlying: error,
+                    bodyPreview: Self.bodyPreview(from: data)
+                )
+            }
         case .failure(let error):
             throw Self.makeDecodingError(
                 error,
@@ -861,10 +946,11 @@ final class DiscourseAPI {
     private func shouldRetryAfterWebSessionRefresh(
         route: DiscourseRouter,
         statusCode: Int?,
-        error: AFError?
+        error: AFError?,
+        data: Data?
     ) async -> Bool {
         let isAuthStatus = statusCode == 401 || statusCode == 403
-        let isEmptySerializedBody = Self.isInputDataNilOrZeroLength(error)
+        let isEmptySerializedBody = Self.isInputDataNilOrZeroLength(error) || data?.isEmpty == true
         guard isAuthStatus || isEmptySerializedBody else { return false }
         guard let base = URL(string: baseURL),
               WebCookieStore.shared.hasDiscourseWebSessionCookie(for: base)
@@ -886,6 +972,19 @@ final class DiscourseAPI {
             subsystem: "Auth"
         )
         return true
+    }
+
+    private static func serverUnavailableError(statusCode: Int) -> DiscourseAPIError {
+        if (500 ... 599).contains(statusCode) {
+            return DiscourseAPIError(
+                messages: [String(format: String(localized: "error.server_unavailable"), statusCode)],
+                errorType: "server_unavailable"
+            )
+        }
+        return DiscourseAPIError(
+            messages: [String(format: String(localized: "error.http_status"), statusCode)],
+            errorType: "http_\(statusCode)"
+        )
     }
 
     private static func makeDecodingError(

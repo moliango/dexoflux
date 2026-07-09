@@ -33,7 +33,7 @@ final class RepliesViewController: UIViewController {
         let postLink = "\(self.baseURL)/t/\(self.topicId)/\(post.postNumber)"
         let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
         let config = NativeRenderConfig.default(
-            contentWidth: tableView.bounds.width - 24,
+            contentWidth: PostNativeCell.renderContentWidth(for: tableView.bounds.width, isFirstPost: false),
             baseURL: self.baseURL,
             postId: post.id,
             galleryImageURLs: galleryImageURLs
@@ -48,7 +48,9 @@ final class RepliesViewController: UIViewController {
             postLink: postLink,
             baseURL: self.baseURL,
             hasUnsupportedBlocks: hasUnsupported,
-            cookedHTML: post.cooked, validReactions: [],
+            cookedHTML: post.cooked,
+            validReactions: [],
+            sharedIssue: nil,
         )
         return cell
     }
@@ -219,9 +221,19 @@ extension RepliesViewController: PostCellDelegate {
     }
 
     func postCell(didTapAvatarForUsername username: String) {
-        let vc = UserProfileViewController(api: api, username: username)
-        let nav = UINavigationController(rootViewController: vc)
-        present(nav, animated: true)
+        let previewVC = UserProfilePreviewViewController(api: api, username: username)
+        previewVC.onViewProfile = { [weak self] selectedUsername in
+            guard let self else { return }
+            let vc = UserProfileViewController(api: self.api, username: selectedUsername)
+            let nav = UINavigationController(rootViewController: vc)
+            self.present(nav, animated: true)
+        }
+        present(previewVC, animated: true)
+    }
+
+    func postCell(didTapQuotedPostNumber postNumber: Int) {
+        let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
+        openInternalViewController(detailVC)
     }
 
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post) {
@@ -236,6 +248,10 @@ extension RepliesViewController: PostCellDelegate {
                 }
             }
         }
+    }
+
+    func postCell(didTapToggleSharedIssueForTopicId topicId: Int) {
+        // Shared issue belongs to the topic OP in the main detail page only.
     }
 
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String]) {
@@ -289,8 +305,8 @@ extension RepliesViewController: PostCellDelegate {
 
     private func openInternalDestination(_ destination: ForumInternalLinkDestination) {
         switch destination {
-        case let .topic(topicId):
-            let detailVC = TopicDetailViewController(api: api, topicId: topicId)
+        case let .topic(topicId, postNumber):
+            let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
             openInternalViewController(detailVC)
         case let .category(slug, categoryId):
             let category = DiscourseCategory(id: categoryId, name: slug, slug: slug)

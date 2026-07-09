@@ -11,7 +11,11 @@ enum HeadingRenderer: BlockRenderer {
         guard case .heading(let level, let inlines) = block else { return UIView() }
 
         if level == 1, let tagText = tagLikeHeadingText(from: inlines) {
-            return HeadingTagBadgeView(text: tagText, color: TopicTagVisualStyle.color(for: tagText))
+            return HeadingTagBadgeView(
+                text: tagText,
+                color: TopicTagVisualStyle.color(for: tagText),
+                font: config.baseFont.withRelativeSize(1).weighted(.semibold)
+            )
         }
 
         let baseSize = config.baseFont.pointSize
@@ -101,12 +105,8 @@ private final class HeadingBlockView: UIView {
     init(level: Int, textView: UIView) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        TopicDetailContentStyle.applySurface(
-            to: self,
-            backgroundColor: level <= 2 ? TopicDetailContentStyle.mutedBackground : .clear,
-            cornerRadius: level <= 2 ? 14 : 0,
-            borderAlpha: level <= 2 ? 0.20 : 0
-        )
+        backgroundColor = .clear
+        layer.borderWidth = 0
 
         let accent = UIView()
         accent.translatesAutoresizingMaskIntoConstraints = false
@@ -117,9 +117,9 @@ private final class HeadingBlockView: UIView {
         addSubview(accent)
         addSubview(textView)
 
-        let topPadding: CGFloat = level <= 2 ? 10 : 4
-        let bottomPadding: CGFloat = level <= 2 ? 10 : 4
-        let sidePadding: CGFloat = level <= 2 ? 12 : 0
+        let topPadding: CGFloat = level <= 2 ? 8 : 4
+        let bottomPadding: CGFloat = level <= 2 ? 6 : 3
+        let sidePadding: CGFloat = 0
 
         NSLayoutConstraint.activate([
             accent.leadingAnchor.constraint(equalTo: leadingAnchor, constant: sidePadding),
@@ -129,7 +129,7 @@ private final class HeadingBlockView: UIView {
 
             textView.topAnchor.constraint(equalTo: topAnchor, constant: topPadding),
             textView.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 10),
-            textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(sidePadding == 0 ? 0 : sidePadding)),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
             textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -bottomPadding),
         ])
     }
@@ -141,7 +141,7 @@ private final class HeadingBlockView: UIView {
 }
 
 private final class HeadingTagBadgeView: UIView {
-    init(text: String, color: UIColor) {
+    init(text: String, color: UIColor, font: UIFont) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = color.withAlphaComponent(0.10)
@@ -159,9 +159,7 @@ private final class HeadingTagBadgeView: UIView {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = text
         label.textColor = color
-        label.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
-            for: .systemFont(ofSize: 14, weight: .semibold)
-        )
+        label.font = font
         label.adjustsFontForContentSizeCategory = true
 
         addSubview(iconView)
@@ -183,5 +181,18 @@ private final class HeadingTagBadgeView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+private extension UIFont {
+    func withRelativeSize(_ offset: CGFloat) -> UIFont {
+        withSize(max(pointSize + offset, 1))
+    }
+
+    func weighted(_ weight: UIFont.Weight) -> UIFont {
+        let descriptor = fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }

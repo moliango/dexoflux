@@ -19,7 +19,8 @@ enum VideoRenderer: BlockRenderer {
             title: title,
             width: width,
             height: height,
-            containerWidth: config.contentWidth
+            containerWidth: config.contentWidth,
+            titleFont: config.baseFont.withRelativeSize(-1).weighted(.medium)
         )
         container.delegate = delegate
         return container
@@ -32,9 +33,11 @@ final class VideoCardView: UIView {
     weak var delegate: PostCellDelegate?
     private let videoURL: String
     private let thumbnailImageView = UIImageView()
+    private let titleFont: UIFont
 
-    init(url: String, thumbnailURL: String?, title: String?, width: Int?, height: Int?, containerWidth: CGFloat) {
+    init(url: String, thumbnailURL: String?, title: String?, width: Int?, height: Int?, containerWidth: CGFloat, titleFont: UIFont) {
         self.videoURL = url
+        self.titleFont = titleFont
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -96,7 +99,7 @@ final class VideoCardView: UIView {
 
             let titleLabel = UILabel()
             titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+            titleLabel.font = titleFont
             titleLabel.textColor = .white
             titleLabel.numberOfLines = 2
             titleLabel.text = title
@@ -150,5 +153,18 @@ final class VideoCardView: UIView {
 
     func cancelImageLoad() {
         thumbnailImageView.sd_cancelCurrentImageLoad()
+    }
+}
+
+private extension UIFont {
+    func withRelativeSize(_ offset: CGFloat) -> UIFont {
+        withSize(max(pointSize + offset, 1))
+    }
+
+    func weighted(_ weight: UIFont.Weight) -> UIFont {
+        let descriptor = fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
