@@ -1841,8 +1841,8 @@ private final class ReadingPreviewHeroView: UIView {
         sampleTitleLabel.text = sampleTitle
         sampleBodyLabel.text = sampleBody
         let settings = AppSettings.shared
-        let titleSize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 1, 16))
-        let bodySize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 3, 14))
+        let titleSize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 1, 1))
+        let bodySize = settings.effectiveContentPointSize(for: max(fontSize.basePointSize - 3, 1))
         sampleTitleLabel.font = settings.contentFont(ofSize: titleSize, weight: .bold)
         sampleBodyLabel.font = settings.contentFont(ofSize: bodySize, weight: .regular)
         updateGradient()

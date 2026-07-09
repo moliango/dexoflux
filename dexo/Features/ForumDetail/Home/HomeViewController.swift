@@ -7,6 +7,8 @@ private enum HomeFABMode {
 }
 
 final class HomeViewController: ObservableViewController {
+    static let initialContentReadyNotification = Notification.Name("DexoHomeInitialContentReadyNotification")
+
     private static let reloadTimeoutNanoseconds: UInt64 = 25_000_000_000
     private static let searchRowExpandedHeight: CGFloat = 40
     private static let categoryRowHeight: CGFloat = 36
@@ -42,11 +44,14 @@ final class HomeViewController: ObservableViewController {
     private var incomingTopicsRetryTask: Task<Void, Never>?
     private var reloadSequence = 0
     private var lastAuthenticatedState: Bool?
+    private var isInitialTopicLoadPending = true
+    private var didPostInitialContentReady = false
     private var isIncomingTopicsBannerVisible = false
     private var isIncomingTopicsInlineBannerVisible = false
     private var incomingTopicsUsesTopSpace = false
     private var isTopRefreshGeometryLocked = false
     private var topRefreshGeometryLockID = 0
+    private var loadingSkeletonTopConstraint: NSLayoutConstraint?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
     private var lastNetworkStatus: NWPath.Status?
@@ -296,6 +301,7 @@ final class HomeViewController: ObservableViewController {
     }()
 
     private let loadingSkeletonView = HomeTopicListSkeletonView()
+    private let emptyStateView = HomeEmptyStateView()
 
     private let footerSpinner: UIActivityIndicatorView = {
         let spinner = UIActivityIndicatorView(style: .medium)
@@ -414,6 +420,7 @@ final class HomeViewController: ObservableViewController {
         incomingTopicsInlineHeaderView.addSubview(incomingTopicsInlineButton)
         view.addSubview(tableView)
         view.addSubview(loadingSkeletonView)
+        view.addSubview(emptyStateView)
         view.addSubview(headerContainer)
         view.addSubview(incomingTopicsHeaderView)
 
@@ -425,9 +432,14 @@ final class HomeViewController: ObservableViewController {
         setupHeader()
         applyThemeStyle()
         updateFloatingActionButton(animated: false)
+        emptyStateView.onRefresh = { [weak self] in
+            self?.refreshFromEmptyState()
+        }
 
         let fabBottomConstraint = floatingActionButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -currentBottomChromeHeight - 20)
         floatingActionButtonBottomConstraint = fabBottomConstraint
+        let skeletonTopConstraint = loadingSkeletonView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: Self.baseTableTopSpacing)
+        loadingSkeletonTopConstraint = skeletonTopConstraint
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -435,10 +447,15 @@ final class HomeViewController: ObservableViewController {
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            loadingSkeletonView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: Self.baseTableTopSpacing),
+            skeletonTopConstraint,
             loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             loadingSkeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            emptyStateView.topAnchor.constraint(greaterThanOrEqualTo: headerContainer.bottomAnchor, constant: 64),
+            emptyStateView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            emptyStateView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            emptyStateView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 28),
 
             headerContainer.topAnchor.constraint(equalTo: view.topAnchor),
             headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -492,6 +509,8 @@ final class HomeViewController: ObservableViewController {
         startObservingForeground()
         startMonitoringNetwork()
 
+        loadingSkeletonView.setSkeletonActive(true, animated: false)
+        tableView.isHidden = true
         reloadTopics()
         Task {
             await api.loadOrFetchEmojiMap()
@@ -718,6 +737,8 @@ final class HomeViewController: ObservableViewController {
         incomingTopicsButton.applyThemeStyle()
         incomingTopicsInlineButton.applyThemeStyle()
         loadingSkeletonView.applyThemeStyle()
+        loadingSkeletonTopConstraint?.constant = tableTopSpacing
+        emptyStateView.applyThemeStyle()
     }
 
     private func setupFilterBar() {
@@ -772,6 +793,7 @@ final class HomeViewController: ObservableViewController {
         applyThemeStyle()
         // Login-required state
         if viewModel.requiresLogin {
+            isInitialTopicLoadPending = false
             errorLabel.text = viewModel.errorMessage
             errorLabel.isHidden = false
             loginButton.isHidden = false
@@ -781,6 +803,7 @@ final class HomeViewController: ObservableViewController {
             setIncomingTopicsBannerVisible(false, animated: false)
             setIncomingTopicsInlineBannerVisible(false)
             loadingSkeletonView.setSkeletonActive(false, animated: false)
+            emptyStateView.setVisible(false, animated: false)
             activityIndicator.stopAnimating()
             return
         }
@@ -789,11 +812,17 @@ final class HomeViewController: ObservableViewController {
         headerContainer.isHidden = false
         floatingActionButton.isHidden = false
 
-        let showsInitialSkeleton = viewModel.isLoading
+        let showsInitialSkeleton = (viewModel.isLoading || isInitialTopicLoadPending)
             && viewModel.topics.isEmpty
             && viewModel.errorMessage == nil
         loadingSkeletonView.setSkeletonActive(showsInitialSkeleton, animated: view.window != nil)
+        let showsEmptyState = !showsInitialSkeleton
+            && viewModel.topics.isEmpty
+            && viewModel.errorMessage == nil
+        emptyStateView.setVisible(showsEmptyState, animated: view.window != nil)
         tableView.isHidden = showsInitialSkeleton
+            || showsEmptyState
+            || (viewModel.topics.isEmpty && viewModel.errorMessage != nil)
 
         categoryButton.menu = UIMenu(title: "", children: buildCategoryMenuElements())
         updateCategoryButton()
@@ -804,6 +833,7 @@ final class HomeViewController: ObservableViewController {
         if let error = viewModel.errorMessage, viewModel.topics.isEmpty {
             errorLabel.text = error
             errorLabel.isHidden = false
+            emptyStateView.setVisible(false, animated: view.window != nil)
         } else {
             errorLabel.isHidden = true
         }
@@ -878,6 +908,10 @@ final class HomeViewController: ObservableViewController {
         incomingTopicsRetryTask = nil
         reloadSequence += 1
         let sequence = reloadSequence
+        if viewModel.topics.isEmpty {
+            isInitialTopicLoadPending = true
+            updateUI()
+        }
 
         if resetCategoryMetadata {
             viewModel.resetCategoryMetadata(clearSelection: true)
@@ -909,6 +943,8 @@ final class HomeViewController: ObservableViewController {
         topicReloadTask?.cancel()
         topicReloadTask = nil
         reloadTimeoutTask = nil
+        isInitialTopicLoadPending = false
+        postInitialContentReadyIfNeeded()
         viewModel.finishLoadingAfterTimeout(message: String(localized: "error.network_timeout"))
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
@@ -921,10 +957,23 @@ final class HomeViewController: ObservableViewController {
         reloadTimeoutTask?.cancel()
         reloadTimeoutTask = nil
         topicReloadTask = nil
+        isInitialTopicLoadPending = false
+        postInitialContentReadyIfNeeded()
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
         }
         finishTopRefreshGeometryLockIfNeeded()
+        updateUI()
+    }
+
+    private func postInitialContentReadyIfNeeded() {
+        guard !didPostInitialContentReady else { return }
+        didPostInitialContentReady = true
+        NotificationCenter.default.post(
+            name: Self.initialContentReadyNotification,
+            object: self,
+            userInfo: [DiscourseAPI.cloudflareBaseURLUserInfoKey: api.baseURL]
+        )
     }
 
     private func selectListMode(_ mode: HomeListMode) {
@@ -1088,6 +1137,12 @@ final class HomeViewController: ObservableViewController {
         setFABMode(.create, animated: true)
         setHomeTabBarHidden(false, animated: true)
         beginTopRefreshGeometryLock(animated: true)
+        reloadTopics()
+    }
+
+    private func refreshFromEmptyState() {
+        setHomeTabBarHidden(false, animated: true)
+        beginTopRefreshGeometryLock(animated: false)
         reloadTopics()
     }
 
@@ -1625,6 +1680,203 @@ final class HomeViewController: ObservableViewController {
     private func openTopic(_ topicId: Int) {
         let detailVC = TopicDetailViewController(api: api, topicId: topicId)
         navigationController?.pushViewController(detailVC, animated: true)
+    }
+}
+
+private final class HomeEmptyStateView: UIView {
+    var onRefresh: (() -> Void)?
+
+    private let cardView: UIView = {
+        let view = UIView()
+        view.layer.cornerRadius = 24
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let iconContainerView: UIView = {
+        let view = UIView()
+        view.layer.cornerRadius = 22
+        view.layer.cornerCurve = .continuous
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let iconView: UIImageView = {
+        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        let imageView = UIImageView(image: UIImage(systemName: "bubble.left.and.bubble.right.fill", withConfiguration: config))
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
+    }()
+
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = String(localized: "home.empty.title")
+        label.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 16,
+            weight: .semibold,
+            fallback: .systemFont(ofSize: 16, weight: .semibold)
+        )
+        label.textColor = .label
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = String(localized: "home.empty.subtitle")
+        label.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 13,
+            weight: .regular,
+            fallback: .systemFont(ofSize: 13, weight: .regular)
+        )
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let refreshButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = String(localized: "action.refresh")
+        config.image = UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+        config.imagePadding = 6
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
+            var a = attrs
+            a.font = AppSettings.shared.appInterfaceFont(
+                ofSize: 13,
+                weight: .semibold,
+                fallback: .systemFont(ofSize: 13, weight: .semibold)
+            )
+            return a
+        }
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isHidden = true
+        alpha = 0
+        translatesAutoresizingMaskIntoConstraints = false
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.alignment = .fill
+        textStack.spacing = 7
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        cardView.addSubview(iconContainerView)
+        iconContainerView.addSubview(iconView)
+        cardView.addSubview(textStack)
+        cardView.addSubview(refreshButton)
+        addSubview(cardView)
+
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(equalTo: topAnchor),
+            cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            cardView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            iconContainerView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 24),
+            iconContainerView.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
+            iconContainerView.widthAnchor.constraint(equalToConstant: 44),
+            iconContainerView.heightAnchor.constraint(equalToConstant: 44),
+
+            iconView.centerXAnchor.constraint(equalTo: iconContainerView.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainerView.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            iconView.heightAnchor.constraint(equalToConstant: 24),
+
+            textStack.topAnchor.constraint(equalTo: iconContainerView.bottomAnchor, constant: 14),
+            textStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
+            textStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
+
+            refreshButton.topAnchor.constraint(equalTo: textStack.bottomAnchor, constant: 18),
+            refreshButton.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
+            refreshButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -24),
+        ])
+
+        refreshButton.addTarget(self, action: #selector(refreshTapped), for: .touchUpInside)
+        applyThemeStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyThemeStyle() {
+        let themeStyle = AppSettings.shared.themeStyle
+        titleLabel.text = String(localized: "home.empty.title")
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 16,
+            weight: .semibold,
+            fallback: .systemFont(ofSize: 16, weight: .semibold)
+        )
+        subtitleLabel.text = String(localized: "home.empty.subtitle")
+        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 13,
+            weight: .regular,
+            fallback: .systemFont(ofSize: 13, weight: .regular)
+        )
+        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
+        cardView.layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
+        cardView.layer.shadowColor = themeStyle.accentColor.cgColor
+        cardView.layer.shadowOpacity = 0.06
+        cardView.layer.shadowRadius = 18
+        cardView.layer.shadowOffset = CGSize(width: 0, height: 8)
+
+        iconContainerView.backgroundColor = themeStyle.accentColor.withAlphaComponent(0.14)
+        iconView.tintColor = themeStyle.accentColor
+
+        var config = refreshButton.configuration ?? UIButton.Configuration.filled()
+        config.title = String(localized: "action.refresh")
+        config.baseBackgroundColor = themeStyle.accentColor
+        config.baseForegroundColor = .white
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
+            var a = attrs
+            a.font = AppSettings.shared.appInterfaceFont(
+                ofSize: 13,
+                weight: .semibold,
+                fallback: .systemFont(ofSize: 13, weight: .semibold)
+            )
+            return a
+        }
+        refreshButton.configuration = config
+    }
+
+    func setVisible(_ visible: Bool, animated: Bool) {
+        guard isHidden == visible else { return }
+        if visible {
+            isHidden = false
+            transform = CGAffineTransform(translationX: 0, y: 8)
+        }
+        let changes = {
+            self.alpha = visible ? 1 : 0
+            self.transform = visible ? .identity : CGAffineTransform(translationX: 0, y: 8)
+        }
+        let finish: (UIViewAnimatingPosition) -> Void = { _ in
+            if !visible {
+                self.isHidden = true
+            }
+        }
+        if animated {
+            DexoMotion.animate(duration: DexoMotion.short, animations: changes, completion: finish)
+        } else {
+            changes()
+            finish(.end)
+        }
+    }
+
+    @objc private func refreshTapped() {
+        onRefresh?()
     }
 }
 

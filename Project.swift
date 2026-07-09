@@ -37,9 +37,9 @@ let project = Project(
             ],
             resources: .resources([
                 .glob(pattern: "dexo/Assets.xcassets/**"),
-                .glob(pattern: "dexo/AppIcon.icon/**"),
                 .glob(pattern: "dexo/Localizable.xcstrings"),
                 .glob(pattern: "dexo/Core/aliases.json"),
+                .glob(pattern: "dexo/Resources/Fonts/**"),
             ]),
             dependencies: [
                 .external(name: "Alamofire"),

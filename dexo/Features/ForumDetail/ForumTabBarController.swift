@@ -172,6 +172,12 @@ final class ForumTabBarController: UITabBarController {
         return tabBarTotalHeight
     }
 
+    func syncTabBarVisibilityForCurrentContent() {
+        scrollTabBarAnimationID += 1
+        isAnimatingScrollTabBar = false
+        applyCurrentTabBarLayout()
+    }
+
     var tabBarTotalHeight: CGFloat {
         return max(tabBar.bounds.height, tabBar.frame.height, 49 + view.safeAreaInsets.bottom)
     }

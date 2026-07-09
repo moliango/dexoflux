@@ -3,11 +3,18 @@ import WebKit
 
 final class ForumContainerViewController: UIViewController, AuthGating {
     private static let cloudflareShieldSuppressionDuration: TimeInterval = 6
+    private static let launchOverlayMinimumDuration: TimeInterval = 1.15
+    private static let launchOverlayMaximumDurationNanoseconds: UInt64 = 4_200_000_000
 
     private(set) var forum: ForumInstance
     private let api: DiscourseAPI
     private let authManager = AuthManager.shared
     private let showsDismissButton: Bool
+    private var launchOverlayStartedAt = Date()
+    private var launchOverlayDismissed = false
+    private var isHomeInitialContentReady = false
+    private var launchOverlayObservationToken: NSObjectProtocol?
+    private var launchOverlayFallbackTask: Task<Void, Never>?
     private var authObservationToken: NSObjectProtocol?
     private var cloudflareChallengeObservationToken: NSObjectProtocol?
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
@@ -18,6 +25,63 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var pendingCloudflareBaseURL: URL?
     private var cloudflareShieldButtonConstraints: [NSLayoutConstraint] = []
     private weak var cloudflareShieldButtonHostView: UIView?
+
+    private let launchLoadingView = DexoLaunchLoadingView()
+
+    private let authSyncOverlayView: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.78)
+        view.alpha = 0
+        view.isHidden = true
+        view.isUserInteractionEnabled = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let authSyncCardView: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.secondarySystemGroupedBackground.withAlphaComponent(0.96)
+        view.layer.cornerRadius = 22
+        view.layer.cornerCurve = .continuous
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowOpacity = 0.10
+        view.layer.shadowRadius = 24
+        view.layer.shadowOffset = CGSize(width: 0, height: 10)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let authSyncSpinner: UIActivityIndicatorView = {
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        return spinner
+    }()
+
+    private let authSyncTitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFontMetrics(forTextStyle: .headline).scaledFont(
+            for: .systemFont(ofSize: 17, weight: .semibold)
+        )
+        label.adjustsFontForContentSizeCategory = true
+        label.textAlignment = .center
+        label.textColor = .label
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let authSyncMessageLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 14, weight: .medium)
+        )
+        label.adjustsFontForContentSizeCategory = true
+        label.textAlignment = .center
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
 
     private let cloudflareShieldButton: UIButton = {
         let button = UIButton(type: .system)
@@ -59,8 +123,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             WebSessionRefreshService.shared.ensureInBackground(forum: forum, reason: "forum_container_loaded")
         }
 
+        startObservingHomeInitialContent()
         setupTabBar()
+        setupAuthSyncOverlay()
         setupCloudflareShieldButton()
+        setupLaunchLoadingOverlay()
         configureNavItems()
         startObservingAuth()
         startObservingCloudflareChallenges()
@@ -111,6 +178,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let authObservationToken {
             NotificationCenter.default.removeObserver(authObservationToken)
         }
+        if let launchOverlayObservationToken {
+            NotificationCenter.default.removeObserver(launchOverlayObservationToken)
+        }
         if let cloudflareChallengeObservationToken {
             NotificationCenter.default.removeObserver(cloudflareChallengeObservationToken)
         }
@@ -120,6 +190,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let cloudflareNeedsUserObservationToken {
             NotificationCenter.default.removeObserver(cloudflareNeedsUserObservationToken)
         }
+        launchOverlayFallbackTask?.cancel()
         NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
         cloudflareShieldButton.removeFromSuperview()
     }
@@ -148,6 +219,111 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private func setupCloudflareShieldButton() {
         cloudflareShieldButton.addTarget(self, action: #selector(cloudflareShieldTapped), for: .touchUpInside)
         installCloudflareShieldButtonIfNeeded()
+    }
+
+    private func setupLaunchLoadingOverlay() {
+        launchOverlayStartedAt = Date()
+        launchLoadingView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(launchLoadingView)
+
+        NSLayoutConstraint.activate([
+            launchLoadingView.topAnchor.constraint(equalTo: view.topAnchor),
+            launchLoadingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            launchLoadingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            launchLoadingView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
+        launchLoadingView.applyThemeStyle()
+        launchLoadingView.startPresenting()
+        scheduleLaunchOverlayFallbackDismiss()
+        if isHomeInitialContentReady {
+            dismissLaunchLoadingOverlayRespectingMinimumDuration()
+        }
+    }
+
+    private func startObservingHomeInitialContent() {
+        launchOverlayObservationToken = NotificationCenter.default.addObserver(
+            forName: HomeViewController.initialContentReadyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleHomeInitialContentReady(notification)
+        }
+    }
+
+    private func scheduleLaunchOverlayFallbackDismiss() {
+        launchOverlayFallbackTask?.cancel()
+        launchOverlayFallbackTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.launchOverlayMaximumDurationNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.dismissLaunchLoadingOverlayRespectingMinimumDuration()
+            }
+        }
+    }
+
+    private func handleHomeInitialContentReady(_ notification: Notification) {
+        guard let baseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
+        guard normalizedBaseURL(baseURL) == normalizedBaseURL(forum.baseURL) else { return }
+        isHomeInitialContentReady = true
+        guard launchLoadingView.superview != nil else { return }
+        dismissLaunchLoadingOverlayRespectingMinimumDuration()
+    }
+
+    private func dismissLaunchLoadingOverlayRespectingMinimumDuration() {
+        guard !launchOverlayDismissed else { return }
+        guard launchLoadingView.superview != nil else { return }
+        let elapsed = Date().timeIntervalSince(launchOverlayStartedAt)
+        let delay = max(0, Self.launchOverlayMinimumDuration - elapsed)
+
+        launchOverlayDismissed = true
+        launchOverlayFallbackTask?.cancel()
+        launchOverlayFallbackTask = nil
+
+        let dismiss = { [weak self] in
+            guard let self else { return }
+            self.launchLoadingView.dismiss {
+                self.launchLoadingView.removeFromSuperview()
+            }
+        }
+
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: dismiss)
+        } else {
+            dismiss()
+        }
+    }
+
+    private func setupAuthSyncOverlay() {
+        view.addSubview(authSyncOverlayView)
+        authSyncOverlayView.addSubview(authSyncCardView)
+        authSyncCardView.addSubview(authSyncSpinner)
+        authSyncCardView.addSubview(authSyncTitleLabel)
+        authSyncCardView.addSubview(authSyncMessageLabel)
+
+        NSLayoutConstraint.activate([
+            authSyncOverlayView.topAnchor.constraint(equalTo: view.topAnchor),
+            authSyncOverlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            authSyncOverlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            authSyncOverlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            authSyncCardView.centerXAnchor.constraint(equalTo: authSyncOverlayView.centerXAnchor),
+            authSyncCardView.centerYAnchor.constraint(equalTo: authSyncOverlayView.centerYAnchor),
+            authSyncCardView.leadingAnchor.constraint(greaterThanOrEqualTo: authSyncOverlayView.leadingAnchor, constant: 42),
+            authSyncCardView.trailingAnchor.constraint(lessThanOrEqualTo: authSyncOverlayView.trailingAnchor, constant: -42),
+
+            authSyncSpinner.topAnchor.constraint(equalTo: authSyncCardView.topAnchor, constant: 24),
+            authSyncSpinner.centerXAnchor.constraint(equalTo: authSyncCardView.centerXAnchor),
+
+            authSyncTitleLabel.topAnchor.constraint(equalTo: authSyncSpinner.bottomAnchor, constant: 16),
+            authSyncTitleLabel.leadingAnchor.constraint(equalTo: authSyncCardView.leadingAnchor, constant: 24),
+            authSyncTitleLabel.trailingAnchor.constraint(equalTo: authSyncCardView.trailingAnchor, constant: -24),
+
+            authSyncMessageLabel.topAnchor.constraint(equalTo: authSyncTitleLabel.bottomAnchor, constant: 8),
+            authSyncMessageLabel.leadingAnchor.constraint(equalTo: authSyncCardView.leadingAnchor, constant: 24),
+            authSyncMessageLabel.trailingAnchor.constraint(equalTo: authSyncCardView.trailingAnchor, constant: -24),
+            authSyncMessageLabel.bottomAnchor.constraint(equalTo: authSyncCardView.bottomAnchor, constant: -24),
+        ])
     }
 
     private func installCloudflareShieldButtonIfNeeded() {
@@ -207,7 +383,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
                 alert.title = "@\(username)"
             }
             alert.addAction(UIAlertAction(title: "Log Out", style: .destructive) { [weak self] _ in
-                self?.performLogout()
+                Task { @MainActor [weak self] in
+                    await self?.performLogout()
+                }
             })
         } else {
             alert.addAction(UIAlertAction(title: "Log In", style: .default) { [weak self] _ in
@@ -334,6 +512,43 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
     }
 
+    private func showAuthSyncOverlay(title: String, message: String, animated: Bool = true) {
+        authSyncTitleLabel.text = title
+        authSyncMessageLabel.text = message
+        authSyncSpinner.color = AppSettings.shared.themeStyle.accentColor
+        authSyncSpinner.startAnimating()
+        view.bringSubviewToFront(authSyncOverlayView)
+        authSyncOverlayView.isHidden = false
+
+        let updates = {
+            self.authSyncOverlayView.alpha = 1
+        }
+        guard animated else {
+            updates()
+            return
+        }
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut], animations: updates)
+    }
+
+    private func hideAuthSyncOverlay(animated: Bool = true, completion: (() -> Void)? = nil) {
+        let finish = {
+            self.authSyncSpinner.stopAnimating()
+            self.authSyncOverlayView.isHidden = true
+            completion?()
+        }
+        let updates = {
+            self.authSyncOverlayView.alpha = 0
+        }
+        guard animated else {
+            updates()
+            finish()
+            return
+        }
+        UIView.animate(withDuration: 0.20, delay: 0, options: [.curveEaseInOut], animations: updates) { _ in
+            finish()
+        }
+    }
+
     private func presentCloudflareVerification(baseURL: URL) {
         guard !isPresentingCloudflareVerification else {
             logCloudflareState("foreground verification skipped because verification is already presented")
@@ -394,8 +609,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         presentWebLogin {}
     }
 
-    func performLogout() {
+    func performLogout() async {
+        let baseURL = forum.baseURL
         authManager.logout(forum: forum)
+        await WebCookieStore.shared.clearWebViewAuthCookies(for: baseURL)
         refreshForumFromDatabase()
     }
 
@@ -411,12 +628,21 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if authManager.hasWebSession(for: baseURL) {
             Task { [weak self] in
                 guard let self else { return }
+                await MainActor.run {
+                    self.showAuthSyncOverlay(
+                        title: String(localized: "weblogin.restore.title"),
+                        message: String(localized: "weblogin.restore.message")
+                    )
+                }
                 let didRecover = await self.authManager.refreshWebSessionUserIfPossible(forum: self.forum)
                 await MainActor.run {
                     self.refreshForumFromDatabase()
                     if didRecover {
-                        action()
+                        self.hideAuthSyncOverlay {
+                            action()
+                        }
                     } else {
+                        self.hideAuthSyncOverlay()
                         self.presentWebLogin(then: action)
                     }
                 }
@@ -430,17 +656,30 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private func presentWebLogin(then action: @escaping () -> Void) {
         let baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(baseURL)/login") ?? URL(string: forum.baseURL) else { return }
-        let vc = WebLoginViewController(targetURL: url) { [weak self] cookies, userAgent in
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            Task {
-                let didLogin = await self.authManager.loginViaWeb(forum: self.forum, cookies: cookies, userAgent: userAgent)
-                self.refreshForumFromDatabase()
-                guard didLogin else { return }
-                action()
+            await WebCookieStore.shared.clearWebViewAuthCookies(for: baseURL)
+            let vc = WebLoginViewController(targetURL: url) { [weak self] cookies, userAgent in
+                guard let self else { return }
+                self.showAuthSyncOverlay(
+                    title: String(localized: "weblogin.success.title"),
+                    message: String(localized: "weblogin.success.message")
+                )
+                Task { @MainActor in
+                    let didLogin = await self.authManager.loginViaWeb(forum: self.forum, cookies: cookies, userAgent: userAgent)
+                    self.refreshForumFromDatabase()
+                    guard didLogin else {
+                        self.hideAuthSyncOverlay()
+                        return
+                    }
+                    self.hideAuthSyncOverlay {
+                        action()
+                    }
+                }
             }
+            let nav = UINavigationController(rootViewController: vc)
+            self.present(nav, animated: true)
         }
-        let nav = UINavigationController(rootViewController: vc)
-        present(nav, animated: true)
     }
 
     private func refreshForumFromDatabase() {
@@ -459,6 +698,203 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     func currentUsername() -> String? {
         let baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return authManager.username(for: baseURL)
+    }
+}
+
+private final class DexoLaunchLoadingView: UIView {
+    private let rootStackView = UIStackView()
+    private let linuxLogoView = UIImageView()
+    private let brandLabel = UILabel()
+    private let valuesLabel = UILabel()
+    private let loadingLabel = UILabel()
+    private let dotsStackView = UIStackView()
+    private var dotViews: [UIView] = []
+    private let launchBackgroundColor = UIColor(red: 0.946, green: 0.944, blue: 0.922, alpha: 1)
+    private let linuxDoTextColor = UIColor(red: 0.095, green: 0.096, blue: 0.105, alpha: 1)
+    private let linuxDoYellow = UIColor(red: 1.0, green: 0.68, blue: 0.02, alpha: 1)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = launchBackgroundColor
+        isOpaque = true
+        isUserInteractionEnabled = true
+        isAccessibilityElement = true
+        accessibilityLabel = String(localized: "launch.loading.accessibility")
+        setupUI()
+        applyThemeStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyThemeStyle() {
+        backgroundColor = launchBackgroundColor
+        brandLabel.textColor = linuxDoTextColor
+        brandLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 30,
+            weight: .heavy,
+            fallback: .systemFont(ofSize: 30, weight: .heavy)
+        )
+        valuesLabel.text = String(localized: "launch.loading.values")
+        valuesLabel.textColor = linuxDoTextColor.withAlphaComponent(0.72)
+        valuesLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 15,
+            weight: .semibold,
+            fallback: .systemFont(ofSize: 15, weight: .semibold)
+        )
+        loadingLabel.text = String(localized: "launch.loading.subtitle")
+        loadingLabel.textColor = linuxDoTextColor.withAlphaComponent(0.62)
+        loadingLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 12,
+            weight: .medium,
+            fallback: .systemFont(ofSize: 12, weight: .medium)
+        )
+        dotViews.forEach { $0.backgroundColor = linuxDoYellow }
+    }
+
+    func startPresenting() {
+        alpha = 1
+        rootStackView.alpha = 0
+        rootStackView.transform = CGAffineTransform(translationX: 0, y: 16).scaledBy(x: 0.96, y: 0.96)
+        valuesLabel.alpha = 0
+        valuesLabel.transform = CGAffineTransform(translationX: 0, y: 8)
+        loadingLabel.alpha = 0
+        dotsStackView.alpha = 0
+
+        let heroAnimator = DexoMotion.propertyAnimator(
+            duration: DexoMotion.emphasized,
+            timingParameters: DexoMotion.softSpring
+        )
+        heroAnimator.addAnimations {
+            self.rootStackView.alpha = 1
+            self.rootStackView.transform = .identity
+        }
+        heroAnimator.startAnimation()
+        DexoMotion.animate(duration: DexoMotion.standard, delay: 0.12) {
+            self.valuesLabel.alpha = 1
+            self.valuesLabel.transform = .identity
+        }
+        DexoMotion.animate(duration: DexoMotion.standard, delay: 0.22) {
+            self.loadingLabel.alpha = 1
+            self.dotsStackView.alpha = 1
+        }
+        startLoadingDots()
+        startLogoBreathing()
+    }
+
+    func dismiss(completion: @escaping () -> Void) {
+        stopLogoBreathing()
+        DexoMotion.animate(
+            duration: DexoMotion.standard,
+            timingParameters: DexoMotion.easeInOutCubic,
+            animations: {
+                self.alpha = 0
+                self.rootStackView.transform = CGAffineTransform(scaleX: 0.98, y: 0.98)
+            }
+        ) { _ in
+            self.stopLoadingDots()
+            completion()
+        }
+    }
+
+    private func setupUI() {
+        rootStackView.axis = .vertical
+        rootStackView.alignment = .center
+        rootStackView.spacing = 18
+        rootStackView.translatesAutoresizingMaskIntoConstraints = false
+
+        linuxLogoView.image = UIImage(named: "LinuxDoLogo") ?? UIImage(named: "launchImg")
+        linuxLogoView.contentMode = .scaleAspectFit
+        linuxLogoView.translatesAutoresizingMaskIntoConstraints = false
+
+        brandLabel.text = "DexoFlux"
+        brandLabel.textAlignment = .center
+        brandLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        valuesLabel.textAlignment = .center
+        valuesLabel.numberOfLines = 2
+
+        loadingLabel.textAlignment = .center
+
+        dotsStackView.axis = .horizontal
+        dotsStackView.alignment = .center
+        dotsStackView.spacing = 7
+        dotsStackView.translatesAutoresizingMaskIntoConstraints = false
+        for _ in 0..<3 {
+            let dot = UIView()
+            dot.layer.cornerRadius = 3.5
+            dot.layer.cornerCurve = .continuous
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            dot.widthAnchor.constraint(equalToConstant: 7).isActive = true
+            dot.heightAnchor.constraint(equalToConstant: 7).isActive = true
+            dotsStackView.addArrangedSubview(dot)
+            dotViews.append(dot)
+        }
+
+        let loadingStack = UIStackView(arrangedSubviews: [loadingLabel, dotsStackView])
+        loadingStack.axis = .vertical
+        loadingStack.alignment = .center
+        loadingStack.spacing = 12
+        loadingStack.translatesAutoresizingMaskIntoConstraints = false
+
+        rootStackView.addArrangedSubview(linuxLogoView)
+        rootStackView.setCustomSpacing(24, after: linuxLogoView)
+        rootStackView.addArrangedSubview(brandLabel)
+        rootStackView.addArrangedSubview(valuesLabel)
+        rootStackView.setCustomSpacing(28, after: valuesLabel)
+        rootStackView.addArrangedSubview(loadingStack)
+        addSubview(rootStackView)
+
+        let preferredLogoWidth = linuxLogoView.widthAnchor.constraint(equalToConstant: 300)
+        preferredLogoWidth.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            rootStackView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            rootStackView.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -18),
+            rootStackView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 26),
+            rootStackView.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -26),
+
+            preferredLogoWidth,
+            linuxLogoView.widthAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.widthAnchor, multiplier: 0.84),
+            linuxLogoView.heightAnchor.constraint(equalTo: linuxLogoView.widthAnchor, multiplier: 1.0 / 3.0),
+        ])
+    }
+
+    private func startLoadingDots() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        for (index, dot) in dotViews.enumerated() {
+            let animation = CABasicAnimation(keyPath: "opacity")
+            animation.fromValue = 0.25
+            animation.toValue = 1
+            animation.duration = 0.62
+            animation.beginTime = CACurrentMediaTime() + (Double(index) * 0.16)
+            animation.autoreverses = true
+            animation.repeatCount = .infinity
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            dot.layer.add(animation, forKey: "dexo.launch.dot")
+        }
+    }
+
+    private func stopLoadingDots() {
+        dotViews.forEach { $0.layer.removeAnimation(forKey: "dexo.launch.dot") }
+    }
+
+    private func startLogoBreathing() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let animation = CABasicAnimation(keyPath: "transform.scale")
+        animation.fromValue = 1
+        animation.toValue = 1.025
+        animation.duration = 1.1
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        linuxLogoView.layer.add(animation, forKey: "dexo.launch.breathe")
+    }
+
+    private func stopLogoBreathing() {
+        linuxLogoView.layer.removeAnimation(forKey: "dexo.launch.breathe")
     }
 }
 

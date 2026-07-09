@@ -785,10 +785,10 @@ final class AppSettings: DexoObservableObject {
 
         var basePointSize: CGFloat {
             switch self {
-            case .small: return 16
-            case .standard: return 18
-            case .large: return 20
-            case .extraLarge: return 22
+            case .small: return 11.75
+            case .standard: return 12.75
+            case .large: return 14
+            case .extraLarge: return 15.25
             }
         }
 
@@ -970,15 +970,7 @@ final class AppSettings: DexoObservableObject {
 
     func effectiveContentPointSize(for pointSize: CGFloat) -> CGFloat {
         let scale = CGFloat(contentFontScalePercent) / CGFloat(Self.defaultFontScalePercent)
-        let basePointSize: CGFloat
-        if activeFontName(for: contentFontFamily) == nil {
-            basePointSize = max(pointSize - systemContentFontCompensation(for: pointSize), 1)
-        } else {
-            basePointSize = pointSize
-        }
-        // PingFang reads visibly larger than imported content fonts at the same point size,
-        // especially in Topic Detail with Dynamic Type scaling.
-        return max(basePointSize * scale, 1)
+        return max(pointSize * scale, 1)
     }
 
     func effectiveInterfacePointSize(for pointSize: CGFloat) -> CGFloat {
@@ -1011,16 +1003,6 @@ final class AppSettings: DexoObservableObject {
             candidate += 0.5
         }
         return bestPointSize
-    }
-
-    private func systemContentFontCompensation(for pointSize: CGFloat) -> CGFloat {
-        if pointSize >= 22 {
-            return 4
-        }
-        if pointSize >= 20 {
-            return 3.5
-        }
-        return 3
     }
 
     func contentMonospacedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
