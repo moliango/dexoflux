@@ -6,6 +6,14 @@ enum QuoteExtractor {
     static func extract(from element: Element, options: ParseOptions) -> ContentBlock {
         let username = try? element.attr("data-username")
         let effectiveUsername = (username?.isEmpty ?? true) ? nil : username
+        let quotePostNumber = firstInteger(
+            in: [
+                try? element.attr("data-post"),
+                try? element.attr("data-post-number"),
+                try? element.attr("data-post-number-id"),
+            ]
+        )
+        let quoteTopicId = firstInteger(in: [try? element.attr("data-topic")])
 
         // Avatar URL from the img inside .title
         let avatarURL: String? = {
@@ -32,6 +40,14 @@ enum QuoteExtractor {
                     }
                 }
             }
+        }
+        if topicURL == nil, let titleLink = firstTopicLink(in: element) {
+            topicTitle = titleLink.title
+            topicURL = URLResolver.resolve(titleLink.href, baseURL: options.baseURL)
+        }
+        if topicURL == nil, let quoteTopicId {
+            let postPath = quotePostNumber.map { "/\($0)" } ?? ""
+            topicURL = URLResolver.resolve("/t/\(quoteTopicId)\(postPath)", baseURL: options.baseURL)
         }
 
         // Category name + URL from .badge-category__wrapper
@@ -63,7 +79,31 @@ enum QuoteExtractor {
             topicURL: topicURL,
             categoryName: categoryName,
             categoryURL: categoryURL,
+            quotePostNumber: quotePostNumber,
             content: contentBlocks
         )
+    }
+
+    private static func firstInteger(in values: [String?]) -> Int? {
+        for value in values {
+            guard let value, !value.isEmpty else { continue }
+            if let integer = Int(value) {
+                return integer
+            }
+        }
+        return nil
+    }
+
+    private static func firstTopicLink(in element: Element) -> (title: String?, href: String)? {
+        guard let links = try? element.select(".title a[href]") else { return nil }
+        for link in links {
+            let cls = (try? link.attr("class")) ?? ""
+            if cls.contains("badge-category") { continue }
+            let href = (try? link.attr("href")) ?? ""
+            guard !href.isEmpty else { continue }
+            let text = (try? link.text()) ?? ""
+            return (text.isEmpty ? nil : text, href)
+        }
+        return nil
     }
 }

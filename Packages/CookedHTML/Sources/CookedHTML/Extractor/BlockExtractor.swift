@@ -253,6 +253,14 @@ enum BlockExtractor {
 
     private static func extractDiv(from element: Element, options: ParseOptions) -> [ContentBlock] {
         let classAttr = (try? element.attr("class")) ?? ""
+        let idAttr = (try? element.attr("id")) ?? ""
+
+        if hasClassToken("mermaid", in: classAttr) || idAttr.lowercased().hasPrefix("flowchart") {
+            let code = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !code.isEmpty {
+                return [.codeBlock(language: "mermaid", code: code)]
+            }
+        }
 
         if hasClassToken("poll", in: classAttr), let poll = extractPoll(from: element) {
             return [.poll(poll)]
@@ -478,6 +486,22 @@ enum BlockExtractor {
         return raw == "true" || raw == "1" || raw == "yes" || raw == "checked"
     }
 
+    private static func rawText(from element: Element) -> String {
+        var result = ""
+        for child in element.getChildNodes() {
+            if let textNode = child as? TextNode {
+                result += textNode.getWholeText()
+            } else if let childElement = child as? Element {
+                if childElement.tagName().lowercased() == "br" {
+                    result += "<br>"
+                } else {
+                    result += rawText(from: childElement)
+                }
+            }
+        }
+        return result
+    }
+
     private static func firstInteger(in text: String) -> Int? {
         let pattern = #"-?\d+"#
         guard let range = text.range(of: pattern, options: .regularExpression) else {
@@ -499,17 +523,46 @@ enum BlockExtractor {
     private static func trimBlock(_ block: ContentBlock) -> ContentBlock? {
         switch block {
         case .paragraph(let inlines):
-            let trimmed = inlines.filter { node in
-                switch node {
-                case .text(let t): return !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                case .styledText(let t, _): return !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                default: return true
-                }
-            }
+            let trimmed = normalizeParagraphInlines(inlines)
             return trimmed.isEmpty ? nil : .paragraph(trimmed)
         default:
             return block
         }
+    }
+
+    private static func normalizeParagraphInlines(_ inlines: [InlineNode]) -> [InlineNode] {
+        var result: [InlineNode] = []
+        var previousWasLineBreak = false
+
+        for node in inlines {
+            switch node {
+            case .text(let text):
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                result.append(node)
+                previousWasLineBreak = false
+            case .styledText(let text, _):
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                result.append(node)
+                previousWasLineBreak = false
+            case .lineBreak:
+                guard !result.isEmpty, !previousWasLineBreak else { continue }
+                result.append(node)
+                previousWasLineBreak = true
+            default:
+                result.append(node)
+                previousWasLineBreak = false
+            }
+        }
+
+        while let last = result.last {
+            if case .lineBreak = last {
+                result.removeLast()
+            } else {
+                break
+            }
+        }
+
+        return result
     }
 
     /// Merge blocks that result from SwiftSoup splitting inline content into separate top-level nodes.

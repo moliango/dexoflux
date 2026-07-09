@@ -70,6 +70,24 @@ final class BlockExtractorTests: XCTestCase {
         }
     }
 
+    func testMermaidDivExtractsAsCodeBlock() {
+        let html = """
+        <div class="mermaid" id="flowchart-linux-do">
+        flowchart TD
+            User[用户] --> CF[Cloudflare<br>CDN]
+        </div>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .codeBlock(let lang, let code) = blocks[0] {
+            XCTAssertEqual(lang, "mermaid")
+            XCTAssertTrue(code.contains("flowchart TD"))
+            XCTAssertTrue(code.contains("Cloudflare"))
+        } else {
+            XCTFail("Expected mermaid codeBlock")
+        }
+    }
+
     // MARK: - Blockquote
 
     func testBlockquote() {
@@ -146,6 +164,25 @@ final class BlockExtractorTests: XCTestCase {
         let html = "<p>   </p><p>Real content</p>"
         let blocks = CookedHTMLParser.parse(html: html)
         XCTAssertEqual(blocks.count, 1)
+    }
+
+    func testLineBreakOnlyParagraphsAreSkipped() {
+        let html = "<p>Before</p><p><br></p><p><br><br></p><p>After</p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks[0], .paragraph([.text("Before")]))
+        XCTAssertEqual(blocks[1], .paragraph([.text("After")]))
+    }
+
+    func testConsecutiveLineBreaksAreCollapsedInsideParagraph() {
+        let html = "<p>First<br><br><br>Second</p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        guard case .paragraph(let inlines) = blocks[0] else {
+            XCTFail("Expected paragraph, got \(blocks[0])")
+            return
+        }
+        XCTAssertEqual(inlines, [.text("First"), .lineBreak, .text("Second")])
     }
 
     // MARK: - Spoiler

@@ -7,7 +7,7 @@ final class IntegrationTests: XCTestCase {
 
     func testDiscourseQuote() {
         let html = """
-        <aside class="quote" data-username="john">
+        <aside class="quote" data-username="john" data-post="25">
             <div class="title">
                 <img src="/user_avatar/linux.do/john/48/123.png" class="avatar"> john:
             </div>
@@ -18,11 +18,45 @@ final class IntegrationTests: XCTestCase {
         """
         let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
         XCTAssertEqual(blocks.count, 1)
-        if case .discourseQuote(let username, let avatarURL, _, _, _, _, let content) = blocks[0] {
+        if case .discourseQuote(let username, let avatarURL, _, _, _, _, let quotePostNumber, let content) = blocks[0] {
             XCTAssertEqual(username, "john")
             XCTAssertNotNil(avatarURL)
             XCTAssertTrue(avatarURL?.contains("john") ?? false)
+            XCTAssertEqual(quotePostNumber, 25)
             XCTAssertFalse(content.isEmpty)
+        } else {
+            XCTFail("Expected discourseQuote, got \(blocks[0])")
+        }
+    }
+
+    func testDiscourseQuoteBuildsTopicURLFromDataTopic() {
+        let html = """
+        <aside class="quote" data-username="jane" data-topic="12345" data-post="7">
+            <div class="title">jane:</div>
+            <blockquote><p>Quoted from another topic.</p></blockquote>
+        </aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
+        if case .discourseQuote(_, _, _, let topicURL, _, _, let quotePostNumber, _) = blocks[0] {
+            XCTAssertEqual(quotePostNumber, 7)
+            XCTAssertEqual(topicURL, "https://linux.do/t/12345/7")
+        } else {
+            XCTFail("Expected discourseQuote, got \(blocks[0])")
+        }
+    }
+
+    func testDiscourseQuoteFallbackTopicURLFromTitleLink() {
+        let html = """
+        <aside class="quote" data-username="jane" data-post="7">
+            <div class="title"><a href="/t/some-topic/12345/7">Some topic</a></div>
+            <blockquote><p>Quoted from another topic.</p></blockquote>
+        </aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
+        if case .discourseQuote(_, _, let topicTitle, let topicURL, _, _, let quotePostNumber, _) = blocks[0] {
+            XCTAssertEqual(topicTitle, "Some topic")
+            XCTAssertEqual(topicURL, "https://linux.do/t/some-topic/12345/7")
+            XCTAssertEqual(quotePostNumber, 7)
         } else {
             XCTFail("Expected discourseQuote, got \(blocks[0])")
         }

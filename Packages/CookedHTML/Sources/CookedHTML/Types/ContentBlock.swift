@@ -87,7 +87,7 @@ public enum ContentBlock: Sendable, Equatable {
     case heading(level: Int, content: [InlineNode])
     case codeBlock(language: String?, code: String)
     case blockquote(blocks: [ContentBlock])
-    case discourseQuote(username: String?, avatarURL: String?, topicTitle: String?, topicURL: String?, categoryName: String?, categoryURL: String?, content: [ContentBlock])
+    case discourseQuote(username: String?, avatarURL: String?, topicTitle: String?, topicURL: String?, categoryName: String?, categoryURL: String?, quotePostNumber: Int?, content: [ContentBlock])
     case image(src: String, alt: String?, width: Int?, height: Int?, href: String? = nil)
     case onebox(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String? = nil)
     case video(url: String, thumbnailURL: String?, title: String?, width: Int?, height: Int?, videoId: String?, provider: String?)
@@ -113,7 +113,7 @@ public extension ContentBlock {
             return inlines.imageSourceURLs
         case .blockquote(let blocks), .spoiler(let blocks):
             return blocks.imageSourceURLs
-        case .discourseQuote(_, let avatarURL, _, _, _, _, let content):
+        case .discourseQuote(_, let avatarURL, _, _, _, _, _, let content):
             return [avatarURL].compactMap { $0 } + content.imageSourceURLs
         case .image(let src, _, _, _, _):
             return [src]
