@@ -346,3 +346,16 @@ Phase 1.4 makes iOS 15.0 the real minimum runtime target. Current local facts sh
 - FluxDo's Rust `doh_proxy`, ECH/HTTPS record support, h2 MITM, generated CA certificates, WebView proxy override, DNS cache UI, and proxy health dashboards.
 - System-level DNS via NetworkExtension or `NEDNSSettingsManager`.
 - Global proxying for arbitrary user-entered forums or non-Linux.do domains.
+
+## Phase 7 User Profile And Me Completion
+
+- Source design: `docs/superpowers/specs/2026-07-10-user-profile-and-me-completion-design.md` owns the approved detailed contract.
+- Scope: complete the user preview card, other-user profile page, and current-user Me page with real Discourse or local behavior. CDK/LDC, Connect statistics, AI, Notion export, and metaverse remain excluded.
+- Networking boundary: extend `DiscourseRouter`, `DiscourseAPI`, and typed models for user card capabilities, follow state, notification levels, private messages, user action pages, reactions, social lists, and drafts. UI code must not assemble raw endpoint payloads.
+- Relationship boundary: one shared relationship state coordinates follow, mute, ignore, restore, permission visibility, in-flight mutations, optimistic updates, and rollback for both preview and full profile surfaces.
+- Profile boundary: keep `UserProfileViewController` as the navigation owner, but move section data and paging state out of static UI construction. Summary, activity, topics, replies, likes received, and reactions are independently refreshable and paged.
+- Me boundary: retain the current card dashboard and existing native routes. Add My Topics, Drafts, Discourse browsing history, in-app browser/bookmarks/history, local profile-stat ordering/layout, and export history.
+- Export guard: export history ships only with a real topic Markdown/HTML export producer. A standalone empty history page is not acceptable.
+- Storage boundary: browser and export records are account-scoped Codable stores under Application Support; compact statistics configuration remains in `UserDefaults`.
+- Failure behavior: preserve loaded pages on pagination failure, retry from the footer, rollback failed mutations, route auth-required operations through `AuthGating`, and never expose a row that only opens an unavailable/coming-soon alert.
+- Compatibility: UIKit only, iOS 15 minimum, current Dexo theme, existing dirty changes preserved, Tuist regenerated for new Swift sources, and Simulator Debug build required before completion.

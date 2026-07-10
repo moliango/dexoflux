@@ -174,6 +174,13 @@ This project is a fork of another project and is being customized as a second-de
 - Phase 3 may route badges, trust requirements, and invite links to web/Safari fallbacks until native pages and data contracts are built.
 - Phase 3 should keep the existing bookmarks entry because Phase 2.1 already made it reusable and FluxDo also exposes bookmarks from profile.
 - Phase 3 must keep iOS 15 compatibility and avoid adding unregistered Swift files unless project registration is handled.
+- Phase 7 must replace every placeholder action in the user preview card and other-user profile page with a real Discourse-backed action or remove the action when the server reports it is unavailable.
+- Phase 7 must implement private messaging, follow/unfollow, mute, timed ignore, notification restore, profile search, profile sharing, biography detail, follower/following lists, and permission-aware action visibility for other users.
+- Phase 7 must implement summary, activity, topics, replies, likes received, and reactions profile sections with real loading, refresh, pagination, empty, error, and retry states.
+- Phase 7 must extend Me/Profile with real entries for my topics, drafts, browsing history, export history, an in-app browser, and the remaining locally supported profile-stat configuration behavior.
+- Phase 7 must reuse existing native badges, invite links, private messages, bookmarks, trust requirements, settings, authentication, topic detail, and reply composer implementations instead of creating duplicate flows.
+- Phase 7 must use UIKit, support iOS 15, and preserve the current Dexo theme rather than copying FluxDo's Flutter widgets literally.
+- Phase 7 must not expose buttons or rows that only display an unavailable/coming-soon alert.
 - Phase 4.1 must compare FluxDo's private messages, badges, trust requirements, invite links, and settings pages before coding.
 - Phase 4.1 must upgrade private messages from a count placeholder to a real list with inbox, sent, and archive filters.
 - Phase 4.1 must allow tapping a private-message topic to open the existing topic detail page.
@@ -411,6 +418,12 @@ This project is a fork of another project and is being customized as a second-de
 - [x] Reply composer tools can insert common Markdown wrappers/prefixes without losing the current selection.
 - [x] Reply composer can upload images and attachments to Discourse and insert the returned Markdown.
 - [x] Reply composer preview mode renders a readable native Markdown preview and can return to editing.
+- [ ] User preview card private-message, follow, and overflow actions call real endpoints and reflect server permissions/current state.
+- [ ] Other-user profile search, private-message, follow, overflow, biography, and follower/following actions are functional.
+- [ ] Other-user profile summary, activity, topics, replies, likes received, and reactions sections load real data with refresh, pagination, empty, error, and retry behavior.
+- [ ] Me/Profile exposes functional my-topics, drafts, browsing-history, export-history, in-app-browser, and profile-stat configuration flows.
+- [ ] Existing badges, invite links, private messages, bookmarks, trust requirements, settings, topic detail, and authentication flows still work after the profile expansion.
+- [ ] No user-profile or Me/Profile row is a fake action that only shows an unavailable/coming-soon message.
 - [ ] Enabling DoH starts a lightweight local proxy for native API requests.
 - [ ] Network settings expose both the DoH switch and the currently effective DoH server URL.
 - [ ] Editing the DoH server URL switches the provider to custom and restarts/reconfigures the lightweight DoH service.
@@ -423,7 +436,8 @@ This project is a fork of another project and is being customized as a second-de
 - Deleting or migrating existing saved non-Linux.do forum rows in Phase 1.2.
 - Adding support for additional forums.
 - Phase 3 does not implement full native My Badges, Trust Requirements, or Invite Links pages.
-- Phase 3 does not implement FluxDo's profile stats drag-and-drop edit page, connect.linux.do stats source switching, CDK/LDC balance cards, drafts, browsing history, browser, AI settings, or metaverse entries.
+- Phase 3 originally deferred FluxDo's profile stats drag-and-drop edit page, drafts, browsing history, and browser; Phase 7 brings the Discourse/local portions of those features into scope.
+- Phase 7 does not implement connect.linux.do stats source switching, CDK/LDC balance cards or OAuth, AI settings/review services, or metaverse entries.
 - Phase 4.1 does not implement a full native parser for connect.linux.do trust requirement cards.
 - Phase 4.1 does not implement invite editing/deletion, invite rate-limit countdowns, or advanced restriction fields.
 - Phase 4.1 does not implement FluxDo's settings search, shortcut settings, Notion settings, or desktop-only setting surfaces.
