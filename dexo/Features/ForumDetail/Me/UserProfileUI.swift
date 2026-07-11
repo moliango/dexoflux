@@ -34,17 +34,14 @@ enum UserProfileFormatting {
         return stripped.isEmpty ? nil : stripped
     }
 
-    static func trustLevelText(_ level: Int?) -> String {
+    static func trustLevelText(_ level: Int?) -> String? {
         switch level {
         case 0: return String(localized: "me.profile.level_0")
         case 1: return String(localized: "me.profile.level_1")
         case 2: return String(localized: "me.profile.level_2")
         case 3: return String(localized: "me.profile.level_3")
         case 4: return String(localized: "me.profile.level_4")
-        case let value?:
-            return String(localized: "me.profile.level_unknown \(value)")
-        case nil:
-            return String(localized: "me.profile.level_unknown 0")
+        default: return nil
         }
     }
 

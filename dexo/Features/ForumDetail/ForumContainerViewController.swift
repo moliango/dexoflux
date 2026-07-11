@@ -23,6 +23,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var shouldShowCloudflareShieldButton = false
     private var cloudflareShieldSuppressedUntil: Date?
     private var pendingCloudflareBaseURL: URL?
+    private var pendingCloudflareResponseURL: URL?
     private var cloudflareShieldButtonConstraints: [NSLayoutConstraint] = []
     private weak var cloudflareShieldButtonHostView: UIView?
 
@@ -116,7 +117,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = DexoLaunchAppearance.backgroundColor
 
         authManager.restoreAuthState(for: forum)
         if authManager.hasWebSession(for: forum.baseURL) {
@@ -409,7 +410,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             return
         }
         logCloudflareState("shield tapped; presenting foreground verification")
-        presentCloudflareVerification(baseURL: baseURL)
+        presentCloudflareVerification(
+            baseURL: baseURL,
+            responseURL: pendingCloudflareResponseURL
+        )
     }
 
     private func handleCloudflareChallengeNotification(_ notification: Notification) {
@@ -418,15 +422,18 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
         let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
         pendingCloudflareBaseURL = baseURL
+        pendingCloudflareResponseURL = responseURL
         guard !isCloudflareShieldSuppressed() else {
             logCloudflareState("challenge ignored while shield is suppressed base=\(baseURLString)")
             setCloudflareShieldButtonVisible(false, animated: true)
             return
         }
         logCloudflareState("challenge detected; starting background verification base=\(baseURLString)")
-        if !isPresentingCloudflareVerification {
-            setCloudflareShieldButtonVisible(true, animated: true)
+        guard !isPresentingCloudflareVerification else {
+            logCloudflareState("background verification skipped because foreground verification is active base=\(baseURLString)")
+            return
         }
+        setCloudflareShieldButtonVisible(true, animated: true)
         CloudflareBackgroundVerificationService.shared.ensureInBackground(
             baseURL: baseURL,
             reason: "container_challenge",
@@ -438,7 +445,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
         guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
+        let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
         pendingCloudflareBaseURL = baseURL
+        pendingCloudflareResponseURL = responseURL
         guard !isCloudflareShieldSuppressed() else {
             logCloudflareState("needs-user ignored while shield is suppressed base=\(baseURLString)")
             setCloudflareShieldButtonVisible(false, animated: true)
@@ -456,10 +465,31 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
         logCloudflareState("verification completed base=\(baseURLString)")
-        isPresentingCloudflareVerification = false
         pendingCloudflareBaseURL = nil
+        pendingCloudflareResponseURL = nil
         suppressCloudflareShieldTemporarily()
         setCloudflareShieldButtonVisible(false, animated: true)
+        refreshVisiblePageAfterCloudflareVerification()
+    }
+
+    private func refreshVisiblePageAfterCloudflareVerification() {
+        guard let tabBar = children.first as? ForumTabBarController,
+              let navigation = tabBar.selectedViewController as? UINavigationController,
+              let visible = navigation.visibleViewController
+        else { return }
+        switch visible {
+        case is HomeViewController:
+            break
+        case is TopicDetailViewController:
+            // Topic Detail observes the completion notification directly.
+            break
+        case let me as MeViewController:
+            me.refreshAfterCloudflareVerification()
+        case let search as SearchViewController:
+            search.refreshAfterCloudflareVerification()
+        default:
+            break
+        }
     }
 
     private func suppressCloudflareShieldTemporarily() {
@@ -549,7 +579,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
     }
 
-    private func presentCloudflareVerification(baseURL: URL) {
+    private func presentCloudflareVerification(baseURL: URL, responseURL: URL?) {
         guard !isPresentingCloudflareVerification else {
             logCloudflareState("foreground verification skipped because verification is already presented")
             return
@@ -558,23 +588,47 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard let presenter = topMostPresenter(), !presenter.isBeingDismissed else { return }
 
         pendingCloudflareBaseURL = baseURL
+        pendingCloudflareResponseURL = responseURL
         isPresentingCloudflareVerification = true
         setCloudflareShieldButtonVisible(false, animated: true)
-        let vc = CloudflareVerificationViewController(
-            baseURL: baseURL,
-            autoDismissOnSuccess: true
-        ) { [weak self] in
-            self?.handleCloudflareVerificationClosed()
+        Task { @MainActor [weak self] in
+            await CloudflareBackgroundVerificationService.shared.beginForegroundVerification(
+                baseURL: baseURL
+            )
+            guard let self, self.isPresentingCloudflareVerification else {
+                CloudflareBackgroundVerificationService.shared.endForegroundVerification(
+                    baseURL: baseURL
+                )
+                return
+            }
+            guard !presenter.isBeingDismissed, presenter.view.window != nil else {
+                CloudflareBackgroundVerificationService.shared.endForegroundVerification(
+                    baseURL: baseURL
+                )
+                self.handleCloudflareVerificationClosed()
+                return
+            }
+
+            let vc = CloudflareVerificationViewController(
+                baseURL: baseURL,
+                responseURL: responseURL,
+                autoDismissOnSuccess: true
+            ) { [weak self] in
+                CloudflareBackgroundVerificationService.shared.endForegroundVerification(
+                    baseURL: baseURL
+                )
+                self?.handleCloudflareVerificationClosed()
+            }
+            let nav = UINavigationController(rootViewController: vc)
+            nav.modalPresentationStyle = .pageSheet
+            nav.isModalInPresentation = true
+            if let sheet = nav.sheetPresentationController {
+                sheet.detents = [.large()]
+                sheet.prefersGrabberVisible = true
+                sheet.preferredCornerRadius = 20
+            }
+            presenter.present(nav, animated: true)
         }
-        let nav = UINavigationController(rootViewController: vc)
-        nav.modalPresentationStyle = .pageSheet
-        nav.presentationController?.delegate = self
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 20
-        }
-        presenter.present(nav, animated: true)
     }
 
     private func handleCloudflareVerificationClosed() {
@@ -598,6 +652,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private func normalizedBaseURL(_ value: String) -> String {
         value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
     }
+
 
     private func logCloudflareState(_ message: String) {
         DohDebugLog.record("container \(message)", subsystem: "CF")
@@ -709,13 +764,12 @@ private final class DexoLaunchLoadingView: UIView {
     private let loadingLabel = UILabel()
     private let dotsStackView = UIStackView()
     private var dotViews: [UIView] = []
-    private let launchBackgroundColor = UIColor(red: 0.946, green: 0.944, blue: 0.922, alpha: 1)
     private let linuxDoTextColor = UIColor(red: 0.095, green: 0.096, blue: 0.105, alpha: 1)
     private let linuxDoYellow = UIColor(red: 1.0, green: 0.68, blue: 0.02, alpha: 1)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = launchBackgroundColor
+        backgroundColor = DexoLaunchAppearance.backgroundColor
         isOpaque = true
         isUserInteractionEnabled = true
         isAccessibilityElement = true
@@ -730,7 +784,7 @@ private final class DexoLaunchLoadingView: UIView {
     }
 
     func applyThemeStyle() {
-        backgroundColor = launchBackgroundColor
+        backgroundColor = DexoLaunchAppearance.backgroundColor
         brandLabel.textColor = linuxDoTextColor
         brandLabel.font = AppSettings.shared.appInterfaceFont(
             ofSize: 30,
@@ -898,12 +952,6 @@ private final class DexoLaunchLoadingView: UIView {
     }
 }
 
-extension ForumContainerViewController: UIAdaptivePresentationControllerDelegate {
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        handleCloudflareVerificationClosed()
-    }
-}
-
 @MainActor
 final class CloudflareBackgroundVerificationService {
     static let shared = CloudflareBackgroundVerificationService()
@@ -912,8 +960,26 @@ final class CloudflareBackgroundVerificationService {
     private let attemptCooldown: TimeInterval = 12
     private var activeAttempts: [String: Task<Bool, Never>] = [:]
     private var lastAttemptAt: [String: Date] = [:]
+    private var foregroundVerificationKeys = Set<String>()
 
     private init() {}
+
+    func beginForegroundVerification(baseURL rawBaseURL: URL) async {
+        let baseURL = normalizedBaseURL(rawBaseURL)
+        let key = baseURL.absoluteString
+        foregroundVerificationKeys.insert(key)
+        guard let task = activeAttempts[key] else { return }
+        log("cancelled base=\(key) reason=foreground_verification")
+        task.cancel()
+        _ = await task.value
+        activeAttempts[key] = nil
+    }
+
+    func endForegroundVerification(baseURL rawBaseURL: URL) {
+        let key = normalizedBaseURL(rawBaseURL).absoluteString
+        foregroundVerificationKeys.remove(key)
+        log("foreground verification ended base=\(key)")
+    }
 
     func ensureInBackground(baseURL rawBaseURL: String, reason: String, responseURL: URL? = nil, force: Bool = false) {
         guard let baseURL = URL(string: normalizedBaseURL(rawBaseURL)) else { return }
@@ -930,6 +996,11 @@ final class CloudflareBackgroundVerificationService {
     func ensureVerified(baseURL rawBaseURL: URL, reason: String, responseURL: URL? = nil, force: Bool = false) async -> Bool {
         let baseURL = normalizedBaseURL(rawBaseURL)
         let key = baseURL.absoluteString
+
+        guard !foregroundVerificationKeys.contains(key) else {
+            log("skipped reason=\(reason) base=\(key) skip=foreground_verification")
+            return false
+        }
 
         if let active = activeAttempts[key] {
             log("joined active attempt reason=\(reason) base=\(key)")
@@ -950,7 +1021,13 @@ final class CloudflareBackgroundVerificationService {
         }
         activeAttempts[key] = task
         let ok = await task.value
+        let wasCancelled = task.isCancelled
         activeAttempts[key] = nil
+
+        if wasCancelled {
+            log("discarded cancelled attempt reason=\(reason) base=\(key)")
+            return false
+        }
 
         if ok {
             log("completed reason=\(reason) base=\(key)")
@@ -1018,6 +1095,7 @@ private final class CloudflareBackgroundVerificationAttempt: NSObject, WKNavigat
     private var didFinish = false
     private var didFail = false
     private var lastFailure: String?
+    private var initialClearanceValue: String?
 
     init(baseURL: URL, responseURL: URL?, reason: String) {
         self.baseURL = baseURL
@@ -1029,6 +1107,7 @@ private final class CloudflareBackgroundVerificationAttempt: NSObject, WKNavigat
     func run() async -> Bool {
         let startedAt = Date()
         log("started reason=\(reason) base=\(baseURL.absoluteString) response=\(responseURL?.absoluteString ?? "none")")
+        initialClearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
         await WebCookieStore.shared.syncToWebView(dataStore, for: baseURL)
 
         let configuration = WKWebViewConfiguration()
@@ -1080,7 +1159,11 @@ private final class CloudflareBackgroundVerificationAttempt: NSObject, WKNavigat
         guard let webView else { return false }
 
         let clearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
-        let hasClearance = clearanceValue?.isEmpty == false
+        let hasClearance = CloudflareVerificationPolicy.hasUsableClearance(
+            currentValue: clearanceValue,
+            initialValue: initialClearanceValue,
+            requiresFreshValue: responseURL != nil
+        )
         let activeChallenge = await pageHasActiveCloudflareChallenge(in: webView)
         let currentURL = webView.url?.absoluteString ?? "none"
 
@@ -1089,9 +1172,10 @@ private final class CloudflareBackgroundVerificationAttempt: NSObject, WKNavigat
     }
 
     private func verificationURL() -> URL {
-        URL(string: "/404?__dexo_cf_bg=\(Int(Date().timeIntervalSince1970))", relativeTo: baseURL)?.absoluteURL
-            ?? responseURL
-            ?? baseURL
+        CloudflareVerificationPolicy.verificationURL(
+            baseURL: baseURL,
+            responseURL: responseURL
+        )
     }
 
     private func syncCloudflareCookieFromWebView() async {

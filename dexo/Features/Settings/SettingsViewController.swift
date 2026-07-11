@@ -1484,7 +1484,7 @@ private extension AppSettings.ThemeStyle {
     }
 }
 
-private final class ReadingSettingsViewController: ObservableViewController {
+final class ReadingSettingsViewController: ObservableViewController {
     private enum ToggleOption: CaseIterable {
         case readingComfort
         case defaultExpandRelatedLinks
@@ -2401,10 +2401,24 @@ extension SettingsCategoryViewController: UITableViewDelegate {
             navigationController?.pushViewController(DohDebugLogViewController(), animated: true)
         case .cloudflareVerify:
             guard let baseURL = URL(string: ForumInstance.linuxDoBaseURL) else { return }
-            let vc = CloudflareVerificationViewController(baseURL: baseURL) { [weak self] in
-                self?.tableView.reloadData()
+            Task { @MainActor [weak self] in
+                await CloudflareBackgroundVerificationService.shared.beginForegroundVerification(
+                    baseURL: baseURL
+                )
+                guard let self, let navigationController = self.navigationController else {
+                    CloudflareBackgroundVerificationService.shared.endForegroundVerification(
+                        baseURL: baseURL
+                    )
+                    return
+                }
+                let vc = CloudflareVerificationViewController(baseURL: baseURL) { [weak self] in
+                    CloudflareBackgroundVerificationService.shared.endForegroundVerification(
+                        baseURL: baseURL
+                    )
+                    self?.tableView.reloadData()
+                }
+                navigationController.pushViewController(vc, animated: true)
             }
-            navigationController?.pushViewController(vc, animated: true)
         case .bottomBarLayout:
             navigationController?.pushViewController(BottomBarLayoutViewController(), animated: true)
         case .clearImageCache:
@@ -4353,6 +4367,56 @@ private final class DohDebugLogViewController: UIViewController {
     }
 }
 
+enum CloudflareVerificationPolicy {
+    static func verificationURL(baseURL: URL, responseURL: URL?) -> URL {
+        _ = responseURL
+        return URL(string: "/challenge", relativeTo: baseURL)?.absoluteURL ?? baseURL
+    }
+
+    static func hasUsableClearance(
+        currentValue: String?,
+        initialValue: String?,
+        requiresFreshValue: Bool
+    ) -> Bool {
+        guard let currentValue, !currentValue.isEmpty else { return false }
+        return !requiresFreshValue || currentValue != initialValue
+    }
+
+    static func canCompleteVerification(
+        currentValue: String?,
+        initialValue: String?,
+        requiresFreshValue: Bool,
+        hasVerifiedPage: Bool,
+        hasActiveChallenge: Bool
+    ) -> Bool {
+        hasVerifiedPage
+            && !hasActiveChallenge
+            && hasUsableClearance(
+                currentValue: currentValue,
+                initialValue: initialValue,
+                requiresFreshValue: requiresFreshValue
+            )
+    }
+
+    static func isVerifiedChallengeLanding(
+        _ response: HTTPURLResponse,
+        baseURL: URL
+    ) -> Bool {
+        guard response.statusCode == 404,
+              let responseURL = response.url,
+              responseURL.scheme?.lowercased() == baseURL.scheme?.lowercased(),
+              responseURL.host?.lowercased() == baseURL.host?.lowercased(),
+              responseURL.port == baseURL.port,
+              responseURL.path.lowercased() == "/challenge"
+        else { return false }
+
+        let cfMitigated = response.allHeaderFields.first { key, _ in
+            "\(key)".caseInsensitiveCompare("cf-mitigated") == .orderedSame
+        }.map { "\($0.value)".lowercased() }
+        return cfMitigated?.contains("challenge") != true
+    }
+}
+
 final class CloudflareVerificationViewController: UIViewController {
     private let baseURL: URL
     private let challengeURL: URL
@@ -4363,8 +4427,16 @@ final class CloudflareVerificationViewController: UIViewController {
     private var isCheckingClearance = false
     private var needsVerificationRecheck = false
     private var initialClearanceValue: String?
+    private var preparationTask: Task<Void, Never>?
     private var verificationCheckTask: Task<Void, Never>?
     private var didCallOnFinish = false
+    private var preparationGeneration = 0
+    private var isPreparingChallenge = false
+    private var isClosing = false
+    private var isCookieObserverRegistered = false
+    private var didFinishVerifiedNavigation = false
+    private var isFinishing = false
+    private var failureCleanupTask: Task<Void, Never>?
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
@@ -4411,11 +4483,25 @@ final class CloudflareVerificationViewController: UIViewController {
         return view
     }()
 
-    init(baseURL: URL, autoDismissOnSuccess: Bool = false, onFinish: @escaping () -> Void) {
+    init(
+        baseURL: URL,
+        responseURL: URL? = nil,
+        verificationURL: URL? = nil,
+        autoDismissOnSuccess: Bool = false,
+        onFinish: @escaping () -> Void
+    ) {
         self.baseURL = baseURL
-        self.challengeURL = URL(string: "/challenge", relativeTo: baseURL)?.absoluteURL ?? baseURL
+        self.challengeURL = verificationURL
+            ?? CloudflareVerificationPolicy.verificationURL(
+                baseURL: baseURL,
+                responseURL: responseURL
+            )
         self.autoDismissOnSuccess = autoDismissOnSuccess
         self.onFinish = onFinish
+        self.initialClearanceValue = WebCookieStore.shared.cookieValue(
+            named: "cf_clearance",
+            for: baseURL
+        )
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -4425,8 +4511,12 @@ final class CloudflareVerificationViewController: UIViewController {
     }
 
     @MainActor deinit {
+        preparationTask?.cancel()
         verificationCheckTask?.cancel()
-        webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+        failureCleanupTask?.cancel()
+        if isCookieObserverRegistered {
+            webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+        }
     }
 
     override func viewDidLoad() {
@@ -4480,19 +4570,16 @@ final class CloudflareVerificationViewController: UIViewController {
         ])
 
         progressObservation = webView.observe(\.estimatedProgress, options: .new) { [weak self] webView, _ in
-            self?.progressView.progress = Float(webView.estimatedProgress)
-            self?.progressView.isHidden = webView.estimatedProgress >= 1.0
-            guard webView.estimatedProgress >= 1.0 else { return }
             Task { @MainActor [weak self] in
-                self?.scheduleVerificationChecks()
+                guard let self else { return }
+                self.progressView.progress = Float(webView.estimatedProgress)
+                self.progressView.isHidden = webView.estimatedProgress >= 1.0
+                guard webView.estimatedProgress >= 1.0 else { return }
+                self.scheduleVerificationChecks()
             }
         }
 
-        initialClearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
-        webView.configuration.websiteDataStore.httpCookieStore.add(self)
-        Task { @MainActor [weak self] in
-            await self?.prepareAndLoadChallenge()
-        }
+        startChallengePreparation()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -4500,21 +4587,51 @@ final class CloudflareVerificationViewController: UIViewController {
         enableSettingsInteractiveBackSwipe()
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        let wasDismissed = isBeingDismissed
+            || navigationController?.isBeingDismissed == true
+            || isMovingFromParent
+        guard wasDismissed else { return }
+        isClosing = true
+        if didDetectClearance {
+            notifyFinishIfNeeded()
+            return
+        }
+        Task { @MainActor [self] in
+            await self.ensureFailureCleanup().value
+            self.notifyFinishIfNeeded()
+        }
+    }
+
     @objc private func doneTapped() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        navigationItem.rightBarButtonItem?.isEnabled = false
+        navigationItem.leftBarButtonItem?.isEnabled = false
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if !self.didDetectClearance {
+            if !self.didDetectClearance, !self.isPreparingChallenge {
+                await self.cancelVerificationCheckTask()
                 await self.syncCookiesAndDetectClearance()
+            }
+            if !self.didDetectClearance {
+                await self.ensureFailureCleanup().value
+            } else {
+                self.isClosing = true
             }
             self.finishAndClose()
         }
     }
 
     @objc private func reloadTapped() {
+        guard !isClosing else { return }
         log("foreground reload tapped base=\(baseURL.absoluteString)")
         didDetectClearance = false
         isCheckingClearance = false
         needsVerificationRecheck = false
+        didFinishVerifiedNavigation = false
+        preparationTask?.cancel()
         verificationCheckTask?.cancel()
         verificationCheckTask = nil
         updateStatus(
@@ -4522,19 +4639,53 @@ final class CloudflareVerificationViewController: UIViewController {
             symbolName: "shield.fill",
             color: .systemOrange
         )
-        Task { @MainActor [weak self] in
-            await self?.prepareAndLoadChallenge()
+        startChallengePreparation()
+    }
+
+    @MainActor
+    private func startChallengePreparation() {
+        preparationGeneration += 1
+        let generation = preparationGeneration
+        isPreparingChallenge = true
+        didFinishVerifiedNavigation = false
+        preparationTask = Task { @MainActor [weak self] in
+            await self?.prepareAndLoadChallenge(generation: generation)
         }
     }
 
     @MainActor
-    private func prepareAndLoadChallenge() async {
-        log("foreground load challenge base=\(baseURL.absoluteString) autoDismiss=\(autoDismissOnSuccess)")
+    private func prepareAndLoadChallenge(generation: Int) async {
+        defer {
+            if generation == preparationGeneration {
+                isPreparingChallenge = false
+                preparationTask = nil
+            }
+        }
+        guard !isClosing else { return }
+        log(
+            "foreground load challenge base=\(baseURL.absoluteString) url=\(challengeURL.absoluteString) autoDismiss=\(autoDismissOnSuccess)"
+        )
+        await WebCookieStore.shared.syncToWebView(
+            webView.configuration.websiteDataStore,
+            for: baseURL
+        )
+        guard generation == preparationGeneration, !Task.isCancelled, !isClosing else { return }
         if autoDismissOnSuccess {
             WebCookieStore.shared.deleteCookie(named: "cf_clearance", for: baseURL)
             await deleteWebViewCookie(named: "cf_clearance")
         }
-        webView.load(URLRequest(url: challengeURL))
+        guard generation == preparationGeneration, !Task.isCancelled, !isClosing else { return }
+        registerCookieObserverIfNeeded()
+        var request = URLRequest(url: challengeURL)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        webView.load(request)
+    }
+
+    @MainActor
+    private func registerCookieObserverIfNeeded() {
+        guard !isCookieObserverRegistered else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.add(self)
+        isCookieObserverRegistered = true
     }
 
     @MainActor
@@ -4559,7 +4710,7 @@ final class CloudflareVerificationViewController: UIViewController {
 
     @MainActor
     private func syncCookiesAndDetectClearance() async {
-        guard !didDetectClearance else { return }
+        guard !didDetectClearance, !isPreparingChallenge, !isClosing else { return }
         if isCheckingClearance {
             needsVerificationRecheck = true
             return
@@ -4582,29 +4733,32 @@ final class CloudflareVerificationViewController: UIViewController {
     @MainActor
     private func performVerificationCheck() async {
         if await hasLoadedKnownVerifiedNotFoundPage() {
-            await completeKnownVerifiedLanding(reason: "foreground known verified not-found page")
+            await completeKnownVerifiedLanding(
+                reason: "foreground known verified not-found page"
+            )
             return
         }
 
         await syncCloudflareCookieFromWebView()
+        guard !Task.isCancelled, !isClosing else { return }
         let clearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
-        let hasNewClearance = clearanceValue?.isEmpty == false
-            && (!autoDismissOnSuccess || clearanceValue != initialClearanceValue)
-        let hasKnownVerifiedRedirect = isKnownVerifiedRedirectURL(webView.url)
-        let hasLoadedVerifiedPage = hasKnownVerifiedRedirect ? true : await hasLoadedVerifiedBasePage()
-        let hasVerifiedPage = hasKnownVerifiedRedirect || hasLoadedVerifiedPage
-        log(
-            "foreground check url=\(webView.url?.absoluteString ?? "none") cf=\(clearanceValue?.isEmpty == false) newCf=\(hasNewClearance) verifiedPage=\(hasVerifiedPage)"
+        let hasVerifiedPage = await hasLoadedVerifiedBasePage()
+        guard !Task.isCancelled, !isClosing else { return }
+        let hasActiveChallenge = hasVerifiedPage ? await pageHasActiveCloudflareChallenge() : true
+        let canComplete = CloudflareVerificationPolicy.canCompleteVerification(
+            currentValue: clearanceValue,
+            initialValue: initialClearanceValue,
+            requiresFreshValue: autoDismissOnSuccess,
+            hasVerifiedPage: hasVerifiedPage,
+            hasActiveChallenge: hasActiveChallenge
         )
-        guard hasNewClearance else {
+        log(
+            "foreground check url=\(webView.url?.absoluteString ?? "none") cf=\(clearanceValue?.isEmpty == false) verifiedPage=\(hasVerifiedPage) activeChallenge=\(hasActiveChallenge) complete=\(canComplete)"
+        )
+        guard canComplete else {
             if hasVerifiedPage {
-                log("foreground verified page loaded but cf_clearance is not available yet; waiting")
+                log("foreground verified page loaded but verification state is incomplete; waiting")
             }
-            return
-        }
-        let hasActiveChallenge = hasKnownVerifiedRedirect ? false : await pageHasActiveCloudflareChallenge()
-        if hasActiveChallenge {
-            log("foreground check active challenge still present")
             return
         }
         await updateStoredUserAgentFromWebView()
@@ -4620,13 +4774,8 @@ final class CloudflareVerificationViewController: UIViewController {
     }
 
     @MainActor
-    private func completeIfLoadedKnownVerifiedNotFoundPage() async {
-        guard await hasLoadedKnownVerifiedNotFoundPage() else { return }
-        await completeKnownVerifiedLanding(reason: "foreground known verified not-found page")
-    }
-
-    @MainActor
     private func completeKnownVerifiedLanding(reason: String) async {
+        guard !didDetectClearance, !isClosing else { return }
         log(reason)
         await syncCloudflareCookieFromWebView()
         await updateStoredUserAgentFromWebView()
@@ -4650,6 +4799,39 @@ final class CloudflareVerificationViewController: UIViewController {
     }
 
     @MainActor
+    private func cancelVerificationCheckTask() async {
+        let task = verificationCheckTask
+        verificationCheckTask = nil
+        task?.cancel()
+        await task?.value
+    }
+
+    @MainActor
+    private func cancelPendingVerificationWork() async {
+        isClosing = true
+        preparationGeneration += 1
+        let preparation = preparationTask
+        preparationTask = nil
+        preparation?.cancel()
+        await preparation?.value
+        isPreparingChallenge = false
+        await cancelVerificationCheckTask()
+    }
+
+    @MainActor
+    private func ensureFailureCleanup() -> Task<Void, Never> {
+        if let failureCleanupTask {
+            return failureCleanupTask
+        }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.cancelPendingVerificationWork()
+        }
+        failureCleanupTask = task
+        return task
+    }
+
+    @MainActor
     private func completeVerification() {
         guard !didDetectClearance else { return }
         log("foreground complete base=\(baseURL.absoluteString)")
@@ -4669,11 +4851,24 @@ final class CloudflareVerificationViewController: UIViewController {
                 DiscourseAPI.cloudflareBaseURLUserInfoKey: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
             ]
         )
-        notifyFinishIfNeeded()
         guard autoDismissOnSuccess else { return }
+        isFinishing = true
+        navigationItem.rightBarButtonItem?.isEnabled = false
+        navigationItem.leftBarButtonItem?.isEnabled = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
             self?.dismiss(animated: true)
         }
+    }
+
+    @MainActor
+    private func completeFromVerifiedChallengeLanding() async {
+        guard !didDetectClearance, !isClosing else { return }
+        await syncCloudflareCookieFromWebView()
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        await syncCloudflareCookieFromWebView()
+        await updateStoredUserAgentFromWebView()
+        log("foreground complete from origin /challenge 404")
+        completeVerification()
     }
 
     @MainActor
@@ -4685,7 +4880,6 @@ final class CloudflareVerificationViewController: UIViewController {
 
     @MainActor
     private func finishAndClose() {
-        notifyFinishIfNeeded()
         if navigationController?.viewControllers.first === self,
            navigationController?.presentingViewController != nil {
             navigationController?.dismiss(animated: true)
@@ -4696,7 +4890,8 @@ final class CloudflareVerificationViewController: UIViewController {
 
     @MainActor
     private func hasLoadedVerifiedBasePage() async -> Bool {
-        guard let currentURL = webView.url,
+        guard didFinishVerifiedNavigation,
+              let currentURL = webView.url,
               let currentHost = currentURL.host?.lowercased(),
               let baseHost = baseURL.host?.lowercased()
         else { return false }
@@ -4724,26 +4919,25 @@ final class CloudflareVerificationViewController: UIViewController {
 
     @MainActor
     private func hasLoadedKnownVerifiedNotFoundPage() async -> Bool {
-        guard let currentURL = webView.url,
+        guard didFinishVerifiedNavigation,
+              let currentURL = webView.url,
               let currentHost = currentURL.host?.lowercased(),
               let baseHost = baseURL.host?.lowercased()
         else { return false }
 
         let hostMatches = currentHost == baseHost || currentHost.hasSuffix(".\(baseHost)")
-        guard hostMatches else { return false }
-
-        let path = currentURL.path.lowercased()
-        guard !path.contains("/cdn-cgi/") else { return false }
+        guard hostMatches, !currentURL.path.lowercased().contains("/cdn-cgi/") else {
+            return false
+        }
 
         guard let pageText = try? await webView.evaluateJavaScript("""
             [
               document.title || '',
               document.body ? document.body.innerText : ''
             ].join('\\n')
-            """) as? String else {
-            return false
-        }
-        guard !Self.hasActiveCloudflareChallenge(in: pageText) else { return false }
+            """) as? String,
+            !Self.hasActiveCloudflareChallenge(in: pageText)
+        else { return false }
 
         let lowerText = pageText.lowercased()
         return lowerText.contains("该页面不存在")
@@ -4760,15 +4954,13 @@ final class CloudflareVerificationViewController: UIViewController {
               document.body ? document.body.innerText : '',
               document.body ? document.body.innerHTML : ''
             ].join('\\n')
-            """) as? String else {
-            return false
-        }
+            """) as? String else { return true }
         return Self.hasActiveCloudflareChallenge(in: pageText)
     }
 
     @MainActor
     private func scheduleVerificationChecks() {
-        guard !didDetectClearance else { return }
+        guard !didDetectClearance, !isPreparingChallenge, !isClosing else { return }
         verificationCheckTask?.cancel()
         verificationCheckTask = Task { @MainActor [weak self] in
             let delays: [UInt64] = [
@@ -4826,7 +5018,7 @@ final class CloudflareVerificationViewController: UIViewController {
 extension CloudflareVerificationViewController: WKNavigationDelegate, WKUIDelegate, WKHTTPCookieStoreObserver {
     nonisolated func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
         Task { @MainActor [weak self] in
-            await self?.syncCookiesAndDetectClearance()
+            self?.scheduleVerificationChecks()
         }
     }
 
@@ -4835,30 +5027,41 @@ extension CloudflareVerificationViewController: WKNavigationDelegate, WKUIDelega
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        let url = navigationAction.request.url
-        Task { @MainActor [weak self] in
-            await self?.completeIfKnownVerifiedRedirect(url)
-        }
         decisionHandler(.allow)
     }
 
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard navigationResponse.isForMainFrame,
+              let response = navigationResponse.response as? HTTPURLResponse,
+              CloudflareVerificationPolicy.isVerifiedChallengeLanding(
+                  response,
+                  baseURL: baseURL
+              )
+        else {
+            decisionHandler(.allow)
+            return
+        }
+
+        decisionHandler(.cancel)
+        Task { @MainActor [weak self] in
+            await self?.completeFromVerifiedChallengeLanding()
+        }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let url = webView.url
+        didFinishVerifiedNavigation = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.completeIfKnownVerifiedRedirect(url)
-            await self.completeIfLoadedKnownVerifiedNotFoundPage()
             self.scheduleVerificationChecks()
         }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        let url = webView.url
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.completeIfKnownVerifiedRedirect(url)
-            self.scheduleVerificationChecks()
-        }
+        didFinishVerifiedNavigation = false
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

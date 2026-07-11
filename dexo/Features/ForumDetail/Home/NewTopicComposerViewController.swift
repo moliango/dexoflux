@@ -4,6 +4,7 @@ final class NewTopicComposerViewController: UIViewController {
     private let api: DiscourseAPI
     private let categories: [DiscourseCategory]
     private let categoriesById: [Int: DiscourseCategory]
+    private let initialTags: [String]
     private var selectedCategoryId: Int?
     var onTopicCreated: ((Int) -> Void)?
 
@@ -58,12 +59,22 @@ final class NewTopicComposerViewController: UIViewController {
         action: #selector(sendTapped)
     )
 
-    init(api: DiscourseAPI, categories: [DiscourseCategory], initialCategoryId: Int?) {
+    init(
+        api: DiscourseAPI,
+        categories: [DiscourseCategory],
+        initialCategoryId: Int?,
+        initialTitle: String = "",
+        initialRaw: String = "",
+        initialTags: [String] = []
+    ) {
         self.api = api
         self.categories = categories
         self.categoriesById = Self.indexCategories(categories)
         self.selectedCategoryId = initialCategoryId
+        self.initialTags = initialTags
         super.init(nibName: nil, bundle: nil)
+        titleField.text = initialTitle
+        textView.text = initialRaw
     }
 
     @available(*, unavailable)
@@ -118,6 +129,7 @@ final class NewTopicComposerViewController: UIViewController {
         titleField.delegate = self
         textView.delegate = self
         updateCategoryButton()
+        updatePlaceholder()
         updateSendButton()
         titleField.addTarget(self, action: #selector(textInputsChanged), for: .editingChanged)
     }
@@ -223,8 +235,13 @@ final class NewTopicComposerViewController: UIViewController {
                 let response = try await api.createTopic(
                     title: topicTitle,
                     raw: body,
-                    categoryId: selectedCategoryId
+                    categoryId: selectedCategoryId,
+                    tags: initialTags
                 )
+                if response.isEnqueued {
+                    presentQueuedAlert()
+                    return
+                }
                 guard let topicId = response.topicId else {
                     throw NSError(
                         domain: "NewTopicComposer",
@@ -249,6 +266,18 @@ final class NewTopicComposerViewController: UIViewController {
                 present(alert, animated: true)
             }
         }
+    }
+
+    private func presentQueuedAlert() {
+        let alert = UIAlertController(
+            title: String(localized: "post.submit.queued.title"),
+            message: String(localized: "post.submit.queued.message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default) { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+        present(alert, animated: true)
     }
 }
 

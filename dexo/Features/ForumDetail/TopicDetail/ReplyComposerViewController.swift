@@ -1150,11 +1150,15 @@ final class ReplyComposerViewController: UIViewController {
 
         Task {
             do {
-                _ = try await api.createReply(
+                let response = try await api.createReply(
                     topicId: topicId,
                     replyToPostNumber: replyToPost?.postNumber,
                     raw: raw
                 )
+                if response.isEnqueued {
+                    presentQueuedAlert()
+                    return
+                }
                 dismiss(animated: true) { [weak self] in
                     self?.onPostCreated?()
                 }
@@ -1170,6 +1174,18 @@ final class ReplyComposerViewController: UIViewController {
                 present(alert, animated: true)
             }
         }
+    }
+
+    private func presentQueuedAlert() {
+        let alert = UIAlertController(
+            title: String(localized: "post.submit.queued.title"),
+            message: String(localized: "post.submit.queued.message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default) { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+        present(alert, animated: true)
     }
 }
 

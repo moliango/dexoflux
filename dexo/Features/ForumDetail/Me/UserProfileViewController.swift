@@ -3,6 +3,7 @@ import UIKit
 final class UserProfileViewController: ObservableViewController {
     private let api: DiscourseAPI
     private let viewModel: UserProfileViewModel
+    private let contentViewModel: UserProfileContentViewModel
 
     private let scrollView = UIScrollView()
     private let contentView = UIView()
@@ -23,20 +24,42 @@ final class UserProfileViewController: ObservableViewController {
     private let recencyLabel = UILabel()
     private let panelView = UIView()
     private let panelStack = UIStackView()
+    private let tabScrollView = UIScrollView()
     private let tabStack = UIStackView()
+    private let profileContentView = UserProfileContentView()
     private let topicListStack = UIStackView()
     private let entryStack = UIStackView()
     private let loadingIndicator = UIActivityIndicatorView(style: .medium)
     private let errorLabel = UILabel()
+    private lazy var searchBarButton = UIBarButtonItem(
+        image: UIImage(systemName: "magnifyingglass"),
+        style: .plain,
+        target: self,
+        action: #selector(searchTapped)
+    )
+    private lazy var messageBarButton = UIBarButtonItem(
+        image: UIImage(systemName: "envelope"),
+        style: .plain,
+        target: self,
+        action: #selector(messageTapped)
+    )
+    private lazy var moreBarButton = UIBarButtonItem(
+        image: UIImage(systemName: "ellipsis"),
+        style: .plain,
+        target: nil,
+        action: nil
+    )
 
     private var savedStandardAppearance: UINavigationBarAppearance?
     private var savedScrollEdgeAppearance: UINavigationBarAppearance?
     private var savedCompactAppearance: UINavigationBarAppearance?
     private var savedTintColor: UIColor?
+    private var lastPresentedRelationshipError: String?
 
     init(api: DiscourseAPI, username: String) {
         self.api = api
         self.viewModel = UserProfileViewModel(api: api, username: username)
+        self.contentViewModel = UserProfileContentViewModel(username: username, service: api)
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
     }
@@ -63,6 +86,10 @@ final class UserProfileViewController: ObservableViewController {
         setupUI()
         Task {
             await viewModel.load()
+            contentViewModel.applySummary(viewModel.summary)
+            if viewModel.summary == nil {
+                await contentViewModel.refresh()
+            }
         }
     }
 
@@ -90,19 +117,17 @@ final class UserProfileViewController: ObservableViewController {
 
         guard let profile = viewModel.userProfile else {
             contentView.alpha = viewModel.isLoading ? 0.45 : 1
+            profileContentView.render(viewModel: contentViewModel)
             return
         }
 
         contentView.alpha = 1
-        configure(profile: profile, summary: viewModel.summary, topics: viewModel.summaryTopics)
+        configure(profile: profile, summary: viewModel.summary)
+        profileContentView.render(viewModel: contentViewModel)
     }
 
     private func setupNavigationItems() {
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(image: UIImage(systemName: "ellipsis"), style: .plain, target: self, action: #selector(unavailableActionTapped)),
-            UIBarButtonItem(image: UIImage(systemName: "envelope"), style: .plain, target: self, action: #selector(unavailableActionTapped)),
-            UIBarButtonItem(image: UIImage(systemName: "magnifyingglass"), style: .plain, target: self, action: #selector(unavailableActionTapped)),
-        ]
+        navigationItem.rightBarButtonItems = [moreBarButton, messageBarButton, searchBarButton]
     }
 
     private func setupUI() {
@@ -135,9 +160,9 @@ final class UserProfileViewController: ObservableViewController {
             heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
             heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            heroView.heightAnchor.constraint(equalToConstant: 520),
+            heroView.heightAnchor.constraint(equalToConstant: 530),
 
-            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -42),
+            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -140),
             panelView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             panelView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             panelView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -164,15 +189,15 @@ final class UserProfileViewController: ObservableViewController {
 
         avatarImageView.contentMode = .scaleAspectFill
         avatarImageView.clipsToBounds = true
-        avatarImageView.layer.cornerRadius = 42
+        avatarImageView.layer.cornerRadius = 36
         avatarImageView.layer.borderWidth = 3
         avatarImageView.translatesAutoresizingMaskIntoConstraints = false
         avatarImageView.backgroundColor = .secondarySystemFill
 
         displayNameLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 34,
+            ofSize: 26,
             weight: .heavy,
-            fallback: .systemFont(ofSize: 34, weight: .heavy)
+            fallback: .systemFont(ofSize: 26, weight: .heavy)
         )
         displayNameLabel.textColor = .white
         displayNameLabel.numberOfLines = 1
@@ -180,27 +205,28 @@ final class UserProfileViewController: ObservableViewController {
         displayNameLabel.minimumScaleFactor = 0.68
 
         usernameLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 18,
+            ofSize: 14,
             weight: .semibold,
-            fallback: .systemFont(ofSize: 18, weight: .semibold)
+            fallback: .systemFont(ofSize: 14, weight: .semibold)
         )
         usernameLabel.textColor = UIColor.white.withAlphaComponent(0.78)
 
         levelLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 14,
+            ofSize: 12,
             weight: .bold,
-            fallback: .systemFont(ofSize: 14, weight: .bold)
+            fallback: .systemFont(ofSize: 12, weight: .bold)
         )
         levelLabel.textColor = .white
         levelLabel.textAlignment = .center
         levelLabel.layer.cornerRadius = 8
         levelLabel.layer.cornerCurve = .continuous
         levelLabel.clipsToBounds = true
+        levelLabel.isHidden = true
 
         titleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 14,
+            ofSize: 12,
             weight: .semibold,
-            fallback: .systemFont(ofSize: 14, weight: .semibold)
+            fallback: .systemFont(ofSize: 12, weight: .semibold)
         )
         titleLabel.textColor = UIColor.white.withAlphaComponent(0.78)
         titleLabel.numberOfLines = 1
@@ -214,7 +240,7 @@ final class UserProfileViewController: ObservableViewController {
         followConfig.baseBackgroundColor = .white
         followButton.configuration = followConfig
         followButton.translatesAutoresizingMaskIntoConstraints = false
-        followButton.addTarget(self, action: #selector(unavailableActionTapped), for: .touchUpInside)
+        followButton.addTarget(self, action: #selector(followTapped), for: .touchUpInside)
 
         let nameStack = UIStackView(arrangedSubviews: [displayNameLabel, usernameLabel, levelLabel, titleLabel])
         nameStack.axis = .vertical
@@ -233,6 +259,11 @@ final class UserProfileViewController: ObservableViewController {
         heroView.addSubview(statsStack)
         heroView.addSubview(recencyPill)
 
+        let levelHeightConstraint = levelLabel.heightAnchor.constraint(equalToConstant: 24)
+        levelHeightConstraint.priority = UILayoutPriority(999)
+        let levelWidthConstraint = levelLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 72)
+        levelWidthConstraint.priority = UILayoutPriority(999)
+
         NSLayoutConstraint.activate([
             backgroundImageView.topAnchor.constraint(equalTo: heroView.topAnchor),
             backgroundImageView.leadingAnchor.constraint(equalTo: heroView.leadingAnchor),
@@ -245,9 +276,9 @@ final class UserProfileViewController: ObservableViewController {
             textureView.bottomAnchor.constraint(equalTo: heroView.bottomAnchor),
 
             avatarImageView.leadingAnchor.constraint(equalTo: heroView.leadingAnchor, constant: 28),
-            avatarImageView.topAnchor.constraint(equalTo: heroView.safeAreaLayoutGuide.topAnchor, constant: 210),
-            avatarImageView.widthAnchor.constraint(equalToConstant: 84),
-            avatarImageView.heightAnchor.constraint(equalToConstant: 84),
+            avatarImageView.topAnchor.constraint(equalTo: heroView.safeAreaLayoutGuide.topAnchor, constant: 22),
+            avatarImageView.widthAnchor.constraint(equalToConstant: 72),
+            avatarImageView.heightAnchor.constraint(equalToConstant: 72),
 
             nameStack.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 18),
             nameStack.trailingAnchor.constraint(lessThanOrEqualTo: followButton.leadingAnchor, constant: -14),
@@ -255,22 +286,22 @@ final class UserProfileViewController: ObservableViewController {
 
             followButton.trailingAnchor.constraint(equalTo: heroView.trailingAnchor, constant: -24),
             followButton.centerYAnchor.constraint(equalTo: avatarImageView.centerYAnchor),
-            followButton.heightAnchor.constraint(equalToConstant: 50),
-            followButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 104),
+            followButton.heightAnchor.constraint(equalToConstant: 40),
+            followButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
 
-            levelLabel.heightAnchor.constraint(equalToConstant: 28),
-            levelLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 82),
+            levelHeightConstraint,
+            levelWidthConstraint,
 
-            bioCard.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 36),
+            bioCard.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 22),
             bioCard.leadingAnchor.constraint(equalTo: heroView.leadingAnchor, constant: 24),
             bioCard.trailingAnchor.constraint(equalTo: heroView.trailingAnchor, constant: -24),
             bioCard.heightAnchor.constraint(greaterThanOrEqualToConstant: 58),
 
-            statsStack.topAnchor.constraint(equalTo: bioCard.bottomAnchor, constant: 22),
+            statsStack.topAnchor.constraint(equalTo: bioCard.bottomAnchor, constant: 16),
             statsStack.leadingAnchor.constraint(equalTo: heroView.leadingAnchor, constant: 26),
             statsStack.trailingAnchor.constraint(lessThanOrEqualTo: heroView.trailingAnchor, constant: -24),
 
-            recencyPill.topAnchor.constraint(equalTo: statsStack.bottomAnchor, constant: 14),
+            recencyPill.topAnchor.constraint(equalTo: statsStack.bottomAnchor, constant: 10),
             recencyPill.leadingAnchor.constraint(equalTo: heroView.leadingAnchor, constant: 26),
             recencyPill.heightAnchor.constraint(equalToConstant: 32),
         ])
@@ -280,12 +311,12 @@ final class UserProfileViewController: ObservableViewController {
         bioCard.translatesAutoresizingMaskIntoConstraints = false
         bioCard.layer.cornerRadius = 10
         bioCard.layer.cornerCurve = .continuous
-        bioCard.addTarget(self, action: #selector(unavailableActionTapped), for: .touchUpInside)
+        bioCard.addTarget(self, action: #selector(bioTapped), for: .touchUpInside)
 
         bioLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 17,
+            ofSize: 14,
             weight: .medium,
-            fallback: .systemFont(ofSize: 17, weight: .medium)
+            fallback: .systemFont(ofSize: 14, weight: .medium)
         )
         bioLabel.textColor = UIColor.white.withAlphaComponent(0.88)
         bioLabel.numberOfLines = 2
@@ -362,25 +393,47 @@ final class UserProfileViewController: ObservableViewController {
         contentView.addSubview(panelView)
 
         panelStack.axis = .vertical
-        panelStack.spacing = 18
+        panelStack.spacing = 12
         panelStack.translatesAutoresizingMaskIntoConstraints = false
         panelView.addSubview(panelStack)
 
+        tabScrollView.translatesAutoresizingMaskIntoConstraints = false
+        tabScrollView.showsHorizontalScrollIndicator = false
+        tabScrollView.alwaysBounceHorizontal = true
+        panelStack.addArrangedSubview(tabScrollView)
+        tabScrollView.heightAnchor.constraint(equalToConstant: 44).isActive = true
+
         tabStack.axis = .horizontal
-        tabStack.distribution = .fillEqually
+        tabStack.distribution = .fill
         tabStack.spacing = 0
-        panelStack.addArrangedSubview(tabStack)
+        tabStack.translatesAutoresizingMaskIntoConstraints = false
+        tabScrollView.addSubview(tabStack)
+        NSLayoutConstraint.activate([
+            tabStack.topAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.topAnchor),
+            tabStack.leadingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.leadingAnchor),
+            tabStack.trailingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.trailingAnchor),
+            tabStack.bottomAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.bottomAnchor),
+            tabStack.heightAnchor.constraint(equalTo: tabScrollView.frameLayoutGuide.heightAnchor),
+        ])
 
-        topicListStack.axis = .vertical
-        topicListStack.spacing = 10
-        panelStack.addArrangedSubview(topicListStack)
-
-        entryStack.axis = .vertical
-        entryStack.spacing = 14
-        panelStack.addArrangedSubview(entryStack)
+        panelStack.addArrangedSubview(profileContentView)
+        profileContentView.heightAnchor.constraint(equalToConstant: 620).isActive = true
+        profileContentView.onRefresh = { [weak self] in
+            Task { @MainActor in
+                await self?.contentViewModel.refresh()
+            }
+        }
+        profileContentView.onLoadMore = { [weak self] in
+            Task { @MainActor in
+                await self?.contentViewModel.loadMore()
+            }
+        }
+        profileContentView.onSelectRow = { [weak self] row in
+            self?.openContentRow(row)
+        }
 
         NSLayoutConstraint.activate([
-            panelStack.topAnchor.constraint(equalTo: panelView.topAnchor, constant: 20),
+            panelStack.topAnchor.constraint(equalTo: panelView.topAnchor, constant: 14),
             panelStack.leadingAnchor.constraint(equalTo: panelView.leadingAnchor, constant: 18),
             panelStack.trailingAnchor.constraint(equalTo: panelView.trailingAnchor, constant: -18),
             panelStack.bottomAnchor.constraint(equalTo: panelView.bottomAnchor, constant: -34),
@@ -412,11 +465,13 @@ final class UserProfileViewController: ObservableViewController {
         ])
     }
 
-    private func configure(profile: DiscourseUserProfile, summary: DiscourseUserSummary?, topics: [DiscourseUserSummaryTopic]) {
+    private func configure(profile: DiscourseUserProfile, summary: DiscourseUserSummary?) {
         let displayName = UserProfileFormatting.displayName(profile: profile, fallbackUsername: viewModel.username)
         displayNameLabel.text = displayName
         usernameLabel.text = "@\(profile.username)"
-        levelLabel.text = UserProfileFormatting.trustLevelText(profile.trustLevel)
+        let levelText = UserProfileFormatting.trustLevelText(profile.trustLevel)
+        levelLabel.text = levelText
+        levelLabel.isHidden = levelText == nil
         titleLabel.text = profile.title
         titleLabel.isHidden = (profile.title ?? "").isEmpty
         bioLabel.text = UserProfileFormatting.cleanBio(profile.bioExcerpt) ?? String(localized: "user.profile.no_bio")
@@ -429,10 +484,9 @@ final class UserProfileViewController: ObservableViewController {
             size: 240
         )
         configureBackground(profile: profile)
-        configureStats(profile: profile, summary: summary)
+        configureStats(profile: profile, card: viewModel.userCard, summary: summary)
+        configureRelationshipActions(profile: profile)
         configureTabs()
-        configureSummaryTopics(topics)
-        configureEntryCards()
     }
 
     private func configureBackground(profile: DiscourseUserProfile) {
@@ -447,28 +501,36 @@ final class UserProfileViewController: ObservableViewController {
         ForumImageLoader.setImage(on: backgroundImageView, url: url)
     }
 
-    private func configureStats(profile: DiscourseUserProfile, summary: DiscourseUserSummary?) {
+    private func configureStats(
+        profile: DiscourseUserProfile,
+        card: DiscourseUserProfile?,
+        summary: DiscourseUserSummary?
+    ) {
         statsStack.arrangedSubviews.forEach { view in
             statsStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
 
-        let firstRowItems = [
-            profile.followingCount.map { (UserProfileFormatting.compactNumber($0), String(localized: "user.profile.following")) },
-            profile.followerCount.map { (UserProfileFormatting.compactNumber($0), String(localized: "user.profile.followers")) },
+        let firstRowItems: [(String, String, UserSocialListViewController.Mode)] = [
+            (card?.followingCount ?? profile.followingCount).map {
+                (UserProfileFormatting.compactNumber($0), String(localized: "user.profile.following"), .following)
+            },
+            (card?.followerCount ?? profile.followerCount).map {
+                (UserProfileFormatting.compactNumber($0), String(localized: "user.profile.followers"), .followers)
+            },
         ].compactMap { $0 }
 
         if !firstRowItems.isEmpty {
-            statsStack.addArrangedSubview(makeStatRow(firstRowItems, valueSize: 22, labelSize: 16, spacing: 18))
+            statsStack.addArrangedSubview(makeSocialStatRow(firstRowItems))
         }
 
         let secondRowItems: [(String, String)] = [
             (UserProfileFormatting.compactNumber(summary?.likesReceived), String(localized: "me.stats.likes")),
-            (UserProfileFormatting.compactNumber(summary?.daysVisited), String(localized: "me.stats.days")),
+            (UserProfileFormatting.compactNumber(card?.profileViewCount ?? profile.profileViewCount), String(localized: "me.stats.profile_views")),
             (UserProfileFormatting.compactNumber(summary?.topicCount), String(localized: "me.stats.topics")),
-            (UserProfileFormatting.compactNumber(summary?.postCount), String(localized: "me.stats.posts")),
+            (UserProfileFormatting.compactNumber(summary?.postCount), String(localized: "user.profile.replies")),
         ]
-        statsStack.addArrangedSubview(makeStatRow(secondRowItems, valueSize: 28, labelSize: 17, spacing: 16))
+        statsStack.addArrangedSubview(makeStatRow(secondRowItems, valueSize: 18, labelSize: 12, spacing: 12))
     }
 
     private func configureTabs() {
@@ -477,23 +539,17 @@ final class UserProfileViewController: ObservableViewController {
             view.removeFromSuperview()
         }
 
-        let tabs: [(String, Selector?)] = [
-            (String(localized: "user.profile.summary"), nil),
-            (String(localized: "user.profile.activity"), #selector(unavailableActionTapped)),
-            (String(localized: "user.topics_title"), #selector(openTopics)),
-            (String(localized: "user.profile.replies"), #selector(openPosts)),
-            (String(localized: "me.stats.likes"), #selector(unavailableActionTapped)),
-            (String(localized: "user.profile.reactions"), #selector(unavailableActionTapped)),
-        ]
-
-        for (index, tab) in tabs.enumerated() {
+        for (index, section) in UserProfileSection.allCases.enumerated() {
             let button = ProfileTabButton()
-            button.configure(title: tab.0, selected: index == 0)
-            if let selector = tab.1 {
-                button.addTarget(self, action: selector, for: .touchUpInside)
-            }
+            button.configure(title: section.title, selected: section == contentViewModel.section)
+            button.tag = index
+            button.addTarget(self, action: #selector(profileTabTapped(_:)), for: .touchUpInside)
             tabStack.addArrangedSubview(button)
-            button.heightAnchor.constraint(equalToConstant: 54).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 68).isActive = true
+        }
+        if contentViewModel.section == .summary {
+            tabScrollView.setContentOffset(.zero, animated: false)
         }
     }
 
@@ -562,6 +618,99 @@ final class UserProfileViewController: ObservableViewController {
         return row
     }
 
+    private func makeSocialStatRow(_ items: [(String, String, UserSocialListViewController.Mode)]) -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        for item in items {
+            let button = UIButton(type: .system)
+            button.tag = item.2 == .following ? 0 : 1
+            button.setAttributedTitle(statText(value: item.0, label: item.1, valueSize: 17, labelSize: 12), for: .normal)
+            button.addTarget(self, action: #selector(socialStatTapped(_:)), for: .touchUpInside)
+            row.addArrangedSubview(button)
+        }
+        return row
+    }
+
+    private func configureRelationshipActions(profile: DiscourseUserProfile) {
+        let state = viewModel.relationshipController.state
+        let currentUsername = AuthManager.shared.username(for: api.baseURL)
+        let isCurrentUser = currentUsername?.caseInsensitiveCompare(profile.username) == .orderedSame
+        followButton.isHidden = isCurrentUser || !state.canFollow
+        followButton.isEnabled = !state.isMutating
+        moreBarButton.isEnabled = !state.isMutating
+        navigationItem.rightBarButtonItems = (isCurrentUser || !state.canSendPrivateMessage)
+            ? [moreBarButton, searchBarButton]
+            : [moreBarButton, messageBarButton, searchBarButton]
+
+        var configuration = followButton.configuration
+        configuration?.title = state.isFollowed
+            ? String(localized: "user.profile.unfollow", defaultValue: "Unfollow")
+            : String(localized: "user.profile.follow")
+        configuration?.image = UIImage(systemName: state.isFollowed ? "minus" : "plus")
+        followButton.configuration = configuration
+        moreBarButton.menu = makeRelationshipMenu(isCurrentUser: isCurrentUser)
+
+        if let message = state.errorMessage,
+           message != lastPresentedRelationshipError,
+           presentedViewController == nil {
+            lastPresentedRelationshipError = message
+            let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel) { [weak self] _ in
+                self?.viewModel.relationshipController.clearError()
+            })
+            present(alert, animated: true)
+        }
+    }
+
+    private func makeRelationshipMenu(isCurrentUser: Bool) -> UIMenu {
+        let state = viewModel.relationshipController.state
+        var children: [UIMenuElement] = []
+        if !isCurrentUser {
+            if state.isMuted || state.isIgnored {
+                children.append(UIAction(
+                    title: String(localized: "user.profile.restore_notifications", defaultValue: "Restore notifications"),
+                    image: UIImage(systemName: "bell")
+                ) { [weak self] _ in self?.performRelationship(.restore) })
+            } else {
+                if state.canMute {
+                    children.append(UIAction(
+                        title: String(localized: "user.profile.mute", defaultValue: "Mute"),
+                        image: UIImage(systemName: "speaker.slash")
+                    ) { [weak self] _ in self?.performRelationship(.mute) })
+                }
+                if state.canIgnore {
+                    let now = Date()
+                    let calendar = Calendar.current
+                    let ignoreActions = [
+                        (String(localized: "user.profile.ignore.day", defaultValue: "For one day"), calendar.date(byAdding: .day, value: 1, to: now) ?? now),
+                        (String(localized: "user.profile.ignore.week", defaultValue: "For one week"), calendar.date(byAdding: .day, value: 7, to: now) ?? now),
+                        (String(localized: "user.profile.ignore.month", defaultValue: "For one month"), calendar.date(byAdding: .month, value: 1, to: now) ?? now),
+                    ].map { title, expiry in
+                        UIAction(title: title) { [weak self] _ in self?.performRelationship(.ignore(until: expiry)) }
+                    }
+                    children.append(UIMenu(
+                        title: String(localized: "user.profile.ignore", defaultValue: "Ignore"),
+                        image: UIImage(systemName: "person.crop.circle.badge.xmark"),
+                        children: ignoreActions
+                    ))
+                }
+            }
+        }
+        children.append(UIAction(
+            title: String(localized: "user.profile.share", defaultValue: "Share user"),
+            image: UIImage(systemName: "square.and.arrow.up")
+        ) { [weak self] _ in self?.shareUser() })
+        return UIMenu(children: children)
+    }
+
+    private func performRelationship(_ mutation: UserRelationshipMutation) {
+        Task { @MainActor [weak self] in
+            await self?.viewModel.relationshipController.perform(mutation)
+        }
+    }
+
     private func statText(value: String, label: String, valueSize: CGFloat, labelSize: CGFloat) -> NSAttributedString {
         let result = NSMutableAttributedString()
         result.append(NSAttributedString(
@@ -624,9 +773,7 @@ final class UserProfileViewController: ObservableViewController {
         heroGradientLayer.startPoint = CGPoint(x: 0.05, y: 0)
         heroGradientLayer.endPoint = CGPoint(x: 1, y: 1)
 
-        for actionCard in entryStack.arrangedSubviews.compactMap({ $0 as? UserProfileActionCard }) {
-            actionCard.backgroundColor = theme.topicCardBackgroundColor
-        }
+        profileContentView.backgroundColor = .clear
     }
 
     private func configureTransparentNavigationBar() {
@@ -682,6 +829,57 @@ final class UserProfileViewController: ObservableViewController {
         }
     }
 
+    @objc private func profileTabTapped(_ sender: UIControl) {
+        guard UserProfileSection.allCases.indices.contains(sender.tag) else { return }
+        let section = UserProfileSection.allCases[sender.tag]
+        Task { @MainActor [weak self] in
+            await self?.contentViewModel.select(section)
+        }
+    }
+
+    private func openContentRow(_ row: UserProfileContentRow) {
+        switch row {
+        case .summaryTopic(let topic):
+            openTopic(id: topic.id, floor: nil)
+        case .summaryReply(let reply):
+            guard let topicId = reply.topicId else { return }
+            openTopic(id: topicId, floor: reply.postNumber)
+        case .summaryLink(let link):
+            guard let url = URL(string: link.url) else { return }
+            UIApplication.shared.open(url)
+        case .summaryUser(_, let user):
+            guard !user.username.isEmpty else { return }
+            navigationController?.pushViewController(
+                UserProfileViewController(api: api, username: user.username),
+                animated: true
+            )
+        case .summaryCategory(let category):
+            let alert = UIAlertController(
+                title: category.name,
+                message: "\(category.topicCount) topics · \(category.postCount) posts",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+            present(alert, animated: true)
+        case .summaryBadge(let badge):
+            let alert = UIAlertController(title: badge.name, message: badge.description, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+            present(alert, animated: true)
+        case .action(let action):
+            openTopic(id: action.topicId, floor: action.postNumber)
+        case .reaction(let reaction):
+            openTopic(id: reaction.topicId, floor: reaction.postNumber)
+        case .header:
+            break
+        }
+    }
+
+    private func openTopic(id: Int, floor: Int?) {
+        guard id > 0 else { return }
+        let detail = TopicDetailViewController(api: api, topicId: id, initialFloor: floor)
+        navigationController?.pushViewController(detail, animated: true)
+    }
+
     @objc private func openTopics() {
         let vc = UserPostsViewController(api: api, username: viewModel.username, filter: .topics)
         navigationController?.pushViewController(vc, animated: true)
@@ -698,16 +896,67 @@ final class UserProfileViewController: ObservableViewController {
         navigationController?.pushViewController(detailVC, animated: true)
     }
 
-    @objc private func unavailableActionTapped() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        let alert = UIAlertController(
-            title: nil,
-            message: String(localized: "user.profile.action_unavailable"),
-            preferredStyle: .alert
+    @objc private func searchTapped() {
+        let query = "@\(viewModel.username) order:latest"
+        navigationController?.pushViewController(
+            SearchViewController(api: api, initialQuery: query),
+            animated: true
         )
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-        present(alert, animated: true)
     }
+
+    @objc private func messageTapped() {
+        let composer = PrivateMessageComposerViewController(api: api, recipient: viewModel.username)
+        present(UINavigationController(rootViewController: composer), animated: true)
+    }
+
+    @objc private func followTapped() {
+        performRelationship(.toggleFollow)
+    }
+
+    @objc private func bioTapped() {
+        let profile = viewModel.userProfile
+        let bio = UserProfileFormatting.cleanBio(profile?.bioCooked ?? profile?.bioRaw ?? profile?.bioExcerpt)
+            ?? String(localized: "user.profile.no_bio")
+        let controller = UIViewController()
+        controller.title = UserProfileFormatting.displayName(profile: profile, fallbackUsername: viewModel.username)
+        controller.view.backgroundColor = AppSettings.shared.themeStyle.contentBackgroundColor
+        let textView = UITextView()
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.isEditable = false
+        textView.backgroundColor = .clear
+        textView.font = AppSettings.shared.contentFont(ofSize: 17)
+        textView.text = bio
+        controller.view.addSubview(textView)
+        NSLayoutConstraint.activate([
+            textView.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            textView.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 16),
+            textView.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -16),
+            textView.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor),
+        ])
+        let navigation = UINavigationController(rootViewController: controller)
+        controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { [weak navigation] _ in navigation?.dismiss(animated: true) }
+        )
+        present(navigation, animated: true)
+    }
+
+    @objc private func socialStatTapped(_ sender: UIButton) {
+        let mode: UserSocialListViewController.Mode = sender.tag == 0 ? .following : .followers
+        navigationController?.pushViewController(
+            UserSocialListViewController(api: api, username: viewModel.username, mode: mode),
+            animated: true
+        )
+    }
+
+    private func shareUser() {
+        let base = api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(base)/u/\(viewModel.username)") else { return }
+        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        activity.popoverPresentationController?.barButtonItem = moreBarButton
+        present(activity, animated: true)
+    }
+
 }
 
 private final class ProfileTabButton: UIControl {
@@ -735,23 +984,23 @@ private final class ProfileTabButton: UIControl {
         addSubview(indicatorView)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 7),
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
 
-            indicatorView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
+            indicatorView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 7),
             indicatorView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            indicatorView.widthAnchor.constraint(equalToConstant: 34),
-            indicatorView.heightAnchor.constraint(equalToConstant: 4),
+            indicatorView.widthAnchor.constraint(equalToConstant: 26),
+            indicatorView.heightAnchor.constraint(equalToConstant: 3),
         ])
     }
 
     func configure(title: String, selected: Bool) {
         titleLabel.text = title
         titleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 16,
-            weight: selected ? .heavy : .bold,
-            fallback: .systemFont(ofSize: 16, weight: selected ? .heavy : .bold)
+            ofSize: 15,
+            weight: selected ? .bold : .semibold,
+            fallback: .systemFont(ofSize: 15, weight: selected ? .bold : .semibold)
         )
         titleLabel.textColor = selected ? AppSettings.shared.themeStyle.accentColor : .secondaryLabel
         indicatorView.backgroundColor = selected ? AppSettings.shared.themeStyle.accentColor : .clear

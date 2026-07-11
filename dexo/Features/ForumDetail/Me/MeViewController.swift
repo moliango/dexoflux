@@ -96,10 +96,14 @@ final class MeViewController: ObservableViewController {
                 profile: viewModel.userProfile,
                 baseURL: api.baseURL
             )
-            statsCard.configure(items: makeStatItems(), isLoggedIn: true)
+            statsCard.configure(
+                items: makeStatItems(),
+                isLoggedIn: true,
+                layout: statsPreferences.configuration.layout
+            )
         } else {
             profileCard.configure(user: nil, profile: nil, baseURL: api.baseURL)
-            statsCard.configure(items: [], isLoggedIn: false)
+            statsCard.configure(items: [], isLoggedIn: false, layout: .grid)
         }
 
         configureActionRows(isLoggedIn: isLoggedIn)
@@ -184,6 +188,30 @@ final class MeViewController: ObservableViewController {
         let trustLevel = viewModel.userProfile?.trustLevel ?? 0
         let rows: [MeActionRow] = [
             MeActionRow(
+                title: String(localized: "me.my_topics", defaultValue: "我的主题"),
+                subtitle: String(localized: "me.action.my_topics.subtitle", defaultValue: "查看我创建的话题"),
+                symbolName: "text.bubble.fill",
+                tintColor: .systemBlue,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openMyTopics() }
+            ),
+            MeActionRow(
+                title: String(localized: "me.discourse_history", defaultValue: "浏览历史"),
+                subtitle: String(localized: "me.action.discourse_history.subtitle", defaultValue: "查看在论坛中读过的话题"),
+                symbolName: "clock.arrow.circlepath",
+                tintColor: .systemTeal,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openDiscourseHistory() }
+            ),
+            MeActionRow(
+                title: String(localized: "me.drafts", defaultValue: "草稿"),
+                subtitle: String(localized: "me.action.drafts.subtitle", defaultValue: "继续编辑保存的内容"),
+                symbolName: "doc.text.fill",
+                tintColor: .systemBrown,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openDrafts() }
+            ),
+            MeActionRow(
                 title: String(localized: "messages.title"),
                 subtitle: String(localized: "me.action.messages.subtitle"),
                 symbolName: "envelope.fill",
@@ -198,6 +226,30 @@ final class MeViewController: ObservableViewController {
                 tintColor: .systemOrange,
                 isEnabled: isLoggedIn,
                 action: { [weak self] in self?.openBookmarks() }
+            ),
+            MeActionRow(
+                title: String(localized: "me.browser", defaultValue: "内置浏览器"),
+                subtitle: String(localized: "me.action.browser.subtitle", defaultValue: "浏览网页并管理本地书签与历史"),
+                symbolName: "safari.fill",
+                tintColor: .systemCyan,
+                isEnabled: true,
+                action: { [weak self] in self?.openBrowser() }
+            ),
+            MeActionRow(
+                title: String(localized: "extensions.title", defaultValue: "元宇宙"),
+                subtitle: String(localized: "extensions.subtitle", defaultValue: "连接 LDC 与 CDK 服务"),
+                symbolName: "sparkles.rectangle.stack.fill",
+                tintColor: .systemIndigo,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openMetaverseServices() }
+            ),
+            MeActionRow(
+                title: String(localized: "topic.export.history", defaultValue: "导出历史"),
+                subtitle: String(localized: "me.action.export_history.subtitle", defaultValue: "查看并再次分享话题导出文件"),
+                symbolName: "square.and.arrow.up.on.square.fill",
+                tintColor: .systemGreen,
+                isEnabled: true,
+                action: { [weak self] in self?.openExportHistory() }
             ),
             MeActionRow(
                 title: String(localized: "me.badges"),
@@ -250,6 +302,10 @@ final class MeViewController: ObservableViewController {
         Task {
             await viewModel.loadProfile()
         }
+    }
+
+    func refreshAfterCloudflareVerification() {
+        loadData()
     }
 
     @objc private func pullToRefresh() {
@@ -328,31 +384,17 @@ final class MeViewController: ObservableViewController {
     }
 
     private func showStatsCustomizer() {
-        let alert = UIAlertController(title: String(localized: "me.stats.customize"), message: nil, preferredStyle: .actionSheet)
-        let selected = Set(statsPreferences.selectedStats)
-        for type in MeStatType.allCases {
-            let action = UIAlertAction(title: type.title, style: .default) { [weak self] _ in
-                self?.toggleStat(type)
-            }
-            action.setValue(selected.contains(type), forKey: "checked")
-            alert.addAction(action)
+        let editor = ProfileStatsEditorViewController(configuration: statsPreferences.configuration)
+        editor.onChange = { [weak self] configuration in
+            guard let self else { return }
+            self.statsPreferences.configuration = configuration
+            self.statsCard.configure(
+                items: self.makeStatItems(),
+                isLoggedIn: self.authGate?.isAuthenticated() == true,
+                layout: configuration.layout
+            )
         }
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = statsCard
-        alert.popoverPresentationController?.sourceRect = statsCard.bounds
-        present(alert, animated: true)
-    }
-
-    private func toggleStat(_ type: MeStatType) {
-        var selected = statsPreferences.selectedStats
-        if selected.contains(type) {
-            guard selected.count > 1 else { return }
-            selected.removeAll { $0 == type }
-        } else {
-            selected.append(type)
-        }
-        statsPreferences.selectedStats = selected
-        statsCard.configure(items: makeStatItems(), isLoggedIn: authGate?.isAuthenticated() == true)
+        navigationController?.pushViewController(editor, animated: true)
     }
 
     private func openCurrentUserProfile() {
@@ -370,12 +412,81 @@ final class MeViewController: ObservableViewController {
         navigationController?.pushViewController(vc, animated: true)
     }
 
+    private func openMyTopics() {
+        guard let username = viewModel.currentUser?.username else {
+            loginTapped()
+            return
+        }
+        let vc = PagedTopicListViewController(
+            api: api,
+            title: String(localized: "me.my_topics", defaultValue: "我的主题"),
+            emptyMessage: String(localized: "me.my_topics.empty", defaultValue: "还没有创建过话题"),
+            searchQuery: "@\(username) order:latest",
+            loader: { [api] page in
+                try await api.fetchCreatedTopics(username: username, page: page)
+            }
+        )
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openDiscourseHistory() {
+        guard authGate?.isAuthenticated() == true else {
+            loginTapped()
+            return
+        }
+        let vc = PagedTopicListViewController(
+            api: api,
+            title: String(localized: "me.discourse_history", defaultValue: "浏览历史"),
+            emptyMessage: String(localized: "me.discourse_history.empty", defaultValue: "还没有论坛浏览记录"),
+            fixedSearchQualifier: "in:seen",
+            loader: { [api] page in
+                try await api.fetchReadTopics(page: page)
+            }
+        )
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openDrafts() {
+        guard authGate?.isAuthenticated() == true else {
+            loginTapped()
+            return
+        }
+        navigationController?.pushViewController(DraftsViewController(api: api), animated: true)
+    }
+
     private func openBookmarks() {
         guard let username = viewModel.currentUser?.username else {
             loginTapped()
             return
         }
         let vc = BookmarksViewController(api: api, username: username, authGate: authGate)
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openBrowser() {
+        let vc = InAppBrowserViewController(
+            api: api,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openMetaverseServices() {
+        guard let username = viewModel.currentUser?.username ?? authGate?.currentUsername() else {
+            loginTapped()
+            return
+        }
+        navigationController?.pushViewController(
+            MetaverseServicesViewController(api: api, username: username),
+            animated: true
+        )
+    }
+
+    private func openExportHistory() {
+        let vc = ExportHistoryViewController(
+            baseURL: api.baseURL,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
         navigationController?.pushViewController(vc, animated: true)
     }
 
@@ -834,7 +945,7 @@ private struct MeActionRow {
     let action: () -> Void
 }
 
-private enum MeStatType: String, CaseIterable {
+enum MeStatType: String, CaseIterable, Codable {
     case daysVisited
     case topicCount
     case postCount
@@ -884,13 +995,32 @@ private enum MeStatType: String, CaseIterable {
     }
 }
 
+enum MeStatsLayout: String, Codable, CaseIterable {
+    case grid
+    case horizontal
+
+    var title: String {
+        switch self {
+        case .grid:
+            return String(localized: "me.stats.layout.grid", defaultValue: "网格")
+        case .horizontal:
+            return String(localized: "me.stats.layout.horizontal", defaultValue: "横向")
+        }
+    }
+}
+
+struct MeStatsConfiguration: Codable, Equatable {
+    var orderedMetrics: [MeStatType]
+    var layout: MeStatsLayout
+}
+
 private struct MeStatItem {
     let type: MeStatType
     let valueText: String
 
     init(type: MeStatType, value: Int?) {
         self.type = type
-        self.valueText = value.map(Self.formatNumber) ?? "-"
+        self.valueText = value.map { Self.formatNumber($0) } ?? "-"
     }
 
     init(type: MeStatType, valueText: String?) {
@@ -903,20 +1033,53 @@ private struct MeStatItem {
     }
 }
 
-private final class MeStatsPreferences {
-    private let key = "me.stats.selected"
-    private let defaults = UserDefaults.standard
+final class MeStatsPreferences {
+    private let legacyKey = "me.stats.selected"
+    private let configurationKey = "me.stats.configuration"
+    private let defaults: UserDefaults
     private let fallback: [MeStatType] = [.daysVisited, .postCount, .likesReceived, .topicCount]
 
-    var selectedStats: [MeStatType] {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var configuration: MeStatsConfiguration {
         get {
-            guard let raw = defaults.stringArray(forKey: key) else { return fallback }
-            let selected = raw.compactMap(MeStatType.init(rawValue:))
-            return selected.isEmpty ? fallback : selected
+            if let data = defaults.data(forKey: configurationKey),
+               let decoded = try? JSONDecoder().decode(MeStatsConfiguration.self, from: data),
+               !decoded.orderedMetrics.isEmpty {
+                return decoded
+            }
+
+            let legacy = defaults.stringArray(forKey: legacyKey)?.compactMap(MeStatType.init(rawValue:)) ?? []
+            let migrated = MeStatsConfiguration(
+                orderedMetrics: legacy.isEmpty ? fallback : legacy,
+                layout: .grid
+            )
+            if let data = try? JSONEncoder().encode(migrated) {
+                defaults.set(data, forKey: configurationKey)
+            }
+            return migrated
         }
         set {
-            defaults.set(newValue.map(\.rawValue), forKey: key)
+            guard !newValue.orderedMetrics.isEmpty,
+                  let data = try? JSONEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: configurationKey)
+            defaults.set(newValue.orderedMetrics.map(\.rawValue), forKey: legacyKey)
         }
+    }
+
+    var selectedStats: [MeStatType] {
+        get { configuration.orderedMetrics }
+        set {
+            var updated = configuration
+            updated.orderedMetrics = newValue
+            configuration = updated
+        }
+    }
+
+    func reset() {
+        configuration = MeStatsConfiguration(orderedMetrics: fallback, layout: .grid)
     }
 }
 
@@ -1117,6 +1280,30 @@ private final class MeDashboardSkeletonView: DexoSkeletonPlaceholderView {
     }
 }
 
+private final class MeInsetLabel: UILabel {
+    private let insets: UIEdgeInsets
+
+    init(insets: UIEdgeInsets) {
+        self.insets = insets
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: CGSize {
+        let size = super.intrinsicContentSize
+        return CGSize(
+            width: size.width + insets.left + insets.right,
+            height: size.height + insets.top + insets.bottom
+        )
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: insets))
+    }
+}
+
 private final class MeProfileCardView: UIView {
     var onLoginTapped: (() -> Void)?
     var onProfileTapped: (() -> Void)?
@@ -1133,7 +1320,9 @@ private final class MeProfileCardView: UIView {
     }()
     private let nameLabel = UILabel()
     private let usernameLabel = UILabel()
-    private let levelLabel = UILabel()
+    private let levelLabel = MeInsetLabel(
+        insets: UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+    )
     private let loginButton: UIButton = {
         var configuration = UIButton.Configuration.filled()
         configuration.title = String(localized: "me.login")
@@ -1170,9 +1359,10 @@ private final class MeProfileCardView: UIView {
         levelLabel.textAlignment = .center
         levelLabel.textColor = .systemBlue
         levelLabel.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.12)
-        levelLabel.layer.cornerRadius = 7
+        levelLabel.layer.cornerRadius = 8
         levelLabel.layer.cornerCurve = .continuous
         levelLabel.layer.masksToBounds = true
+        levelLabel.isHidden = true
         levelLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         let infoStack = UIStackView(arrangedSubviews: [nameLabel, usernameLabel, levelLabel])
@@ -1192,6 +1382,9 @@ private final class MeProfileCardView: UIView {
         cardView.isUserInteractionEnabled = true
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
 
+        let levelHeightConstraint = levelLabel.heightAnchor.constraint(equalToConstant: 26)
+        levelHeightConstraint.priority = UILayoutPriority(999)
+
         NSLayoutConstraint.activate([
             cardView.topAnchor.constraint(equalTo: topAnchor),
             cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -1209,8 +1402,7 @@ private final class MeProfileCardView: UIView {
             infoStack.trailingAnchor.constraint(lessThanOrEqualTo: chevronImageView.leadingAnchor, constant: -12),
             infoStack.trailingAnchor.constraint(lessThanOrEqualTo: loginButton.leadingAnchor, constant: -12),
 
-            levelLabel.heightAnchor.constraint(equalToConstant: 22),
-            levelLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 74),
+            levelHeightConstraint,
 
             chevronImageView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
             chevronImageView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
@@ -1236,10 +1428,11 @@ private final class MeProfileCardView: UIView {
 
         loginButton.isHidden = true
         chevronImageView.isHidden = false
-        levelLabel.isHidden = false
         nameLabel.text = profile?.name ?? user.name ?? user.username
         usernameLabel.text = "@\(user.username)"
-        levelLabel.text = trustLevelText(profile?.trustLevel)
+        let levelText = UserProfileFormatting.trustLevelText(profile?.trustLevel)
+        levelLabel.text = levelText
+        levelLabel.isHidden = levelText == nil
 
         let avatarTemplate = profile?.avatarTemplate ?? user.avatarTemplate
         AvatarImageLoader.setImage(
@@ -1249,18 +1442,6 @@ private final class MeProfileCardView: UIView {
             size: 240,
             placeholder: UIImage(systemName: "person.crop.circle.fill")
         )
-    }
-
-    private func trustLevelText(_ level: Int?) -> String {
-        switch level {
-        case 0: return String(localized: "me.profile.level_0")
-        case 1: return String(localized: "me.profile.level_1")
-        case 2: return String(localized: "me.profile.level_2")
-        case 3: return String(localized: "me.profile.level_3")
-        case 4: return String(localized: "me.profile.level_4")
-        case let level?: return String(localized: "me.profile.level_unknown \(level)")
-        case nil: return String(localized: "me.profile.level_unknown 0")
-        }
     }
 
     @objc private func loginTapped() {
@@ -1280,8 +1461,11 @@ private final class MeStatsCardView: UIView {
     private let cardView = MeCardSurfaceView()
     private let titleLabel = UILabel()
     private let customizeButton = UIButton(type: .system)
+    private let statsScrollView = UIScrollView()
     private let gridStackView = UIStackView()
     private let emptyLabel = UILabel()
+    private var gridWidthConstraint: NSLayoutConstraint?
+    private var statsHeightConstraint: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1311,6 +1495,12 @@ private final class MeStatsCardView: UIView {
         gridStackView.spacing = 14
         gridStackView.translatesAutoresizingMaskIntoConstraints = false
 
+        statsScrollView.translatesAutoresizingMaskIntoConstraints = false
+        statsScrollView.showsHorizontalScrollIndicator = false
+        statsScrollView.showsVerticalScrollIndicator = false
+        statsScrollView.alwaysBounceVertical = false
+        statsScrollView.addSubview(gridStackView)
+
         emptyLabel.text = String(localized: "me.stats.login_required")
         emptyLabel.textColor = .secondaryLabel
         emptyLabel.font = .systemFont(ofSize: 14)
@@ -1320,8 +1510,13 @@ private final class MeStatsCardView: UIView {
 
         addSubview(cardView)
         cardView.addSubview(headerStack)
-        cardView.addSubview(gridStackView)
+        cardView.addSubview(statsScrollView)
         cardView.addSubview(emptyLabel)
+
+        let widthConstraint = gridStackView.widthAnchor.constraint(equalTo: statsScrollView.frameLayoutGuide.widthAnchor)
+        let heightConstraint = statsScrollView.heightAnchor.constraint(equalToConstant: 84)
+        gridWidthConstraint = widthConstraint
+        statsHeightConstraint = heightConstraint
 
         NSLayoutConstraint.activate([
             cardView.topAnchor.constraint(equalTo: topAnchor),
@@ -1333,19 +1528,27 @@ private final class MeStatsCardView: UIView {
             headerStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
             headerStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
 
-            gridStackView.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 16),
-            gridStackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
-            gridStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
-            gridStackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            statsScrollView.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 16),
+            statsScrollView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            statsScrollView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            statsScrollView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            heightConstraint,
+
+            gridStackView.topAnchor.constraint(equalTo: statsScrollView.contentLayoutGuide.topAnchor),
+            gridStackView.leadingAnchor.constraint(equalTo: statsScrollView.contentLayoutGuide.leadingAnchor),
+            gridStackView.trailingAnchor.constraint(equalTo: statsScrollView.contentLayoutGuide.trailingAnchor),
+            gridStackView.bottomAnchor.constraint(equalTo: statsScrollView.contentLayoutGuide.bottomAnchor),
+            gridStackView.heightAnchor.constraint(equalTo: statsScrollView.frameLayoutGuide.heightAnchor),
+            widthConstraint,
 
             emptyLabel.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 18),
             emptyLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
             emptyLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            emptyLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -18),
+            emptyLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -18),
         ])
     }
 
-    func configure(items: [MeStatItem], isLoggedIn: Bool) {
+    func configure(items: [MeStatItem], isLoggedIn: Bool, layout: MeStatsLayout) {
         gridStackView.arrangedSubviews.forEach { view in
             gridStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -1353,24 +1556,49 @@ private final class MeStatsCardView: UIView {
 
         customizeButton.isHidden = !isLoggedIn
         emptyLabel.isHidden = isLoggedIn
-        gridStackView.isHidden = !isLoggedIn
+        statsScrollView.isHidden = !isLoggedIn
         guard isLoggedIn else { return }
 
-        let rows = stride(from: 0, to: items.count, by: 4).map {
-            Array(items[$0..<min($0 + 4, items.count)])
-        }
-        for rowItems in rows {
-            let rowStack = UIStackView()
-            rowStack.axis = .horizontal
-            rowStack.distribution = .fillEqually
-            rowStack.spacing = 8
-            rowItems.forEach { rowStack.addArrangedSubview(MeStatView(item: $0)) }
-            if rowItems.count < 4 {
-                for _ in rowItems.count..<4 {
-                    rowStack.addArrangedSubview(UIView())
-                }
+        switch layout {
+        case .grid:
+            statsScrollView.isScrollEnabled = false
+            gridStackView.axis = .vertical
+            gridStackView.alignment = .fill
+            gridStackView.distribution = .fill
+            gridStackView.spacing = 14
+            gridWidthConstraint?.isActive = true
+
+            let rows = stride(from: 0, to: items.count, by: 4).map {
+                Array(items[$0..<min($0 + 4, items.count)])
             }
-            gridStackView.addArrangedSubview(rowStack)
+            for rowItems in rows {
+                let rowStack = UIStackView()
+                rowStack.axis = .horizontal
+                rowStack.distribution = .fillEqually
+                rowStack.spacing = 8
+                rowItems.forEach { rowStack.addArrangedSubview(MeStatView(item: $0)) }
+                if rowItems.count < 4 {
+                    for _ in rowItems.count..<4 {
+                        rowStack.addArrangedSubview(UIView())
+                    }
+                }
+                gridStackView.addArrangedSubview(rowStack)
+            }
+            let rowCount = max(rows.count, 1)
+            statsHeightConstraint?.constant = CGFloat(rowCount * 84 + max(rowCount - 1, 0) * 14)
+        case .horizontal:
+            statsScrollView.isScrollEnabled = true
+            gridStackView.axis = .horizontal
+            gridStackView.alignment = .fill
+            gridStackView.distribution = .fill
+            gridStackView.spacing = 12
+            gridWidthConstraint?.isActive = false
+            for item in items {
+                let statView = MeStatView(item: item)
+                statView.widthAnchor.constraint(equalToConstant: 78).isActive = true
+                gridStackView.addArrangedSubview(statView)
+            }
+            statsHeightConstraint?.constant = 84
         }
     }
 
