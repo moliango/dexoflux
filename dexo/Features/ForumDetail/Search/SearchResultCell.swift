@@ -78,13 +78,13 @@ final class SearchResultCell: UITableViewCell {
     func configure(with post: DiscourseSearchResult.SearchPost, baseURL: String) {
         // Strip HTML tags from headline for plain text display
         if let headline = post.topicTitleHeadline {
-            titleLabel.text = headline.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            titleLabel.text = Self.cleanedSearchText(headline)
         } else {
             titleLabel.text = nil
         }
 
-        blurbLabel.text = post.blurb
-        usernameLabel.text = post.username
+        blurbLabel.text = Self.cleanedSearchText(post.blurb ?? "")
+        usernameLabel.text = "@\(post.username) · #\(post.postNumber)"
 
         AvatarImageLoader.setImage(
             on: avatarImageView,
@@ -101,5 +101,18 @@ final class SearchResultCell: UITableViewCell {
         usernameLabel.text = nil
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
+    }
+
+    private static func cleanedSearchText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&hellip;", with: "…")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

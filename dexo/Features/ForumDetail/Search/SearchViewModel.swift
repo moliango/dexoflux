@@ -28,7 +28,7 @@ final class SearchViewModel: DexoObservableObject {
     var categories: [DiscourseCategory] = []
     var selectedCategoryId: Int?
     var selectedTag: String?
-    var selectedSortOrder: SearchSortOrder = .latest
+    var selectedSortOrder: SearchSortOrder = .relevance
 
     private let api: DiscourseAPI
     private var currentPage = 0
@@ -84,8 +84,9 @@ final class SearchViewModel: DexoObservableObject {
         notifyChanged()
 
         do {
-            let result = try await api.search(term: query, page: 0)
-            searchResults = result.posts ?? []
+            let result = try await api.search(term: query, page: 1, typeFilter: "topic")
+            searchResults = uniqueTopics(from: result.posts ?? [])
+            currentPage = 1
             canLoadMore = result.groupedSearchResult?.morePosts ?? false
         } catch {
             searchResults = []
@@ -104,10 +105,10 @@ final class SearchViewModel: DexoObservableObject {
         let query = buildQuery(term: currentTerm)
 
         do {
-            let result = try await api.search(term: query, page: nextPage)
-            let newPosts = result.posts ?? []
-            let existingIds = Set(searchResults.map(\.id))
-            let filtered = newPosts.filter { !existingIds.contains($0.id) }
+            let result = try await api.search(term: query, page: nextPage, typeFilter: "topic")
+            let newPosts = uniqueTopics(from: result.posts ?? [])
+            let existingTopicIds = Set(searchResults.map(\.topicId))
+            let filtered = newPosts.filter { !existingTopicIds.contains($0.topicId) }
             searchResults.append(contentsOf: filtered)
             currentPage = nextPage
             canLoadMore = result.groupedSearchResult?.morePosts ?? false
@@ -139,6 +140,13 @@ final class SearchViewModel: DexoObservableObject {
         let indexed = DiscourseCategory.indexedById(from: categories)
         for (id, category) in indexed {
             categoriesById[id] = category
+        }
+    }
+
+    private func uniqueTopics(from posts: [DiscourseSearchResult.SearchPost]) -> [DiscourseSearchResult.SearchPost] {
+        var seen = Set<Int>()
+        return posts.filter { post in
+            post.topicId > 0 && seen.insert(post.topicId).inserted
         }
     }
 

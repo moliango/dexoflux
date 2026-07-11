@@ -3,6 +3,8 @@ import UIKit
 final class SearchViewController: ObservableViewController, UISearchBarDelegate {
     private let api: DiscourseAPI
     private let viewModel: SearchViewModel
+    private let initialQuery: String?
+    private let fixedQueryQualifier: String?
 
     private var searchTask: Task<Void, Never>?
 
@@ -100,9 +102,11 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         return label
     }()
 
-    init(api: DiscourseAPI) {
+    init(api: DiscourseAPI, initialQuery: String? = nil, fixedQueryQualifier: String? = nil) {
         self.api = api
         self.viewModel = SearchViewModel(api: api)
+        self.initialQuery = initialQuery
+        self.fixedQueryQualifier = fixedQueryQualifier
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -145,6 +149,10 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
         Task {
             await viewModel.loadCategories()
+        }
+        if let initialQuery, !initialQuery.isEmpty {
+            searchController.searchBar.text = initialQuery
+            triggerSearch()
         }
     }
 
@@ -406,10 +414,20 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
     private func triggerSearch() {
         let term = searchController.searchBar.text ?? ""
         guard !term.isEmpty else { return }
+        let effectiveTerm: String
+        if let fixedQueryQualifier, !fixedQueryQualifier.isEmpty {
+            effectiveTerm = "\(term.trimmingCharacters(in: .whitespacesAndNewlines)) \(fixedQueryQualifier)"
+        } else {
+            effectiveTerm = term
+        }
         searchTask?.cancel()
         searchTask = Task {
-            await viewModel.search(term: term)
+            await viewModel.search(term: effectiveTerm)
         }
+    }
+
+    func refreshAfterCloudflareVerification() {
+        triggerSearch()
     }
 
     // MARK: - Helpers
