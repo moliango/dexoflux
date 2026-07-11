@@ -1278,6 +1278,8 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
             let completed = position == .end && !context.transitionWasCancelled
             fromView.alpha = 1
             fromView.transform = .identity
+            toView.alpha = 1
+            toView.transform = .identity
             if !completed {
                 toView.removeFromSuperview()
             }
