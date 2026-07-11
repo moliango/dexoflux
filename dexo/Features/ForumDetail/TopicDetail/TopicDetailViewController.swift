@@ -241,6 +241,7 @@ final class TopicDetailViewController: ObservableViewController {
     private var downloadedAttachmentURLs: Set<URL> = []
     private var prefetchedImagePostIds = Set<Int>()
     private var pendingSharedIssueTopicIds = Set<Int>()
+    private var cloudflareCompletionObservationToken: NSObjectProtocol?
 
     private enum BackSwipeFallbackMetrics {
         static let edgeActivationWidth: CGFloat = 44
@@ -473,6 +474,9 @@ final class TopicDetailViewController: ObservableViewController {
 
     @MainActor
     deinit {
+        if let cloudflareCompletionObservationToken {
+            NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
+        }
         readingTracker.stop()
     }
 
@@ -481,6 +485,8 @@ final class TopicDetailViewController: ObservableViewController {
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
         title = String(localized: "topic_detail.default_title")
+        startObservingCloudflareVerification()
+        configureTopicActions()
         applyTypography()
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
@@ -616,6 +622,7 @@ final class TopicDetailViewController: ObservableViewController {
         lastContentFontScope = settings.contentFontScope
         lastInterfaceFontScalePercent = settings.interfaceFontScalePercent
         lastThemeStyle = settings.themeStyle
+        configureTopicActions()
         if didChangeThemeStyle {
             hasTitleHeader = false
         }
@@ -766,13 +773,63 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
     private func prefetchContentImages(forPostIds postIds: [Int]) {
-        let urls = postIds.flatMap { postId -> [URL] in
-            guard prefetchedImagePostIds.insert(postId).inserted,
-                  let blocks = viewModel.parsedBlocks[postId]
-            else { return [] }
-            return blocks.imageSourceURLs.compactMap(URL.init(string:))
+        let newPostIds = postIds.filter { postId in
+            prefetchedImagePostIds.insert(postId).inserted
         }
-        ForumImageLoader.prefetch(urls: urls)
+        let contentURLs = newPostIds.flatMap { postId in
+            viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
+        }
+        ForumImageLoader.prefetch(urls: contentURLs)
+        AvatarImageLoader.prefetch(
+            urls: avatarURLs(forPostIds: newPostIds),
+            cloudflareBaseURL: baseURL
+        )
+    }
+
+    private func avatarURLs(forPostIds postIds: [Int]) -> [URL] {
+        let postIds = Set(postIds)
+        return viewModel.posts.compactMap { post in
+            guard postIds.contains(post.id) else { return nil }
+            return AvatarImageLoader.url(
+                from: post.avatarTemplate,
+                baseURL: baseURL,
+                size: 96
+            )
+        }
+    }
+
+    private func startObservingCloudflareVerification() {
+        cloudflareCompletionObservationToken = NotificationCenter.default.addObserver(
+            forName: DiscourseAPI.cloudflareVerificationCompletedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleCloudflareVerificationCompleted(notification)
+        }
+    }
+
+    private func handleCloudflareVerificationCompleted(_ notification: Notification) {
+        guard let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String,
+              ForumInstance.normalizedBaseURL(verifiedBaseURL) == ForumInstance.normalizedBaseURL(baseURL)
+        else { return }
+
+        let readyPostIds = viewModel.posts.compactMap { post in
+            viewModel.parsedBlocks[post.id] == nil ? nil : post.id
+        }
+        AvatarImageLoader.credentialsDidChange(
+            for: baseURL,
+            retrying: avatarURLs(forPostIds: readyPostIds)
+        )
+        prefetchedImagePostIds.removeAll()
+        prefetchContentImages(forPostIds: readyPostIds)
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            await self.viewModel.loadTopic(
+                id: self.topicId,
+                containerWidth: self.view.bounds.width
+            )
+        }
     }
 
     private func updateTitleHeader() {
@@ -1106,6 +1163,282 @@ final class TopicDetailViewController: ObservableViewController {
         present(activity, animated: true)
     }
 
+    private func makeExportMenu() -> UIMenu {
+        let formatMenus = TopicExportFormat.allCases.map { format in
+            UIMenu(
+                title: format.title,
+                image: UIImage(systemName: format == .markdown ? "doc.plaintext" : "chevron.left.forwardslash.chevron.right"),
+                children: TopicExportRange.allCases.map { range in
+                    UIAction(title: range.title) { [weak self] _ in
+                        self?.exportTopic(format: format, range: range)
+                    }
+                }
+            )
+        }
+        return UIMenu(
+            title: String(localized: "topic.export", defaultValue: "导出话题"),
+            image: UIImage(systemName: "square.and.arrow.up"),
+            children: formatMenus
+        )
+    }
+
+    private func configureTopicActions() {
+        let searchButton = UIBarButtonItem(
+            image: UIImage(systemName: "magnifyingglass"),
+            style: .plain,
+            target: self,
+            action: #selector(searchTopicTapped)
+        )
+        searchButton.accessibilityLabel = String(localized: "topic.search", defaultValue: "搜索话题")
+
+        let topic = viewModel.topic
+        let bookmarkTitle = topic?.bookmarked == true
+            ? String(localized: "topic.bookmark.remove", defaultValue: "取消书签")
+            : String(localized: "topic.bookmark.add", defaultValue: "添加书签")
+        let bookmark = UIAction(title: bookmarkTitle, image: UIImage(systemName: topic?.bookmarked == true ? "bookmark.slash" : "bookmark")) { [weak self] _ in
+            self?.bookmarkTopic()
+        }
+        let share = UIAction(title: String(localized: "topic.share", defaultValue: "分享链接"), image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+            self?.shareTopicLink(sourceView: nil)
+        }
+        let username = AuthManager.shared.username(for: api.baseURL)
+        let isReadLater = TopicReadLaterStore.shared.contains(
+            topicId: topicId,
+            baseURL: api.baseURL,
+            username: username
+        )
+        let readLater = UIAction(
+            title: isReadLater
+                ? String(localized: "topic.read_later.remove", defaultValue: "移出稍后阅读")
+                : String(localized: "topic.read_later.add", defaultValue: "稍后阅读"),
+            image: UIImage(systemName: "square.stack.3d.up"),
+            state: isReadLater ? .on : .off
+        ) { [weak self] _ in
+            guard let self else { return }
+            TopicReadLaterStore.shared.toggle(
+                topicId: self.topicId,
+                baseURL: self.api.baseURL,
+                username: AuthManager.shared.username(for: self.api.baseURL)
+            )
+            self.configureTopicActions()
+        }
+        let shareImage = UIAction(title: String(localized: "topic.share_image", defaultValue: "生成分享图片"), image: UIImage(systemName: "photo")) { [weak self] _ in
+            self?.shareTopicImage()
+        }
+        let opFilter = UIAction(
+            title: viewModel.isFilteringByOP
+                ? String(localized: "topic.filter_all", defaultValue: "显示全部回复")
+                : String(localized: "topic.filter_op", defaultValue: "只看楼主"),
+            image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
+            state: viewModel.isFilteringByOP ? .on : .off
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.viewModel.setFilteringByOP(!self.viewModel.isFilteringByOP)
+        }
+        let notificationMenu = UIMenu(
+            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
+            image: UIImage(systemName: "bell"),
+            children: DiscourseTopicDetail.NotificationLevel.allCases.reversed().map { level in
+                UIAction(
+                    title: self.title(for: level),
+                    state: topic?.notificationLevel == level ? .on : .off
+                ) { [weak self] _ in
+                    self?.setNotificationLevel(level)
+                }
+            }
+        )
+        let openBrowser = UIAction(title: String(localized: "topic.open_browser", defaultValue: "在浏览器打开"), image: UIImage(systemName: "globe")) { [weak self] _ in
+            guard let self, let url = URL(string: "\(self.baseURL)/t/\(self.topicId)") else { return }
+            let browser = InAppBrowserViewController(
+                api: self.api,
+                username: AuthManager.shared.username(for: self.api.baseURL),
+                initialURL: url
+            )
+            self.navigationController?.pushViewController(browser, animated: true)
+        }
+        let readingSettings = UIAction(title: String(localized: "topic.reading_settings", defaultValue: "阅读设置"), image: UIImage(systemName: "book")) { [weak self] _ in
+            self?.navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
+        }
+        var actions: [UIMenuElement] = [bookmark, readLater, notificationMenu, share, shareImage, opFilter]
+        if topic?.canEdit == true {
+            actions.append(UIAction(title: String(localized: "topic.edit", defaultValue: "编辑话题"), image: UIImage(systemName: "pencil")) { [weak self] _ in
+                self?.editTopic()
+            })
+        }
+        actions.append(contentsOf: [makeExportMenu(), openBrowser, readingSettings])
+
+        let moreButton = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            menu: UIMenu(children: actions)
+        )
+        moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
+        navigationItem.rightBarButtonItems = [moreButton, searchButton]
+    }
+
+    @objc private func searchTopicTapped() {
+        let alert = UIAlertController(
+            title: String(localized: "topic.search", defaultValue: "搜索话题"),
+            message: nil,
+            preferredStyle: .alert
+        )
+        alert.addTextField { field in
+            field.placeholder = String(localized: "topic.search.placeholder", defaultValue: "输入关键词")
+            field.returnKeyType = .search
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "topic.search", defaultValue: "搜索话题"), style: .default) { [weak self, weak alert] _ in
+            guard let self, let query = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return }
+            self.performTopicSearch(query)
+        })
+        present(alert, animated: true)
+    }
+
+    private func performTopicSearch(_ query: String) {
+        Task {
+            do {
+                let result = try await api.searchTopic(topicId: topicId, term: query)
+                let posts = (result.posts ?? []).filter { $0.topicId == topicId }
+                presentSearchResults(posts, query: query)
+            } catch {
+                showPostActionError(error)
+            }
+        }
+    }
+
+    private func presentSearchResults(_ posts: [DiscourseSearchResult.SearchPost], query: String) {
+        guard !posts.isEmpty else {
+            let alert = UIAlertController(
+                title: String(localized: "topic.search", defaultValue: "搜索话题"),
+                message: String(localized: "topic.search.empty", defaultValue: "没有找到匹配内容"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+        let sheet = UIAlertController(title: query, message: nil, preferredStyle: .actionSheet)
+        for post in posts.prefix(12) {
+            let excerpt = post.blurb?.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression) ?? post.username
+            let title = "#\(post.postNumber)  \(String(excerpt.prefix(70)))"
+            sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                self?.jumpToFloor(post.postNumber)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.last
+        present(sheet, animated: true)
+    }
+
+    private func title(for level: DiscourseTopicDetail.NotificationLevel) -> String {
+        switch level {
+        case .watching: return String(localized: "topic.notifications.watching", defaultValue: "关注")
+        case .tracking: return String(localized: "topic.notifications.tracking", defaultValue: "跟踪")
+        case .regular: return String(localized: "topic.notifications.regular", defaultValue: "常规")
+        case .muted: return String(localized: "topic.notifications.muted", defaultValue: "静音")
+        }
+    }
+
+    private func setNotificationLevel(_ level: DiscourseTopicDetail.NotificationLevel) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.api.updateTopicNotificationLevel(topicId: self.topicId, level: level)
+                    self.viewModel.topic?.notificationLevel = level
+                    self.configureTopicActions()
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
+    private func editTopic() {
+        guard let topic = viewModel.topic, topic.canEdit else { return }
+        let alert = UIAlertController(title: String(localized: "topic.edit", defaultValue: "编辑话题"), message: nil, preferredStyle: .alert)
+        alert.addTextField { $0.text = topic.title }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default) { [weak self, weak alert] _ in
+            guard let self, let title = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return }
+            Task {
+                do {
+                    try await self.api.updateTopic(topicId: self.topicId, title: title)
+                    self.hasTitleHeader = false
+                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func shareTopicImage() {
+        guard let topic = viewModel.topic else { return }
+        let displayTitle = topic.fancyTitle ?? topic.title
+        let firstPost = viewModel.posts.first(where: { $0.actionCode == nil })
+        let excerpt = firstPost?.cooked.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression) ?? ""
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 1350))
+        let image = renderer.image { context in
+            UIColor.systemBackground.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 1350))
+            let titleAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 56, weight: .bold), .foregroundColor: UIColor.label]
+            let bodyAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 34), .foregroundColor: UIColor.secondaryLabel]
+            (displayTitle as NSString).draw(in: CGRect(x: 72, y: 92, width: 936, height: 260), withAttributes: titleAttributes)
+            (String(excerpt.prefix(500)) as NSString).draw(in: CGRect(x: 72, y: 390, width: 936, height: 700), withAttributes: bodyAttributes)
+            ("\(baseURL)/t/\(topicId)" as NSString).draw(in: CGRect(x: 72, y: 1190, width: 936, height: 80), withAttributes: bodyAttributes)
+        }
+        let activity = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.first
+        present(activity, animated: true)
+    }
+
+    private func exportTopic(format: TopicExportFormat, range: TopicExportRange) {
+        guard let topic = viewModel.topic else {
+            showPostActionError(TopicExportError.noPosts)
+            return
+        }
+        let title = topic.fancyTitle ?? topic.title
+        let posts = viewModel.posts
+        let username = findAuthGating()?.currentUsername()
+        let service = TopicExportService(baseURL: baseURL, username: username)
+        let history = ExportHistoryStore(baseURL: baseURL, username: username)
+        let selectedPostCount = range == .firstPost ? min(posts.count, 1) : posts.filter { $0.actionCode == nil }.count
+
+        do {
+            let fileURL = try service.export(
+                topicId: topicId,
+                title: title,
+                posts: posts,
+                format: format,
+                range: range
+            )
+            let record = TopicExportRecord(
+                topicId: topicId,
+                title: title,
+                format: format,
+                filePath: fileURL.path,
+                postCount: selectedPostCount,
+                errorMessage: nil
+            )
+            try history.add(record)
+            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+            activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+            present(activity, animated: true)
+        } catch {
+            let failedRecord = TopicExportRecord(
+                topicId: topicId,
+                title: title,
+                format: format,
+                filePath: nil,
+                postCount: selectedPostCount,
+                errorMessage: error.localizedDescription
+            )
+            try? history.add(failedRecord)
+            showPostActionError(error)
+        }
+    }
+
     private func bookmarkTopic() {
         performAuthenticated { [weak self] in
             guard let self else { return }
@@ -1425,8 +1758,9 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             self?.syncOwningTabBarVisibility()
         }
         timeline.modalPresentationStyle = .pageSheet
+        timeline.isModalInPresentation = true
         if let sheet = timeline.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
+            sheet.detents = [.medium()]
             sheet.prefersGrabberVisible = false
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
         }
@@ -1939,7 +2273,7 @@ extension TopicTimelineSheetViewController: UITextFieldDelegate {
     }
 }
 
-private final class TopicTimelineTrackView: UIControl {
+private final class TopicTimelineTrackView: UIControl, UIGestureRecognizerDelegate {
     var totalCount: Int {
         get { totalCountValue }
         set {
@@ -1983,6 +2317,12 @@ private final class TopicTimelineTrackView: UIControl {
         isOpaque = false
         contentMode = .redraw
         accessibilityTraits = [.adjustable]
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = true
+        pan.delegate = self
+        addGestureRecognizer(pan)
     }
 
     override func tintColorDidChange() {
@@ -2052,11 +2392,38 @@ private final class TopicTimelineTrackView: UIControl {
         return true
     }
 
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began, .changed:
+            updateSelection(at: gesture.location(in: self).y)
+        default:
+            break
+        }
+    }
+
     private func updateSelection(for touch: UITouch) {
-        let index = indexForY(touch.location(in: self).y)
+        updateSelection(at: touch.location(in: self).y)
+    }
+
+    private func updateSelection(at y: CGFloat) {
+        let index = indexForY(y)
         guard index != selectedIndex else { return }
         selectedIndex = index
         sendActions(for: .valueChanged)
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+        let velocity = pan.velocity(in: self)
+        return abs(velocity.y) >= abs(velocity.x)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard otherGestureRecognizer is UIPanGestureRecognizer else { return false }
+        return otherGestureRecognizer.view !== self
     }
 
     private func clampedIndex(_ index: Int) -> Int {
@@ -2192,6 +2559,19 @@ private final class TopicReadingTracker {
             await MainActor.run {
                 guard let self else { return }
                 self.isFlushInFlight = false
+                if let statusCode,
+                   (200 ..< 300).contains(statusCode),
+                   let highestSeen = timings.keys.max() {
+                    NotificationCenter.default.post(
+                        name: .topicReadProgressDidChange,
+                        object: nil,
+                        userInfo: [
+                            TopicReadProgressUserInfoKey.baseURL: api.baseURL,
+                            TopicReadProgressUserInfoKey.topicId: topicId,
+                            TopicReadProgressUserInfoKey.highestSeen: highestSeen,
+                        ]
+                    )
+                }
                 guard !force,
                       let statusCode,
                       !(200 ..< 300).contains(statusCode)

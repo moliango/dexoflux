@@ -12,6 +12,7 @@ final class RepliesViewController: UIViewController {
     private var parsedBlocks: [Int: [AnnotatedBlock]] = [:]
     private var unsupportedPostIds: Set<Int> = []
     private var downloadedAttachmentURLs: Set<URL> = []
+    private var cloudflareCompletionObservationToken: NSObjectProtocol?
 
     private lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
@@ -75,10 +76,17 @@ final class RepliesViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        if let cloudflareCompletionObservationToken {
+            NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Replies"
         view.backgroundColor = .systemBackground
+        startObservingCloudflareVerification()
 
         view.addSubview(tableView)
         view.addSubview(activityIndicator)
@@ -156,8 +164,46 @@ final class RepliesViewController: UIViewController {
     }
 
     private func prefetchReplyImages() {
-        let urls = parsedBlocks.values.flatMap(\.imageSourceURLs).compactMap(URL.init(string:))
-        ForumImageLoader.prefetch(urls: urls)
+        let contentURLs = parsedBlocks.values.flatMap(\.imageSourceURLs).compactMap(URL.init(string:))
+        ForumImageLoader.prefetch(urls: contentURLs)
+        AvatarImageLoader.prefetch(
+            urls: replyAvatarURLs(),
+            cloudflareBaseURL: baseURL
+        )
+    }
+
+    private func replyAvatarURLs() -> [URL] {
+        replies.compactMap { reply in
+            AvatarImageLoader.url(
+                from: reply.avatarTemplate,
+                baseURL: baseURL,
+                size: 96
+            )
+        }
+    }
+
+    private func startObservingCloudflareVerification() {
+        cloudflareCompletionObservationToken = NotificationCenter.default.addObserver(
+            forName: DiscourseAPI.cloudflareVerificationCompletedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleCloudflareVerificationCompleted(notification)
+        }
+    }
+
+    private func handleCloudflareVerificationCompleted(_ notification: Notification) {
+        guard let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String,
+              ForumInstance.normalizedBaseURL(verifiedBaseURL) == ForumInstance.normalizedBaseURL(baseURL)
+        else { return }
+
+        AvatarImageLoader.credentialsDidChange(
+            for: baseURL,
+            retrying: replyAvatarURLs()
+        )
+        prefetchReplyImages()
+        guard let visibleRows = tableView.indexPathsForVisibleRows, !visibleRows.isEmpty else { return }
+        tableView.reloadRows(at: visibleRows, with: .none)
     }
 }
 

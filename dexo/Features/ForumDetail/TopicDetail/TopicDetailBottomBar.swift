@@ -143,7 +143,7 @@ final class TopicDetailBottomBar: UIControl {
 
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         longPress.minimumPressDuration = 0.2
-        longPress.cancelsTouchesInView = false
+        longPress.cancelsTouchesInView = true
         addGestureRecognizer(longPress)
 
         NSLayoutConstraint.activate([

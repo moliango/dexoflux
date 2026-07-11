@@ -108,6 +108,21 @@ final class HomeViewModel: DexoObservableObject {
         return categoryIndex[id]
     }
 
+    @discardableResult
+    func updateTopicReadProgress(topicId: Int, highestSeen: Int) -> Bool {
+        guard highestSeen > 0,
+              let index = topics.firstIndex(where: { $0.id == topicId })
+        else { return false }
+
+        let current = topics[index]
+        guard highestSeen > (current.lastReadPostNumber ?? 0) || current.unseen else {
+            return false
+        }
+        topics[index] = current.updatingReadProgress(highestSeen: highestSeen)
+        notifyChanged()
+        return true
+    }
+
     func loadTopics(retryingExplicitCancellation: Bool = false) async {
         isLoading = true
         errorMessage = nil

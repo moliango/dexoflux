@@ -56,11 +56,20 @@ enum DiscourseQuoteRenderer: BlockRenderer {
         if let topicTitle, !topicTitle.isEmpty {
             // Topic-link variant: title button + optional category badge
             let titleButton = UIButton(type: .system)
-            titleButton.setTitle(topicTitle, for: .normal)
-            titleButton.titleLabel?.font = config.baseFont.withRelativeSize(-1).weighted(.semibold)
-            titleButton.titleLabel?.lineBreakMode = .byTruncatingTail
-            titleButton.setTitleColor(config.linkColor, for: .normal)
+            var titleConfig = UIButton.Configuration.plain()
+            titleConfig.title = topicTitle
+            titleConfig.baseForegroundColor = config.linkColor
+            titleConfig.contentInsets = .zero
+            titleConfig.titleLineBreakMode = .byTruncatingTail
+            titleConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var updated = attributes
+                updated.font = config.baseFont.withRelativeSize(-1).weighted(.semibold)
+                return updated
+            }
+            titleButton.configuration = titleConfig
             titleButton.contentHorizontalAlignment = .leading
+            titleButton.titleLabel?.numberOfLines = 1
+            titleButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
             titleButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             if let topicURL, let url = URL(string: topicURL) {
                 titleButton.addAction(UIAction { _ in
@@ -109,13 +118,14 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             linkColor: config.linkColor,
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
-            contentWidth: max(config.contentWidth - 22, 0),
+            contentWidth: max(config.contentWidth - 28, 0),
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs
         )
 
-        let views = NativeContentRenderer.renderBlocks(content, config: quoteConfig, delegate: delegate)
+        let normalizedContent = normalizedQuoteContent(content)
+        let views = NativeContentRenderer.renderBlocks(normalizedContent, config: quoteConfig, delegate: delegate)
         for view in views {
             contentStack.addArrangedSubview(view)
         }
@@ -128,15 +138,80 @@ enum DiscourseQuoteRenderer: BlockRenderer {
 
             headerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             headerStack.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 12),
-            { let c = headerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12); c.priority = .init(999); return c }(),
+            headerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
 
             contentStack.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 8),
             contentStack.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 12),
-            { let c = contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12); c.priority = .init(999); return c }(),
+            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
             contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
         ])
 
         return container
+    }
+
+    private static func normalizedQuoteContent(_ blocks: [ContentBlock]) -> [ContentBlock] {
+        blocks.flatMap { block -> [ContentBlock] in
+            guard case .paragraph(let inlines) = block else { return [block] }
+            var result: [ContentBlock] = []
+            var textInlines: [InlineNode] = []
+
+            func flushText() {
+                let trimmed = textInlines.trimmedWhitespace()
+                if !trimmed.isEmpty { result.append(.paragraph(trimmed)) }
+                textInlines.removeAll(keepingCapacity: true)
+            }
+
+            for inline in inlines {
+                if let imageBlock = quoteImageBlock(from: inline) {
+                    flushText()
+                    result.append(imageBlock)
+                } else {
+                    textInlines.append(inline)
+                }
+            }
+            flushText()
+            return result.isEmpty ? [block] : result
+        }
+    }
+
+    private static func quoteImageBlock(from inline: InlineNode) -> ContentBlock? {
+        switch inline {
+        case .image(let src, let alt, let width, let height, let isEmoji):
+            guard !isEmoji, !src.isEmpty else { return nil }
+            return .image(src: src, alt: alt, width: width, height: height, href: src)
+        case .link(let href, let children):
+            if children.count == 1,
+               case .image(let src, let alt, let width, let height, let isEmoji) = children[0],
+               !isEmoji {
+                return .image(src: src, alt: alt, width: width, height: height, href: href)
+            }
+            let label = plainText(children).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard looksLikeImageURL(href),
+                  label.hasPrefix("["), label.hasSuffix("]") else { return nil }
+            return .image(src: href, alt: String(label.dropFirst().dropLast()), width: nil, height: nil, href: href)
+        default:
+            return nil
+        }
+    }
+
+    private static func looksLikeImageURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value) else { return false }
+        let path = components.path.lowercased()
+        return [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".heic"].contains { path.hasSuffix($0) }
+    }
+
+    private static func plainText(_ inlines: [InlineNode]) -> String {
+        inlines.map { inline in
+            switch inline {
+            case .text(let text), .styledText(let text, _), .code(let text): return text
+            case .link(_, let children), .spoiler(let children): return plainText(children)
+            case .mention(let username, _): return "@\(username)"
+            case .mentionGroup(let name, _): return "@\(name)"
+            case .hashtag(let text, _, _): return "#\(text)"
+            case .image(_, let alt, _, _, _): return alt ?? ""
+            case .lineBreak: return "\n"
+            }
+        }.joined()
     }
 }
 

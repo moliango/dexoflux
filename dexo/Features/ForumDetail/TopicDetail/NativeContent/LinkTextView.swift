@@ -21,7 +21,7 @@ final class LinkTextView: UITextView {
         }
         let fittingSize = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
         let measured = sizeThatFits(fittingSize)
-        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height))
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height + 2))
     }
 
     deinit {

@@ -39,6 +39,7 @@ final class HomeViewController: ObservableViewController {
     private var authObservationToken: NSObjectProtocol?
     private var settingsObservationToken: NSObjectProtocol?
     private var foregroundObservationToken: NSObjectProtocol?
+    private var topicReadProgressObservationToken: NSObjectProtocol?
     private var topicReloadTask: Task<Void, Never>?
     private var reloadTimeoutTask: Task<Void, Never>?
     private var incomingTopicsRetryTask: Task<Void, Never>?
@@ -289,7 +290,8 @@ final class HomeViewController: ObservableViewController {
             tags: topic.tags ?? [],
             replyCount: max(topic.postsCount - 1, 0),
             views: topic.views,
-            timeText: TopicCell.formatDate(topic.lastPostedAt ?? topic.createdAt)
+            timeText: TopicCell.formatDate(topic.lastPostedAt ?? topic.createdAt),
+            isUnread: topic.isUnreadForDisplay
         )
     }
 
@@ -323,10 +325,80 @@ final class HomeViewController: ObservableViewController {
         return label
     }()
 
+    private let loginPromptCard: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 28
+        view.layer.cornerCurve = .continuous
+        view.isHidden = true
+        return view
+    }()
+
+    private let loginLogoView: UIImageView = {
+        let view = UIImageView(image: UIImage(named: "LinuxDoLogo") ?? UIImage(named: "launchImg"))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.contentMode = .scaleAspectFit
+        return view
+    }()
+
+    private let loginTitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "欢迎使用 DexoFlux"
+        label.font = .systemFont(ofSize: 24, weight: .bold)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let loginFeatureLabel: UILabel = {
+        let label = UILabel()
+        label.text = "连接观点、记录阅读，也不错过每一次回应"
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let loginBenefitsStack: UIStackView = {
+        let items = [
+            ("text.bubble.fill", "探索话题"),
+            ("bell.badge.fill", "及时回应"),
+            ("bookmark.fill", "同步收藏"),
+        ]
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .fill
+        stack.distribution = .fillEqually
+        stack.spacing = 8
+        for (symbol, title) in items {
+            var config = UIButton.Configuration.tinted()
+            config.title = title
+            config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+            config.imagePlacement = .top
+            config.imagePadding = 6
+            config.cornerStyle = .medium
+            config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 5, bottom: 9, trailing: 5)
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var updated = attributes
+                updated.font = .systemFont(ofSize: 11.5, weight: .semibold)
+                return updated
+            }
+            let item = UIButton(configuration: config)
+            item.isUserInteractionEnabled = false
+            stack.addArrangedSubview(item)
+        }
+        return stack
+    }()
+
     private let loginButton: UIButton = {
         var config = UIButton.Configuration.filled()
         config.title = String(localized: "home.login_prompt")
-        config.cornerStyle = .medium
+        config.cornerStyle = .large
+        config.image = UIImage(systemName: "arrow.right")
+        config.imagePlacement = .trailing
+        config.imagePadding = 8
+        config.contentInsets = NSDirectionalEdgeInsets(top: 13, leading: 22, bottom: 13, trailing: 22)
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isHidden = true
@@ -425,8 +497,16 @@ final class HomeViewController: ObservableViewController {
         view.addSubview(incomingTopicsHeaderView)
 
         view.addSubview(activityIndicator)
-        view.addSubview(errorLabel)
-        view.addSubview(loginButton)
+        let loginStack = UIStackView(arrangedSubviews: [loginLogoView, loginTitleLabel, loginFeatureLabel, errorLabel, loginBenefitsStack, loginButton])
+        loginStack.axis = .vertical
+        loginStack.alignment = .fill
+        loginStack.spacing = 12
+        loginStack.setCustomSpacing(7, after: loginTitleLabel)
+        loginStack.setCustomSpacing(18, after: errorLabel)
+        loginStack.setCustomSpacing(22, after: loginBenefitsStack)
+        loginStack.translatesAutoresizingMaskIntoConstraints = false
+        loginPromptCard.addSubview(loginStack)
+        view.addSubview(loginPromptCard)
         view.addSubview(floatingActionButton)
 
         setupHeader()
@@ -479,13 +559,15 @@ final class HomeViewController: ObservableViewController {
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
 
-            errorLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            errorLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            errorLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-
-            loginButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            loginButton.topAnchor.constraint(equalTo: errorLabel.bottomAnchor, constant: 16),
+            loginPromptCard.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -34),
+            loginPromptCard.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 22),
+            loginPromptCard.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -22),
+            loginStack.topAnchor.constraint(equalTo: loginPromptCard.topAnchor, constant: 28),
+            loginStack.leadingAnchor.constraint(equalTo: loginPromptCard.leadingAnchor, constant: 24),
+            loginStack.trailingAnchor.constraint(equalTo: loginPromptCard.trailingAnchor, constant: -24),
+            loginStack.bottomAnchor.constraint(equalTo: loginPromptCard.bottomAnchor, constant: -26),
+            loginLogoView.heightAnchor.constraint(equalToConstant: 68),
+            loginButton.heightAnchor.constraint(equalToConstant: 50),
 
             floatingActionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             fabBottomConstraint,
@@ -507,6 +589,7 @@ final class HomeViewController: ObservableViewController {
         startObservingAuthChanges()
         startObservingSettingsChanges()
         startObservingForeground()
+        startObservingTopicReadProgress()
         startMonitoringNetwork()
 
         loadingSkeletonView.setSkeletonActive(true, animated: false)
@@ -529,6 +612,9 @@ final class HomeViewController: ObservableViewController {
         }
         if let foregroundObservationToken {
             NotificationCenter.default.removeObserver(foregroundObservationToken)
+        }
+        if let topicReadProgressObservationToken {
+            NotificationCenter.default.removeObserver(topicReadProgressObservationToken)
         }
         topicReloadTask?.cancel()
         reloadTimeoutTask?.cancel()
@@ -604,6 +690,22 @@ final class HomeViewController: ObservableViewController {
             queue: .main
         ) { [weak self] _ in
             self?.reloadAfterBecomingVisibleIfNeeded()
+        }
+    }
+
+    private func startObservingTopicReadProgress() {
+        topicReadProgressObservationToken = NotificationCenter.default.addObserver(
+            forName: .topicReadProgressDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let baseURL = notification.userInfo?[TopicReadProgressUserInfoKey.baseURL] as? String,
+                  baseURL == self.api.baseURL,
+                  let topicId = notification.userInfo?[TopicReadProgressUserInfoKey.topicId] as? Int,
+                  let highestSeen = notification.userInfo?[TopicReadProgressUserInfoKey.highestSeen] as? Int
+            else { return }
+            self.viewModel.updateTopicReadProgress(topicId: topicId, highestSeen: highestSeen)
         }
     }
 
@@ -739,6 +841,24 @@ final class HomeViewController: ObservableViewController {
         loadingSkeletonView.applyThemeStyle()
         loadingSkeletonTopConstraint?.constant = tableTopSpacing
         emptyStateView.applyThemeStyle()
+        loginPromptCard.backgroundColor = themeStyle.topicCardBackgroundColor.withAlphaComponent(0.94)
+        loginPromptCard.layer.borderWidth = 1
+        loginPromptCard.layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
+        loginPromptCard.layer.shadowColor = themeStyle.accentColor.cgColor
+        loginPromptCard.layer.shadowOpacity = 0.09
+        loginPromptCard.layer.shadowRadius = 26
+        loginPromptCard.layer.shadowOffset = CGSize(width: 0, height: 12)
+        loginTitleLabel.textColor = .label
+        loginBenefitsStack.arrangedSubviews.compactMap { $0 as? UIButton }.forEach { item in
+            var configuration = item.configuration ?? .tinted()
+            configuration.baseForegroundColor = themeStyle.accentColor
+            configuration.baseBackgroundColor = themeStyle.accentColor.withAlphaComponent(0.12)
+            item.configuration = configuration
+        }
+        var loginConfiguration = loginButton.configuration ?? .filled()
+        loginConfiguration.baseBackgroundColor = themeStyle.accentColor
+        loginConfiguration.baseForegroundColor = .white
+        loginButton.configuration = loginConfiguration
     }
 
     private func setupFilterBar() {
@@ -797,6 +917,7 @@ final class HomeViewController: ObservableViewController {
             errorLabel.text = viewModel.errorMessage
             errorLabel.isHidden = false
             loginButton.isHidden = false
+            loginPromptCard.isHidden = false
             tableView.isHidden = true
             headerContainer.isHidden = true
             floatingActionButton.isHidden = true
@@ -809,6 +930,7 @@ final class HomeViewController: ObservableViewController {
         }
 
         loginButton.isHidden = true
+        loginPromptCard.isHidden = true
         headerContainer.isHidden = false
         floatingActionButton.isHidden = false
 
@@ -1077,7 +1199,7 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func shouldReloadTopicsAfterCloudflareVerification() -> Bool {
-        viewModel.topics.isEmpty || viewModel.isBlockedByCloudflare || viewModel.errorMessage != nil
+        false
     }
 
     private func reloadTopicsAfterCloudflareVerificationIfNeeded(_ shouldReload: Bool) {
@@ -1985,6 +2107,7 @@ private final class IncomingTopicsBannerView: UIControl {
         view.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.14)
         view.layer.cornerRadius = 17
         view.layer.cornerCurve = .continuous
+        view.isUserInteractionEnabled = false
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()

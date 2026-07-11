@@ -83,7 +83,8 @@ final class PostNativeCell: UITableViewCell {
     static let reuseIdentifier = "PostNativeCell"
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
-    private static let actionIconPointSize: CGFloat = 16
+    private static let actionIconPointSize: CGFloat = 12
+    private static let actionIconCanvasSize = CGSize(width: 12, height: 12)
     private static let fontAwesomeSolidFontName = "FontAwesome5Free-Solid"
     private static let fontAwesomeSolidGlyphs: [String: String] = [
         "award": "\u{f559}",
@@ -140,7 +141,7 @@ final class PostNativeCell: UITableViewCell {
     ]
     fileprivate static let boostIconImage: UIImage = {
         if let image = UIImage(named: "BoostRocket") {
-            return resizedActionIcon(image)
+            return image.withRenderingMode(.alwaysTemplate)
         }
         return UIImage(
             systemName: "paperplane.fill",
@@ -170,6 +171,7 @@ final class PostNativeCell: UITableViewCell {
         static let contentTop: CGFloat = 10
         static let firstPostContentInset: CGFloat = 0
         static let actionTop: CGFloat = 10
+        static let sharedIssueButtonHeight: CGFloat = 30
         static let actionButtonWidth: CGFloat = 32
         static let actionSpacing: CGFloat = 2
         static let minimumReplyCardHeight: CGFloat = 80
@@ -307,7 +309,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let timeLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 12)
+        label.font = .systemFont(ofSize: 11.75)
         label.textColor = .secondaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -315,7 +317,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let floorLabel: UILabel = {
         let label = UILabel()
-        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        label.font = .monospacedDigitSystemFont(ofSize: 11.75, weight: .regular)
         label.textColor = .tertiaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -361,6 +363,7 @@ final class PostNativeCell: UITableViewCell {
     private var contentStackLeadingConstraint: NSLayoutConstraint?
     private var contentStackTrailingConstraint: NSLayoutConstraint?
     private var contentStackBottomConstraint: NSLayoutConstraint?
+    private var sharedIssueButtonMinWidthConstraint: NSLayoutConstraint?
 
     // MARK: - Bottom Bar
 
@@ -382,6 +385,10 @@ final class PostNativeCell: UITableViewCell {
         button.contentHorizontalAlignment = .center
         button.isHidden = true
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.lineBreakMode = .byClipping
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         return button
     }()
 
@@ -470,7 +477,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let reactButton: UIButton = {
         let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "heart", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -489,7 +496,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let bookmarkButton: UIButton = {
         let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "bookmark", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -498,7 +505,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let moreButton: UIButton = {
         let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "ellipsis", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
         button.showsMenuAsPrimaryAction = true
@@ -508,7 +515,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let replyButton: UIButton = {
         let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "arrowshape.turn.up.left", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -542,9 +549,9 @@ final class PostNativeCell: UITableViewCell {
         flairBadgeView.addSubview(flairImageView)
         topLineStackView.addArrangedSubview(nameLabel)
         topLineStackView.addArrangedSubview(topBadgesStackView)
-        topLineStackView.addArrangedSubview(userTitleLabel)
-        topLineStackView.addArrangedSubview(grantedBadgesStackView)
         metaLineStackView.addArrangedSubview(usernameLabel)
+        metaLineStackView.addArrangedSubview(userTitleLabel)
+        metaLineStackView.addArrangedSubview(grantedBadgesStackView)
         cardView.addSubview(topLineStackView)
         cardView.addSubview(metaLineStackView)
         cardView.addSubview(timeLabel)
@@ -598,6 +605,9 @@ final class PostNativeCell: UITableViewCell {
         contentCardTopConstraint.priority = .defaultHigh
         let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(equalToConstant: 42)
         self.reactionPillWidthConstraint = reactionPillWidthConstraint
+        let sharedIssueButtonMinWidthConstraint = sharedIssueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
+        sharedIssueButtonMinWidthConstraint.priority = .init(999)
+        self.sharedIssueButtonMinWidthConstraint = sharedIssueButtonMinWidthConstraint
 
         let cardTopConstraint = cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Metrics.cardOuterVertical)
         let cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Metrics.cardOuterVertical)
@@ -666,6 +676,8 @@ final class PostNativeCell: UITableViewCell {
             bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
             bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
             bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+            sharedIssueButtonMinWidthConstraint,
+            sharedIssueButton.heightAnchor.constraint(equalToConstant: Metrics.sharedIssueButtonHeight),
 
             sharedIssueCountLabel.centerYAnchor.constraint(equalTo: sharedIssueButton.centerYAnchor),
             sharedIssueCountLabel.trailingAnchor.constraint(equalTo: sharedIssueButton.trailingAnchor, constant: -7),
@@ -752,11 +764,11 @@ final class PostNativeCell: UITableViewCell {
         nameLabel.textColor = (post.moderator || post.groupModerator || post.admin) ? .systemBlue : .label
 
         if let userTitle = displayUserTitle(for: post) {
-            userTitleLabel.text = userTitle
-            userTitleLabel.textColor = .systemYellow
+            configureUserTitle(userTitle)
             userTitleLabel.isHidden = false
         } else {
             userTitleLabel.text = nil
+            userTitleLabel.attributedText = nil
             userTitleLabel.isHidden = true
         }
 
@@ -809,7 +821,7 @@ final class PostNativeCell: UITableViewCell {
             setupTextViews(in: view)
             contentStackView.addArrangedSubview(view)
         }
-        tightenConsecutiveParagraphSpacing()
+        adjustNativeContentSpacing()
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
             contentStackView.addArrangedSubview(boostStripView)
         }
@@ -828,7 +840,7 @@ final class PostNativeCell: UITableViewCell {
         )
     }
 
-    private func tightenConsecutiveParagraphSpacing() {
+    private func adjustNativeContentSpacing() {
         let arrangedSubviews = contentStackView.arrangedSubviews
         guard arrangedSubviews.count > 1 else { return }
 
@@ -837,8 +849,19 @@ final class PostNativeCell: UITableViewCell {
             let next = arrangedSubviews[arrangedSubviews.index(after: index)]
             if current is LinkTextView, next is LinkTextView {
                 contentStackView.setCustomSpacing(0, after: current)
+            } else if current is LinkTextView, Self.needsBreathingRoomBefore(next) {
+                contentStackView.setCustomSpacing(10, after: current)
+            } else if Self.needsBreathingRoomBefore(current), next is LinkTextView {
+                contentStackView.setCustomSpacing(8, after: current)
             }
         }
+    }
+
+    private static func needsBreathingRoomBefore(_ view: UIView) -> Bool {
+        view is TappableImageContainer
+            || view is VideoCardView
+            || view is OneboxCardView
+            || view is FallbackBlockView
     }
 
     private func applyCardStyle(isFirstPost: Bool) {
@@ -903,12 +926,12 @@ final class PostNativeCell: UITableViewCell {
             relativeTo: .caption1
         )
         floorLabel.font = TopicDetailTypography.contentContextMonospacedFont(
-            offsetFromBody: -3,
+            offsetFromBody: -1,
             weight: .regular,
             relativeTo: .caption1
         )
         timeLabel.font = TopicDetailTypography.contentContextFont(
-            offsetFromBody: -3,
+            offsetFromBody: -1,
             weight: .regular,
             relativeTo: .caption1
         )
@@ -940,12 +963,34 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func displayUserTitle(for post: DiscourseTopicDetail.Post) -> String? {
-        [post.userTitle, post.primaryGroupName]
-            .compactMap { value in
-                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed?.isEmpty == false ? trimmed : nil
+        let trimmed = post.userTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    private func configureUserTitle(_ title: String) {
+        if title == "种子用户" {
+            let colors: [UIColor] = [
+                UIColor(red: 0.94, green: 0.58, blue: 0.08, alpha: 1),
+                UIColor(red: 0.16, green: 0.67, blue: 0.82, alpha: 1),
+                UIColor(red: 0.91, green: 0.34, blue: 0.58, alpha: 1),
+                UIColor(red: 0.48, green: 0.39, blue: 0.88, alpha: 1),
+            ]
+            let attributed = NSMutableAttributedString()
+            for (index, character) in title.enumerated() {
+                attributed.append(NSAttributedString(
+                    string: String(character),
+                    attributes: [
+                        .font: userTitleLabel.font as Any,
+                        .foregroundColor: colors[index % colors.count],
+                    ]
+                ))
             }
-            .first
+            userTitleLabel.attributedText = attributed
+            return
+        }
+        userTitleLabel.attributedText = nil
+        userTitleLabel.text = title
+        userTitleLabel.textColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.82)
     }
 
     private func configureHeaderBadges(for post: DiscourseTopicDetail.Post, baseURL: String) {
@@ -969,10 +1014,11 @@ final class PostNativeCell: UITableViewCell {
         if let emoji = post.userStatus?.emoji,
            let urlString = EmojiStore.url(for: emoji) ?? EmojiStore.lookup(for: emoji),
            let url = URL(string: urlString) {
-            grantedBadgesStackView.addArrangedSubview(makeHeaderBadgeImageView(url: url, size: 15))
+            topBadgesStackView.addArrangedSubview(makeHeaderBadgeImageView(url: url, size: 15))
         }
+        topBadgesStackView.isHidden = topBadgesStackView.arrangedSubviews.isEmpty
 
-        for badge in post.badgesGranted.prefix(4) {
+        for badge in post.badgesGranted {
             guard let badgeView = makeGrantedBadgeView(for: badge, baseURL: baseURL) else {
                 continue
             }
@@ -1004,15 +1050,20 @@ final class PostNativeCell: UITableViewCell {
         let color = grantedBadgeColor(for: badge)
         if let imageUrl = badge.imageUrl,
            let url = resolveHeaderBadgeURL(imageUrl, baseURL: baseURL) {
-            return makeHeaderBadgeImageView(
+            let imageView = makeHeaderBadgeImageView(
                 url: url,
                 placeholder: nil,
                 placeholderTintColor: .clear,
                 size: 14
             )
+            imageView.isAccessibilityElement = true
+            imageView.accessibilityLabel = badge.name
+            return imageView
         }
 
         if let badgeView = makeFontAwesomeBadgeView(icon: badge.icon, tintColor: color, size: 13) {
+            badgeView.isAccessibilityElement = true
+            badgeView.accessibilityLabel = badge.name
             return badgeView
         }
 
@@ -1323,7 +1374,7 @@ final class PostNativeCell: UITableViewCell {
 
     private func configureRepliesButton(count: Int) {
         var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: "bubble.left.fill", withConfiguration: Self.actionSymbolConfig(pointSize: 13))
+        config.image = UIImage(systemName: "bubble.left.fill", withConfiguration: Self.actionSymbolConfig())
         config.title = "\(count)"
         config.imagePadding = 4
         config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
@@ -1351,59 +1402,76 @@ final class PostNativeCell: UITableViewCell {
         }
 
         let theme = AppSettings.shared.themeStyle
+        let fluxBlue = UIColor(red: 0.10, green: 0.54, blue: 0.98, alpha: 1)
         let title = state.userCreated
             ? String(localized: "shared_issue.marked_label")
             : String(localized: "shared_issue.compact_label")
-        let foregroundColor: UIColor = state.userCreated ? theme.accentColor : .secondaryLabel
+        let foregroundColor: UIColor = state.userCreated ? fluxBlue : theme.accentColor
         let backgroundColor: UIColor = state.userCreated
-            ? theme.accentColor.withAlphaComponent(0.14)
-            : UIColor.secondarySystemFill.withAlphaComponent(0.62)
+            ? fluxBlue.withAlphaComponent(0.13)
+            : theme.accentColor.withAlphaComponent(0.08)
         let borderColor: UIColor = state.userCreated
-            ? theme.accentColor.withAlphaComponent(0.34)
-            : UIColor.separator.withAlphaComponent(0.28)
+            ? fluxBlue.withAlphaComponent(0.26)
+            : theme.accentColor.withAlphaComponent(0.16)
 
-        var attributes = AttributeContainer()
-        attributes.font = TopicDetailTypography.interfaceFont(
+        let titleFont = TopicDetailTypography.interfaceFont(
             ofSize: 12.5,
             weight: .semibold
         )
+        var attributes = AttributeContainer()
+        attributes.font = titleFont
 
         var config = UIButton.Configuration.plain()
         config.image = UIImage(
             systemName: state.userCreated ? "hand.raised.fill" : "hand.raised",
-            withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .semibold)
+            withConfiguration: Self.actionSymbolConfig(weight: .semibold)
         )
-        config.imagePadding = 4
+        config.titleLineBreakMode = .byClipping
+        config.imagePadding = 6
         config.attributedTitle = AttributedString(title, attributes: attributes)
+        let trailingInset: CGFloat = state.count > 0 ? 32 : 11
         config.contentInsets = NSDirectionalEdgeInsets(
             top: 0,
-            leading: 9,
+            leading: 11,
             bottom: 0,
-            trailing: state.count > 0 ? 32 : 9
+            trailing: trailingInset
         )
         config.baseForegroundColor = foregroundColor
+        config.cornerStyle = .capsule
         config.background.backgroundColor = backgroundColor
-        config.background.cornerRadius = Self.bottomBarHeight / 2
+        config.background.cornerRadius = Metrics.sharedIssueButtonHeight / 2
         sharedIssueButton.configuration = config
         sharedIssueButton.tintColor = foregroundColor
-        sharedIssueButton.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 12.5, weight: .semibold)
-        sharedIssueButton.layer.cornerRadius = Self.bottomBarHeight / 2
+        sharedIssueButton.titleLabel?.font = titleFont
+        sharedIssueButton.titleLabel?.numberOfLines = 1
+        sharedIssueButton.titleLabel?.lineBreakMode = .byClipping
+        sharedIssueButton.layer.cornerRadius = Metrics.sharedIssueButtonHeight / 2
         sharedIssueButton.layer.cornerCurve = .continuous
         sharedIssueButton.layer.borderWidth = 1.0 / UIScreen.main.scale
         sharedIssueButton.layer.borderColor = borderColor.cgColor
-        sharedIssueButton.layer.shadowColor = theme.accentColor.cgColor
-        sharedIssueButton.layer.shadowOpacity = state.userCreated ? 0.08 : 0
-        sharedIssueButton.layer.shadowRadius = 6
-        sharedIssueButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        sharedIssueButton.layer.shadowColor = fluxBlue.cgColor
+        sharedIssueButton.layer.shadowOpacity = state.userCreated ? 0.10 : 0
+        sharedIssueButton.layer.shadowRadius = 8
+        sharedIssueButton.layer.shadowOffset = CGSize(width: 0, height: 3)
         sharedIssueButton.clipsToBounds = true
         sharedIssueButton.isEnabled = state.canCreate
         sharedIssueButton.alpha = state.canCreate ? 1 : 0.68
         sharedIssueButton.isHidden = false
+        let titleWidth = ceil((title as NSString).size(withAttributes: [.font: titleFont]).width)
+        let countWidth: CGFloat = state.count > 0
+            ? max(18, ceil(("\(state.count)" as NSString).size(withAttributes: [
+                .font: TopicDetailTypography.interfaceFont(ofSize: 11, weight: .semibold),
+            ]).width) + 10)
+            : 0
+        sharedIssueButtonMinWidthConstraint?.constant = 11 + Self.actionIconPointSize + 6 + titleWidth
+            + (state.count > 0 ? max(28, countWidth + 7) : 11)
         sharedIssueCountLabel.text = state.count > 0 ? "\(state.count)" : nil
-        sharedIssueCountLabel.textColor = state.userCreated ? .white : theme.accentColor
+        sharedIssueCountLabel.textColor = state.userCreated ? .white : fluxBlue
         sharedIssueCountLabel.backgroundColor = state.userCreated
-            ? theme.accentColor.withAlphaComponent(0.86)
-            : theme.accentColor.withAlphaComponent(0.12)
+            ? fluxBlue.withAlphaComponent(0.92)
+            : fluxBlue.withAlphaComponent(0.14)
+        sharedIssueCountLabel.layer.borderWidth = state.userCreated ? 1.0 / UIScreen.main.scale : 0
+        sharedIssueCountLabel.layer.borderColor = UIColor.white.withAlphaComponent(0.75).cgColor
         sharedIssueCountLabel.isHidden = state.count <= 0
         sharedIssueButton.accessibilityLabel = state.canCreate
             ? String(localized: "shared_issue.title")
@@ -1488,10 +1556,7 @@ final class PostNativeCell: UITableViewCell {
     private func configureReplyButton() {
         configureActionButton(
             replyButton,
-            image: UIImage(
-                systemName: "arrowshape.turn.up.left",
-                withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .medium)
-            ),
+            symbolName: "arrowshape.turn.up.left",
             tintColor: .secondaryLabel,
             backgroundColor: .clear,
             accessibilityLabel: "回复"
@@ -1542,7 +1607,9 @@ final class PostNativeCell: UITableViewCell {
         accessibilityLabel: String?
     ) {
         var config = UIButton.Configuration.plain()
-        config.image = image?.withRenderingMode(.alwaysTemplate)
+        config.image = image.map { image in
+            Self.normalizedActionIcon(image)
+        }
         config.baseForegroundColor = tintColor
         config.contentInsets = .zero
         config.background.backgroundColor = backgroundColor
@@ -1555,17 +1622,34 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private static func actionSymbolConfig(
-        pointSize: CGFloat = 16,
-        weight: UIImage.SymbolWeight = .semibold
+        pointSize: CGFloat = actionIconPointSize,
+        weight: UIImage.SymbolWeight = .medium
     ) -> UIImage.SymbolConfiguration {
         UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
     }
 
-    private static func resizedActionIcon(_ image: UIImage) -> UIImage {
-        let targetSize = CGSize(width: actionIconPointSize, height: actionIconPointSize)
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+    private static func normalizedActionIcon(_ image: UIImage) -> UIImage {
+        guard image.size.width > 0, image.size.height > 0 else {
+            return image.withRenderingMode(.alwaysTemplate)
+        }
+
+        let scale = min(
+            actionIconCanvasSize.width / image.size.width,
+            actionIconCanvasSize.height / image.size.height
+        )
+        let drawSize = CGSize(
+            width: image.size.width * scale,
+            height: image.size.height * scale
+        )
+        let drawRect = CGRect(
+            x: (actionIconCanvasSize.width - drawSize.width) / 2,
+            y: (actionIconCanvasSize.height - drawSize.height) / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        let renderer = UIGraphicsImageRenderer(size: actionIconCanvasSize)
         let rendered = renderer.image { _ in
-            image.withRenderingMode(.alwaysOriginal).draw(in: CGRect(origin: .zero, size: targetSize))
+            image.withRenderingMode(.alwaysOriginal).draw(in: drawRect)
         }
         return rendered.withRenderingMode(.alwaysTemplate)
     }

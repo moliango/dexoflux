@@ -52,6 +52,7 @@ struct XiaohongshuTopicCardModel {
     let replyCount: Int
     let views: Int
     let timeText: String
+    let isUnread: Bool
 }
 
 final class TopicCell: UITableViewCell {
@@ -192,6 +193,7 @@ final class TopicCell: UITableViewCell {
         let themeStyle = AppSettings.shared.themeStyle
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
         applyTypography()
+        titleLabel.textColor = topic.isUnreadForDisplay ? .label : .secondaryLabel
         configureTitleWithEmoji(topic.fancyTitle)
 
         let replies = max(topic.postsCount - 1, 0)
@@ -722,6 +724,7 @@ private final class XiaohongshuTopicCardView: UIControl {
         previewLabel.textColor = readableTextColor(for: accentColor)
         previewLabel.text = Self.cleanPreviewText(model.excerpt) ?? model.title
         titleLabel.text = model.title
+        titleLabel.textColor = model.isUnread ? .label : .secondaryLabel
         usernameLabel.text = model.username.map { "@\($0)" } ?? model.timeText
         replyCountLabel.text = Self.compactCount(model.replyCount)
         viewsLabel.text = Self.compactCount(model.views)
