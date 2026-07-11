@@ -8,34 +8,34 @@
 		<dict>
 			<key>DexoFluxCards</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxCards</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxCards</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxCards</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
 			<key>DexoFluxOrbit</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxOrbit</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxOrbit</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxOrbit</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
 			<key>DexoFluxSignal</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxSignal</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxSignal</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxSignal</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
@@ -52,34 +52,34 @@
 		<dict>
 			<key>DexoFluxCards</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxCards</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxCards</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxCards</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
 			<key>DexoFluxOrbit</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxOrbit</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxOrbit</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxOrbit</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
 			<key>DexoFluxSignal</key>
 			<dict>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxSignal</string>
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>DexoFluxSignal</string>
 				</array>
+				<key>CFBundleIconName</key>
+				<string>DexoFluxSignal</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
@@ -94,24 +94,22 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.eilgnaw.dexo</string>
+			<string>com.naine.dexoflux</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>dexo</string>
 			</array>
 		</dict>
 	</array>
-	<key>UIAppFonts</key>
-	<array>
-		<string>FontAwesome5_Solid.ttf</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>DexoFlux needs permission to save images to your photo library.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>FontAwesome5_Solid.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -131,11 +129,8 @@
 	</dict>
 	<key>UILaunchScreen</key>
 	<dict>
-		<key>UIToolbar</key>
-		<dict>
-			<key>UIImageName</key>
-			<string></string>
-		</dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
 	</dict>
 </dict>
 </plist>

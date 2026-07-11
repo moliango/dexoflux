@@ -77,6 +77,21 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
             return false
         }
 
+        // The WebView already proved the login by issuing `_t`; do not block the UI
+        // on profile/session enrichment, which can take several seconds behind CF.
+        if WebCookieStore.shared.hasCookie(named: "_t", for: url) {
+            notifyChanged()
+            Task { @MainActor [weak self] in
+                _ = await WebSessionRefreshService.shared.ensureSynced(
+                    forum: forum,
+                    reason: "web_login_background",
+                    force: true
+                )
+                _ = await self?.refreshWebSessionUserIfPossible(forum: forum)
+            }
+            return true
+        }
+
         _ = await WebSessionRefreshService.shared.ensureSynced(forum: forum, reason: "web_login", force: true)
 
         if await refreshWebSessionUserIfPossible(forum: forum) {

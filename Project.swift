@@ -25,7 +25,7 @@ let project = Project(
             name: "dexoflux",
             destinations: .iOS,
             product: .app,
-            bundleId: "com.eilgnaw.dexo",
+            bundleId: "com.naine.dexoflux",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .file(path: "dexo/Info.plist"),
             sources: [
@@ -75,6 +75,26 @@ let project = Project(
                     "TARGETED_DEVICE_FAMILY": "1,2",
                 ]
             )
+        ),
+        .target(
+            name: "dexofluxTests",
+            destinations: .iOS,
+            product: .unitTests,
+            bundleId: "com.naine.dexofluxTests",
+            deploymentTargets: .iOS("15.0"),
+            infoPlist: .default,
+            sources: ["dexofluxTests/**"],
+            dependencies: [
+                .target(name: "dexoflux"),
+            ]
+        ),
+    ],
+    schemes: [
+        .scheme(
+            name: "dexofluxTests",
+            shared: true,
+            buildAction: .buildAction(targets: ["dexoflux", "dexofluxTests"]),
+            testAction: .targets(["dexofluxTests"])
         ),
     ]
 )

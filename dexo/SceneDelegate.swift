@@ -1,5 +1,11 @@
 import UIKit
 
+enum DexoLaunchAppearance {
+    static let backgroundColorName = "LaunchBackground"
+    static let backgroundColor = UIColor(named: backgroundColorName)
+        ?? UIColor(red: 0.946, green: 0.944, blue: 0.922, alpha: 1)
+}
+
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
@@ -7,11 +13,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = (scene as? UIWindowScene) else { return }
 
         let window = UIWindow(windowScene: windowScene)
+        self.window = window
+        window.backgroundColor = DexoLaunchAppearance.backgroundColor
+        AppSettings.shared.applyAppearance()
         let defaultForum = DatabaseManager.shared.defaultForum()
         window.rootViewController = ForumContainerViewController(forum: defaultForum, showsDismissButton: false)
         window.makeKeyAndVisible()
-        self.window = window
-        AppSettings.shared.applyAppearance()
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}
