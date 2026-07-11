@@ -16,13 +16,26 @@ struct DiscourseSearchResult: Decodable {
         let avatarTemplate: String?
         let blurb: String?
         let topicId: Int
+        let postNumber: Int
         let topicTitleHeadline: String?
 
         enum CodingKeys: String, CodingKey {
             case id, username, blurb
             case avatarTemplate = "avatar_template"
             case topicId = "topic_id"
+            case postNumber = "post_number"
             case topicTitleHeadline = "topic_title_headline"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = (try? container.decode(Int.self, forKey: .id)) ?? 0
+            username = (try? container.decodeIfPresent(String.self, forKey: .username)) ?? ""
+            avatarTemplate = try? container.decodeIfPresent(String.self, forKey: .avatarTemplate)
+            blurb = try? container.decodeIfPresent(String.self, forKey: .blurb)
+            topicId = (try? container.decode(Int.self, forKey: .topicId)) ?? 0
+            postNumber = max(1, (try? container.decode(Int.self, forKey: .postNumber)) ?? 1)
+            topicTitleHeadline = try? container.decodeIfPresent(String.self, forKey: .topicTitleHeadline)
         }
     }
 

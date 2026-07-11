@@ -59,7 +59,7 @@ struct DiscourseReactionToggleResponse: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         reactions = (try? container.decodeIfPresent([DiscourseTopicDetail.Reaction].self, forKey: .reactions)) ?? []
-        reactionUsersCount = container.decodeLossyInt(forKey: .reactionUsersCount)
+        reactionUsersCount = container.decodeLossyAPIInt(forKey: .reactionUsersCount)
         currentUserReaction = try? container.decodeIfPresent(
             DiscourseTopicDetail.Reaction.self,
             forKey: .currentUserReaction
@@ -78,7 +78,7 @@ struct DiscourseSharedIssueResponse: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        count = container.decodeLossyInt(forKey: .count) ?? 0
+        count = container.decodeLossyAPIInt(forKey: .count) ?? 0
         userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
     }
 }
@@ -441,8 +441,27 @@ final class DiscourseAPI {
         }
     }
 
-    func search(term: String, page: Int = 0) async throws -> DiscourseSearchResult {
-        try await request(route: .search(term: term, page: page))
+    func search(term: String, page: Int = 0, typeFilter: String? = nil) async throws -> DiscourseSearchResult {
+        try await request(route: .search(term: term, page: page, typeFilter: typeFilter))
+    }
+
+    func searchTopic(topicId: Int, term: String, page: Int = 0) async throws -> DiscourseSearchResult {
+        let query = "\(term.trimmingCharacters(in: .whitespacesAndNewlines)) topic:\(topicId)"
+        return try await search(term: query, page: page)
+    }
+
+    func updateTopicNotificationLevel(topicId: Int, level: DiscourseTopicDetail.NotificationLevel) async throws {
+        try await requestVoid(
+            route: .topicNotificationLevel(topicId: topicId),
+            parameters: ["notification_level": level.rawValue]
+        )
+    }
+
+    func updateTopic(topicId: Int, title: String) async throws {
+        try await requestVoid(
+            route: .updateTopic(topicId: topicId),
+            parameters: ["title": title]
+        )
     }
 
     func fetchTags() async throws -> DiscourseTagList {
@@ -801,6 +820,80 @@ final class DiscourseAPI {
         return response.user
     }
 
+    func fetchUserCard(username: String) async throws -> DiscourseUserProfile {
+        let response: DiscourseUserCardResponse = try await request(route: .userCard(username: username))
+        return response.user
+    }
+
+    func followUser(username: String) async throws {
+        try await requestVoid(route: .follow(username: username))
+    }
+
+    func unfollowUser(username: String) async throws {
+        try await requestVoid(route: .unfollow(username: username))
+    }
+
+    func updateUserNotificationLevel(username: String, level: String, expiringAt: Date?) async throws {
+        var parameters: Parameters = ["notification_level": level]
+        if let expiringAt {
+            parameters["expiring_at"] = ISO8601DateFormatter().string(from: expiringAt)
+        }
+        try await requestVoid(
+            route: .userNotificationLevel(username: username),
+            parameters: parameters
+        )
+    }
+
+    func sendPrivateMessage(to username: String, title: String, raw: String) async throws -> DiscourseCreatePostResponse {
+        try await request(
+            route: .createTopic,
+            parameters: [
+                "archetype": "private_message",
+                "target_recipients": username,
+                "title": title,
+                "raw": raw,
+            ]
+        )
+    }
+
+    func fetchUserActions(username: String, filter: String, offset: Int = 0) async throws -> [DiscourseUserAction] {
+        let response: DiscourseUserActionResponse = try await request(
+            route: .userActions(username: username, filter: filter, offset: offset)
+        )
+        return response.userActions
+    }
+
+    func fetchUserReactions(username: String, beforeReactionUserId: Int? = nil) async throws -> [DiscourseUserReaction] {
+        let response: DiscourseUserReactionResponse = try await request(
+            route: .userReactions(username: username, beforeReactionUserId: beforeReactionUserId)
+        )
+        return response.reactions
+    }
+
+    func fetchFollowing(username: String) async throws -> [DiscourseFollowUser] {
+        try await request(route: .following(username: username))
+    }
+
+    func fetchFollowers(username: String) async throws -> [DiscourseFollowUser] {
+        try await request(route: .followers(username: username))
+    }
+
+    func fetchDrafts(offset: Int = 0, limit: Int = 20) async throws -> DiscourseDraftListResponse {
+        try await request(route: .drafts(offset: offset, limit: limit))
+    }
+
+    func deleteDraft(key: String, sequence: Int) async throws {
+        do {
+            try await requestVoid(route: .deleteDraft(key: key, sequence: sequence))
+        } catch let error as DiscourseAPIError where error.errorType == "http_404" {
+            return
+        }
+    }
+
+    func fetchCreatedTopics(username: String, page: Int = 0) async throws -> DiscourseTopicList {
+        try await request(route: .createdTopics(username: username, page: page))
+    }
+
     func fetchUserBadges(username: String) async throws -> DiscourseUserBadgesResponse {
         try await request(route: .userBadges(username: username))
     }
@@ -849,10 +942,49 @@ final class DiscourseAPI {
         headers: HTTPHeaders? = nil,
         allowAuthRecovery: Bool = true
     ) async throws -> T {
+        let response = try await performRequest(
+            route: route,
+            parameters: parameters,
+            headers: headers,
+            allowAuthRecovery: allowAuthRecovery
+        )
+        do {
+            return try JSONDecoder().decode(T.self, from: response.data)
+        } catch {
+            throw DiscourseDecodingError(
+                route: route,
+                url: response.url,
+                statusCode: response.statusCode,
+                underlying: error,
+                bodyPreview: Self.bodyPreview(from: response.data)
+            )
+        }
+    }
+
+    private func requestVoid(
+        route: DiscourseRouter,
+        parameters: Parameters? = nil,
+        headers: HTTPHeaders? = nil,
+        allowAuthRecovery: Bool = true
+    ) async throws {
+        _ = try await performRequest(
+            route: route,
+            parameters: parameters,
+            headers: headers,
+            allowAuthRecovery: allowAuthRecovery
+        )
+    }
+
+    private func performRequest(
+        route: DiscourseRouter,
+        parameters: Parameters? = nil,
+        headers: HTTPHeaders? = nil,
+        allowAuthRecovery: Bool = true
+    ) async throws -> RawDiscourseResponse {
         let url = baseURL + route.path
         let encoding: ParameterEncoding = route.method == .post ? JSONEncoding.default : URLEncoding.default
         let response = await session.request(url, method: route.method, parameters: parameters, encoding: encoding, headers: headers)
-            .serializingData()
+            .serializingData(emptyResponseCodes: [200, 201, 202, 204, 205])
             .response
 
         #if DEBUG
@@ -877,7 +1009,7 @@ final class DiscourseAPI {
                error: response.error,
                data: response.data
            ) {
-            return try await request(
+            return try await performRequest(
                 route: route,
                 parameters: parameters,
                 headers: headers,
@@ -921,17 +1053,11 @@ final class DiscourseAPI {
 
         switch response.result {
         case .success(let data):
-            do {
-                return try JSONDecoder().decode(T.self, from: data)
-            } catch {
-                throw DiscourseDecodingError(
-                    route: route,
-                    url: url,
-                    statusCode: response.response?.statusCode,
-                    underlying: error,
-                    bodyPreview: Self.bodyPreview(from: data)
-                )
-            }
+            return RawDiscourseResponse(
+                data: data,
+                url: url,
+                statusCode: response.response?.statusCode
+            )
         case .failure(let error):
             throw Self.makeDecodingError(
                 error,
@@ -1028,7 +1154,7 @@ final class DiscourseAPI {
         )
     }
 
-    private static func postCloudflareChallengeDetected(baseURL: String, responseURL: URL?) {
+    static func postCloudflareChallengeDetected(baseURL: String, responseURL: URL?) {
         DohDebugLog.record(
             "challenge detected base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")",
             subsystem: "CF"
@@ -1046,9 +1172,18 @@ final class DiscourseAPI {
         )
     }
 
-    private static func isCloudflareChallengeResponse(_ response: HTTPURLResponse?, data: Data?) -> Bool {
+    nonisolated static func isCloudflareChallengeResponse(_ response: HTTPURLResponse?, data: Data?) -> Bool {
         let cfMitigated = headerValue("cf-mitigated", in: response)
         if cfMitigated?.localizedCaseInsensitiveContains("challenge") == true {
+            return true
+        }
+
+        let statusCode = response?.statusCode
+        let server = headerValue("server", in: response)?.lowercased() ?? ""
+        let contentType = headerValue("content-type", in: response)?.lowercased() ?? ""
+        if (statusCode == 403 || statusCode == 429 || statusCode == 503),
+           server.contains("cloudflare"),
+           contentType.contains("text/html") {
             return true
         }
 
@@ -1064,14 +1199,12 @@ final class DiscourseAPI {
 
         guard hasChallengeMarker else { return false }
 
-        let server = headerValue("server", in: response)?.lowercased() ?? ""
-        let contentType = headerValue("content-type", in: response)?.lowercased() ?? ""
         return server.contains("cloudflare")
             || contentType.contains("text/html")
             || lowerBody.contains("cloudflare")
     }
 
-    private static func headerValue(_ name: String, in response: HTTPURLResponse?) -> String? {
+    nonisolated private static func headerValue(_ name: String, in response: HTTPURLResponse?) -> String? {
         guard let response else { return nil }
         for (key, value) in response.allHeaderFields {
             guard "\(key)".caseInsensitiveCompare(name) == .orderedSame else { continue }
@@ -1094,7 +1227,7 @@ final class DiscourseAPI {
 }
 
 private extension KeyedDecodingContainer {
-    func decodeLossyInt(forKey key: Key) -> Int? {
+    func decodeLossyAPIInt(forKey key: Key) -> Int? {
         if let value = try? decodeIfPresent(Int.self, forKey: key) {
             return value
         }
@@ -1171,6 +1304,12 @@ private struct DiscourseErrorResponse: Decodable {
 private struct DiscourseFailedResponse: Decodable {
     let failed: String?
     let message: String?
+}
+
+private struct RawDiscourseResponse {
+    let data: Data
+    let url: String
+    let statusCode: Int?
 }
 
 struct DiscourseAPIError: LocalizedError {

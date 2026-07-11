@@ -1,5 +1,15 @@
 import Foundation
 
+extension Notification.Name {
+    static let topicReadProgressDidChange = Notification.Name("topicReadProgressDidChange")
+}
+
+enum TopicReadProgressUserInfoKey {
+    static let baseURL = "baseURL"
+    static let topicId = "topicId"
+    static let highestSeen = "highestSeen"
+}
+
 struct DiscourseTopicList: Decodable {
     let users: [User]?
     let categories: [DiscourseCategory]?
@@ -55,15 +65,26 @@ struct DiscourseTopicList: Decodable {
         let excerpt: String?
         let posters: [Poster]?
         let tags: [String]?
+        let unseen: Bool
+        let unreadPosts: Int
+        let lastReadPostNumber: Int?
+        let highestPostNumber: Int?
+
+        var isUnreadForDisplay: Bool {
+            unseen || unreadPosts > 0 || lastReadPostNumber == nil
+        }
 
         enum CodingKeys: String, CodingKey {
-            case id, title, views, pinned, excerpt, posters, tags
+            case id, title, views, pinned, excerpt, posters, tags, unseen
             case fancyTitle = "fancy_title"
             case postsCount = "posts_count"
             case replyCount = "reply_count"
             case categoryId = "category_id"
             case createdAt = "created_at"
             case lastPostedAt = "last_posted_at"
+            case unreadPosts = "unread_posts"
+            case lastReadPostNumber = "last_read_post_number"
+            case highestPostNumber = "highest_post_number"
         }
 
         init(from decoder: Decoder) throws {
@@ -81,6 +102,70 @@ struct DiscourseTopicList: Decodable {
             excerpt = try container.decodeIfPresent(String.self, forKey: .excerpt)
             posters = try container.decodeIfPresent([Poster].self, forKey: .posters)
             tags = Self.decodeTags(from: container)
+            unseen = try container.decodeIfPresent(Bool.self, forKey: .unseen) ?? false
+            unreadPosts = try container.decodeIfPresent(Int.self, forKey: .unreadPosts) ?? 0
+            lastReadPostNumber = try container.decodeIfPresent(Int.self, forKey: .lastReadPostNumber)
+            highestPostNumber = try container.decodeIfPresent(Int.self, forKey: .highestPostNumber)
+        }
+
+        func updatingReadProgress(highestSeen: Int) -> Topic {
+            Topic(
+                id: id,
+                fancyTitle: fancyTitle,
+                title: title,
+                postsCount: postsCount,
+                replyCount: replyCount,
+                views: views,
+                categoryId: categoryId,
+                createdAt: createdAt,
+                lastPostedAt: lastPostedAt,
+                pinned: pinned,
+                excerpt: excerpt,
+                posters: posters,
+                tags: tags,
+                unseen: false,
+                unreadPosts: max((highestPostNumber ?? postsCount) - highestSeen, 0),
+                lastReadPostNumber: max(lastReadPostNumber ?? 0, highestSeen),
+                highestPostNumber: highestPostNumber
+            )
+        }
+
+        private init(
+            id: Int,
+            fancyTitle: String,
+            title: String,
+            postsCount: Int,
+            replyCount: Int,
+            views: Int,
+            categoryId: Int?,
+            createdAt: String,
+            lastPostedAt: String?,
+            pinned: Bool?,
+            excerpt: String?,
+            posters: [Poster]?,
+            tags: [String]?,
+            unseen: Bool,
+            unreadPosts: Int,
+            lastReadPostNumber: Int?,
+            highestPostNumber: Int?
+        ) {
+            self.id = id
+            self.fancyTitle = fancyTitle
+            self.title = title
+            self.postsCount = postsCount
+            self.replyCount = replyCount
+            self.views = views
+            self.categoryId = categoryId
+            self.createdAt = createdAt
+            self.lastPostedAt = lastPostedAt
+            self.pinned = pinned
+            self.excerpt = excerpt
+            self.posters = posters
+            self.tags = tags
+            self.unseen = unseen
+            self.unreadPosts = unreadPosts
+            self.lastReadPostNumber = lastReadPostNumber
+            self.highestPostNumber = highestPostNumber
         }
 
         private static func decodeTags(from container: KeyedDecodingContainer<CodingKeys>) -> [String]? {

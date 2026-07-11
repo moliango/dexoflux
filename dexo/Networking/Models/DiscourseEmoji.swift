@@ -22,14 +22,38 @@ struct DiscourseEmojiGroup {
 }
 
 struct DiscourseCreatePostResponse: Decodable {
-    let id: Int
+    struct PendingPost: Decodable {
+        let id: Int?
+        let raw: String?
+        let createdAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case raw
+            case createdAt = "created_at"
+        }
+    }
+
+    let id: Int?
     let topicId: Int?
-    let postNumber: Int
+    let postNumber: Int?
+    let action: String?
+    let success: Bool?
+    let pendingCount: Int?
+    let pendingPost: PendingPost?
+
+    var isEnqueued: Bool {
+        action == "enqueued" && success == true
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
         case topicId = "topic_id"
         case postNumber = "post_number"
+        case action
+        case success
+        case pendingCount = "pending_count"
+        case pendingPost = "pending_post"
     }
 }
 

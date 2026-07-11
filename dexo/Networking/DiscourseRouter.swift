@@ -12,6 +12,8 @@ enum DiscourseRouter {
     case categories
     case topic(id: Int, trackVisit: Bool)
     case topicPosts(topicId: Int, postIds: [Int])
+    case topicNotificationLevel(topicId: Int)
+    case updateTopic(topicId: Int)
     case notifications
     case privateMessages(username: String)
     case privateMessagesSent(username: String)
@@ -25,12 +27,23 @@ enum DiscourseRouter {
     case basicInfo
     case currentUser
     case emojis
-    case search(term: String, page: Int)
+    case search(term: String, page: Int, typeFilter: String?)
     case tags
     case tagSearch(query: String, categoryId: Int?)
     case bookmarks(username: String)
     case userSummary(username: String)
     case userProfile(username: String)
+    case userCard(username: String)
+    case follow(username: String)
+    case unfollow(username: String)
+    case userNotificationLevel(username: String)
+    case userActions(username: String, filter: String, offset: Int)
+    case userReactions(username: String, beforeReactionUserId: Int?)
+    case following(username: String)
+    case followers(username: String)
+    case drafts(offset: Int, limit: Int)
+    case deleteDraft(key: String, sequence: Int)
+    case createdTopics(username: String, page: Int)
     case userBadges(username: String)
     case pendingInvites(username: String)
     case createInvite
@@ -44,11 +57,12 @@ enum DiscourseRouter {
     
     var method: HTTPMethod {
         switch self {
-        case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload:
+        case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
+             .topicNotificationLevel:
             return .post
-        case .toggleReaction, .votePoll:
+        case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic:
             return .put
-        case .deleteBookmark:
+        case .deleteBookmark, .unfollow, .deleteDraft:
             return .delete
         default:
             return .get
@@ -83,6 +97,10 @@ enum DiscourseRouter {
         case .topicPosts(let topicId, let postIds):
             let ids = postIds.map { "post_ids[]=\($0)" }.joined(separator: "&")
             return "/t/\(topicId)/posts.json?\(ids)"
+        case .topicNotificationLevel(let topicId):
+            return "/t/\(topicId)/notifications"
+        case .updateTopic(let topicId):
+            return "/t/-/\(topicId).json"
         case .notifications:
             return "/notifications.json"
         case .privateMessages(let username):
@@ -109,9 +127,10 @@ enum DiscourseRouter {
             return "/session/current.json"
         case .emojis:
             return "/emojis.json"
-        case .search(let term, let page):
+        case .search(let term, let page, let typeFilter):
             let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
-            return "/search.json?q=\(encoded)&page=\(page)"
+            let filter = typeFilter.map { "&type_filter=\(Self.queryValue($0))" } ?? ""
+            return "/search.json?q=\(encoded)&page=\(page)\(filter)"
         case .tags:
             return "/tags.json"
         case .tagSearch(let query, let categoryId):
@@ -127,6 +146,30 @@ enum DiscourseRouter {
             return "/u/\(username)/summary.json"
         case .userProfile(let username):
             return "/u/\(username).json"
+        case .userCard(let username):
+            return "/u/\(Self.pathComponent(username))/card.json"
+        case .follow(let username), .unfollow(let username):
+            return "/follow/\(Self.pathComponent(username))"
+        case .userNotificationLevel(let username):
+            return "/u/\(Self.pathComponent(username))/notification_level.json"
+        case .userActions(let username, let filter, let offset):
+            return "/user_actions.json?username=\(Self.queryValue(username))&filter=\(Self.queryValue(filter))&offset=\(offset)"
+        case .userReactions(let username, let beforeReactionUserId):
+            var path = "/discourse-reactions/posts/reactions.json?username=\(Self.queryValue(username))"
+            if let beforeReactionUserId {
+                path += "&before_reaction_user_id=\(beforeReactionUserId)"
+            }
+            return path
+        case .following(let username):
+            return "/u/\(Self.pathComponent(username))/follow/following"
+        case .followers(let username):
+            return "/u/\(Self.pathComponent(username))/follow/followers"
+        case .drafts(let offset, let limit):
+            return "/drafts.json?offset=\(offset)&limit=\(limit)"
+        case .deleteDraft(let key, let sequence):
+            return "/drafts/\(Self.pathComponent(key)).json?sequence=\(sequence)"
+        case .createdTopics(let username, let page):
+            return "/topics/created-by/\(Self.pathComponent(username)).json?page=\(page)"
         case .userBadges(let username):
             return "/user-badges/\(username.lowercased()).json?grouped=true"
         case .pendingInvites(let username):
@@ -149,5 +192,13 @@ enum DiscourseRouter {
         case .upload(let clientId):
             return "/uploads.json?client_id=\(clientId)"
         }
+    }
+
+    private static func pathComponent(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    }
+
+    private static func queryValue(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
     }
 }

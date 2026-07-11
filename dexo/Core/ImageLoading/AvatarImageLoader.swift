@@ -56,17 +56,20 @@ enum AvatarImageLoader {
         size: Int = 96,
         placeholder: UIImage? = defaultPlaceholder
     ) {
+        let url = url(from: template, baseURL: baseURL, size: size)
         setImage(
             on: imageView,
-            url: url(from: template, baseURL: baseURL, size: size),
-            placeholder: placeholder
+            url: url,
+            placeholder: placeholder,
+            cloudflareBaseURL: baseURL
         )
     }
 
     static func setImage(
         on imageView: UIImageView,
         url: URL?,
-        placeholder: UIImage? = defaultPlaceholder
+        placeholder: UIImage? = defaultPlaceholder,
+        cloudflareBaseURL: String? = nil
     ) {
         imageView.tintColor = .tertiaryLabel
         guard let url else {
@@ -86,7 +89,7 @@ enum AvatarImageLoader {
             with: url,
             placeholderImage: placeholder,
             options: options,
-            context: context(for: url),
+            context: context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil,
             completed: { image, _, _, _ in
                 guard let image else { return }
@@ -95,7 +98,7 @@ enum AvatarImageLoader {
         )
     }
 
-    static func prefetch(urls: [URL]) {
+    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
         let uniqueURLs = uniqueUnprefetchedURLs(urls)
         guard !uniqueURLs.isEmpty else { return }
 
@@ -103,7 +106,10 @@ enum AvatarImageLoader {
         for urls in grouped.values {
             let requestContext: [SDWebImageContextOption: Any]?
             if let firstURL = urls.first {
-                requestContext = context(for: firstURL)
+                requestContext = context(
+                    for: firstURL,
+                    cloudflareBaseURL: cloudflareBaseURL
+                )
             } else {
                 requestContext = nil
             }
@@ -116,6 +122,18 @@ enum AvatarImageLoader {
                 completed: nil
             )
         }
+    }
+
+    static func credentialsDidChange(for baseURL: String, retrying retryURLs: [URL] = []) {
+        guard let host = URL(string: baseURL)?.host?.lowercased() else { return }
+        let retryURLStrings = Set(retryURLs.map(\.absoluteString))
+        prefetchLock.lock()
+        prefetchedURLStrings = prefetchedURLStrings.filter { value in
+            if retryURLStrings.contains(value) { return false }
+            guard let urlHost = URL(string: value)?.host?.lowercased() else { return true }
+            return urlHost != host && !urlHost.hasSuffix(".\(host)")
+        }
+        prefetchLock.unlock()
     }
 
     private static func uniqueUnprefetchedURLs(_ urls: [URL]) -> [URL] {
@@ -137,11 +155,46 @@ enum AvatarImageLoader {
         return result
     }
 
-    static func context(for url: URL) -> [SDWebImageContextOption: Any]? {
+    static func context(
+        for url: URL,
+        cloudflareBaseURL: String? = nil
+    ) -> [SDWebImageContextOption: Any]? {
+        var context: [SDWebImageContextOption: Any] = [:]
         let headers = requestHeaders(for: url)
-        guard !headers.isEmpty else { return nil }
-        let modifier = SDWebImageDownloaderRequestModifier(headers: headers)
-        return [SDWebImageContextOption.downloadRequestModifier: modifier]
+        if !headers.isEmpty {
+            context[SDWebImageContextOption.downloadRequestModifier] = SDWebImageDownloaderRequestModifier(
+                headers: headers
+            )
+        }
+
+        let responseModifier = SDWebImageDownloaderResponseModifier(block: { response in
+            guard let httpResponse = response as? HTTPURLResponse,
+                  DiscourseAPI.isCloudflareChallengeResponse(httpResponse, data: nil)
+            else { return response }
+
+            let detectedBaseURL = cloudflareBaseURL
+                ?? httpResponse.url.flatMap(Self.originString(for:))
+                ?? Self.originString(for: url)
+            if let detectedBaseURL {
+                Task { @MainActor in
+                    DiscourseAPI.postCloudflareChallengeDetected(
+                        baseURL: detectedBaseURL,
+                        responseURL: httpResponse.url
+                    )
+                }
+            }
+            return response
+        })
+        context[SDWebImageContextOption.downloadResponseModifier] = responseModifier
+        return context
+    }
+
+    nonisolated private static func originString(for url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        if let port = url.port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
     }
 
     private static func requestHeaderSignature(for url: URL) -> String {
@@ -205,8 +258,11 @@ enum ForumImageLoader {
         )
     }
 
-    static func prefetch(urls: [URL]) {
-        AvatarImageLoader.prefetch(urls: urls)
+    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
+        AvatarImageLoader.prefetch(
+            urls: urls,
+            cloudflareBaseURL: cloudflareBaseURL
+        )
     }
 }
 

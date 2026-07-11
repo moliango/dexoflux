@@ -1,6 +1,13 @@
 import Foundation
 
 struct DiscourseTopicDetail: Decodable {
+    enum NotificationLevel: Int, CaseIterable {
+        case muted = 0
+        case regular = 1
+        case tracking = 2
+        case watching = 3
+    }
+
     let id: Int
     let title: String
     let fancyTitle: String?
@@ -19,6 +26,8 @@ struct DiscourseTopicDetail: Decodable {
     var canCreateSharedIssue: Bool
     var sharedIssueCount: Int
     var userCreatedSharedIssue: Bool
+    var notificationLevel: NotificationLevel
+    let canEdit: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, title, tags, bookmarked, views
@@ -35,6 +44,7 @@ struct DiscourseTopicDetail: Decodable {
         case canCreateSharedIssue = "can_create_shared_issue"
         case sharedIssueCount = "shared_issue_count"
         case userCreatedSharedIssue = "user_created_shared_issue"
+        case details
     }
 
     init(from decoder: Decoder) throws {
@@ -57,7 +67,26 @@ struct DiscourseTopicDetail: Decodable {
         canCreateSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .canCreateSharedIssue)) ?? false
         sharedIssueCount = container.decodeLossyInt(forKey: .sharedIssueCount) ?? 0
         userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
+        let details = try? container.decodeIfPresent(Details.self, forKey: .details)
+        notificationLevel = NotificationLevel(rawValue: details?.notificationLevel ?? 1) ?? .regular
+        canEdit = details?.canEdit ?? false
         injectGrantedBadges()
+    }
+
+    private struct Details: Decodable {
+        let notificationLevel: Int
+        let canEdit: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case notificationLevel = "notification_level"
+            case canEdit = "can_edit"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            notificationLevel = container.decodeLossyInt(forKey: .notificationLevel) ?? 1
+            canEdit = (try? container.decodeIfPresent(Bool.self, forKey: .canEdit)) ?? false
+        }
     }
 
     private mutating func injectGrantedBadges() {
@@ -437,7 +466,7 @@ struct DiscourseTopicDetail: Decodable {
     }
 }
 
-private extension KeyedDecodingContainer {
+extension KeyedDecodingContainer {
     func decodeNonEmptyStringIfPresent(forKey key: Key) throws -> String? {
         let value = try decodeIfPresent(String.self, forKey: key)?
             .trimmingCharacters(in: .whitespacesAndNewlines)

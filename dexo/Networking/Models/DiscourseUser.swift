@@ -38,6 +38,8 @@ struct DiscourseUserProfile: Codable {
     let createdAt: String?
     let lastPostedAt: String?
     let bioExcerpt: String?
+    let bioCooked: String?
+    let bioRaw: String?
     let location: String?
     let website: String?
     let websiteName: String?
@@ -48,6 +50,23 @@ struct DiscourseUserProfile: Codable {
     let gamificationScore: Int?
     let flairName: String?
     let flairUrl: String?
+    let flairBackgroundColor: String?
+    let flairColor: String?
+    let lastSeenAt: String?
+    let recentTimeRead: Int?
+    let topicPostCount: Int?
+    let canFollow: Bool?
+    let isFollowed: Bool?
+    let canSendPrivateMessages: Bool?
+    let canSendPrivateMessageToUser: Bool?
+    let muted: Bool?
+    let ignored: Bool?
+    let canMuteUser: Bool?
+    let canIgnoreUser: Bool?
+    let suspendReason: String?
+    let suspendedTill: String?
+    let silenceReason: String?
+    let silencedTill: String?
 
     enum CodingKeys: String, CodingKey {
         case id, username, name, title
@@ -59,6 +78,8 @@ struct DiscourseUserProfile: Codable {
         case createdAt = "created_at"
         case lastPostedAt = "last_posted_at"
         case bioExcerpt = "bio_excerpt"
+        case bioCooked = "bio_cooked"
+        case bioRaw = "bio_raw"
         case location
         case website
         case websiteName = "website_name"
@@ -69,6 +90,22 @@ struct DiscourseUserProfile: Codable {
         case gamificationScore = "gamification_score"
         case flairName = "flair_name"
         case flairUrl = "flair_url"
+        case flairBackgroundColor = "flair_bg_color"
+        case flairColor = "flair_color"
+        case lastSeenAt = "last_seen_at"
+        case recentTimeRead = "recent_time_read"
+        case topicPostCount = "topic_post_count"
+        case canFollow = "can_follow"
+        case isFollowed = "is_followed"
+        case canSendPrivateMessages = "can_send_private_messages"
+        case canSendPrivateMessageToUser = "can_send_private_message_to_user"
+        case muted, ignored
+        case canMuteUser = "can_mute_user"
+        case canIgnoreUser = "can_ignore_user"
+        case suspendReason = "suspend_reason"
+        case suspendedTill = "suspended_till"
+        case silenceReason = "silence_reason"
+        case silencedTill = "silenced_till"
     }
 }
 
@@ -140,7 +177,7 @@ struct DiscourseUserBadgesResponse: Decodable {
     }
 }
 
-struct DiscourseBadge: Decodable {
+struct DiscourseBadge: Codable {
     let id: Int
     let name: String
     let description: String?
