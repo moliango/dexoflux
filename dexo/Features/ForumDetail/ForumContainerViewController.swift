@@ -19,6 +19,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var cloudflareChallengeObservationToken: NSObjectProtocol?
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
     private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
+    private var appUpdateObservationToken: NSObjectProtocol?
+    private var appDidBecomeActiveObservationToken: NSObjectProtocol?
+    private var pendingAppUpdateRetryTask: Task<Void, Never>?
     private var isPresentingCloudflareVerification = false
     private var shouldShowCloudflareShieldButton = false
     private var cloudflareShieldSuppressedUntil: Date?
@@ -28,6 +31,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private weak var cloudflareShieldButtonHostView: UIView?
 
     private let launchLoadingView = DexoLaunchLoadingView()
+    private var tabBarViewController: ForumTabBarController?
+    private var pluginDockViewController: PluginDockViewController?
 
     private let authSyncOverlayView: UIView = {
         let view = UIView()
@@ -126,12 +131,14 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
         startObservingHomeInitialContent()
         setupTabBar()
+        setupPluginDock()
         setupAuthSyncOverlay()
         setupCloudflareShieldButton()
         setupLaunchLoadingOverlay()
         configureNavItems()
         startObservingAuth()
         startObservingCloudflareChallenges()
+        startObservingAppUpdates()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -139,6 +146,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if shouldShowCloudflareShieldButton {
             installCloudflareShieldButtonIfNeeded()
         }
+        guard !showsDismissButton else { return }
+        AppUpdateCoordinator.shared.scheduleAutomaticCheckIfNeeded()
+        presentPendingAppUpdateIfPossible()
     }
 
     private func startObservingAuth() {
@@ -191,13 +201,21 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let cloudflareNeedsUserObservationToken {
             NotificationCenter.default.removeObserver(cloudflareNeedsUserObservationToken)
         }
+        if let appUpdateObservationToken {
+            NotificationCenter.default.removeObserver(appUpdateObservationToken)
+        }
+        if let appDidBecomeActiveObservationToken {
+            NotificationCenter.default.removeObserver(appDidBecomeActiveObservationToken)
+        }
         launchOverlayFallbackTask?.cancel()
+        pendingAppUpdateRetryTask?.cancel()
         NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
         cloudflareShieldButton.removeFromSuperview()
     }
 
     private func setupTabBar() {
         let tabBarVC = ForumTabBarController(api: api, authGate: self)
+        tabBarViewController = tabBarVC
         tabBarVC.onNavigationControllersChanged = { [weak self] in
             self?.configureNavItems()
         }
@@ -215,6 +233,21 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         tabBarVC.configureTabBarSurface()
 
         tabBarVC.didMove(toParent: self)
+    }
+
+    private func setupPluginDock() {
+        let dock = PluginDockViewController(api: api, username: forum.username)
+        pluginDockViewController = dock
+        addChild(dock)
+        view.addSubview(dock.view)
+        dock.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            dock.view.topAnchor.constraint(equalTo: view.topAnchor),
+            dock.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dock.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dock.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        dock.didMove(toParent: self)
     }
 
     private func setupCloudflareShieldButton() {
@@ -285,6 +318,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             guard let self else { return }
             self.launchLoadingView.dismiss {
                 self.launchLoadingView.removeFromSuperview()
+                self.presentPendingAppUpdateIfPossible()
             }
         }
 
@@ -292,6 +326,78 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: dismiss)
         } else {
             dismiss()
+        }
+    }
+
+    private func startObservingAppUpdates() {
+        guard !showsDismissButton else { return }
+        appUpdateObservationToken = NotificationCenter.default.addObserver(
+            forName: .appUpdateDidBecomeAvailable,
+            object: AppUpdateCoordinator.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.presentPendingAppUpdateIfPossible()
+        }
+        appDidBecomeActiveObservationToken = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.presentPendingAppUpdateIfPossible()
+        }
+    }
+
+    private func presentPendingAppUpdateIfPossible() {
+        guard !showsDismissButton,
+              launchOverlayDismissed,
+              launchLoadingView.superview == nil,
+              authSyncOverlayView.isHidden,
+              !isPresentingCloudflareVerification,
+              !hasBusyPresentation(in: self),
+              view.window != nil
+        else {
+            schedulePendingAppUpdateRetryIfNeeded()
+            return
+        }
+        AppUpdateCoordinator.shared.presentPendingIfPossible(from: self)
+        schedulePendingAppUpdateRetryIfNeeded()
+    }
+
+    private func hasBusyPresentation(in viewController: UIViewController) -> Bool {
+        if viewController.presentedViewController != nil ||
+            viewController.isBeingPresented ||
+            viewController.isBeingDismissed ||
+            viewController.transitionCoordinator != nil {
+            return true
+        }
+
+        if let navigationController = viewController as? UINavigationController,
+           let visibleViewController = navigationController.visibleViewController {
+            return hasBusyPresentation(in: visibleViewController)
+        }
+        if let tabBarController = viewController as? UITabBarController,
+           let selectedViewController = tabBarController.selectedViewController {
+            return hasBusyPresentation(in: selectedViewController)
+        }
+        return viewController.children
+            .filter { $0.viewIfLoaded?.window != nil }
+            .contains { hasBusyPresentation(in: $0) }
+    }
+
+    private func schedulePendingAppUpdateRetryIfNeeded() {
+        guard !showsDismissButton,
+              AppUpdateCoordinator.shared.pendingRelease != nil,
+              pendingAppUpdateRetryTask == nil
+        else { return }
+
+        pendingAppUpdateRetryTask = Task { [weak self] in
+            defer { self?.pendingAppUpdateRetryTask = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled, let self else { return }
+                guard AppUpdateCoordinator.shared.pendingRelease != nil else { return }
+                self.presentPendingAppUpdateIfPossible()
+            }
         }
     }
 

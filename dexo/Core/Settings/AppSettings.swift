@@ -72,6 +72,11 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    enum PluginDockSide: String, CaseIterable {
+        case left
+        case right
+    }
+
     enum AppLanguage: String, CaseIterable {
         case simplifiedChinese = "zh-Hans"
         case traditionalChineseTaiwan = "zh-Hant-TW"
@@ -423,6 +428,52 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var pluginDockEnabled: Bool {
+        get { bool(forKey: "pluginDockEnabled", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "pluginDockEnabled")
+            notifyChanged()
+        }
+    }
+
+    var autoCheckForUpdates: Bool {
+        get { bool(forKey: "autoCheckForUpdates", defaultValue: true) }
+        set {
+            guard autoCheckForUpdates != newValue else { return }
+            defaults.set(newValue, forKey: "autoCheckForUpdates")
+            notifyChanged()
+        }
+    }
+
+    var pluginDockSide: PluginDockSide {
+        get {
+            defaults.string(forKey: "pluginDockSide").flatMap(PluginDockSide.init(rawValue:)) ?? .right
+        }
+        set {
+            guard pluginDockSide != newValue else { return }
+            defaults.set(newValue.rawValue, forKey: "pluginDockSide")
+            notifyChanged()
+        }
+    }
+
+    var pluginDockVerticalPosition: Double {
+        get {
+            guard defaults.object(forKey: "pluginDockVerticalPosition") != nil else { return 0.72 }
+            return Self.normalizedPluginDockVerticalPosition(defaults.double(forKey: "pluginDockVerticalPosition"))
+        }
+        set {
+            let value = Self.normalizedPluginDockVerticalPosition(newValue)
+            guard abs(pluginDockVerticalPosition - value) > 0.0001 else { return }
+            defaults.set(value, forKey: "pluginDockVerticalPosition")
+            notifyChanged()
+        }
+    }
+
+    private static func normalizedPluginDockVerticalPosition(_ value: Double) -> Double {
+        guard value.isFinite else { return 0.72 }
+        return min(max(value, 0), 1)
+    }
+
     var xiaohongshuCardsStaggered: Bool {
         get { bool(forKey: "xiaohongshuCardsStaggered", defaultValue: false) }
         set {
@@ -552,6 +603,10 @@ final class AppSettings: DexoObservableObject {
                 appearanceMode: appearanceMode.rawValue,
                 appLanguage: appLanguage.rawValue,
                 themeStyle: themeStyle.rawValue,
+                pluginDockEnabled: pluginDockEnabled,
+                pluginDockSide: pluginDockSide.rawValue,
+                pluginDockVerticalPosition: pluginDockVerticalPosition,
+                autoCheckForUpdates: autoCheckForUpdates,
                 xiaohongshuCardsStaggered: xiaohongshuCardsStaggered,
                 autoOpenLastForum: autoOpenLastForum,
                 lastOpenedForumId: lastOpenedForumId,
@@ -601,6 +656,19 @@ final class AppSettings: DexoObservableObject {
         if let rawValue = preferences.themeStyle,
            let value = ThemeStyle(rawValue: rawValue) {
             themeStyle = value
+        }
+        if let value = preferences.pluginDockEnabled {
+            pluginDockEnabled = value
+        }
+        if let rawValue = preferences.pluginDockSide,
+           let value = PluginDockSide(rawValue: rawValue) {
+            pluginDockSide = value
+        }
+        if let value = preferences.pluginDockVerticalPosition {
+            pluginDockVerticalPosition = value
+        }
+        if let value = preferences.autoCheckForUpdates {
+            autoCheckForUpdates = value
         }
         if let value = preferences.xiaohongshuCardsStaggered {
             xiaohongshuCardsStaggered = value
@@ -703,6 +771,10 @@ final class AppSettings: DexoObservableObject {
         let appearanceMode: Int?
         let appLanguage: String?
         let themeStyle: Int?
+        let pluginDockEnabled: Bool?
+        let pluginDockSide: String?
+        let pluginDockVerticalPosition: Double?
+        let autoCheckForUpdates: Bool?
         let xiaohongshuCardsStaggered: Bool?
         let autoOpenLastForum: Bool?
         let lastOpenedForumId: Int64?
@@ -1534,7 +1606,7 @@ final class AppSettings: DexoObservableObject {
             }
         }
 
-        static func storedValue(_ rawValue: String) -> ForumDynamicTabItem? {
+        nonisolated static func storedValue(_ rawValue: String) -> ForumDynamicTabItem? {
             if rawValue == "categories" {
                 return .history
             }
@@ -1551,6 +1623,10 @@ final class AppSettings: DexoObservableObject {
         .bookmarks,
     ]
 
+    static func pluginForumTabItemID(pluginID: String, contributionID: String) -> String {
+        "plugin:\(pluginID):\(contributionID)"
+    }
+
     var bottomBarAutoHideEnabled: Bool {
         get { bool(forKey: "bottomBarAutoHideEnabled", defaultValue: true) }
         set {
@@ -1561,16 +1637,29 @@ final class AppSettings: DexoObservableObject {
 
     var forumDynamicTabItems: [ForumDynamicTabItem] {
         get {
-            guard let rawValues = defaults.stringArray(forKey: "forumDynamicTabItemIds") else {
-                return Self.defaultForumDynamicTabItems
-            }
-            return Self.sanitizedForumDynamicTabItems(rawValues.compactMap(ForumDynamicTabItem.storedValue))
+            Self.sanitizedForumDynamicTabItems(
+                forumConfiguredTabItemIDs.compactMap(ForumDynamicTabItem.storedValue)
+            )
         }
         set {
-            let items = Self.sanitizedForumDynamicTabItems(newValue)
-            defaults.set(items.map(\.rawValue), forKey: "forumDynamicTabItemIds")
+            forumConfiguredTabItemIDs = Self.sanitizedForumDynamicTabItems(newValue).map(\.rawValue)
+        }
+    }
+
+    var forumConfiguredTabItemIDs: [String] {
+        get {
+            let stored = defaults.stringArray(forKey: "forumDynamicTabItemIds")
+                ?? Self.defaultForumDynamicTabItems.map(\.rawValue)
+            return Self.sanitizedForumTabItemIDs(stored)
+        }
+        set {
+            defaults.set(Self.sanitizedForumTabItemIDs(newValue), forKey: "forumDynamicTabItemIds")
             notifyChanged()
         }
+    }
+
+    var forumVisibleConfiguredTabItemIDs: [String] {
+        Array(forumConfiguredTabItemIDs.prefix(Self.maximumVisibleForumDynamicTabItems))
     }
 
     var forumVisibleDynamicTabItems: [ForumDynamicTabItem] {
@@ -1578,7 +1667,7 @@ final class AppSettings: DexoObservableObject {
     }
 
     func resetForumDynamicTabItems() {
-        forumDynamicTabItems = Self.defaultForumDynamicTabItems
+        forumConfiguredTabItemIDs = Self.defaultForumDynamicTabItems.map(\.rawValue)
     }
 
     // MARK: - Home
@@ -1692,6 +1781,20 @@ final class AppSettings: DexoObservableObject {
             return limitedItems
         }
         return Array(defaultForumDynamicTabItems.prefix(minimumConfiguredForumDynamicTabItems))
+    }
+
+    private static func sanitizedForumTabItemIDs(_ itemIDs: [String]) -> [String] {
+        var seen = Set<String>()
+        let normalized = itemIDs.compactMap { rawValue -> String? in
+            if let systemItem = ForumDynamicTabItem.storedValue(rawValue) {
+                return systemItem.rawValue
+            }
+            guard rawValue.hasPrefix("plugin:"), rawValue.split(separator: ":").count >= 3 else {
+                return nil
+            }
+            return rawValue
+        }
+        return Array(normalized.filter { seen.insert($0).inserted }.prefix(maximumConfiguredForumDynamicTabItems))
     }
 }
 

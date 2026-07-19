@@ -2,14 +2,32 @@ import XCTest
 
 @MainActor
 final class LocalizationCoverageTests: XCTestCase {
+    func testUpdateStringsHaveAllSupportedLocalizations() throws {
+        let keys = [
+            "settings.about",
+            "settings.about.subtitle",
+            "settings.update.auto_check",
+            "settings.update.check_now",
+            "settings.update.current_version",
+            "settings.update.release_page",
+            "update.asset.unavailable",
+            "update.available.title",
+            "update.checking.message",
+            "update.checking.title",
+            "update.error.message",
+            "update.error.title",
+            "update.later",
+            "update.latest.message %@",
+            "update.latest.title",
+            "update.now",
+            "update.release_notes",
+            "update.release_notes.empty",
+        ]
+
+        try assertLocalizationsExist(for: keys, locales: ["en", "zh-Hans", "zh-Hant", "zh-HK"])
+    }
+
     func testProfileActionStringsHaveAllChineseLocalizations() async throws {
-        let projectRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let catalogURL = projectRoot.appendingPathComponent("dexo/Localizable.xcstrings")
-        let data = try Data(contentsOf: catalogURL)
-        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
         let keys = [
             "action.confirm",
             "user.profile.ignore",
@@ -28,10 +46,22 @@ final class LocalizationCoverageTests: XCTestCase {
             "user.profile.unfollow",
         ]
 
+        try assertLocalizationsExist(for: keys, locales: ["zh-Hans", "zh-Hant", "zh-HK"])
+    }
+
+    private func assertLocalizationsExist(for keys: [String], locales: [String]) throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let catalogURL = projectRoot.appendingPathComponent("dexo/Localizable.xcstrings")
+        let data = try Data(contentsOf: catalogURL)
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+
         for key in keys {
             let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing key: \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations: \(key)")
-            for locale in ["zh-Hans", "zh-Hant", "zh-HK"] {
+            for locale in locales {
                 let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing \(locale): \(key)")
                 let unit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing string unit: \(key) \(locale)")
                 let value = try XCTUnwrap(unit["value"] as? String, "Missing value: \(key) \(locale)")

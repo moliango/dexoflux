@@ -10,6 +10,7 @@ final class SettingsViewController: ObservableViewController {
         case network
         case bottomBar
         case dataManagement
+        case about
 
         var title: String {
             switch self {
@@ -18,6 +19,7 @@ final class SettingsViewController: ObservableViewController {
             case .network: return String(localized: "settings.network")
             case .bottomBar: return String(localized: "settings.bottom_bar")
             case .dataManagement: return String(localized: "settings.data_management")
+            case .about: return String(localized: "settings.about")
             }
         }
 
@@ -28,6 +30,7 @@ final class SettingsViewController: ObservableViewController {
             case .network: return String(localized: "settings.network.subtitle")
             case .bottomBar: return String(localized: "settings.bottom_bar.subtitle")
             case .dataManagement: return String(localized: "settings.data_management.subtitle")
+            case .about: return String(localized: "settings.about.subtitle")
             }
         }
 
@@ -38,6 +41,7 @@ final class SettingsViewController: ObservableViewController {
             case .network: return "network"
             case .bottomBar: return "rectangle.bottomthird.inset.filled"
             case .dataManagement: return "externaldrive.fill"
+            case .about: return "arrow.triangle.2.circlepath.circle.fill"
             }
         }
 
@@ -48,6 +52,7 @@ final class SettingsViewController: ObservableViewController {
             case .network: return .systemBlue
             case .bottomBar: return .systemPurple
             case .dataManagement: return .systemBrown
+            case .about: return .systemIndigo
             }
         }
     }
@@ -159,6 +164,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     private let interfaceFontSizeCard = FontScaleCardView()
     private let fontScopeRow = ReadingToggleRowView()
     private let incomingTopicsFloatingRow = ReadingToggleRowView()
+    private let pluginDockRow = ReadingToggleRowView()
     private let xiaohongshuStaggeredCardsRow = ReadingToggleRowView()
     private var renderedLanguage: AppSettings.AppLanguage?
     private var renderedThemeStyle: AppSettings.ThemeStyle?
@@ -307,6 +313,12 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             updateUI()
         }
+        pluginDockRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.pluginDockEnabled = isOn
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
         xiaohongshuStaggeredCardsRow.onValueChanged = { [weak self] isOn in
             guard let self else { return }
             settings.xiaohongshuCardsStaggered = isOn
@@ -375,6 +387,15 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             symbolName: "house"
         )
         homeSection.addArrangedSubview(incomingTopicsFloatingRow)
+        pluginDockRow.configure(
+            title: String(localized: "settings.appearance.plugin_dock", defaultValue: "插件侧边 Dock"),
+            subtitle: String(localized: "settings.appearance.plugin_dock.subtitle", defaultValue: "从屏幕边缘呼出 LD 士多和 NewAPI 窗口"),
+            symbolName: "rectangle.inset.filled.and.person.filled",
+            isOn: settings.pluginDockEnabled,
+            accentColor: settings.themeStyle.accentColor,
+            backgroundColor: settings.themeStyle.topicCardBackgroundColor
+        )
+        homeSection.addArrangedSubview(pluginDockRow)
         contentStack.addArrangedSubview(homeSection)
 
         let iconSection = verticalSection(
@@ -2225,6 +2246,10 @@ private final class SettingsCategoryViewController: ObservableViewController {
         case bottomAutoHide
         case clearImageCache
         case autoOpen
+        case currentVersion
+        case checkForUpdates
+        case automaticUpdateCheck
+        case githubReleases
         #if DEBUG
         case renderPreview
         #endif
@@ -2284,6 +2309,8 @@ private final class SettingsCategoryViewController: ObservableViewController {
             return [.bottomBarLayout, .bottomAutoHide]
         case .dataManagement:
             return [.clearImageCache, .autoOpen]
+        case .about:
+            return [.currentVersion, .checkForUpdates, .automaticUpdateCheck, .githubReleases]
         }
     }
 }
@@ -2342,6 +2369,21 @@ extension SettingsCategoryViewController: UITableViewDataSource {
             return valueCell(title: String(localized: "settings.data.clear_image_cache"), detail: nil)
         case .autoOpen:
             return switchCell(title: String(localized: "settings.auto_open_last_forum"), isOn: settings.autoOpenLastForum, action: #selector(autoOpenToggleChanged(_:)))
+        case .currentVersion:
+            return infoCell(
+                title: String(localized: "settings.update.current_version"),
+                detail: AppVersion.installed().displayString
+            )
+        case .checkForUpdates:
+            return valueCell(title: String(localized: "settings.update.check_now"), detail: nil)
+        case .automaticUpdateCheck:
+            return switchCell(
+                title: String(localized: "settings.update.auto_check"),
+                isOn: settings.autoCheckForUpdates,
+                action: #selector(autoCheckForUpdatesChanged(_:))
+            )
+        case .githubReleases:
+            return valueCell(title: String(localized: "settings.update.release_page"), detail: nil)
         #if DEBUG
         case .renderPreview:
             return valueCell(title: "Render Preview", detail: nil)
@@ -2423,6 +2465,10 @@ extension SettingsCategoryViewController: UITableViewDelegate {
             navigationController?.pushViewController(BottomBarLayoutViewController(), animated: true)
         case .clearImageCache:
             clearImageCache()
+        case .checkForUpdates:
+            AppUpdateCoordinator.shared.checkManually(from: self)
+        case .githubReleases:
+            AppUpdateCoordinator.openReleasePage()
         #if DEBUG
         case .renderPreview:
             showRenderPreviewInput()
@@ -2436,6 +2482,11 @@ extension SettingsCategoryViewController: UITableViewDelegate {
 private extension SettingsCategoryViewController {
     @objc func autoOpenToggleChanged(_ sender: UISwitch) {
         settings.autoOpenLastForum = sender.isOn
+    }
+
+    @objc func autoCheckForUpdatesChanged(_ sender: UISwitch) {
+        settings.autoCheckForUpdates = sender.isOn
+        AppUpdateCoordinator.shared.automaticCheckPreferenceDidChange()
     }
 
     @objc func readingComfortChanged(_ sender: UISwitch) {
@@ -3787,9 +3838,187 @@ private final class PaddingLabel: UILabel {
     }
 }
 
+private final class UserProfileTabsSettingsViewController: UITableViewController {
+    private let preferences = UserProfileTabPreferences()
+    private var visibleSections: [UserProfileSection] = []
+    private var hiddenSections: [UserProfileSection] = []
+
+    init() {
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = String(localized: "settings.profile_tabs")
+        tableView.backgroundColor = AppSettings.shared.themeStyle.topicListBackgroundColor
+        tableView.tintColor = AppSettings.shared.themeStyle.accentColor
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: String(localized: "settings.bottom_bar.restore_default", defaultValue: "恢复默认"),
+            style: .plain,
+            target: self,
+            action: #selector(restoreDefaultTapped)
+        )
+        reloadConfiguration()
+        setEditing(true, animated: false)
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        enableSettingsInteractiveBackSwipe()
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        2
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        section == 0 ? visibleSections.count : hiddenSections.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        section == 0
+            ? String(localized: "settings.profile_tabs.visible")
+            : String(localized: "settings.profile_tabs.hidden")
+    }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        if section == 0 {
+            return visibleSections.count == 1
+                ? String(localized: "settings.profile_tabs.minimum_one")
+                : String(localized: "settings.profile_tabs.visible_help")
+        }
+        return hiddenSections.isEmpty ? String(localized: "settings.profile_tabs.hidden_empty") : nil
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let section = sectionValue(at: indexPath)
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        var content = cell.defaultContentConfiguration()
+        content.image = UIImage(systemName: symbolName(for: section))
+        content.imageProperties.tintColor = AppSettings.shared.themeStyle.accentColor
+        content.text = section.title
+        content.secondaryText = indexPath.section == 0
+            ? String(localized: "settings.profile_tabs.item_visible")
+            : String(localized: "settings.profile_tabs.item_hidden")
+        content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
+        content.secondaryTextProperties.color = .secondaryLabel
+        cell.contentConfiguration = content
+        cell.selectionStyle = .none
+        cell.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        return cell
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        editingStyleForRowAt indexPath: IndexPath
+    ) -> UITableViewCell.EditingStyle {
+        if indexPath.section == 0 {
+            return visibleSections.count > 1 ? .delete : .none
+        }
+        return .insert
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        commit editingStyle: UITableViewCell.EditingStyle,
+        forRowAt indexPath: IndexPath
+    ) {
+        switch (indexPath.section, editingStyle) {
+        case (0, .delete):
+            guard visibleSections.count > 1, visibleSections.indices.contains(indexPath.row) else { return }
+            visibleSections.remove(at: indexPath.row)
+        case (1, .insert):
+            guard hiddenSections.indices.contains(indexPath.row) else { return }
+            visibleSections.append(hiddenSections[indexPath.row])
+        default:
+            return
+        }
+        persistAndReload()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        indexPath.section == 0
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
+        toProposedIndexPath proposedDestinationIndexPath: IndexPath
+    ) -> IndexPath {
+        guard proposedDestinationIndexPath.section == 0 else {
+            return IndexPath(row: max(visibleSections.count - 1, 0), section: 0)
+        }
+        return proposedDestinationIndexPath
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        moveRowAt sourceIndexPath: IndexPath,
+        to destinationIndexPath: IndexPath
+    ) {
+        guard sourceIndexPath.section == 0,
+              destinationIndexPath.section == 0,
+              visibleSections.indices.contains(sourceIndexPath.row) else { return }
+        let section = visibleSections.remove(at: sourceIndexPath.row)
+        let destination = min(destinationIndexPath.row, visibleSections.count)
+        visibleSections.insert(section, at: destination)
+        preferences.setVisibleSections(visibleSections)
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    @objc private func restoreDefaultTapped() {
+        preferences.reset()
+        reloadConfiguration()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func sectionValue(at indexPath: IndexPath) -> UserProfileSection {
+        indexPath.section == 0 ? visibleSections[indexPath.row] : hiddenSections[indexPath.row]
+    }
+
+    private func reloadConfiguration() {
+        visibleSections = preferences.visibleSections
+        let visibleSet = Set(visibleSections)
+        hiddenSections = UserProfileSection.allCases.filter { !visibleSet.contains($0) }
+        tableView.reloadData()
+    }
+
+    private func persistAndReload() {
+        preferences.setVisibleSections(visibleSections)
+        reloadConfiguration()
+    }
+
+    private func symbolName(for section: UserProfileSection) -> String {
+        switch section {
+        case .summary: return "chart.bar.doc.horizontal.fill"
+        case .activity: return "bolt.fill"
+        case .topics: return "text.bubble.fill"
+        case .replies: return "quote.bubble.fill"
+        case .likesReceived: return "heart.fill"
+        case .likesGiven: return "hand.thumbsup.fill"
+        case .reactions: return "face.smiling.fill"
+        }
+    }
+}
+
 private final class BottomBarLayoutViewController: ObservableViewController {
+    private struct TabItemDescriptor: Hashable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let symbolName: String
+    }
+
     private let settings = AppSettings.shared
     private let autoHideRow = ReadingToggleRowView()
+    private let profileTabsRow = DataManagementActionRowView()
+    private var pluginObservationToken: NSObjectProtocol?
 
     private let scrollView: UIScrollView = {
         let scroll = UIScrollView()
@@ -3815,7 +4044,7 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         configureRootView()
         rebuildContent()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "恢复默认",
+            title: String(localized: "settings.bottom_bar.restore_default", defaultValue: "恢复默认"),
             style: .plain,
             target: self,
             action: #selector(restoreDefaultTapped)
@@ -3824,6 +4053,26 @@ private final class BottomBarLayoutViewController: ObservableViewController {
             guard let self else { return }
             settings.bottomBarAutoHideEnabled = isOn
             refreshDataViews()
+        }
+        profileTabsRow.addTarget(self, action: #selector(profileTabsTapped), for: .touchUpInside)
+        pluginObservationToken = NotificationCenter.default.addObserver(
+            forName: PluginStateStore.stateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            if let changedScope = notification.userInfo?[PluginStateStore.scopeUserInfoKey] as? String,
+               changedScope != self.pluginScope.storageKey {
+                return
+            }
+            self.rebuildContent()
+        }
+    }
+
+    @MainActor
+    deinit {
+        if let pluginObservationToken {
+            NotificationCenter.default.removeObserver(pluginObservationToken)
         }
     }
 
@@ -3844,23 +4093,58 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         rebuildContent()
     }
 
-    private var configuredItems: [AppSettings.ForumDynamicTabItem] {
-        settings.forumDynamicTabItems
+    private var pluginScope: PluginScope {
+        let forum = DatabaseManager.shared.defaultForum()
+        return PluginScope(
+            baseURL: forum.baseURL,
+            username: AuthManager.shared.username(for: forum.baseURL)
+        )
     }
 
-    private var availableItems: [AppSettings.ForumDynamicTabItem] {
-        let configured = Set(configuredItems)
-        return AppSettings.ForumDynamicTabItem.allCases.filter { !configured.contains($0) }
+    private var allItems: [TabItemDescriptor] {
+        let systemItems = AppSettings.ForumDynamicTabItem.allCases.map {
+            TabItemDescriptor(id: $0.rawValue, title: $0.title, subtitle: $0.subtitle, symbolName: $0.symbolName)
+        }
+        let pluginItems = DexoPluginRuntime.shared.registry
+            .contributions(of: .forumTab, for: pluginScope)
+            .map { registration in
+                TabItemDescriptor(
+                    id: AppSettings.pluginForumTabItemID(
+                        pluginID: registration.plugin.id,
+                        contributionID: registration.contribution.id
+                    ),
+                    title: registration.contribution.titleFallback ?? registration.plugin.displayName,
+                    subtitle: String(
+                        format: String(localized: "settings.bottom_bar.plugin_provider_format", defaultValue: "由 %@ 插件提供"),
+                        registration.plugin.displayName
+                    ),
+                    symbolName: registration.contribution.systemImageName
+                )
+            }
+        return systemItems + pluginItems
     }
 
-    private func setConfiguredItems(_ items: [AppSettings.ForumDynamicTabItem]) {
-        settings.forumDynamicTabItems = items
+    private var configuredItems: [TabItemDescriptor] {
+        let itemsByID = Dictionary(uniqueKeysWithValues: allItems.map { ($0.id, $0) })
+        return settings.forumConfiguredTabItemIDs.compactMap { itemsByID[$0] }
+    }
+
+    private var availableItems: [TabItemDescriptor] {
+        let configured = Set(settings.forumConfiguredTabItemIDs)
+        return allItems.filter { !configured.contains($0.id) }
+    }
+
+    private func setConfiguredItems(_ items: [TabItemDescriptor]) {
+        settings.forumConfiguredTabItemIDs = items.map(\.id)
         rebuildContent()
     }
 
-    private func addAvailableItem(_ item: AppSettings.ForumDynamicTabItem) {
+    private func addAvailableItem(_ item: TabItemDescriptor) {
         guard configuredItems.count < AppSettings.maximumConfiguredForumDynamicTabItems else {
-            showLimitMessage("最多保留 \(AppSettings.maximumConfiguredForumDynamicTabItems) 个功能候选。")
+            showLimitMessage(String(
+                format: String(localized: "settings.bottom_bar.candidate_limit_format", defaultValue: "最多保留 %lld 个功能候选。"),
+                AppSettings.maximumConfiguredForumDynamicTabItems
+            ))
             return
         }
 
@@ -3887,11 +4171,14 @@ private final class BottomBarLayoutViewController: ObservableViewController {
     }
 
     private func actualBottomBarSummary() -> String {
-        let visibleTitles = settings.forumVisibleDynamicTabItems.map(\.title)
+        let visibleTitles = Array(configuredItems.prefix(AppSettings.maximumVisibleForumDynamicTabItems)).map(\.title)
         if visibleTitles.isEmpty {
-            return "当前实际底栏：首页 + 我的。"
+            return String(localized: "settings.bottom_bar.summary_empty", defaultValue: "当前实际底栏：首页 + 我的。")
         }
-        return "当前实际底栏：首页 + \(visibleTitles.joined(separator: " / ")) + 我的。"
+        return String(
+            format: String(localized: "settings.bottom_bar.summary_format", defaultValue: "当前实际底栏：首页 + %@ + 我的。"),
+            visibleTitles.joined(separator: " / ")
+        )
     }
 
     private func configureRootView() {
@@ -3930,10 +4217,17 @@ private final class BottomBarLayoutViewController: ObservableViewController {
     private func refreshDataViews() {
         autoHideRow.configure(
             title: String(localized: "settings.bottom_bar.auto_hide"),
-            subtitle: "首页向上滑动隐藏底栏，向下滑动或回到顶部显示。",
+            subtitle: String(localized: "settings.bottom_bar.auto_hide.subtitle", defaultValue: "首页向上滑动隐藏底栏，向下滑动或回到顶部显示。"),
             symbolName: "arrow.up.and.down",
             isOn: settings.bottomBarAutoHideEnabled,
             accentColor: settings.themeStyle.accentColor,
+            backgroundColor: settings.themeStyle.topicCardBackgroundColor
+        )
+        profileTabsRow.configure(
+            title: String(localized: "settings.profile_tabs"),
+            subtitle: String(localized: "settings.profile_tabs.subtitle"),
+            symbolName: "rectangle.3.group.fill",
+            tintColor: settings.themeStyle.accentColor,
             backgroundColor: settings.themeStyle.topicCardBackgroundColor
         )
     }
@@ -3945,7 +4239,7 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         card.layer.shadowOffset = CGSize(width: 0, height: 10)
         card.layer.shadowColor = settings.themeStyle.accentColor.cgColor
 
-        let eyebrow = makePillLabel(text: "当前配置", color: settings.themeStyle.accentColor)
+        let eyebrow = makePillLabel(text: String(localized: "settings.bottom_bar.current_configuration", defaultValue: "当前配置"), color: settings.themeStyle.accentColor)
         let title = UILabel()
         title.text = actualBottomBarSummary()
         title.font = .systemFont(ofSize: 20, weight: .heavy)
@@ -3953,7 +4247,10 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         title.numberOfLines = 0
 
         let subtitle = UILabel()
-        subtitle.text = "首页固定第一位，我的固定末尾；系统底栏最多 5 个入口，前 \(AppSettings.maximumVisibleForumDynamicTabItems) 个功能项会优先显示。"
+        subtitle.text = String(
+            format: String(localized: "settings.bottom_bar.preview_help_format", defaultValue: "首页固定第一位，我的固定末尾；系统底栏最多 5 个入口，前 %lld 个功能项会优先显示。"),
+            AppSettings.maximumVisibleForumDynamicTabItems
+        )
         subtitle.font = .systemFont(ofSize: 13, weight: .medium)
         subtitle.textColor = .secondaryLabel
         subtitle.numberOfLines = 0
@@ -3963,7 +4260,7 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         previewRow.alignment = .center
         previewRow.spacing = 8
         previewRow.addArrangedSubview(makeMiniTab(title: String(localized: "tab.home"), symbolName: "house.fill", active: true))
-        for (index, item) in settings.forumVisibleDynamicTabItems.enumerated() {
+        for (index, item) in configuredItems.prefix(AppSettings.maximumVisibleForumDynamicTabItems).enumerated() {
             previewRow.addArrangedSubview(makeMiniTab(
                 title: item.title,
                 symbolName: item.symbolName,
@@ -3985,10 +4282,10 @@ private final class BottomBarLayoutViewController: ObservableViewController {
     }
 
     private func makeEnabledSection() -> UIView {
-        let stack = makeSectionStack(title: "底栏入口", symbolName: "rectangle.bottomthird.inset.filled")
+        let stack = makeSectionStack(title: String(localized: "settings.bottom_bar.entries", defaultValue: "底栏入口"), symbolName: "rectangle.bottomthird.inset.filled")
         stack.addArrangedSubview(makeFixedItemRow(
             title: String(localized: "tab.home"),
-            subtitle: "固定第一位",
+            subtitle: String(localized: "settings.bottom_bar.fixed_first", defaultValue: "固定第一位"),
             symbolName: "house.fill"
         ))
         for (index, item) in configuredItems.enumerated() {
@@ -3998,13 +4295,13 @@ private final class BottomBarLayoutViewController: ObservableViewController {
     }
 
     private func makeAvailableSection() -> UIView {
-        let stack = makeSectionStack(title: "可添加", symbolName: "plus.circle")
+        let stack = makeSectionStack(title: String(localized: "settings.bottom_bar.available", defaultValue: "可添加"), symbolName: "plus.circle")
         if availableItems.isEmpty {
-            stack.addArrangedSubview(makeInfoCard(text: "没有更多可添加。"))
+            stack.addArrangedSubview(makeInfoCard(text: String(localized: "settings.bottom_bar.available_empty", defaultValue: "没有更多可添加。")))
             return stack
         }
         if configuredItems.count >= AppSettings.maximumConfiguredForumDynamicTabItems {
-            stack.addArrangedSubview(makeInfoCard(text: "候选已满，先删除一个功能再添加。"))
+            stack.addArrangedSubview(makeInfoCard(text: String(localized: "settings.bottom_bar.available_full", defaultValue: "候选已满，先删除一个功能再添加。")))
         }
         for item in availableItems {
             stack.addArrangedSubview(makeAvailableItemRow(item: item))
@@ -4013,9 +4310,14 @@ private final class BottomBarLayoutViewController: ObservableViewController {
     }
 
     private func makeBehaviorSection() -> UIView {
-        let stack = makeSectionStack(title: "行为", symbolName: "hand.tap")
+        let stack = makeSectionStack(title: String(localized: "settings.bottom_bar.behavior", defaultValue: "行为"), symbolName: "hand.tap")
         stack.addArrangedSubview(autoHideRow)
+        stack.addArrangedSubview(profileTabsRow)
         return stack
+    }
+
+    @objc private func profileTabsTapped() {
+        navigationController?.pushViewController(UserProfileTabsSettingsViewController(), animated: true)
     }
 
     private func makeSectionStack(title: String, symbolName: String) -> UIStackView {
@@ -4037,14 +4339,19 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         )
     }
 
-    private func makeConfiguredItemRow(item: AppSettings.ForumDynamicTabItem, index: Int) -> UIView {
+    private func makeConfiguredItemRow(item: TabItemDescriptor, index: Int) -> UIView {
         let accessory = UIStackView()
         accessory.axis = .horizontal
         accessory.alignment = .center
         accessory.spacing = 6
 
         let isVisible = index < AppSettings.maximumVisibleForumDynamicTabItems
-        accessory.addArrangedSubview(makePillLabel(text: isVisible ? "显示" : "候选", color: isVisible ? settings.themeStyle.accentColor : .secondaryLabel))
+        accessory.addArrangedSubview(makePillLabel(
+            text: isVisible
+                ? String(localized: "settings.bottom_bar.visible", defaultValue: "显示")
+                : String(localized: "settings.bottom_bar.candidate", defaultValue: "候选"),
+            color: isVisible ? settings.themeStyle.accentColor : .secondaryLabel
+        ))
         accessory.addArrangedSubview(makeActionButton(symbolName: "chevron.up", enabled: index > 0) { [weak self] in
             self?.moveConfiguredItem(from: index, by: -1)
         })
@@ -4057,14 +4364,16 @@ private final class BottomBarLayoutViewController: ObservableViewController {
 
         return makeItemRow(
             title: item.title,
-            subtitle: isVisible ? "显示在底栏" : "候选保留，暂不显示",
+            subtitle: isVisible
+                ? String(localized: "settings.bottom_bar.visible.subtitle", defaultValue: "显示在底栏")
+                : String(localized: "settings.bottom_bar.candidate.subtitle", defaultValue: "候选保留，暂不显示"),
             symbolName: item.symbolName,
             tintColor: isVisible ? settings.themeStyle.accentColor : .secondaryLabel,
             accessory: accessory
         )
     }
 
-    private func makeAvailableItemRow(item: AppSettings.ForumDynamicTabItem) -> UIView {
+    private func makeAvailableItemRow(item: TabItemDescriptor) -> UIView {
         let canAdd = configuredItems.count < AppSettings.maximumConfiguredForumDynamicTabItems
         let accessory = makeActionButton(symbolName: "plus", enabled: canAdd, color: settings.themeStyle.accentColor) { [weak self] in
             self?.addAvailableItem(item)
@@ -4096,7 +4405,10 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         iconContainer.layer.cornerRadius = 13
         iconContainer.layer.cornerCurve = .continuous
 
-        let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        let iconImage = UIImage(systemName: symbolName, withConfiguration: symbolConfiguration)
+            ?? UIImage(named: symbolName)?.withRenderingMode(.alwaysOriginal)
+        let icon = UIImageView(image: iconImage)
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.contentMode = .scaleAspectFit
         icon.tintColor = tintColor
@@ -4191,7 +4503,10 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         view.layer.cornerCurve = .continuous
         view.clipsToBounds = false
 
-        let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)))
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+        let iconImage = UIImage(systemName: symbolName, withConfiguration: symbolConfiguration)
+            ?? UIImage(named: symbolName)?.withRenderingMode(.alwaysOriginal)
+        let icon = UIImageView(image: iconImage)
         icon.tintColor = active ? settings.themeStyle.accentColor : .secondaryLabel
         icon.contentMode = .scaleAspectFit
 
@@ -4210,6 +4525,8 @@ private final class BottomBarLayoutViewController: ObservableViewController {
         NSLayoutConstraint.activate([
             view.heightAnchor.constraint(equalToConstant: 54),
             view.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 6),

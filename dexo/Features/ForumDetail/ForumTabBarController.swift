@@ -11,13 +11,21 @@ final class ForumTabBarController: UITabBarController {
     private var scrollTabBarAnimationID = 0
     private var settingsObservationToken: NSObjectProtocol?
     private var authObservationToken: NSObjectProtocol?
+    private var pluginObservationToken: NSObjectProtocol?
     private var meAvatarLoadTask: Task<Void, Never>?
     private var renderedMeAvatarKey: String?
     private var pendingMeAvatarKey: String?
     private var tabIdentifiers: [String] = []
-    private var visibleDynamicTabItems: [AppSettings.ForumDynamicTabItem] = []
+    private var visibleTabItemIDs: [String] = []
     private var renderedLanguage = AppSettings.shared.appLanguage
     private var scrollExpandedLayoutSnapshots: [ObjectIdentifier: ScrollExpandedLayoutSnapshot] = [:]
+
+    private var pluginScope: PluginScope {
+        PluginScope(
+            baseURL: api.baseURL,
+            username: authGate?.currentUsername() ?? AuthManager.shared.username(for: api.baseURL)
+        )
+    }
 
     init(api: DiscourseAPI, authGate: AuthGating? = nil) {
         self.api = api
@@ -37,6 +45,7 @@ final class ForumTabBarController: UITabBarController {
         rebuildTabs(preservingIdentifier: nil)
         startObservingSettings()
         startObservingAuth()
+        startObservingPlugins()
         configureTabBarSurface()
         refreshMeTabAvatarIcon()
     }
@@ -47,6 +56,9 @@ final class ForumTabBarController: UITabBarController {
         }
         if let authObservationToken {
             NotificationCenter.default.removeObserver(authObservationToken)
+        }
+        if let pluginObservationToken {
+            NotificationCenter.default.removeObserver(pluginObservationToken)
         }
         meAvatarLoadTask?.cancel()
     }
@@ -184,17 +196,28 @@ final class ForumTabBarController: UITabBarController {
 
     private var shouldHideTabBarForCurrentContent: Bool {
         guard let navigationController = selectedViewController as? UINavigationController,
-              let visibleViewController = navigationController.visibleViewController,
-              visibleViewController !== navigationController.viewControllers.first
+              let visibleViewController = navigationController.visibleViewController
         else {
             return false
         }
+        if let browser = visibleViewController as? InAppBrowserViewController,
+           browser.hidesHostTabBarAtRoot {
+            return true
+        }
+        guard visibleViewController !== navigationController.viewControllers.first else { return false }
         return visibleViewController.hidesBottomBarWhenPushed
+    }
+
+    private var shouldExpandContentForHiddenRootTabBar: Bool {
+        guard let navigationController = selectedViewController as? UINavigationController,
+              let browser = navigationController.visibleViewController as? InAppBrowserViewController
+        else { return false }
+        return browser.hidesHostTabBarAtRoot
     }
 
     private func applyCurrentTabBarLayout() {
         if shouldHideTabBarForCurrentContent {
-            applyHiddenTabBarLayout(expandsSelectedContent: false)
+            applyHiddenTabBarLayout(expandsSelectedContent: shouldExpandContentForHiddenRootTabBar)
         } else if isTabBarHiddenByScroll {
             applyHiddenTabBarLayout(expandsSelectedContent: true)
         } else {
@@ -326,7 +349,24 @@ private extension ForumTabBarController {
             object: AuthManager.shared,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshMeTabAvatarIcon(forceRefresh: true)
+            guard let self else { return }
+            self.refreshMeTabAvatarIcon(forceRefresh: true)
+            self.rebuildTabs(preservingIdentifier: self.selectedTabIdentifier())
+        }
+    }
+
+    func startObservingPlugins() {
+        pluginObservationToken = NotificationCenter.default.addObserver(
+            forName: PluginStateStore.stateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            if let changedScope = notification.userInfo?[PluginStateStore.scopeUserInfoKey] as? String,
+               changedScope != self.pluginScope.storageKey {
+                return
+            }
+            self.rebuildTabs(preservingIdentifier: self.selectedTabIdentifier())
         }
     }
 
@@ -338,8 +378,8 @@ private extension ForumTabBarController {
         let languageChanged = currentLanguage != renderedLanguage
         renderedLanguage = currentLanguage
 
-        let newVisibleItems = AppSettings.shared.forumVisibleDynamicTabItems
-        if newVisibleItems != visibleDynamicTabItems {
+        let newVisibleItems = AppSettings.shared.forumVisibleConfiguredTabItemIDs
+        if newVisibleItems != visibleTabItemIDs {
             rebuildTabs(preservingIdentifier: selectedTabIdentifier())
             return
         }
@@ -394,7 +434,7 @@ private extension ForumTabBarController {
 
         navigationControllers = controllers
         tabIdentifiers = identifiers
-        visibleDynamicTabItems = AppSettings.shared.forumVisibleDynamicTabItems
+        visibleTabItemIDs = AppSettings.shared.forumVisibleConfiguredTabItemIDs
 
         if #available(iOS 18.0, *) {
             let existingTabs = Dictionary(uniqueKeysWithValues: zip(previousIdentifiers, tabs))
@@ -595,7 +635,22 @@ private extension ForumTabBarController {
             },
         ]
 
-        specs.append(contentsOf: AppSettings.shared.forumVisibleDynamicTabItems.map(dynamicTabSpec(for:)))
+        let pluginTabs = Dictionary(uniqueKeysWithValues: DexoPluginRuntime.shared.registry
+            .contributions(of: .forumTab, for: pluginScope)
+            .map { registration in
+                (AppSettings.pluginForumTabItemID(
+                    pluginID: registration.plugin.id,
+                    contributionID: registration.contribution.id
+                ), registration)
+            })
+        let configuredSpecs = AppSettings.shared.forumVisibleConfiguredTabItemIDs.compactMap { itemID -> TabSpec? in
+            if let systemItem = AppSettings.ForumDynamicTabItem.storedValue(itemID) {
+                return dynamicTabSpec(for: systemItem)
+            }
+            guard let registration = pluginTabs[itemID] else { return nil }
+            return pluginTabSpec(for: registration)
+        }
+        specs.append(contentsOf: configuredSpecs)
 
         specs.append(
             TabSpec(
@@ -608,6 +663,38 @@ private extension ForumTabBarController {
         )
 
         return specs
+    }
+
+    func pluginTabSpec(for registration: PluginContributionRegistration) -> TabSpec? {
+        let identifier = "plugin.\(registration.plugin.id).\(registration.contribution.id)"
+        let title = registration.contribution.titleFallback ?? registration.plugin.displayName
+
+        switch registration.plugin.id {
+        case BuiltInPluginID.newAPICheckIn:
+            return TabSpec(
+                identifier: identifier,
+                title: title,
+                symbolName: registration.contribution.systemImageName
+            ) {
+                NewAPICheckInViewController()
+            }
+        case BuiltInPluginID.ldcStore:
+            return TabSpec(
+                identifier: identifier,
+                title: title,
+                symbolName: registration.contribution.systemImageName
+            ) { [api, authGate] in
+                InAppBrowserViewController(
+                    api: api,
+                    username: authGate?.currentUsername() ?? AuthManager.shared.username(for: api.baseURL),
+                    initialURL: URL(string: "https://ldcstore.com/"),
+                    hidesHostTabBarAtRoot: true,
+                    hidesBrowserControlBar: true
+                )
+            }
+        default:
+            return nil
+        }
     }
 
     func dynamicTabSpec(for item: AppSettings.ForumDynamicTabItem) -> TabSpec {
@@ -687,6 +774,7 @@ enum DexoTabBarIconStyle {
             .withRenderingMode(.alwaysTemplate)
             ?? UIImage(systemName: fallbackSymbolName, withConfiguration: configuration)?
             .withRenderingMode(.alwaysTemplate)
+            ?? UIImage(named: fallbackSymbolName)?.withRenderingMode(.alwaysOriginal)
     }
 
     private static func filledSymbolName(for identifier: String, fallback: String) -> String {
@@ -740,6 +828,7 @@ extension ForumTabBarController: UINavigationControllerDelegate {
     }
 
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
+        TopicDetailTransitionGeometry.normalize(viewController.view)
         navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
         if navigationController.viewControllers.count > 1 {
@@ -1197,6 +1286,16 @@ extension BrowsingHistoryViewController: UITableViewDelegate {
     }
 }
 
+enum TopicDetailTransitionGeometry {
+    static let pushInitialTransform = CGAffineTransform.identity
+
+    static func normalize(_ view: UIView) {
+        view.layer.removeAllAnimations()
+        view.alpha = 1
+        view.transform = .identity
+    }
+}
+
 private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTransitioning {
     private let operation: UINavigationController.Operation
     private let detailOffset: CGFloat = 34
@@ -1257,10 +1356,12 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
             context.completeTransition(false)
             return DexoMotion.propertyAnimator(duration: 0)
         }
+        TopicDetailTransitionGeometry.normalize(fromView)
+        TopicDetailTransitionGeometry.normalize(toView)
+        container.backgroundColor = AppSettings.shared.themeStyle.topicListBackgroundColor
         toView.frame = context.finalFrame(for: toViewController)
-        toView.alpha = 0.94
-        toView.transform = CGAffineTransform(translationX: detailOffset, y: 6)
-            .scaledBy(x: 0.992, y: 0.992)
+        toView.alpha = 0.97
+        toView.transform = TopicDetailTransitionGeometry.pushInitialTransform
         container.addSubview(toView)
 
         let animator = DexoMotion.propertyAnimator(
@@ -1276,10 +1377,8 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
         }
         animator.addCompletion { [weak self] position in
             let completed = position == .end && !context.transitionWasCancelled
-            fromView.alpha = 1
-            fromView.transform = .identity
-            toView.alpha = 1
-            toView.transform = .identity
+            TopicDetailTransitionGeometry.normalize(fromView)
+            TopicDetailTransitionGeometry.normalize(toView)
             if !completed {
                 toView.removeFromSuperview()
             }
@@ -1299,6 +1398,8 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
             context.completeTransition(false)
             return DexoMotion.propertyAnimator(duration: 0)
         }
+        TopicDetailTransitionGeometry.normalize(fromView)
+        TopicDetailTransitionGeometry.normalize(toView)
         toView.frame = context.finalFrame(for: toViewController)
         toView.alpha = 0.98
         toView.transform = CGAffineTransform(translationX: -listParallaxOffset, y: 0)
@@ -1317,10 +1418,8 @@ private final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAni
         }
         animator.addCompletion { [weak self] position in
             let completed = position == .end && !context.transitionWasCancelled
-            fromView.alpha = 1
-            fromView.transform = .identity
-            toView.alpha = 1
-            toView.transform = .identity
+            TopicDetailTransitionGeometry.normalize(fromView)
+            TopicDetailTransitionGeometry.normalize(toView)
             context.completeTransition(completed)
             self?.runningAnimator = nil
         }
