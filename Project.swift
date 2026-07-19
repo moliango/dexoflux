@@ -64,7 +64,7 @@ let project = Project(
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad": "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown",
                     "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
                     "OTHER_LDFLAGS": "$(inherited) -ObjC",
-                    "MARKETING_VERSION": "1.2",
+                    "MARKETING_VERSION": "1.4",
                     "PRODUCT_NAME": "dexoflux",
                     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
                     "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
