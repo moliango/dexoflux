@@ -3,6 +3,7 @@ import UIKit
 
 enum AvatarImageLoader {
     static let defaultPlaceholder = UIImage(systemName: "person.crop.circle.fill")
+    static let primaryAvatarPixelSize = 120
 
     private static let inMemoryCache = NSCache<NSURL, UIImage>()
     private static let prefetchLock = NSLock()

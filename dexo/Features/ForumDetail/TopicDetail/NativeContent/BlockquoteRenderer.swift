@@ -41,7 +41,8 @@ enum BlockquoteRenderer: BlockRenderer {
             contentWidth: max(config.contentWidth - 18, 0),
             baseURL: config.baseURL,
             postId: config.postId,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            topicTagNames: config.topicTagNames
         )
 
         let views = NativeContentRenderer.renderBlocks(inner, config: quoteConfig, delegate: delegate)
@@ -212,7 +213,8 @@ private final class ObsidianCalloutView: UIView {
             contentWidth: max(config.contentWidth - 16, 0),
             baseURL: config.baseURL,
             postId: config.postId,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            topicTagNames: config.topicTagNames
         )
         super.init(frame: .zero)
 

@@ -1,5 +1,26 @@
 import Foundation
 
+enum BrowserNavigationURLKind: Equatable {
+    case web
+    case internalWebKit
+    case externalApp
+    case invalid
+}
+
+enum BrowserNavigationURLClassifier {
+    static func classify(_ url: URL) -> BrowserNavigationURLKind {
+        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return .invalid }
+        switch scheme {
+        case "http", "https":
+            return url.host == nil ? .invalid : .web
+        case "about", "data", "blob", "javascript":
+            return .internalWebKit
+        default:
+            return .externalApp
+        }
+    }
+}
+
 enum AccountScopeKey {
     static func make(baseURL: String, username: String?) -> String {
         "\(normalizedBaseURL(baseURL))|\(normalizedUsername(username))"

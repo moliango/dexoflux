@@ -28,6 +28,24 @@ final class TopicReadStateTests: XCTestCase {
         XCTAssertTrue(topic.isUnreadForDisplay)
     }
 
+    func testIncomingTopicDetectionContinuesPastFirstServerPageWithoutFixedLimit() {
+        XCTAssertTrue(IncomingTopicPageTraversal.shouldContinue(
+            reachedCurrentFirstTopic: false,
+            moreTopicsURL: "/latest?page=1",
+            pageAddedNewTopicIds: true
+        ))
+        XCTAssertFalse(IncomingTopicPageTraversal.shouldContinue(
+            reachedCurrentFirstTopic: true,
+            moreTopicsURL: "/latest?page=2",
+            pageAddedNewTopicIds: true
+        ))
+        XCTAssertFalse(IncomingTopicPageTraversal.shouldContinue(
+            reachedCurrentFirstTopic: false,
+            moreTopicsURL: nil,
+            pageAddedNewTopicIds: true
+        ))
+    }
+
     @MainActor
     func testHomeReadProgressUpdateClearsUnreadOnlyThroughHighestSeen() throws {
         let viewModel = HomeViewModel(api: DiscourseAPI(baseURL: "https://linux.do"))

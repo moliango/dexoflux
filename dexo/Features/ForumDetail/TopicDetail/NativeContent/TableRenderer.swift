@@ -100,7 +100,8 @@ enum TableRenderer: BlockRenderer {
                 contentWidth: innerWidth,
                 baseURL: config.baseURL,
                 postId: config.postId,
-                galleryImageURLs: config.galleryImageURLs
+                galleryImageURLs: config.galleryImageURLs,
+                topicTagNames: config.topicTagNames
             )
 
             // Rescale images to fill cell width (TappableImageContainer uses 690px reference)

@@ -381,8 +381,53 @@ enum TopicDetailPollResultMerger {
     }
 }
 
+enum TopicDetailPaginationPolicy {
+    static func canStartEarlier(
+        isLoadingEarlier: Bool,
+        isLoadingMore: Bool,
+        isJumping: Bool
+    ) -> Bool {
+        !isLoadingEarlier && !isLoadingMore && !isJumping
+    }
+
+    static func canStartMore(
+        isLoadingEarlier: Bool,
+        isLoadingMore: Bool,
+        isJumping: Bool
+    ) -> Bool {
+        !isLoadingEarlier && !isLoadingMore && !isJumping
+    }
+
+    static func shouldRestoreEarlierAnchor(
+        hasAnchor: Bool,
+        isLoadingEarlier: Bool,
+        snapshotChanged: Bool
+    ) -> Bool {
+        hasAnchor && !isLoadingEarlier && snapshotChanged
+    }
+}
+
+enum TopicDetailSnapshotPolicy {
+    enum Decision: Equatable {
+        case skip
+        case apply
+        case queue
+    }
+
+    static func decision(
+        isApplying: Bool,
+        currentItemIDs: [Int],
+        requestedItemIDs: [Int]
+    ) -> Decision {
+        if isApplying { return .queue }
+        return currentItemIDs == requestedItemIDs ? .skip : .apply
+    }
+}
+
 final class TopicDetailViewModel: DexoObservableObject {
     var topic: DiscourseTopicDetail?
+    private(set) var category: DiscourseCategory?
+    private(set) var categoryPresentation: TopicCategoryBadgePresentation?
     var parsedBlocks: [Int: [AnnotatedBlock]] = [:]
     var unsupportedPostIds: Set<Int> = []
     var isLoading = false
@@ -402,6 +447,9 @@ final class TopicDetailViewModel: DexoObservableObject {
     /// Cached first post (OP) to preserve across jumpToFloor
     private var firstPost: DiscourseTopicDetail.Post?
     private var parseGeneration = 0
+    private var categoryMetadataTask: Task<Void, Never>?
+    private var categoryMetadataCategoryId: Int?
+    private var loadedCategoryMetadataId: Int?
 
     init(api: DiscourseAPI) {
         self.api = api
@@ -481,6 +529,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         do {
             let detail = try await api.fetchTopic(id: id, trackVisit: true)
             topic = detail
+            startLoadingCategoryMetadata(for: detail.categoryId)
 
             // Save the full stream of post IDs
             allPostIds = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
@@ -542,8 +591,109 @@ final class TopicDetailViewModel: DexoObservableObject {
         notifyChanged()
     }
 
+    private func startLoadingCategoryMetadata(for categoryId: Int?) {
+        guard let categoryId else {
+            categoryMetadataTask?.cancel()
+            categoryMetadataTask = nil
+            categoryMetadataCategoryId = nil
+            loadedCategoryMetadataId = nil
+            category = nil
+            categoryPresentation = nil
+            return
+        }
+        if loadedCategoryMetadataId == categoryId { return }
+        if categoryMetadataCategoryId == categoryId, categoryMetadataTask != nil { return }
+
+        if let cachedCategory = DiscourseTaxonomySessionStore.category(id: categoryId, for: api.baseURL) {
+            let cachedParent = cachedCategory.parentCategoryId.flatMap {
+                DiscourseTaxonomySessionStore.category(id: $0, for: api.baseURL)
+            }
+            category = cachedCategory
+            categoryPresentation = TopicCategoryBadgePresentation.resolve(
+                category: cachedCategory,
+                parent: cachedParent,
+                displayName: cachedCategory.displayName(parent: cachedParent),
+                baseURL: api.baseURL
+            )
+            loadedCategoryMetadataId = categoryId
+            return
+        }
+
+        if category?.id != categoryId {
+            loadedCategoryMetadataId = nil
+            let seededCategory = LinuxDoCategoryCatalog.category(id: categoryId, baseURL: api.baseURL)
+            let seededParent = seededCategory?.parentCategoryId.flatMap {
+                LinuxDoCategoryCatalog.category(id: $0, baseURL: api.baseURL)
+            }
+            category = seededCategory
+            categoryPresentation = TopicCategoryBadgePresentation.resolve(
+                category: seededCategory,
+                parent: seededParent,
+                displayName: seededCategory?.displayName(parent: seededParent),
+                baseURL: api.baseURL
+            )
+        }
+
+        let refreshBaseURL = api.baseURL
+        categoryMetadataTask?.cancel()
+        categoryMetadataCategoryId = categoryId
+        categoryMetadataTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.categoryMetadataCategoryId == categoryId {
+                    self.categoryMetadataTask = nil
+                    self.categoryMetadataCategoryId = nil
+                }
+            }
+
+            do {
+                let categories: [DiscourseCategory]
+                if DiscourseTaxonomySessionStore.beginRefresh(for: refreshBaseURL) {
+                    defer { DiscourseTaxonomySessionStore.endRefresh(for: refreshBaseURL) }
+                    categories = try await self.api.fetchSiteCategories()
+                    try Task.checkCancellation()
+                    DiscourseTaxonomySessionStore.replace(categories: categories, for: refreshBaseURL)
+                } else {
+                    categories = await DiscourseTaxonomySessionStore.waitForRefresh(for: refreshBaseURL)
+                    try Task.checkCancellation()
+                }
+                self.applyCategoryMetadata(categories, categoryId: categoryId)
+            } catch is CancellationError {
+                return
+            } catch {
+                DohDebugLog.record(
+                    "topic detail category metadata load failed: \(error.localizedDescription)",
+                    subsystem: "Category"
+                )
+            }
+        }
+    }
+
+    private func applyCategoryMetadata(_ categories: [DiscourseCategory], categoryId: Int) {
+        guard topic?.categoryId == categoryId else { return }
+        let index = DiscourseCategoryIndex(categories: categories, source: .site)
+        guard let category = index[categoryId] else { return }
+        let parent = category.parentCategoryId.flatMap { index[$0] }
+        self.category = category
+        categoryPresentation = TopicCategoryBadgePresentation.resolve(
+            category: category,
+            parent: parent,
+            displayName: category.displayName(parent: parent),
+            baseURL: api.baseURL
+        )
+        loadedCategoryMetadataId = categoryId
+        notifyChanged()
+    }
+
     func loadMorePosts(containerWidth: CGFloat) async {
-        guard canLoadMore, !isLoadingMore, let topicId = topic?.id else { return }
+        guard canLoadMore,
+              TopicDetailPaginationPolicy.canStartMore(
+                  isLoadingEarlier: isLoadingEarlier,
+                  isLoadingMore: isLoadingMore,
+                  isJumping: isJumping
+              ),
+              let topicId = topic?.id
+        else { return }
         isLoadingMore = true
         notifyChanged()
 
@@ -592,8 +742,16 @@ final class TopicDetailViewModel: DexoObservableObject {
         notifyChanged()
     }
 
-    func loadEarlierPosts(containerWidth: CGFloat) async {
-        guard canLoadEarlier, !isLoadingEarlier, let topicId = topic?.id else { return }
+    @discardableResult
+    func loadEarlierPosts(containerWidth: CGFloat) async -> Bool {
+        guard canLoadEarlier,
+              TopicDetailPaginationPolicy.canStartEarlier(
+                  isLoadingEarlier: isLoadingEarlier,
+                  isLoadingMore: isLoadingMore,
+                  isJumping: isJumping
+              ),
+              let topicId = topic?.id
+        else { return false }
         isLoadingEarlier = true
         notifyChanged()
 
@@ -603,7 +761,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         guard !batch.isEmpty else {
             isLoadingEarlier = false
             notifyChanged()
-            return
+            return true
         }
 
         do {
@@ -615,7 +773,7 @@ final class TopicDetailViewModel: DexoObservableObject {
                 loadedRangeStart = newStart
                 isLoadingEarlier = false
                 notifyChanged()
-                return
+                return true
             }
 
             // Sort new posts by their order in allPostIds
@@ -637,7 +795,7 @@ final class TopicDetailViewModel: DexoObservableObject {
             guard await parseAndStore(posts: sortedPosts, generation: parseGeneration) else {
                 isLoadingEarlier = false
                 notifyChanged()
-                return
+                return true
             }
 
             loadedRangeStart = newStart
@@ -647,6 +805,7 @@ final class TopicDetailViewModel: DexoObservableObject {
 
         isLoadingEarlier = false
         notifyChanged()
+        return true
     }
 
     func jumpToFloor(_ floor: Int, containerWidth: CGFloat) async {

@@ -16,6 +16,66 @@ enum CodeBlockRenderer: BlockRenderer {
     }
 }
 
+struct CodeBlockThemePalette {
+    let background: UIColor
+    let foreground: UIColor
+    let border: UIColor
+    let string: UIColor
+    let comment: UIColor
+    let keyword: UIColor
+    let number: UIColor
+    let function: UIColor
+    let property: UIColor
+
+    static func palette(for interfaceStyle: UIUserInterfaceStyle) -> CodeBlockThemePalette {
+        if interfaceStyle == .dark {
+            return CodeBlockThemePalette(
+                background: .black,
+                foreground: UIColor(red: 0.86, green: 0.88, blue: 0.92, alpha: 1),
+                border: UIColor.white.withAlphaComponent(0.16),
+                string: UIColor(red: 0.95, green: 0.73, blue: 0.38, alpha: 1),
+                comment: UIColor(red: 0.55, green: 0.60, blue: 0.67, alpha: 1),
+                keyword: UIColor(red: 0.98, green: 0.42, blue: 0.63, alpha: 1),
+                number: UIColor(red: 1.00, green: 0.62, blue: 0.30, alpha: 1),
+                function: UIColor(red: 0.38, green: 0.72, blue: 1.00, alpha: 1),
+                property: UIColor(red: 0.39, green: 0.81, blue: 0.64, alpha: 1)
+            )
+        }
+
+        return CodeBlockThemePalette(
+            background: .white,
+            foreground: UIColor(red: 0.17, green: 0.20, blue: 0.26, alpha: 1),
+            border: UIColor.separator.withAlphaComponent(0.38),
+            string: UIColor(red: 0.55, green: 0.38, blue: 0.05, alpha: 1),
+            comment: UIColor(red: 0.42, green: 0.47, blue: 0.53, alpha: 1),
+            keyword: UIColor(red: 0.68, green: 0.18, blue: 0.36, alpha: 1),
+            number: UIColor(red: 0.72, green: 0.34, blue: 0.08, alpha: 1),
+            function: UIColor(red: 0.06, green: 0.39, blue: 0.67, alpha: 1),
+            property: UIColor(red: 0.14, green: 0.46, blue: 0.34, alpha: 1)
+        )
+    }
+
+    static var dynamic: CodeBlockThemePalette {
+        CodeBlockThemePalette(
+            background: dynamicColor(\.background),
+            foreground: dynamicColor(\.foreground),
+            border: dynamicColor(\.border),
+            string: dynamicColor(\.string),
+            comment: dynamicColor(\.comment),
+            keyword: dynamicColor(\.keyword),
+            number: dynamicColor(\.number),
+            function: dynamicColor(\.function),
+            property: dynamicColor(\.property)
+        )
+    }
+
+    private static func dynamicColor(_ keyPath: KeyPath<CodeBlockThemePalette, UIColor>) -> UIColor {
+        UIColor { traitCollection in
+            palette(for: traitCollection.userInterfaceStyle)[keyPath: keyPath]
+        }
+    }
+}
+
 private struct MermaidFlowchartDiagram {
     enum Direction {
         case topDown
@@ -388,6 +448,7 @@ private final class MacStyleCodeBlockView: UIView {
     private let code: String
     private let copyButton = UIButton(type: .system)
     private let copyButtonBackground = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    private let scrollView = UIScrollView()
     private var resetCopyIconWorkItem: DispatchWorkItem?
     private var hideCopyButtonWorkItem: DispatchWorkItem?
 
@@ -395,11 +456,12 @@ private final class MacStyleCodeBlockView: UIView {
         self.code = code
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        backgroundColor = .white
+        let palette = CodeBlockThemePalette.dynamic
+        backgroundColor = palette.background
         layer.cornerRadius = 14
         layer.cornerCurve = .continuous
         layer.borderWidth = 1.0 / UIScreen.main.scale
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.38).cgColor
+        layer.borderColor = palette.border.resolvedColor(with: traitCollection).cgColor
         clipsToBounds = true
 
         let trafficStack = UIStackView(arrangedSubviews: [
@@ -425,13 +487,12 @@ private final class MacStyleCodeBlockView: UIView {
         copyButton.accessibilityLabel = String(localized: "code_block.copy")
         copyButton.isPointerInteractionEnabled = true
 
-        let scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.showsHorizontalScrollIndicator = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = false
         scrollView.backgroundColor = .clear
-        scrollView.indicatorStyle = .default
+        updateTraitDependentColors()
 
         let codeLabel = UILabel()
         codeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -488,6 +549,12 @@ private final class MacStyleCodeBlockView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) != false else { return }
+        updateTraitDependentColors()
     }
 
     deinit {
@@ -556,6 +623,12 @@ private final class MacStyleCodeBlockView: UIView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: item)
     }
 
+    private func updateTraitDependentColors() {
+        let palette = CodeBlockThemePalette.palette(for: traitCollection.userInterfaceStyle)
+        layer.borderColor = palette.border.cgColor
+        scrollView.indicatorStyle = traitCollection.userInterfaceStyle == .dark ? .white : .default
+    }
+
     fileprivate static func makeTrafficDot(color: UIColor) -> UIView {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -569,6 +642,7 @@ private final class MacStyleCodeBlockView: UIView {
     }
 
     private static func attributedCode(_ code: String, config: NativeRenderConfig) -> NSAttributedString {
+        let palette = CodeBlockThemePalette.dynamic
         let result = NSMutableAttributedString(string: code.isEmpty ? " " : code)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = max(3, config.defaultLineSpacing - 2)
@@ -576,22 +650,26 @@ private final class MacStyleCodeBlockView: UIView {
         let fullRange = NSRange(location: 0, length: result.length)
         result.addAttributes([
             .font: config.codeFont,
-            .foregroundColor: UIColor(red: 0.17, green: 0.20, blue: 0.26, alpha: 1),
+            .foregroundColor: palette.foreground,
             .paragraphStyle: paragraphStyle,
         ], range: fullRange)
-        applySyntaxHighlighting(to: result, in: fullRange)
+        applySyntaxHighlighting(to: result, in: fullRange, palette: palette)
         return result
     }
 
-    private static func applySyntaxHighlighting(to text: NSMutableAttributedString, in fullRange: NSRange) {
+    private static func applySyntaxHighlighting(
+        to text: NSMutableAttributedString,
+        in fullRange: NSRange,
+        palette: CodeBlockThemePalette
+    ) {
         let source = text.string
         let patterns: [(String, UIColor)] = [
-            (#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, UIColor(red: 0.55, green: 0.38, blue: 0.05, alpha: 1)),
-            (#"//.*|/\*[\s\S]*?\*/"#, UIColor(red: 0.42, green: 0.47, blue: 0.53, alpha: 1)),
-            (#"\b(const|let|var|func|function|return|if|else|for|while|switch|case|struct|class|enum|import|using|namespace|int|void|true|false|null|nil|try|catch|throw|throws|async|await|public|private|static|final)\b"#, UIColor(red: 0.68, green: 0.18, blue: 0.36, alpha: 1)),
-            (#"\b\d+(?:\.\d+)?\b"#, UIColor(red: 0.72, green: 0.34, blue: 0.08, alpha: 1)),
-            (#"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?=\()"#, UIColor(red: 0.06, green: 0.39, blue: 0.67, alpha: 1)),
-            (#"\.([A-Za-z_][A-Za-z0-9_]*)\b"#, UIColor(red: 0.14, green: 0.46, blue: 0.34, alpha: 1)),
+            (#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, palette.string),
+            (#"//.*|/\*[\s\S]*?\*/"#, palette.comment),
+            (#"\b(const|let|var|func|function|return|if|else|for|while|switch|case|struct|class|enum|import|using|namespace|int|void|true|false|null|nil|try|catch|throw|throws|async|await|public|private|static|final)\b"#, palette.keyword),
+            (#"\b\d+(?:\.\d+)?\b"#, palette.number),
+            (#"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?=\()"#, palette.function),
+            (#"\.([A-Za-z_][A-Za-z0-9_]*)\b"#, palette.property),
         ]
 
         for (pattern, color) in patterns {

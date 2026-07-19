@@ -1274,7 +1274,7 @@ extension ReplyComposerViewController: UIDocumentPickerDelegate {
     }
 }
 
-private enum ComposerMarkdownTool: CaseIterable {
+enum ComposerMarkdownTool: CaseIterable {
     case image
     case attachment
     case heading
@@ -1332,7 +1332,7 @@ private enum ComposerMarkdownTool: CaseIterable {
     }
 }
 
-private final class ComposerToolPanelView: UIView {
+final class ComposerToolPanelView: UIView {
     var onToolSelected: ((ComposerMarkdownTool) -> Void)?
 
     var isUploading = false {
@@ -1465,7 +1465,7 @@ private final class ComposerToolPanelView: UIView {
     }
 }
 
-private final class ComposerMarkdownPreviewView: UIView {
+final class ComposerMarkdownPreviewView: UIView {
     private let textView: UITextView = {
         let tv = UITextView()
         tv.translatesAutoresizingMaskIntoConstraints = false

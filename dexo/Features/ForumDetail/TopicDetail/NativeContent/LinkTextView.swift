@@ -4,6 +4,13 @@ import UIKit
 /// A UITextView subclass that preserves link tap interaction and system text selection/copy.
 /// Also handles tap-to-reveal for inline spoiler text ranges (`<span class="spoiler">`).
 final class LinkTextView: UITextView {
+    var preferredMeasurementWidth: CGFloat = 0 {
+        didSet {
+            guard abs(preferredMeasurementWidth - oldValue) > 0.5 else { return }
+            invalidateIntrinsicContentSize()
+        }
+    }
+
     private var hasSpoiler = false
     private var spoilerRevealed = false
     private var spoilerRanges: [NSRange] = []
@@ -16,10 +23,11 @@ final class LinkTextView: UITextView {
     private static let blurFraction: CGFloat = 0.7
 
     override var intrinsicContentSize: CGSize {
-        guard !isScrollEnabled, bounds.width > 0 else {
+        let measurementWidth = bounds.width > 0 ? bounds.width : preferredMeasurementWidth
+        guard !isScrollEnabled, measurementWidth > 0 else {
             return super.intrinsicContentSize
         }
-        let fittingSize = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        let fittingSize = CGSize(width: measurementWidth, height: .greatestFiniteMagnitude)
         let measured = sizeThatFits(fittingSize)
         return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height + 2))
     }

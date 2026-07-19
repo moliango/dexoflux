@@ -4,6 +4,7 @@ final class UserProfileViewController: ObservableViewController {
     private let api: DiscourseAPI
     private let viewModel: UserProfileViewModel
     private let contentViewModel: UserProfileContentViewModel
+    private let tabPreferences: UserProfileTabPreferences
 
     private let scrollView = UIScrollView()
     private let contentView = UIView()
@@ -57,9 +58,15 @@ final class UserProfileViewController: ObservableViewController {
     private var lastPresentedRelationshipError: String?
 
     init(api: DiscourseAPI, username: String) {
+        let tabPreferences = UserProfileTabPreferences()
         self.api = api
         self.viewModel = UserProfileViewModel(api: api, username: username)
-        self.contentViewModel = UserProfileContentViewModel(username: username, service: api)
+        self.tabPreferences = tabPreferences
+        self.contentViewModel = UserProfileContentViewModel(
+            username: username,
+            service: api,
+            initialSection: tabPreferences.visibleSections.first ?? .summary
+        )
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
     }
@@ -72,6 +79,7 @@ final class UserProfileViewController: ObservableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         configureTransparentNavigationBar()
+        reconcileVisibleProfileSection()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -84,11 +92,23 @@ final class UserProfileViewController: ObservableViewController {
         navigationItem.title = nil
         setupNavigationItems()
         setupUI()
-        Task {
-            await viewModel.load()
-            contentViewModel.applySummary(viewModel.summary)
-            if viewModel.summary == nil {
-                await contentViewModel.refresh()
+        let profileViewModel = viewModel
+        let profileContentViewModel = contentViewModel
+        let initialContentGeneration = profileContentViewModel.contentGeneration
+        Task { @MainActor in
+            await profileViewModel.load()
+            let summary = profileViewModel.summary
+            guard profileContentViewModel.applySummary(
+                summary,
+                ifGeneration: initialContentGeneration
+            ) else { return }
+            if summary == nil {
+                await profileContentViewModel.refresh()
+            }
+        }
+        if profileContentViewModel.section != .summary {
+            Task { @MainActor in
+                await profileContentViewModel.refresh()
             }
         }
     }
@@ -162,7 +182,7 @@ final class UserProfileViewController: ObservableViewController {
             heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             heroView.heightAnchor.constraint(equalToConstant: 530),
 
-            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -140),
+            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -110),
             panelView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             panelView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             panelView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -533,22 +553,23 @@ final class UserProfileViewController: ObservableViewController {
         statsStack.addArrangedSubview(makeStatRow(secondRowItems, valueSize: 18, labelSize: 12, spacing: 12))
     }
 
-    private func configureTabs() {
+    private func configureTabs(selectedSection: UserProfileSection? = nil) {
         tabStack.arrangedSubviews.forEach { view in
             tabStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
 
-        for (index, section) in UserProfileSection.allCases.enumerated() {
+        let selectedSection = selectedSection ?? contentViewModel.section
+        for (index, section) in tabPreferences.visibleSections.enumerated() {
             let button = ProfileTabButton()
-            button.configure(title: section.title, selected: section == contentViewModel.section)
+            button.configure(title: section.title, selected: section == selectedSection)
             button.tag = index
             button.addTarget(self, action: #selector(profileTabTapped(_:)), for: .touchUpInside)
             tabStack.addArrangedSubview(button)
             button.heightAnchor.constraint(equalToConstant: 42).isActive = true
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 68).isActive = true
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
         }
-        if contentViewModel.section == .summary {
+        if selectedSection == .summary {
             tabScrollView.setContentOffset(.zero, animated: false)
         }
     }
@@ -830,11 +851,28 @@ final class UserProfileViewController: ObservableViewController {
     }
 
     @objc private func profileTabTapped(_ sender: UIControl) {
-        guard UserProfileSection.allCases.indices.contains(sender.tag) else { return }
-        let section = UserProfileSection.allCases[sender.tag]
-        Task { @MainActor [weak self] in
-            await self?.contentViewModel.select(section)
+        let visibleSections = tabPreferences.visibleSections
+        guard visibleSections.indices.contains(sender.tag) else { return }
+        let section = visibleSections[sender.tag]
+        let profileContentViewModel = contentViewModel
+        Task { @MainActor in
+            await profileContentViewModel.select(section)
         }
+    }
+
+    private func reconcileVisibleProfileSection() {
+        let visibleSections = tabPreferences.visibleSections
+        guard let firstSection = visibleSections.first else { return }
+        guard visibleSections.contains(contentViewModel.section) else {
+            configureTabs(selectedSection: firstSection)
+            let profileContentViewModel = contentViewModel
+            Task { @MainActor [weak self] in
+                await profileContentViewModel.select(firstSection)
+                self?.configureTabs()
+            }
+            return
+        }
+        configureTabs()
     }
 
     private func openContentRow(_ row: UserProfileContentRow) {

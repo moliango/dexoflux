@@ -3,6 +3,162 @@ import XCTest
 
 @MainActor
 final class AccountScopedStoreTests: XCTestCase {
+    private let updateDefaultsKeys = [
+        "autoCheckForUpdates",
+    ]
+    private let pluginDockDefaultsKeys = [
+        "pluginDockEnabled",
+        "pluginDockSide",
+        "pluginDockVerticalPosition",
+    ]
+
+    func testAutomaticUpdateCheckDefaultsToEnabled() {
+        withPreservedUpdateDefaults {
+            UserDefaults.standard.removeObject(forKey: "autoCheckForUpdates")
+
+            XCTAssertTrue(AppSettings.shared.autoCheckForUpdates)
+        }
+    }
+
+    func testAutomaticUpdateCheckNotifiesOnlyWhenValueChanges() {
+        withPreservedUpdateDefaults {
+            UserDefaults.standard.removeObject(forKey: "autoCheckForUpdates")
+            var notificationCount = 0
+            let token = NotificationCenter.default.addObserver(
+                forName: DexoObservableObject.didChangeNotification,
+                object: AppSettings.shared,
+                queue: .main
+            ) { _ in
+                notificationCount += 1
+            }
+            defer { NotificationCenter.default.removeObserver(token) }
+
+            AppSettings.shared.autoCheckForUpdates = true
+            XCTAssertEqual(notificationCount, 0)
+
+            AppSettings.shared.autoCheckForUpdates = false
+            XCTAssertEqual(notificationCount, 1)
+
+            AppSettings.shared.autoCheckForUpdates = false
+            XCTAssertEqual(notificationCount, 1)
+
+            AppSettings.shared.autoCheckForUpdates = true
+            XCTAssertEqual(notificationCount, 2)
+        }
+    }
+
+    func testAutomaticUpdateCheckPreferencesBackupRoundTrip() throws {
+        try withPreservedUpdateDefaults {
+            AppSettings.shared.autoCheckForUpdates = false
+            let backup = try AppSettings.shared.makePreferencesBackupData()
+
+            AppSettings.shared.autoCheckForUpdates = true
+            try AppSettings.shared.importPreferencesBackupData(backup)
+
+            XCTAssertFalse(AppSettings.shared.autoCheckForUpdates)
+        }
+    }
+
+    func testPluginDockDefaultsAndStoredValues() {
+        withPreservedPluginDockDefaults {
+            let defaults = UserDefaults.standard
+            pluginDockDefaultsKeys.forEach(defaults.removeObject(forKey:))
+
+            XCTAssertTrue(AppSettings.shared.pluginDockEnabled)
+            XCTAssertEqual(AppSettings.shared.pluginDockSide, .right)
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0.72, accuracy: 0.0001)
+
+            AppSettings.shared.pluginDockEnabled = false
+            AppSettings.shared.pluginDockSide = .left
+            AppSettings.shared.pluginDockVerticalPosition = 0.35
+
+            XCTAssertFalse(AppSettings.shared.pluginDockEnabled)
+            XCTAssertEqual(AppSettings.shared.pluginDockSide, .left)
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0.35, accuracy: 0.0001)
+        }
+    }
+
+    func testPluginDockVerticalPositionIsNormalized() {
+        withPreservedPluginDockDefaults {
+            AppSettings.shared.pluginDockVerticalPosition = -1
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0, accuracy: 0.0001)
+
+            AppSettings.shared.pluginDockVerticalPosition = 2
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 1, accuracy: 0.0001)
+
+            AppSettings.shared.pluginDockVerticalPosition = .nan
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0.72, accuracy: 0.0001)
+
+            AppSettings.shared.pluginDockVerticalPosition = .infinity
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0.72, accuracy: 0.0001)
+        }
+    }
+
+    func testPluginDockSideAndPositionDoNotNotifyForEquivalentValues() {
+        withPreservedPluginDockDefaults {
+            AppSettings.shared.pluginDockSide = .right
+            AppSettings.shared.pluginDockVerticalPosition = 0.72
+            var notificationCount = 0
+            let token = NotificationCenter.default.addObserver(
+                forName: DexoObservableObject.didChangeNotification,
+                object: AppSettings.shared,
+                queue: .main
+            ) { _ in
+                notificationCount += 1
+            }
+            defer { NotificationCenter.default.removeObserver(token) }
+
+            AppSettings.shared.pluginDockSide = .right
+            AppSettings.shared.pluginDockVerticalPosition = 0.72001
+            XCTAssertEqual(notificationCount, 0)
+
+            AppSettings.shared.pluginDockSide = .left
+            AppSettings.shared.pluginDockVerticalPosition = 0.4
+            XCTAssertEqual(notificationCount, 2)
+        }
+    }
+
+    func testPluginDockPreferencesBackupRoundTrip() throws {
+        try withPreservedPluginDockDefaults {
+            AppSettings.shared.pluginDockEnabled = false
+            AppSettings.shared.pluginDockSide = .left
+            AppSettings.shared.pluginDockVerticalPosition = 0.31
+            let backup = try AppSettings.shared.makePreferencesBackupData()
+
+            AppSettings.shared.pluginDockEnabled = true
+            AppSettings.shared.pluginDockSide = .right
+            AppSettings.shared.pluginDockVerticalPosition = 0.9
+            try AppSettings.shared.importPreferencesBackupData(backup)
+
+            XCTAssertFalse(AppSettings.shared.pluginDockEnabled)
+            XCTAssertEqual(AppSettings.shared.pluginDockSide, .left)
+            XCTAssertEqual(AppSettings.shared.pluginDockVerticalPosition, 0.31, accuracy: 0.0001)
+        }
+    }
+
+    func testBrowserNavigationClassifiesWebKitInternalSchemesWithoutExternalPrompt() throws {
+        XCTAssertEqual(
+            BrowserNavigationURLClassifier.classify(try XCTUnwrap(URL(string: "about:blank"))),
+            .internalWebKit
+        )
+        XCTAssertEqual(
+            BrowserNavigationURLClassifier.classify(try XCTUnwrap(URL(string: "data:text/html,ready"))),
+            .internalWebKit
+        )
+        XCTAssertEqual(
+            BrowserNavigationURLClassifier.classify(try XCTUnwrap(URL(string: "blob:https://linux.do/id"))),
+            .internalWebKit
+        )
+        XCTAssertEqual(
+            BrowserNavigationURLClassifier.classify(try XCTUnwrap(URL(string: "https://linux.do/oauth"))),
+            .web
+        )
+        XCTAssertEqual(
+            BrowserNavigationURLClassifier.classify(try XCTUnwrap(URL(string: "mailto:test@example.com"))),
+            .externalApp
+        )
+    }
+
     func testBrowserHistoryIsAccountScopedAndBaseURLIsNormalized() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -203,5 +359,35 @@ final class AccountScopedStoreTests: XCTestCase {
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("dexoflux-store-tests-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func withPreservedPluginDockDefaults<T>(_ operation: () throws -> T) rethrows -> T {
+        let defaults = UserDefaults.standard
+        let storedValues = Dictionary(uniqueKeysWithValues: pluginDockDefaultsKeys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in pluginDockDefaultsKeys {
+                if let value = storedValues[key] ?? nil {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+        return try operation()
+    }
+
+    private func withPreservedUpdateDefaults<T>(_ operation: () throws -> T) rethrows -> T {
+        let defaults = UserDefaults.standard
+        let storedValues = Dictionary(uniqueKeysWithValues: updateDefaultsKeys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in updateDefaultsKeys {
+                if let value = storedValues[key] ?? nil {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+        return try operation()
     }
 }

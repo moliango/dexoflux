@@ -1,6 +1,25 @@
 import UIKit
 import CookedHTML
 
+enum HeadingPresentationPolicy {
+    static let usesAccentRail = false
+
+    static func shouldRenderTagBadge(
+        level: Int,
+        text: String,
+        topicTagNames: Set<String>
+    ) -> Bool {
+        guard level == 1 else { return false }
+        let normalizedText = normalize(text)
+        guard !normalizedText.isEmpty else { return false }
+        return topicTagNames.contains { normalize($0) == normalizedText }
+    }
+
+    private static func normalize(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 enum HeadingRenderer: BlockRenderer {
     static func canRender(_ block: ContentBlock) -> Bool {
         if case .heading = block { return true }
@@ -10,10 +29,15 @@ enum HeadingRenderer: BlockRenderer {
     static func render(_ block: ContentBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) -> UIView {
         guard case .heading(let level, let inlines) = block else { return UIView() }
 
-        if level == 1, let tagText = tagLikeHeadingText(from: inlines) {
+        let headingText = plainHeadingText(from: inlines)
+        if HeadingPresentationPolicy.shouldRenderTagBadge(
+            level: level,
+            text: headingText,
+            topicTagNames: config.topicTagNames
+        ) {
             return HeadingTagBadgeView(
-                text: tagText,
-                color: TopicTagVisualStyle.color(for: tagText),
+                text: headingText,
+                color: TopicTagVisualStyle.color(for: headingText),
                 font: config.baseFont.withRelativeSize(1).weighted(.semibold)
             )
         }
@@ -39,7 +63,8 @@ enum HeadingRenderer: BlockRenderer {
             contentWidth: config.contentWidth,
             baseURL: config.baseURL,
             postId: config.postId,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            topicTagNames: config.topicTagNames
         )
 
         let attributedText = headingConfig.styledAttributedString(
@@ -67,15 +92,10 @@ enum HeadingRenderer: BlockRenderer {
         return textView
     }
 
-    private static func tagLikeHeadingText(from inlines: [InlineNode]) -> String? {
-        let text = plainText(from: inlines)
+    private static func plainHeadingText(from inlines: [InlineNode]) -> String {
+        plainText(from: inlines)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
-        guard !text.isEmpty, text.count <= 18 else { return nil }
-        guard text.rangeOfCharacter(from: CharacterSet.newlines) == nil else { return nil }
-        let punctuation = CharacterSet(charactersIn: ".,;:!?，。；：！？、()（）[]【】")
-        guard text.rangeOfCharacter(from: punctuation) == nil else { return nil }
-        return text
     }
 
     private static func plainText(from inlines: [InlineNode]) -> String {
@@ -108,27 +128,13 @@ private final class HeadingBlockView: UIView {
         backgroundColor = .clear
         layer.borderWidth = 0
 
-        let accent = UIView()
-        accent.translatesAutoresizingMaskIntoConstraints = false
-        accent.backgroundColor = TopicDetailContentStyle.headingAccentColor(for: level)
-        accent.layer.cornerRadius = 2
-        accent.layer.cornerCurve = .continuous
-
-        addSubview(accent)
         addSubview(textView)
 
         let topPadding: CGFloat = level <= 2 ? 8 : 4
         let bottomPadding: CGFloat = level <= 2 ? 6 : 3
-        let sidePadding: CGFloat = 0
-
         NSLayoutConstraint.activate([
-            accent.leadingAnchor.constraint(equalTo: leadingAnchor, constant: sidePadding),
-            accent.topAnchor.constraint(equalTo: topAnchor, constant: topPadding + 2),
-            accent.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(bottomPadding + 2)),
-            accent.widthAnchor.constraint(equalToConstant: 4),
-
             textView.topAnchor.constraint(equalTo: topAnchor, constant: topPadding),
-            textView.leadingAnchor.constraint(equalTo: accent.trailingAnchor, constant: 10),
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: trailingAnchor),
             textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -bottomPadding),
         ])

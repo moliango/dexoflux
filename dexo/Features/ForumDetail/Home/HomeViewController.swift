@@ -6,6 +6,22 @@ private enum HomeFABMode {
     case refresh
 }
 
+enum HomePullToRefreshPolicy {
+    static let triggerDistance: CGFloat = 56
+
+    static func shouldTrigger(
+        pullDistance: CGFloat,
+        isRefreshing: Bool,
+        isLoading: Bool,
+        hasReloadTask: Bool
+    ) -> Bool {
+        pullDistance >= triggerDistance
+            && !isRefreshing
+            && !isLoading
+            && !hasReloadTask
+    }
+}
+
 final class HomeViewController: ObservableViewController {
     static let initialContentReadyNotification = Notification.Name("DexoHomeInitialContentReadyNotification")
 
@@ -32,6 +48,7 @@ final class HomeViewController: ObservableViewController {
     private var floatingActionButtonBottomConstraint: NSLayoutConstraint?
     private var isSearchRowCollapsed = false
     private var fabMode: HomeFABMode = .create
+    private var isCreateMenuVisible = false
     private var isHomeTabBarHidden = false
     private var lastHomeScrollY: CGFloat?
     private var incomingTopicsPollTimer: Timer?
@@ -234,7 +251,7 @@ final class HomeViewController: ObservableViewController {
         let avatarURL = AvatarImageLoader.url(
             from: self.viewModel.avatarTemplate(for: topic),
             baseURL: baseURL,
-            size: 96
+            size: AvatarImageLoader.primaryAvatarPixelSize
         )
         let category = self.viewModel.category(for: topic)
         let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
@@ -243,7 +260,9 @@ final class HomeViewController: ObservableViewController {
             avatarURL: avatarURL,
             categoryName: self.viewModel.categoryDisplayName(for: category),
             categoryColor: categoryColor,
-            tags: topic.tags ?? []
+            tags: topic.tags ?? [],
+            categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
+            categoryBaseURL: baseURL
         )
         return cell
     }
@@ -275,7 +294,7 @@ final class HomeViewController: ObservableViewController {
         let avatarURL = AvatarImageLoader.url(
             from: viewModel.avatarTemplate(for: topic),
             baseURL: api.baseURL,
-            size: 96
+            size: AvatarImageLoader.primaryAvatarPixelSize
         )
         let category = viewModel.category(for: topic)
         let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
@@ -287,6 +306,8 @@ final class HomeViewController: ObservableViewController {
             username: viewModel.username(for: topic),
             categoryName: viewModel.categoryDisplayName(for: category),
             categoryColor: categoryColor,
+            categoryPresentation: viewModel.categoryBadgePresentation(for: topic),
+            categoryBaseURL: api.baseURL,
             tags: topic.tags ?? [],
             replyCount: max(topic.postsCount - 1, 0),
             views: topic.views,
@@ -420,6 +441,81 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
+    private let createMenuBackdrop: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.10)
+        view.alpha = 0
+        view.isHidden = true
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+
+    private let createMenuContainer: UIVisualEffectView = {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 22
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1.0 / UIScreen.main.scale
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowOpacity = 0.14
+        view.layer.shadowRadius = 18
+        view.layer.shadowOffset = CGSize(width: 0, height: 9)
+        view.clipsToBounds = false
+        view.alpha = 0
+        view.isHidden = true
+        view.accessibilityViewIsModal = true
+        return view
+    }()
+
+    private let createTopicMenuButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.title = String(localized: "new_topic.title")
+        config.subtitle = String(localized: "new_topic.body.placeholder")
+        config.image = UIImage(systemName: "square.and.pencil")
+        config.imagePadding = 12
+        config.titleAlignment = .leading
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        config.background.cornerRadius = 15
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.contentHorizontalAlignment = .leading
+        button.accessibilityHint = String(localized: "new_topic.title")
+        return button
+    }()
+
+    private let draftsMenuButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.title = String(localized: "me.drafts", defaultValue: "我的草稿")
+        config.subtitle = String(localized: "me.action.drafts.subtitle", defaultValue: "继续编辑保存的内容")
+        config.image = UIImage(systemName: "doc.text.fill")
+        config.imagePadding = 12
+        config.titleAlignment = .leading
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        config.background.cornerRadius = 15
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.contentHorizontalAlignment = .leading
+        button.accessibilityHint = String(localized: "me.action.drafts.subtitle", defaultValue: "继续编辑保存的内容")
+        return button
+    }()
+
+    private lazy var createMenuStackView: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [createTopicMenuButton, draftsMenuButton])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private lazy var createMenuDismissTapGesture: UITapGestureRecognizer = {
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(createMenuBackdropTapped))
+        gesture.cancelsTouchesInView = true
+        gesture.delegate = self
+        gesture.isEnabled = false
+        return gesture
+    }()
+
     private let incomingTopicsHeaderView: UIView = {
         let view = UIView()
         view.backgroundColor = .clear
@@ -507,7 +603,11 @@ final class HomeViewController: ObservableViewController {
         loginStack.translatesAutoresizingMaskIntoConstraints = false
         loginPromptCard.addSubview(loginStack)
         view.addSubview(loginPromptCard)
+        createMenuContainer.contentView.addSubview(createMenuStackView)
+        view.addSubview(createMenuBackdrop)
+        view.addSubview(createMenuContainer)
         view.addSubview(floatingActionButton)
+        view.addGestureRecognizer(createMenuDismissTapGesture)
 
         setupHeader()
         applyThemeStyle()
@@ -569,6 +669,22 @@ final class HomeViewController: ObservableViewController {
             loginLogoView.heightAnchor.constraint(equalToConstant: 68),
             loginButton.heightAnchor.constraint(equalToConstant: 50),
 
+            createMenuBackdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            createMenuBackdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            createMenuBackdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            createMenuBackdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            createMenuContainer.trailingAnchor.constraint(equalTo: floatingActionButton.trailingAnchor),
+            createMenuContainer.bottomAnchor.constraint(equalTo: floatingActionButton.topAnchor, constant: -12),
+            createMenuContainer.widthAnchor.constraint(equalToConstant: 218),
+
+            createMenuStackView.topAnchor.constraint(equalTo: createMenuContainer.contentView.topAnchor, constant: 8),
+            createMenuStackView.leadingAnchor.constraint(equalTo: createMenuContainer.contentView.leadingAnchor, constant: 8),
+            createMenuStackView.trailingAnchor.constraint(equalTo: createMenuContainer.contentView.trailingAnchor, constant: -8),
+            createMenuStackView.bottomAnchor.constraint(equalTo: createMenuContainer.contentView.bottomAnchor, constant: -8),
+            createTopicMenuButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 58),
+            draftsMenuButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 58),
+
             floatingActionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             fabBottomConstraint,
             floatingActionButton.widthAnchor.constraint(equalToConstant: 56),
@@ -581,6 +697,8 @@ final class HomeViewController: ObservableViewController {
         notificationButton.addTarget(self, action: #selector(notificationsTapped), for: .touchUpInside)
         categoryManagerButton.addTarget(self, action: #selector(categoryManagerTapped), for: .touchUpInside)
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
+        createTopicMenuButton.addTarget(self, action: #selector(createTopicMenuTapped), for: .touchUpInside)
+        draftsMenuButton.addTarget(self, action: #selector(draftsMenuTapped), for: .touchUpInside)
         floatingActionButton.addTarget(self, action: #selector(fabTapped), for: .touchUpInside)
         incomingTopicsButton.addTarget(self, action: #selector(incomingTopicsTapped), for: .touchUpInside)
         incomingTopicsInlineButton.addTarget(self, action: #selector(incomingTopicsTapped), for: .touchUpInside)
@@ -836,6 +954,9 @@ final class HomeViewController: ObservableViewController {
         searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
         floatingActionButton.backgroundColor = themeStyle.accentColor
         floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
+        createMenuContainer.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
+        configureCreateMenuButton(createTopicMenuButton, accentColor: themeStyle.accentColor)
+        configureCreateMenuButton(draftsMenuButton, accentColor: themeStyle.accentColor)
         incomingTopicsButton.applyThemeStyle()
         incomingTopicsInlineButton.applyThemeStyle()
         loadingSkeletonView.applyThemeStyle()
@@ -913,6 +1034,7 @@ final class HomeViewController: ObservableViewController {
         applyThemeStyle()
         // Login-required state
         if viewModel.requiresLogin {
+            setCreateMenuVisible(false, animated: false)
             isInitialTopicLoadPending = false
             errorLabel.text = viewModel.errorMessage
             errorLabel.isHidden = false
@@ -1160,8 +1282,34 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func pullToRefresh() {
+        guard topicReloadTask == nil, !viewModel.isLoading else {
+            if refreshControl.isRefreshing, !isTopRefreshGeometryLocked {
+                refreshControl.endRefreshing()
+            }
+            return
+        }
         beginTopRefreshGeometryLock(animated: false)
         reloadTopics()
+    }
+
+    @discardableResult
+    private func triggerShortPullRefreshIfNeeded(_ scrollView: UIScrollView) -> Bool {
+        let pullDistance = max(
+            0,
+            -(scrollView.contentOffset.y + scrollView.contentInset.top)
+        )
+        guard HomePullToRefreshPolicy.shouldTrigger(
+            pullDistance: pullDistance,
+            isRefreshing: refreshControl.isRefreshing,
+            isLoading: viewModel.isLoading,
+            hasReloadTask: topicReloadTask != nil
+        ) else {
+            return false
+        }
+
+        refreshControl.beginRefreshing()
+        pullToRefresh()
+        return true
     }
 
     @objc private func incomingTopicsTapped() {
@@ -1225,10 +1373,25 @@ final class HomeViewController: ObservableViewController {
     @objc private func fabTapped() {
         switch fabMode {
         case .create:
-            openNewTopicComposer()
+            setCreateMenuVisible(!isCreateMenuVisible, animated: true)
         case .refresh:
+            setCreateMenuVisible(false, animated: false)
             refreshFromFloatingActionButton()
         }
+    }
+
+    @objc private func createMenuBackdropTapped() {
+        setCreateMenuVisible(false, animated: true)
+    }
+
+    @objc private func createTopicMenuTapped() {
+        setCreateMenuVisible(false, animated: true)
+        openNewTopicComposer()
+    }
+
+    @objc private func draftsMenuTapped() {
+        setCreateMenuVisible(false, animated: true)
+        openDrafts()
     }
 
     private func openNewTopicComposer() {
@@ -1252,6 +1415,18 @@ final class HomeViewController: ObservableViewController {
             authGate.requireAuth(then: presentComposer)
         } else {
             presentComposer()
+        }
+    }
+
+    private func openDrafts() {
+        let presentDrafts = { [weak self] in
+            guard let self else { return }
+            self.navigationController?.pushViewController(DraftsViewController(api: self.api), animated: true)
+        }
+        if let authGate {
+            authGate.requireAuth(then: presentDrafts)
+        } else {
+            presentDrafts()
         }
     }
 
@@ -1294,7 +1469,7 @@ final class HomeViewController: ObservableViewController {
                 AvatarImageLoader.url(
                     from: viewModel.avatarTemplate(for: topic),
                     baseURL: api.baseURL,
-                    size: 96
+                    size: AvatarImageLoader.primaryAvatarPixelSize
                 )
             }
         AvatarImageLoader.prefetch(urls: urls)
@@ -1727,19 +1902,87 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func setFABMode(_ mode: HomeFABMode, animated: Bool) {
+        if mode != .create {
+            setCreateMenuVisible(false, animated: animated)
+        }
         guard fabMode != mode else { return }
         fabMode = mode
         updateFloatingActionButton(animated: animated)
     }
 
+    private func setCreateMenuVisible(_ visible: Bool, animated: Bool) {
+        let shouldShow = visible && fabMode == .create && !floatingActionButton.isHidden
+        guard isCreateMenuVisible != shouldShow else { return }
+        isCreateMenuVisible = shouldShow
+        createMenuDismissTapGesture.isEnabled = shouldShow
+
+        if shouldShow {
+            createMenuBackdrop.isHidden = false
+            createMenuContainer.isHidden = false
+            createMenuBackdrop.alpha = 0
+            createMenuContainer.alpha = 0
+            createMenuContainer.transform = CGAffineTransform(translationX: 0, y: 12)
+                .scaledBy(x: 0.94, y: 0.94)
+            view.bringSubviewToFront(createMenuBackdrop)
+            view.bringSubviewToFront(createMenuContainer)
+            view.bringSubviewToFront(floatingActionButton)
+        }
+
+        updateFloatingActionButton(animated: animated)
+        let updates = {
+            self.createMenuBackdrop.alpha = shouldShow ? 1 : 0
+            self.createMenuContainer.alpha = shouldShow ? 1 : 0
+            self.createMenuContainer.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: 8)
+                .scaledBy(x: 0.96, y: 0.96)
+        }
+        let completion = {
+            guard !self.isCreateMenuVisible else { return }
+            self.createMenuBackdrop.isHidden = true
+            self.createMenuContainer.isHidden = true
+        }
+
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            DexoMotion.animate(
+                duration: DexoMotion.quick,
+                timingParameters: shouldShow ? DexoMotion.easeOutCubic : DexoMotion.easeInCubic,
+                animations: updates
+            ) { _ in completion() }
+        } else {
+            updates()
+            completion()
+        }
+    }
+
+    private func configureCreateMenuButton(_ button: UIButton, accentColor: UIColor) {
+        guard var configuration = button.configuration else { return }
+        configuration.baseForegroundColor = accentColor
+        configuration.baseBackgroundColor = accentColor.withAlphaComponent(0.10)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = .systemFont(ofSize: 15, weight: .semibold)
+            attributes.foregroundColor = .label
+            return attributes
+        }
+        configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = .systemFont(ofSize: 11.5, weight: .regular)
+            attributes.foregroundColor = .secondaryLabel
+            return attributes
+        }
+        button.configuration = configuration
+    }
+
     private func updateFloatingActionButton(animated: Bool) {
         let symbolName: String
         let accessibilityLabel: String
-        switch fabMode {
-        case .create:
+        switch (fabMode, isCreateMenuVisible) {
+        case (.create, true):
+            symbolName = "xmark"
+            accessibilityLabel = String(localized: "common.close", defaultValue: "关闭")
+        case (.create, false):
             symbolName = "plus"
             accessibilityLabel = String(localized: "new_topic.title")
-        case .refresh:
+        case (.refresh, _):
             symbolName = "arrow.clockwise"
             accessibilityLabel = String(localized: "action.refresh")
         }
@@ -1748,7 +1991,7 @@ final class HomeViewController: ObservableViewController {
         let updates = {
             self.floatingActionButton.setImage(image, for: .normal)
             self.floatingActionButton.accessibilityLabel = accessibilityLabel
-            self.floatingActionButton.transform = self.fabMode == .refresh
+            self.floatingActionButton.transform = self.fabMode == .refresh && !self.isCreateMenuVisible
                 ? CGAffineTransform(rotationAngle: .pi / 8)
                 : .identity
         }
@@ -2573,9 +2816,21 @@ private final class CategoryManagerCell: UITableViewCell {
     }
 }
 
+extension HomeViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === createMenuDismissTapGesture, isCreateMenuVisible else { return true }
+        let location = touch.location(in: view)
+        return !createMenuContainer.frame.contains(location)
+            && !floatingActionButton.frame.contains(location)
+    }
+}
+
 extension HomeViewController: UITableViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard scrollView === tableView else { return }
+        if isCreateMenuVisible, scrollView.isDragging || scrollView.isDecelerating {
+            setCreateMenuVisible(false, animated: true)
+        }
         hideHomeScrollIndicators()
         updateIncomingTopicsPlacement(animated: false)
         let y = scrollView.contentOffset.y + scrollView.contentInset.top
@@ -2600,7 +2855,9 @@ extension HomeViewController: UITableViewDelegate {
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard scrollView === tableView, !decelerate else { return }
+        guard scrollView === tableView else { return }
+        if triggerShortPullRefreshIfNeeded(scrollView) { return }
+        guard !decelerate else { return }
         settleSearchRowCollapse(animated: true)
     }
 

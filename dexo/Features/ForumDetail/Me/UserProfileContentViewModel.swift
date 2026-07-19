@@ -9,12 +9,13 @@ protocol UserProfileContentServicing: AnyObject {
 
 extension DiscourseAPI: UserProfileContentServicing {}
 
-enum UserProfileSection: Int, CaseIterable {
+enum UserProfileSection: String, CaseIterable, Codable {
     case summary
     case activity
     case topics
     case replies
     case likesReceived
+    case likesGiven
     case reactions
 
     var actionFilter: String? {
@@ -23,6 +24,7 @@ enum UserProfileSection: Int, CaseIterable {
         case .topics: return "4"
         case .replies: return "5"
         case .likesReceived: return "1"
+        case .likesGiven: return "2"
         case .summary, .reactions: return nil
         }
     }
@@ -34,8 +36,45 @@ enum UserProfileSection: Int, CaseIterable {
         case .topics: return String(localized: "user.topics_title")
         case .replies: return String(localized: "user.profile.replies")
         case .likesReceived: return String(localized: "me.stats.likes")
+        case .likesGiven: return String(localized: "me.stats.likes_given")
         case .reactions: return String(localized: "user.profile.reactions")
         }
+    }
+}
+
+final class UserProfileTabPreferences {
+    static let didChangeNotification = Notification.Name("UserProfileTabPreferences.didChange")
+
+    private let storageKey = "user.profile.visible_sections"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var visibleSections: [UserProfileSection] {
+        guard let storedValues = defaults.stringArray(forKey: storageKey) else {
+            return UserProfileSection.allCases
+        }
+        let sections = sanitized(storedValues.compactMap(UserProfileSection.init(rawValue:)))
+        return sections.isEmpty ? UserProfileSection.allCases : sections
+    }
+
+    func setVisibleSections(_ sections: [UserProfileSection]) {
+        let sections = sanitized(sections)
+        guard !sections.isEmpty else { return }
+        defaults.set(sections.map(\.rawValue), forKey: storageKey)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    func reset() {
+        defaults.removeObject(forKey: storageKey)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    private func sanitized(_ sections: [UserProfileSection]) -> [UserProfileSection] {
+        var seen = Set<UserProfileSection>()
+        return sections.filter { seen.insert($0).inserted }
     }
 }
 
@@ -66,20 +105,32 @@ final class UserProfileContentViewModel: DexoObservableObject {
     private var summary: DiscourseUserSummary?
     private var actionOffset = 0
     private var reactionCursor: Int?
+    private var requestGeneration = 0
 
-    init(username: String, service: UserProfileContentServicing) {
+    var contentGeneration: Int {
+        requestGeneration
+    }
+
+    init(
+        username: String,
+        service: UserProfileContentServicing,
+        initialSection: UserProfileSection = .summary
+    ) {
         self.username = username
         self.service = service
+        section = initialSection
         super.init()
     }
 
-    func applySummary(_ summary: DiscourseUserSummary?) {
+    @discardableResult
+    func applySummary(_ summary: DiscourseUserSummary?, ifGeneration generation: Int) -> Bool {
+        guard generation == requestGeneration, section == .summary else { return false }
         self.summary = summary
-        guard section == .summary else { return }
         rows = makeSummaryRows(summary)
         errorMessage = nil
         canLoadMore = false
         notifyChanged()
+        return true
     }
 
     func select(_ section: UserProfileSection) async {
@@ -98,53 +149,68 @@ final class UserProfileContentViewModel: DexoObservableObject {
 
     func loadMore() async {
         guard canLoadMore, !isLoading, !isLoadingMore, section != .summary else { return }
+        let generation = requestGeneration
+        let requestedSection = section
+        let requestedActionOffset = actionOffset
+        let requestedReactionCursor = reactionCursor
         isLoadingMore = true
         loadMoreErrorMessage = nil
         notifyChanged()
         do {
-            switch section {
+            switch requestedSection {
             case .reactions:
                 let page = try await service.fetchUserReactions(
                     username: username,
-                    beforeReactionUserId: reactionCursor
+                    beforeReactionUserId: requestedReactionCursor
                 )
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 appendReactions(page)
-            case .activity, .topics, .replies, .likesReceived:
-                guard let filter = section.actionFilter else { break }
+            case .activity, .topics, .replies, .likesReceived, .likesGiven:
+                guard let filter = requestedSection.actionFilter else { break }
                 let page = try await service.fetchUserActions(
                     username: username,
                     filter: filter,
-                    offset: actionOffset
+                    offset: requestedActionOffset
                 )
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 appendActions(page)
             case .summary:
                 break
             }
         } catch {
+            guard isCurrentRequest(generation, section: requestedSection) else { return }
             loadMoreErrorMessage = error.localizedDescription
         }
+        guard isCurrentRequest(generation, section: requestedSection) else { return }
         isLoadingMore = false
         notifyChanged()
     }
 
     private func reloadCurrentSection() async {
+        requestGeneration += 1
+        let generation = requestGeneration
+        let requestedSection = section
         actionOffset = 0
         reactionCursor = nil
         errorMessage = nil
         loadMoreErrorMessage = nil
         canLoadMore = false
+        isLoadingMore = false
 
-        if section == .summary {
+        if requestedSection == .summary {
             rows = makeSummaryRows(summary)
             isLoading = true
             notifyChanged()
             do {
                 let response = try await service.fetchUserSummaryResponse(username: username)
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 summary = response.userSummary
                 rows = makeSummaryRows(response.userSummary)
             } catch {
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 errorMessage = error.localizedDescription
             }
+            guard isCurrentRequest(generation, section: requestedSection) else { return }
             isLoading = false
             notifyChanged()
             return
@@ -154,22 +220,30 @@ final class UserProfileContentViewModel: DexoObservableObject {
         isLoading = true
         notifyChanged()
         do {
-            switch section {
+            switch requestedSection {
             case .reactions:
                 let page = try await service.fetchUserReactions(username: username, beforeReactionUserId: nil)
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 appendReactions(page)
-            case .activity, .topics, .replies, .likesReceived:
-                guard let filter = section.actionFilter else { break }
+            case .activity, .topics, .replies, .likesReceived, .likesGiven:
+                guard let filter = requestedSection.actionFilter else { break }
                 let page = try await service.fetchUserActions(username: username, filter: filter, offset: 0)
+                guard isCurrentRequest(generation, section: requestedSection) else { return }
                 appendActions(page)
             case .summary:
                 break
             }
         } catch {
+            guard isCurrentRequest(generation, section: requestedSection) else { return }
             errorMessage = error.localizedDescription
         }
+        guard isCurrentRequest(generation, section: requestedSection) else { return }
         isLoading = false
         notifyChanged()
+    }
+
+    private func isCurrentRequest(_ generation: Int, section requestedSection: UserProfileSection) -> Bool {
+        generation == requestGeneration && requestedSection == section
     }
 
     private func appendActions(_ page: [DiscourseUserAction]) {

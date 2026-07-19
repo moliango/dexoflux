@@ -218,6 +218,7 @@ final class TopicDetailViewController: ObservableViewController {
     private let initialFloor: Int?
     private let baseURL: String
     private var hasTitleHeader = false
+    private var lastCategoryPresentation: TopicCategoryBadgePresentation?
     private var isLoadingEarlierLocally = false
     private var pendingScrollToFloor: Int?
     private var lastScrollOffset: CGFloat = 0
@@ -225,6 +226,12 @@ final class TopicDetailViewController: ObservableViewController {
     private var suppressLoadEarlier = false
     /// Anchor info for restoring scroll position after loading earlier posts
     private var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
+    private struct PendingPostSnapshot {
+        let itemIDs: [Int]
+        let earlierAnchor: (postId: Int, cellTopOffset: CGFloat)?
+    }
+    private var isApplyingPostSnapshot = false
+    private var pendingPostSnapshot: PendingPostSnapshot?
     private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
     private var lastContentFontSize = AppSettings.shared.contentFontSize
     private var lastContentFontScalePercent = AppSettings.shared.contentFontScalePercent
@@ -242,6 +249,13 @@ final class TopicDetailViewController: ObservableViewController {
     private var prefetchedImagePostIds = Set<Int>()
     private var pendingSharedIssueTopicIds = Set<Int>()
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
+
+    private var pluginScope: PluginScope {
+        PluginScope(
+            baseURL: api.baseURL,
+            username: AuthManager.shared.username(for: api.baseURL)
+        )
+    }
 
     private enum BackSwipeFallbackMetrics {
         static let edgeActivationWidth: CGFloat = 44
@@ -305,7 +319,8 @@ final class TopicDetailViewController: ObservableViewController {
             contentWidth: renderContentWidth,
             baseURL: self.baseURL,
             postId: post.id,
-            galleryImageURLs: galleryImageURLs
+            galleryImageURLs: galleryImageURLs,
+            topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? [])
         )
         let hasUnsupported = self.viewModel.unsupportedPostIds.contains(postId)
 
@@ -477,6 +492,11 @@ final class TopicDetailViewController: ObservableViewController {
         if let cloudflareCompletionObservationToken {
             NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
         }
+        NotificationCenter.default.removeObserver(
+            self,
+            name: PluginStateStore.stateDidChangeNotification,
+            object: nil
+        )
         readingTracker.stop()
     }
 
@@ -486,6 +506,12 @@ final class TopicDetailViewController: ObservableViewController {
         navigationItem.largeTitleDisplayMode = .never
         title = String(localized: "topic_detail.default_title")
         startObservingCloudflareVerification()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(pluginStateDidChange),
+            name: PluginStateStore.stateDidChangeNotification,
+            object: nil
+        )
         configureTopicActions()
         applyTypography()
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
@@ -588,7 +614,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
 
         // Execute deferred jump scroll after layout is complete
-        if let floor = pendingScrollToFloor {
+        if !isApplyingPostSnapshot, let floor = pendingScrollToFloor {
             pendingScrollToFloor = nil
             let targetRow = viewModel.visibleRowForFloor(floor) ?? 0
             let rowCount = tableView.numberOfRows(inSection: 0)
@@ -608,6 +634,7 @@ final class TopicDetailViewController: ObservableViewController {
         applyThemeStyle()
         applyTypography()
         let didChangeThemeStyle = lastThemeStyle != settings.themeStyle
+        let didChangeCategoryPresentation = lastCategoryPresentation != viewModel.categoryPresentation
         let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
             || lastContentFontSize != settings.contentFontSize
             || lastContentFontScalePercent != settings.contentFontScalePercent
@@ -622,8 +649,9 @@ final class TopicDetailViewController: ObservableViewController {
         lastContentFontScope = settings.contentFontScope
         lastInterfaceFontScalePercent = settings.interfaceFontScalePercent
         lastThemeStyle = settings.themeStyle
+        lastCategoryPresentation = viewModel.categoryPresentation
         configureTopicActions()
-        if didChangeThemeStyle {
+        if didChangeThemeStyle || didChangeCategoryPresentation {
             hasTitleHeader = false
         }
 
@@ -683,33 +711,15 @@ final class TopicDetailViewController: ObservableViewController {
                 prepareInitialContentTransition()
             }
             tableView.isHidden = false
-            var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
-            snapshot.appendSections([0])
             var seen = Set<Int>()
             let readyIds = viewModel.visiblePosts.compactMap { post -> Int? in
                 guard viewModel.parsedBlocks[post.id] != nil,
                       seen.insert(post.id).inserted else { return nil }
                 return post.id
             }
-            snapshot.appendItems(readyIds, toSection: 0)
             prefetchContentImages(forPostIds: readyIds)
-
-            // Restore scroll position when earlier posts were prepended
-            if let anchor = earlierLoadAnchor {
-                earlierLoadAnchor = nil
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                dataSource.apply(snapshot, animatingDifferences: false)
-                tableView.layoutIfNeeded()
-                if let newIndexPath = dataSource.indexPath(for: anchor.postId) {
-                    let newCellTop = tableView.rectForRow(at: newIndexPath).minY
-                    tableView.contentOffset.y = newCellTop - anchor.cellTopOffset
-                }
-                CATransaction.commit()
-                isLoadingEarlierLocally = false
-            } else {
-                dataSource.apply(snapshot, animatingDifferences: false)
-            }
+            let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
+            applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
             if shouldReloadVisibleContent {
                 tableView.reloadData()
             }
@@ -793,7 +803,7 @@ final class TopicDetailViewController: ObservableViewController {
             return AvatarImageLoader.url(
                 from: post.avatarTemplate,
                 baseURL: baseURL,
-                size: 96
+                size: AvatarImageLoader.primaryAvatarPixelSize
             )
         }
     }
@@ -842,14 +852,14 @@ final class TopicDetailViewController: ObservableViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let tags = topic.tags
-        configureTags(tags)
-        let hasVisibleTags = !tags.isEmpty
+        configureTaxonomy(tags: tags, category: viewModel.categoryPresentation)
+        let hasVisibleTaxonomy = viewModel.categoryPresentation != nil || !tags.isEmpty
 
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
             titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            tagsContainer.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: hasVisibleTags ? 8 : 0),
+            tagsContainer.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: hasVisibleTaxonomy ? 8 : 0),
             tagsContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             tagsContainer.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
             metadataRow.topAnchor.constraint(equalTo: tagsContainer.bottomAnchor, constant: 10),
@@ -937,10 +947,13 @@ final class TopicDetailViewController: ObservableViewController {
         return relative.localizedString(for: date, relativeTo: Date())
     }
 
-    private func configureTags(_ tags: [DiscourseTopicDetail.Tag]) {
+    private func configureTaxonomy(
+        tags: [DiscourseTopicDetail.Tag],
+        category: TopicCategoryBadgePresentation?
+    ) {
         tagsContainer.subviews.forEach { $0.removeFromSuperview() }
         tagsContainer.constraints.forEach { tagsContainer.removeConstraint($0) }
-        guard !tags.isEmpty else {
+        guard category != nil || !tags.isEmpty else {
             tagsContainer.heightAnchor.constraint(equalToConstant: 0).isActive = true
             return
         }
@@ -949,51 +962,53 @@ final class TopicDetailViewController: ObservableViewController {
         let vSpacing: CGFloat = 6
         let maxWidth = tableView.bounds.width - 32 // 16pt padding on each side
 
-        var buttons: [UIButton] = []
+        var badges: [TopicTaxonomyBadgeView] = []
+        if let category {
+            let badge = TopicTaxonomyBadgeView(
+                category: category,
+                baseURL: baseURL,
+                variant: .regular,
+                isInteractive: true
+            )
+            badge.addAction(UIAction { [weak self] _ in
+                guard let self, let resolvedCategory = self.viewModel.category else { return }
+                let viewController = CategoryTopicsViewController(api: self.api, category: resolvedCategory)
+                self.navigationController?.pushViewController(viewController, animated: true)
+            }, for: .touchUpInside)
+            badges.append(badge)
+        }
+
         for tag in tags {
-            let button = UIButton(type: .system)
             let color = TopicTagVisualStyle.color(for: tag.name)
-            var config = UIButton.Configuration.filled()
-            config.title = tag.name
-            config.baseForegroundColor = color
-            config.baseBackgroundColor = color.withAlphaComponent(0.10)
-            config.cornerStyle = .capsule
-            config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 9, bottom: 4, trailing: 11)
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                var outgoing = incoming
-                outgoing.font = .systemFont(ofSize: 13, weight: .medium)
-                return outgoing
-            }
-            config.image = UIImage(systemName: "tag.fill")
-            config.imagePadding = 4
-            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-            button.configuration = config
-            button.layer.borderColor = color.withAlphaComponent(0.18).cgColor
-            button.layer.borderWidth = 1
-            button.layer.cornerCurve = .continuous
+            let badge = TopicTaxonomyBadgeView(
+                tag: tag.name,
+                color: color,
+                variant: .regular,
+                isInteractive: true
+            )
             let tagSlug = tag.slug
-            button.addAction(UIAction { [weak self] _ in
+            badge.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
                 let vc = TagTopicsViewController(api: self.api, tagName: tagSlug)
                 self.navigationController?.pushViewController(vc, animated: true)
             }, for: .touchUpInside)
-            buttons.append(button)
+            badges.append(badge)
         }
 
         // Flow layout: calculate positions with line wrapping
         var x: CGFloat = 0
         var y: CGFloat = 0
         var lineHeight: CGFloat = 0
-        for button in buttons {
-            let size = button.sizeThatFits(CGSize(width: maxWidth, height: .greatestFiniteMagnitude))
+        for badge in badges {
+            badge.translatesAutoresizingMaskIntoConstraints = true
+            let size = badge.sizeThatFits(CGSize(width: maxWidth, height: .greatestFiniteMagnitude))
             if x + size.width > maxWidth, x > 0 {
                 x = 0
                 y += lineHeight + vSpacing
                 lineHeight = 0
             }
-            button.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
-            button.layer.cornerRadius = size.height / 2
-            tagsContainer.addSubview(button)
+            badge.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+            tagsContainer.addSubview(badge)
             x += size.width + hSpacing
             lineHeight = max(lineHeight, size.height)
         }
@@ -1081,12 +1096,76 @@ final class TopicDetailViewController: ObservableViewController {
     // MARK: - Reading Tracking
 
     private func updateVisibleReadingPosts() {
-        guard isViewLoaded, view.window != nil else { return }
+        guard isViewLoaded, view.window != nil, !isApplyingPostSnapshot else { return }
         let postNumbers = (tableView.indexPathsForVisibleRows ?? []).compactMap { indexPath -> Int? in
             guard let postId = dataSource.itemIdentifier(for: indexPath) else { return nil }
             return viewModel.posts.first(where: { $0.id == postId })?.postNumber
         }
         readingTracker.setVisiblePostNumbers(Set(postNumbers))
+    }
+
+    private func applyPostSnapshot(
+        itemIDs: [Int],
+        earlierAnchor: (postId: Int, cellTopOffset: CGFloat)?
+    ) {
+        let decision = TopicDetailSnapshotPolicy.decision(
+            isApplying: isApplyingPostSnapshot,
+            currentItemIDs: dataSource.snapshot().itemIdentifiers,
+            requestedItemIDs: itemIDs
+        )
+
+        switch decision {
+        case .skip:
+            if earlierAnchor != nil {
+                earlierLoadAnchor = nil
+                isLoadingEarlierLocally = false
+            }
+        case .queue:
+            pendingPostSnapshot = PendingPostSnapshot(
+                itemIDs: itemIDs,
+                earlierAnchor: earlierAnchor ?? pendingPostSnapshot?.earlierAnchor
+            )
+        case .apply:
+            isApplyingPostSnapshot = true
+            if earlierAnchor != nil {
+                earlierLoadAnchor = nil
+            }
+            var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
+            snapshot.appendSections([0])
+            snapshot.appendItems(itemIDs, toSection: 0)
+            dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let earlierAnchor {
+                        if let newIndexPath = self.dataSource.indexPath(for: earlierAnchor.postId) {
+                            UIView.performWithoutAnimation {
+                                self.tableView.layoutIfNeeded()
+                                let newCellTop = self.tableView.rectForRow(at: newIndexPath).minY
+                                self.tableView.setContentOffset(
+                                    CGPoint(x: self.tableView.contentOffset.x, y: newCellTop - earlierAnchor.cellTopOffset),
+                                    animated: false
+                                )
+                            }
+                            self.lastScrollOffset = self.tableView.contentOffset.y
+                        }
+                        self.isLoadingEarlierLocally = false
+                    }
+
+                    self.isApplyingPostSnapshot = false
+                    if let pending = self.pendingPostSnapshot {
+                        self.pendingPostSnapshot = nil
+                        self.applyPostSnapshot(
+                            itemIDs: pending.itemIDs,
+                            earlierAnchor: pending.earlierAnchor
+                        )
+                    } else if self.pendingScrollToFloor != nil {
+                        self.view.setNeedsLayout()
+                    }
+                    self.updateVisibleReadingPosts()
+                    self.updateBottomBarProgress()
+                }
+            }
+        }
     }
 
     // MARK: - Container Access
@@ -1265,7 +1344,10 @@ final class TopicDetailViewController: ObservableViewController {
                 self?.editTopic()
             })
         }
-        actions.append(contentsOf: [makeExportMenu(), openBrowser, readingSettings])
+        if DexoPluginRuntime.shared.registry.isPluginEnabled(BuiltInPluginID.topicExport, for: pluginScope) {
+            actions.append(makeExportMenu())
+        }
+        actions.append(contentsOf: [openBrowser, readingSettings])
 
         let moreButton = UIBarButtonItem(
             image: UIImage(systemName: "ellipsis.circle"),
@@ -1273,6 +1355,10 @@ final class TopicDetailViewController: ObservableViewController {
         )
         moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
         navigationItem.rightBarButtonItems = [moreButton, searchButton]
+    }
+
+    @objc private func pluginStateDidChange() {
+        configureTopicActions()
     }
 
     @objc private func searchTopicTapped() {
@@ -1973,15 +2059,18 @@ extension TopicDetailViewController: UITableViewDelegate {
         let contentTop = -(scrollView.adjustedContentInset.top)
         if scrollView.contentOffset.y <= contentTop + 200 {
             // Capture anchor synchronously before any async work
-            if let anchorIndexPath = tableView.indexPathsForVisibleRows?.first,
-               let anchorId = dataSource.itemIdentifier(for: anchorIndexPath)
-            {
-                let cellTopOffset = tableView.rectForRow(at: anchorIndexPath).minY - tableView.contentOffset.y
-                earlierLoadAnchor = (postId: anchorId, cellTopOffset: cellTopOffset)
-            }
+            guard let anchorIndexPath = tableView.indexPathsForVisibleRows?.first,
+                  let anchorId = dataSource.itemIdentifier(for: anchorIndexPath)
+            else { return }
+            let cellTopOffset = tableView.rectForRow(at: anchorIndexPath).minY - tableView.contentOffset.y
+            earlierLoadAnchor = (postId: anchorId, cellTopOffset: cellTopOffset)
             isLoadingEarlierLocally = true
             Task {
-                await viewModel.loadEarlierPosts(containerWidth: view.bounds.width)
+                let didStart = await viewModel.loadEarlierPosts(containerWidth: view.bounds.width)
+                if !didStart {
+                    earlierLoadAnchor = nil
+                    isLoadingEarlierLocally = false
+                }
                 // updateUI (triggered by DexoObservableObject) will handle position restoration
             }
         }

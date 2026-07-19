@@ -1,5 +1,15 @@
 import Foundation
 
+enum IncomingTopicPageTraversal {
+    static func shouldContinue(
+        reachedCurrentFirstTopic: Bool,
+        moreTopicsURL: String?,
+        pageAddedNewTopicIds: Bool
+    ) -> Bool {
+        !reachedCurrentFirstTopic && moreTopicsURL != nil && pageAddedNewTopicIds
+    }
+}
+
 enum HomeListMode: CaseIterable, Hashable {
     case latest
     case newTopics
@@ -61,6 +71,7 @@ final class HomeViewModel: DexoObservableObject {
     private var categoryIndex = DiscourseCategoryIndex()
     private var loggedTopicCategoryIds = Set<Int>()
     private var categoryMetadataTask: Task<Void, Never>?
+    private var hasLoadedFullCategoryMetadata = false
 
     init(api: DiscourseAPI) {
         self.api = api
@@ -101,6 +112,22 @@ final class HomeViewModel: DexoObservableObject {
         guard let category else { return nil }
         let resolved = categoryIndex[category.id] ?? category
         return resolved.displayName(parent: parentCategory(for: resolved))
+    }
+
+    func categoryBadgePresentation(for topic: DiscourseTopicList.Topic) -> TopicCategoryBadgePresentation? {
+        guard let categoryId = topic.categoryId else { return nil }
+        guard let category = categoryIndex[categoryId]
+            ?? LinuxDoCategoryCatalog.category(id: categoryId, baseURL: api.baseURL)
+        else { return nil }
+        let parent = category.parentCategoryId.flatMap {
+            categoryIndex[$0] ?? LinuxDoCategoryCatalog.category(id: $0, baseURL: api.baseURL)
+        }
+        return TopicCategoryBadgePresentation.resolve(
+            category: category,
+            parent: parent,
+            displayName: category.displayName(parent: parent),
+            baseURL: api.baseURL
+        )
     }
 
     func selectedCategory() -> DiscourseCategory? {
@@ -225,14 +252,42 @@ final class HomeViewModel: DexoObservableObject {
         }
         guard listMode == .latest, !topics.isEmpty, !isLoading else { return }
         do {
-            let result = try await fetchTopics(page: 0)
-            let incomingIds = incomingTopicIds(from: result.topicList.topics)
+            guard let firstCurrentTopicId = topics.first?.id else { return }
+            var page = 0
+            var latestTopics: [DiscourseTopicList.Topic] = []
+            var seenTopicIds = Set<Int>()
+            var latestUsers: [DiscourseTopicList.User] = []
+            var latestCategories: [DiscourseCategory] = []
+
+            while true {
+                let result = try await fetchTopics(page: page)
+                try Task.checkCancellation()
+                let pageTopics = result.topicList.topics
+                let previousCount = seenTopicIds.count
+                for topic in pageTopics where seenTopicIds.insert(topic.id).inserted {
+                    latestTopics.append(topic)
+                }
+                latestUsers.append(contentsOf: result.users ?? [])
+                latestCategories.append(contentsOf: result.categories ?? [])
+
+                let shouldContinue = IncomingTopicPageTraversal.shouldContinue(
+                    reachedCurrentFirstTopic: pageTopics.contains(where: { $0.id == firstCurrentTopicId }),
+                    moreTopicsURL: result.topicList.moreTopicsUrl,
+                    pageAddedNewTopicIds: seenTopicIds.count > previousCount
+                )
+                guard shouldContinue else { break }
+                page += 1
+            }
+
+            let incomingIds = incomingTopicIds(from: latestTopics)
             if incomingIds != incomingTopicIds {
                 incomingTopicIds = incomingIds
-                indexUsers(result.users)
-                indexCategories(result.categories, source: .topicList)
+                indexUsers(latestUsers)
+                indexCategories(latestCategories, source: .topicList)
                 notifyChanged()
             }
+        } catch is CancellationError {
+            // A foreground refresh or a newer detection replaced this poll.
         } catch {
             if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
@@ -271,15 +326,25 @@ final class HomeViewModel: DexoObservableObject {
         }
 
         do {
-            let result = try await api.fetchTopicsByIds(ids)
-            try Task.checkCancellation()
-            let incomingTopics = result.topicList.topics
+            var incomingTopics: [DiscourseTopicList.Topic] = []
+            var incomingUsers: [DiscourseTopicList.User] = []
+            var incomingCategories: [DiscourseCategory] = []
+            for start in stride(from: 0, to: ids.count, by: 100) {
+                let end = min(start + 100, ids.count)
+                let result = try await api.fetchTopicsByIds(Array(ids[start..<end]))
+                try Task.checkCancellation()
+                incomingTopics.append(contentsOf: result.topicList.topics)
+                incomingUsers.append(contentsOf: result.users ?? [])
+                incomingCategories.append(contentsOf: result.categories ?? [])
+            }
             if !incomingTopics.isEmpty {
+                let order = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+                incomingTopics.sort { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
                 let incomingIds = Set(incomingTopics.map(\.id))
                 let remaining = topics.filter { !incomingIds.contains($0.id) }
                 topics = incomingTopics + remaining
-                indexUsers(result.users)
-                indexCategories(result.categories, source: .topicList)
+                indexUsers(incomingUsers)
+                indexCategories(incomingCategories, source: .topicList)
             }
             incomingTopicIds.removeAll()
             shouldRetryIncomingTopicsAfterCloudflare = false
@@ -304,6 +369,7 @@ final class HomeViewModel: DexoObservableObject {
         categoryMetadataTask = nil
         categories = []
         categoryIndex = DiscourseCategoryIndex()
+        hasLoadedFullCategoryMetadata = false
         loggedTopicCategoryIds.removeAll()
         if clearSelection {
             selectedCategoryId = nil
@@ -359,6 +425,7 @@ final class HomeViewModel: DexoObservableObject {
         categories = []
         selectedCategoryId = nil
         categoryIndex = DiscourseCategoryIndex()
+        hasLoadedFullCategoryMetadata = false
         loggedTopicCategoryIds.removeAll()
         requiresLogin = true
         isBlockedByCloudflare = false
@@ -453,20 +520,45 @@ final class HomeViewModel: DexoObservableObject {
 
     private func loadCategoriesIfNeeded() async {
         guard canBrowseTopics else { return }
-        guard categoryIndex.isEmpty else { return }
+        guard !hasLoadedFullCategoryMetadata else { return }
+        let cachedCategories = DiscourseTaxonomySessionStore.categories(for: api.baseURL)
+        if !cachedCategories.isEmpty {
+            let visibleCategories = cachedCategories.filter { $0.id != 1 }
+            categories = DiscourseCategory.hierarchy(fromFlat: visibleCategories)
+            indexCategories(visibleCategories, source: .site)
+            hasLoadedFullCategoryMetadata = true
+            notifyChanged()
+            return
+        }
+        guard DiscourseTaxonomySessionStore.beginRefresh(for: api.baseURL) else {
+            let sharedCategories = await DiscourseTaxonomySessionStore.waitForRefresh(for: api.baseURL)
+            guard !Task.isCancelled, !sharedCategories.isEmpty else { return }
+            let visibleCategories = sharedCategories.filter { $0.id != 1 }
+            categories = DiscourseCategory.hierarchy(fromFlat: visibleCategories)
+            indexCategories(visibleCategories, source: .site)
+            hasLoadedFullCategoryMetadata = true
+            notifyChanged()
+            return
+        }
+        defer { DiscourseTaxonomySessionStore.endRefresh(for: api.baseURL) }
         do {
             let siteCategories = (try? await api.fetchSiteCategories()) ?? []
+            try Task.checkCancellation()
             if !siteCategories.isEmpty {
                 let visibleCategories = siteCategories.filter { $0.id != 1 }
                 categories = DiscourseCategory.hierarchy(fromFlat: visibleCategories)
                 indexCategories(visibleCategories, source: .site)
+                DiscourseTaxonomySessionStore.replace(categories: siteCategories, for: api.baseURL)
                 logCategoryMetadata(source: "site", categories: visibleCategories)
             } else {
                 let list = try await api.fetchCategories()
+                try Task.checkCancellation()
                 categories = DiscourseCategory.normalizedTree(fromNested: list.categoryList.categories)
                 indexCategories(categories, source: .categoryList)
+                DiscourseTaxonomySessionStore.replace(categories: categories, for: api.baseURL)
                 logCategoryMetadata(source: "categories", categories: categories)
             }
+            hasLoadedFullCategoryMetadata = true
             notifyChanged()
         } catch {
             // Non-critical — cells just won't show category names
@@ -476,7 +568,7 @@ final class HomeViewModel: DexoObservableObject {
 
     private func startLoadingCategoriesIfNeeded() {
         guard canBrowseTopics else { return }
-        guard categoryIndex.isEmpty, categoryMetadataTask == nil else { return }
+        guard !hasLoadedFullCategoryMetadata, categoryMetadataTask == nil else { return }
         categoryMetadataTask = Task { [weak self] in
             guard let self else { return }
             await self.loadCategoriesIfNeeded()

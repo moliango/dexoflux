@@ -121,7 +121,8 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             contentWidth: max(config.contentWidth - 28, 0),
             baseURL: config.baseURL,
             postId: config.postId,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            topicTagNames: config.topicTagNames
         )
 
         let normalizedContent = normalizedQuoteContent(content)

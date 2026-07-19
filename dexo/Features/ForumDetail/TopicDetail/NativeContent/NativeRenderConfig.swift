@@ -11,6 +11,7 @@ struct NativeRenderConfig {
     let baseURL: String?
     let postId: Int?
     let galleryImageURLs: [URL]
+    let topicTagNames: Set<String>
     let defaultLineSpacing: CGFloat
     let defaultParagraphSpacing: CGFloat
 
@@ -24,6 +25,7 @@ struct NativeRenderConfig {
         baseURL: String?,
         postId: Int? = nil,
         galleryImageURLs: [URL] = [],
+        topicTagNames: Set<String> = [],
         defaultLineSpacing: CGFloat = 4,
         defaultParagraphSpacing: CGFloat = 5
     ) {
@@ -36,6 +38,7 @@ struct NativeRenderConfig {
         self.baseURL = baseURL
         self.postId = postId
         self.galleryImageURLs = galleryImageURLs
+        self.topicTagNames = topicTagNames
         self.defaultLineSpacing = defaultLineSpacing
         self.defaultParagraphSpacing = defaultParagraphSpacing
     }
@@ -54,7 +57,8 @@ struct NativeRenderConfig {
         contentWidth: CGFloat,
         baseURL: String? = nil,
         postId: Int? = nil,
-        galleryImageURLs: [URL] = []
+        galleryImageURLs: [URL] = [],
+        topicTagNames: Set<String> = []
     ) -> NativeRenderConfig {
         let settings = AppSettings.shared
         let comfortMode = settings.readingComfortMode
@@ -79,6 +83,7 @@ struct NativeRenderConfig {
             baseURL: baseURL,
             postId: postId,
             galleryImageURLs: galleryImageURLs,
+            topicTagNames: topicTagNames,
             defaultLineSpacing: comfortMode ? 3 : 2,
             defaultParagraphSpacing: comfortMode ? 5 : 3
         )

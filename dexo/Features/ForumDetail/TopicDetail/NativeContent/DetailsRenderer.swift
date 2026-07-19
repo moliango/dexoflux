@@ -47,7 +47,8 @@ private class DetailsCardView: UIView {
             contentWidth: max(config.contentWidth - 16, 0),
             baseURL: config.baseURL,
             postId: config.postId,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            topicTagNames: config.topicTagNames
         )
 
         // MARK: Header

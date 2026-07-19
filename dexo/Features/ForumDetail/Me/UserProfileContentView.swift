@@ -219,13 +219,23 @@ final class UserProfileContentView: UIView, UITableViewDataSource, UITableViewDe
         case .action(let action):
             content.text = action.title
             content.secondaryText = UserProfileFormatting.cleanBio(action.excerpt)
-            content.image = UIImage(systemName: action.actionType == 4 ? "text.bubble.fill" : "quote.bubble.fill")
+            content.image = UIImage(systemName: Self.actionSymbolName(for: action.actionType))
         case .reaction(let reaction):
             content.text = reaction.topicTitle ?? String(localized: "user.profile.reactions")
             content.secondaryText = UserProfileFormatting.cleanBio(reaction.excerpt)
             content.image = UIImage(systemName: "face.smiling.fill")
         }
         content.imageProperties.tintColor = accent
+    }
+
+    private static func actionSymbolName(for actionType: Int?) -> String {
+        switch actionType {
+        case 1: return "heart.fill"
+        case 2: return "hand.thumbsup.fill"
+        case 4: return "text.bubble.fill"
+        case 5: return "quote.bubble.fill"
+        default: return "bubble.left.fill"
+        }
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

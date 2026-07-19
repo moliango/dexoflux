@@ -30,6 +30,30 @@ final class DraftRoutingTests: XCTestCase {
         XCTAssertEqual(draft.destination, .unsupported)
     }
 
+    func testNewTopicSubmissionTrimsContentAndDeduplicatesTags() {
+        let submission = NewTopicSubmission.make(
+            title: "  A useful title  ",
+            raw: "\nBody content\n",
+            categoryId: 42,
+            tags: ["swift", " ios ", "swift", ""]
+        )
+
+        XCTAssertEqual(
+            submission,
+            NewTopicSubmission(
+                title: "A useful title",
+                raw: "Body content",
+                categoryId: 42,
+                tags: ["swift", "ios"]
+            )
+        )
+    }
+
+    func testNewTopicSubmissionRejectsBlankTitleOrBody() {
+        XCTAssertNil(NewTopicSubmission.make(title: " ", raw: "Body", categoryId: nil, tags: []))
+        XCTAssertNil(NewTopicSubmission.make(title: "Title", raw: "\n", categoryId: nil, tags: []))
+    }
+
     private func decodeDraft(key: String, data: String) throws -> DiscourseDraft {
         let escapedData = data
             .replacingOccurrences(of: "\\", with: "\\\\")

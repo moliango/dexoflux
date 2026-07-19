@@ -2,6 +2,39 @@ import CookedHTML
 import SDWebImage
 import UIKit
 
+final class PostActionButton: UIButton {
+    static let iconSize = CGSize(width: 22, height: 22)
+
+    private(set) lazy var fixedIconView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = false
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        addSubview(fixedIconView)
+        NSLayoutConstraint.activate([
+            fixedIconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            fixedIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            fixedIconView.widthAnchor.constraint(equalToConstant: Self.iconSize.width),
+            fixedIconView.heightAnchor.constraint(equalToConstant: Self.iconSize.height),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setFixedIcon(_ image: UIImage?, tintColor: UIColor) {
+        fixedIconView.image = image?.withRenderingMode(.alwaysTemplate)
+        fixedIconView.tintColor = tintColor
+    }
+}
+
 enum TopicDetailTypography {
     static func interfaceFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
         let settings = AppSettings.shared
@@ -84,61 +117,7 @@ final class PostNativeCell: UITableViewCell {
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
     private static let actionIconPointSize: CGFloat = 12
-    private static let actionIconCanvasSize = CGSize(width: 12, height: 12)
-    private static let fontAwesomeSolidFontName = "FontAwesome5Free-Solid"
-    private static let fontAwesomeSolidGlyphs: [String: String] = [
-        "award": "\u{f559}",
-        "book": "\u{f02d}",
-        "book-open": "\u{f518}",
-        "bookmark": "\u{f02e}",
-        "bug": "\u{f188}",
-        "bullseye": "\u{f140}",
-        "certificate": "\u{f0a3}",
-        "check": "\u{f00c}",
-        "check-circle": "\u{f058}",
-        "code": "\u{f121}",
-        "comment": "\u{f075}",
-        "comments": "\u{f086}",
-        "crosshairs": "\u{f05b}",
-        "eye": "\u{f06e}",
-        "fire": "\u{f06d}",
-        "flame": "\u{f06d}",
-        "fist-raised": "\u{f6de}",
-        "gavel": "\u{f0e3}",
-        "gem": "\u{f3a5}",
-        "graduation-cap": "\u{f19d}",
-        "hammer": "\u{f6e3}",
-        "hand": "\u{f256}",
-        "hand-fist": "\u{f6de}",
-        "hand-paper": "\u{f256}",
-        "hand-rock": "\u{f255}",
-        "heart": "\u{f004}",
-        "laptop-code": "\u{f5fc}",
-        "lightbulb": "\u{f0eb}",
-        "magnifying-glass": "\u{f002}",
-        "medal": "\u{f5a2}",
-        "palette": "\u{f53f}",
-        "people-group": "\u{f0c0}",
-        "rocket": "\u{f135}",
-        "search": "\u{f002}",
-        "seedling": "\u{f4d8}",
-        "shield": "\u{f3ed}",
-        "shield-alt": "\u{f3ed}",
-        "shield-halved": "\u{f3ed}",
-        "star": "\u{f005}",
-        "target": "\u{f140}",
-        "terminal": "\u{f120}",
-        "thumbs-down": "\u{f165}",
-        "thumbs-up": "\u{f164}",
-        "trophy": "\u{f091}",
-        "user": "\u{f007}",
-        "user-check": "\u{f4fc}",
-        "user-graduate": "\u{f501}",
-        "user-shield": "\u{f505}",
-        "user-tag": "\u{f507}",
-        "users": "\u{f0c0}",
-        "wrench": "\u{f0ad}",
-    ]
+    private static let actionIconCanvasSize = CGSize(width: 22, height: 22)
     fileprivate static let boostIconImage: UIImage = {
         if let image = UIImage(named: "BoostRocket") {
             return image.withRenderingMode(.alwaysTemplate)
@@ -172,8 +151,10 @@ final class PostNativeCell: UITableViewCell {
         static let firstPostContentInset: CGFloat = 0
         static let actionTop: CGFloat = 10
         static let sharedIssueButtonHeight: CGFloat = 30
-        static let actionButtonWidth: CGFloat = 32
+        static let reactionSlotWidth: CGFloat = 42
+        static let actionButtonWidth: CGFloat = 36
         static let actionSpacing: CGFloat = 2
+        static let supplementaryFooterSpacing: CGFloat = 4
         static let minimumReplyCardHeight: CGFloat = 80
     }
 
@@ -189,6 +170,8 @@ final class PostNativeCell: UITableViewCell {
     private var cardBottomConstraint: NSLayoutConstraint?
     private var cardLeadingConstraint: NSLayoutConstraint?
     private var cardTrailingConstraint: NSLayoutConstraint?
+    private var supplementaryFooterHeightConstraint: NSLayoutConstraint?
+    private var actionStackTopConstraint: NSLayoutConstraint?
 
     private let cardView: UIView = {
         let view = UIView()
@@ -207,7 +190,7 @@ final class PostNativeCell: UITableViewCell {
     private var flairHeightConstraint: NSLayoutConstraint?
     private var flairImageWidthConstraint: NSLayoutConstraint?
     private var flairImageHeightConstraint: NSLayoutConstraint?
-    private var currentAvatarTemplateSize = 96
+    private var currentAvatarTemplateSize = AvatarImageLoader.primaryAvatarPixelSize
 
     // MARK: - Header UI
 
@@ -414,6 +397,8 @@ final class PostNativeCell: UITableViewCell {
         sv.spacing = 2
         sv.alignment = .center
         sv.isHidden = true
+        sv.isUserInteractionEnabled = false
+        sv.translatesAutoresizingMaskIntoConstraints = false
         return sv
     }()
 
@@ -445,15 +430,6 @@ final class PostNativeCell: UITableViewCell {
         return control
     }()
 
-    private let reactionPillStack: UIStackView = {
-        let sv = UIStackView()
-        sv.axis = .horizontal
-        sv.spacing = 4
-        sv.alignment = .center
-        sv.isUserInteractionEnabled = false
-        sv.translatesAutoresizingMaskIntoConstraints = false
-        return sv
-    }()
     private var reactionPillWidthConstraint: NSLayoutConstraint?
 
     private let bottomLeftStack: UIStackView = {
@@ -461,6 +437,8 @@ final class PostNativeCell: UITableViewCell {
         sv.axis = .horizontal
         sv.spacing = 4
         sv.alignment = .center
+        sv.isHidden = true
+        sv.accessibilityIdentifier = "post.supplementary.footer"
         sv.translatesAutoresizingMaskIntoConstraints = false
         return sv
     }()
@@ -470,13 +448,14 @@ final class PostNativeCell: UITableViewCell {
         sv.axis = .horizontal
         sv.spacing = Metrics.actionSpacing
         sv.alignment = .center
+        sv.accessibilityIdentifier = "post.action.footer"
         sv.translatesAutoresizingMaskIntoConstraints = false
         sv.setContentCompressionResistancePriority(.required, for: .horizontal)
         return sv
     }()
 
-    private let reactButton: UIButton = {
-        let button = UIButton(type: .system)
+    private let reactButton: PostActionButton = {
+        let button = PostActionButton(type: .system)
         let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "heart", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
@@ -484,8 +463,8 @@ final class PostNativeCell: UITableViewCell {
         return button
     }()
 
-    private let boostButton: UIButton = {
-        let button = UIButton(type: .system)
+    private let boostButton: PostActionButton = {
+        let button = PostActionButton(type: .system)
         button.setImage(PostNativeCell.boostIconImage, for: .normal)
         button.tintColor = .tertiaryLabel
         button.imageView?.contentMode = .scaleAspectFit
@@ -494,8 +473,8 @@ final class PostNativeCell: UITableViewCell {
         return button
     }()
 
-    private let bookmarkButton: UIButton = {
-        let button = UIButton(type: .system)
+    private let bookmarkButton: PostActionButton = {
+        let button = PostActionButton(type: .system)
         let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "bookmark", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
@@ -503,8 +482,8 @@ final class PostNativeCell: UITableViewCell {
         return button
     }()
 
-    private let moreButton: UIButton = {
-        let button = UIButton(type: .system)
+    private let moreButton: PostActionButton = {
+        let button = PostActionButton(type: .system)
         let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "ellipsis", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
@@ -513,8 +492,8 @@ final class PostNativeCell: UITableViewCell {
         return button
     }()
 
-    private let replyButton: UIButton = {
-        let button = UIButton(type: .system)
+    private let replyButton: PostActionButton = {
+        let button = PostActionButton(type: .system)
         let config = PostNativeCell.actionSymbolConfig()
         button.setImage(UIImage(systemName: "arrowshape.turn.up.left", withConfiguration: config), for: .normal)
         button.tintColor = .tertiaryLabel
@@ -569,9 +548,8 @@ final class PostNativeCell: UITableViewCell {
         }
         reactionStackView.addArrangedSubview(reactionCountLabel)
         reactionCountLabel.isHidden = true
-        reactionPillStack.addArrangedSubview(reactionStackView)
-        reactionPillStack.addArrangedSubview(reactButton)
-        reactionPillControl.addSubview(reactionPillStack)
+        bottomLeftStack.addArrangedSubview(reactionStackView)
+        reactionPillControl.addSubview(reactButton)
         actionStackView.addArrangedSubview(reactionPillControl)
         actionStackView.addArrangedSubview(boostButton)
         actionStackView.addArrangedSubview(bookmarkButton)
@@ -603,11 +581,20 @@ final class PostNativeCell: UITableViewCell {
         self.flairImageHeightConstraint = flairImageHeightConstraint
         let contentCardTopConstraint = contentCardView.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop)
         contentCardTopConstraint.priority = .defaultHigh
-        let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(equalToConstant: 42)
+        let reactionPillWidthConstraint = reactionPillControl.widthAnchor.constraint(
+            equalToConstant: Metrics.reactionSlotWidth
+        )
         self.reactionPillWidthConstraint = reactionPillWidthConstraint
         let sharedIssueButtonMinWidthConstraint = sharedIssueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
         sharedIssueButtonMinWidthConstraint.priority = .init(999)
         self.sharedIssueButtonMinWidthConstraint = sharedIssueButtonMinWidthConstraint
+        let supplementaryFooterHeightConstraint = bottomLeftStack.heightAnchor.constraint(equalToConstant: 0)
+        self.supplementaryFooterHeightConstraint = supplementaryFooterHeightConstraint
+        let actionStackTopConstraint = actionStackView.topAnchor.constraint(
+            equalTo: contentCardView.bottomAnchor,
+            constant: Metrics.actionTop
+        )
+        self.actionStackTopConstraint = actionStackTopConstraint
 
         let cardTopConstraint = cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Metrics.cardOuterVertical)
         let cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Metrics.cardOuterVertical)
@@ -674,8 +661,8 @@ final class PostNativeCell: UITableViewCell {
 
             bottomLeftStack.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
             bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
-            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
-            bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
+            supplementaryFooterHeightConstraint,
             sharedIssueButtonMinWidthConstraint,
             sharedIssueButton.heightAnchor.constraint(equalToConstant: Metrics.sharedIssueButtonHeight),
 
@@ -684,14 +671,13 @@ final class PostNativeCell: UITableViewCell {
             sharedIssueCountLabel.heightAnchor.constraint(equalToConstant: 18),
             sharedIssueCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
-            actionStackView.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
+            actionStackTopConstraint,
             actionStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             actionStackView.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             { let c = actionStackView.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -8); c.priority = .init(999); return c }(),
 
-            reactionPillStack.centerYAnchor.constraint(equalTo: reactionPillControl.centerYAnchor),
-            reactionPillStack.leadingAnchor.constraint(equalTo: reactionPillControl.leadingAnchor, constant: 6),
-            reactionPillStack.trailingAnchor.constraint(equalTo: reactionPillControl.trailingAnchor, constant: -3),
+            reactButton.centerYAnchor.constraint(equalTo: reactionPillControl.centerYAnchor),
+            reactButton.centerXAnchor.constraint(equalTo: reactionPillControl.centerXAnchor),
             reactionPillControl.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             reactionPillWidthConstraint,
 
@@ -813,6 +799,7 @@ final class PostNativeCell: UITableViewCell {
         configureBookmarkButton(isBookmarked: post.bookmarked)
         configureReplyButton()
         configureMoreMenu(isBookmarked: post.bookmarked)
+        updateFooterLayout()
 
         // Render content blocks
         contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -821,7 +808,6 @@ final class PostNativeCell: UITableViewCell {
             setupTextViews(in: view)
             contentStackView.addArrangedSubview(view)
         }
-        adjustNativeContentSpacing()
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
             contentStackView.addArrangedSubview(boostStripView)
         }
@@ -831,6 +817,7 @@ final class PostNativeCell: UITableViewCell {
             }
             contentStackView.addArrangedSubview(relatedLinksView)
         }
+        adjustNativeContentSpacing()
 
         AvatarImageLoader.setImage(
             on: avatarImageView,
@@ -862,6 +849,8 @@ final class PostNativeCell: UITableViewCell {
             || view is VideoCardView
             || view is OneboxCardView
             || view is FallbackBlockView
+            || view is BoostStripView
+            || view is RelatedLinksCardView
     }
 
     private func applyCardStyle(isFirstPost: Bool) {
@@ -959,7 +948,7 @@ final class PostNativeCell: UITableViewCell {
         flairBadgeView.layer.cornerRadius = flairSize / 2
         applyFlairImageScale(1, badgeSize: flairSize)
 
-        currentAvatarTemplateSize = max(96, Int(ceil(avatarSize * UIScreen.main.scale)))
+        currentAvatarTemplateSize = AvatarImageLoader.primaryAvatarPixelSize
     }
 
     private func displayUserTitle(for post: DiscourseTopicDetail.Post) -> String? {
@@ -1071,8 +1060,8 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func makeFontAwesomeBadgeView(icon: String?, tintColor: UIColor, size: CGFloat) -> UIView? {
-        guard let glyph = fontAwesomeGlyph(for: icon),
-              let font = UIFont(name: Self.fontAwesomeSolidFontName, size: size)
+        guard let glyph = DiscourseFontAwesomeIcon.glyph(for: icon),
+              let font = UIFont(name: DiscourseFontAwesomeIcon.fontName, size: size)
         else { return nil }
 
         let label = UILabel()
@@ -1087,97 +1076,6 @@ final class PostNativeCell: UITableViewCell {
             label.heightAnchor.constraint(equalToConstant: size + 1),
         ])
         return label
-    }
-
-    private func fontAwesomeGlyph(for icon: String?) -> String? {
-        guard let rawIcon = icon?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-              !rawIcon.isEmpty
-        else { return nil }
-
-        let normalizedIcon = rawIcon
-            .replacingOccurrences(of: "fa-solid", with: "fas")
-            .replacingOccurrences(of: "fa-regular", with: "far")
-            .replacingOccurrences(of: "fa-brands", with: "fab")
-        let components = normalizedIcon
-            .split(whereSeparator: { $0 == " " || $0 == "." })
-            .map(String.init)
-
-        let candidates = ([normalizedIcon] + components).map { component in
-            component
-                .replacingOccurrences(of: "fa-", with: "")
-                .replacingOccurrences(of: "fas-", with: "")
-                .replacingOccurrences(of: "far-", with: "")
-                .replacingOccurrences(of: "fab-", with: "")
-                .replacingOccurrences(of: "fas ", with: "")
-                .replacingOccurrences(of: "far ", with: "")
-                .replacingOccurrences(of: "fab ", with: "")
-                .replacingOccurrences(of: "fa ", with: "")
-                .replacingOccurrences(of: "_", with: "-")
-                .trimmingCharacters(in: CharacterSet(charactersIn: ":"))
-        }
-
-        for candidate in candidates where !candidate.isEmpty {
-            if let glyph = Self.fontAwesomeSolidGlyphs[fontAwesomeSolidAlias(for: candidate)] {
-                return glyph
-            }
-        }
-        return nil
-    }
-
-    private func fontAwesomeSolidAlias(for icon: String) -> String {
-        let normalized = icon
-            .replacingOccurrences(of: "_", with: "-")
-            .trimmingCharacters(in: CharacterSet(charactersIn: ":"))
-        switch normalized {
-        case "book-open-reader":
-            return "book-open"
-        case "eye-low-vision":
-            return "eye"
-        case "fire-flame-curved", "fire-flame-simple":
-            return "fire"
-        case "hand-back-fist":
-            return "hand-rock"
-        case "magnifying-glass", "magnifying-glass-arrow-right", "magnifying-glass-chart",
-             "magnifying-glass-dollar", "magnifying-glass-location", "magnifying-glass-minus",
-             "magnifying-glass-plus":
-            return "search"
-        case "people-arrows", "people-carry-box", "people-group", "people-line",
-             "people-pulling", "people-roof", "user-group", "users-between-lines",
-             "users-gear", "users-line", "users-rays", "users-rectangle", "users-viewfinder":
-            return "users"
-        case "shield-halved", "shield-heart", "shield-virus":
-            return "shield-alt"
-        case "solid-bookmark":
-            return "bookmark"
-        case "solid-comment":
-            return "comment"
-        case "solid-comments":
-            return "comments"
-        case "solid-eye":
-            return "eye"
-        case "solid-gem":
-            return "gem"
-        case "solid-hand", "hand":
-            return "hand-paper"
-        case "solid-hand-back-fist", "hand-fist":
-            return "fist-raised"
-        case "solid-hand-point-down", "solid-hand-point-left", "solid-hand-point-right",
-             "solid-hand-point-up", "hand-point-down", "hand-point-left", "hand-point-right",
-             "hand-point-up":
-            return "hand"
-        case "solid-heart":
-            return "heart"
-        case "solid-lightbulb":
-            return "lightbulb"
-        case "solid-star":
-            return "star"
-        case "solid-thumbs-down":
-            return "thumbs-down"
-        case "solid-thumbs-up":
-            return "thumbs-up"
-        default:
-            return normalized
-        }
     }
 
     private func makeHeaderBadgeImageView(
@@ -1354,22 +1252,7 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func makeFontAwesomeGlyphImage(icon: String?, color: UIColor, size: CGFloat) -> UIImage? {
-        guard let glyph = fontAwesomeGlyph(for: icon),
-              let font = UIFont(name: Self.fontAwesomeSolidFontName, size: size)
-        else { return nil }
-
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
-        return renderer.image { _ in
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: color,
-            ]
-            let textSize = glyph.size(withAttributes: attributes)
-            glyph.draw(
-                at: CGPoint(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2),
-                withAttributes: attributes
-            )
-        }.withRenderingMode(.alwaysOriginal)
+        DiscourseFontAwesomeIcon.image(for: icon, color: color, size: size)
     }
 
     private func configureRepliesButton(count: Int) {
@@ -1482,7 +1365,6 @@ final class PostNativeCell: UITableViewCell {
         guard !reactions.isEmpty else {
             reactionStackView.isHidden = true
             reactionCountLabel.isHidden = true
-            reactionPillWidthConstraint?.constant = 42
             return
         }
 
@@ -1512,9 +1394,17 @@ final class PostNativeCell: UITableViewCell {
         }
 
         reactionStackView.isHidden = false
-        let visibleEmojiWidth = CGFloat(min(reactions.count, 3)) * 16 + CGFloat(max(0, min(reactions.count, 3) - 1)) * 2
-        let countWidth = count > 0 ? reactionCountLabel.intrinsicContentSize.width + 4 : 0
-        reactionPillWidthConstraint?.constant = min(max(42, 42 + visibleEmojiWidth + countWidth), 112)
+    }
+
+    private func updateFooterLayout() {
+        let showsSupplementaryFooter = !sharedIssueButton.isHidden
+            || !showRepliesButton.isHidden
+            || !reactionStackView.isHidden
+        bottomLeftStack.isHidden = !showsSupplementaryFooter
+        supplementaryFooterHeightConstraint?.constant = showsSupplementaryFooter ? Self.bottomBarHeight : 0
+        actionStackTopConstraint?.constant = Metrics.actionTop + (showsSupplementaryFooter
+            ? Self.bottomBarHeight + Metrics.supplementaryFooterSpacing
+            : 0)
     }
 
     private func configureReactionButton(for post: DiscourseTopicDetail.Post) {
@@ -1540,7 +1430,13 @@ final class PostNativeCell: UITableViewCell {
             backgroundColor: .clear,
             accessibilityLabel: String(localized: "post.boost")
         )
-        boostButton.isHidden = !post.canBoost
+        boostButton.isHidden = false
+        // Pagination responses may omit can_boost; keep the slot so the footer geometry stays stable.
+        boostButton.alpha = post.canBoost ? 1 : 0
+        boostButton.isUserInteractionEnabled = post.canBoost
+        boostButton.isEnabled = post.canBoost
+        boostButton.isAccessibilityElement = post.canBoost
+        boostButton.accessibilityElementsHidden = !post.canBoost
     }
 
     private func configureBookmarkButton(isBookmarked: Bool) {
@@ -1584,7 +1480,7 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func configureActionButton(
-        _ button: UIButton,
+        _ button: PostActionButton,
         symbolName: String,
         tintColor: UIColor,
         backgroundColor: UIColor,
@@ -1600,23 +1496,19 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func configureActionButton(
-        _ button: UIButton,
+        _ button: PostActionButton,
         image: UIImage?,
         tintColor: UIColor,
         backgroundColor: UIColor,
         accessibilityLabel: String?
     ) {
-        var config = UIButton.Configuration.plain()
-        config.image = image.map { image in
-            Self.normalizedActionIcon(image)
-        }
-        config.baseForegroundColor = tintColor
-        config.contentInsets = .zero
-        config.background.backgroundColor = backgroundColor
-        config.background.cornerRadius = Self.bottomBarHeight / 2
-        button.configuration = config
+        button.configuration = nil
+        button.setImage(nil, for: .normal)
+        button.setFixedIcon(image.map(Self.normalizedActionIcon), tintColor: tintColor)
         button.tintColor = tintColor
-        button.imageView?.contentMode = .scaleAspectFit
+        button.backgroundColor = backgroundColor
+        button.layer.cornerRadius = Self.bottomBarHeight / 2
+        button.layer.cornerCurve = .continuous
         button.accessibilityLabel = accessibilityLabel
         button.clipsToBounds = true
     }
@@ -1919,7 +1811,7 @@ final class PostNativeCell: UITableViewCell {
         reactionCountLabel.isHidden = true
         validReactions = []
         isBookmarked = false
-        reactionPillWidthConstraint?.constant = 42
+        reactionPillWidthConstraint?.constant = Metrics.reactionSlotWidth
         configureActionButton(
             reactButton,
             symbolName: "heart",
@@ -1938,9 +1830,15 @@ final class PostNativeCell: UITableViewCell {
             accessibilityLabel: String(localized: "post.boost")
         )
         boostButton.isHidden = false
+        boostButton.alpha = 1
+        boostButton.isUserInteractionEnabled = true
+        boostButton.isEnabled = true
+        boostButton.isAccessibilityElement = true
+        boostButton.accessibilityElementsHidden = false
         configureBookmarkButton(isBookmarked: false)
         configureReplyButton()
         configureMoreMenu(isBookmarked: false)
+        updateFooterLayout()
         let sourceConfig = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         sourceButton.setImage(UIImage(systemName: "doc.on.clipboard", withConfiguration: sourceConfig), for: .normal)
         sourceButton.tintColor = .tertiaryLabel

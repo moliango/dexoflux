@@ -14,6 +14,13 @@ final class MeViewController: ObservableViewController {
     private let actionsCard = MeActionCardView()
     private let loadingSkeletonView = MeDashboardSkeletonView()
 
+    private var pluginScope: PluginScope {
+        PluginScope(
+            baseURL: api.baseURL,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
+    }
+
     private lazy var scrollView: UIScrollView = {
         let sv = UIScrollView()
         sv.translatesAutoresizingMaskIntoConstraints = false
@@ -62,7 +69,23 @@ final class MeViewController: ObservableViewController {
 
         setupLayout()
         setupActions()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(pluginStateDidChange),
+            name: PluginStateStore.stateDidChangeNotification,
+            object: nil
+        )
         loadData()
+    }
+
+    @MainActor
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateUI()
     }
 
     override func updateUI() {
@@ -186,7 +209,7 @@ final class MeViewController: ObservableViewController {
 
     private func configureActionRows(isLoggedIn: Bool) {
         let trustLevel = viewModel.userProfile?.trustLevel ?? 0
-        let rows: [MeActionRow] = [
+        var rows: [MeActionRow] = [
             MeActionRow(
                 title: String(localized: "me.my_topics", defaultValue: "我的主题"),
                 subtitle: String(localized: "me.action.my_topics.subtitle", defaultValue: "查看我创建的话题"),
@@ -236,22 +259,6 @@ final class MeViewController: ObservableViewController {
                 action: { [weak self] in self?.openBrowser() }
             ),
             MeActionRow(
-                title: String(localized: "extensions.title", defaultValue: "元宇宙"),
-                subtitle: String(localized: "extensions.subtitle", defaultValue: "连接 LDC 与 CDK 服务"),
-                symbolName: "sparkles.rectangle.stack.fill",
-                tintColor: .systemIndigo,
-                isEnabled: isLoggedIn,
-                action: { [weak self] in self?.openMetaverseServices() }
-            ),
-            MeActionRow(
-                title: String(localized: "topic.export.history", defaultValue: "导出历史"),
-                subtitle: String(localized: "me.action.export_history.subtitle", defaultValue: "查看并再次分享话题导出文件"),
-                symbolName: "square.and.arrow.up.on.square.fill",
-                tintColor: .systemGreen,
-                isEnabled: true,
-                action: { [weak self] in self?.openExportHistory() }
-            ),
-            MeActionRow(
                 title: String(localized: "me.badges"),
                 subtitle: String(localized: "me.action.badges.subtitle"),
                 symbolName: "medal.fill",
@@ -284,6 +291,40 @@ final class MeViewController: ObservableViewController {
                 action: { [weak self] in self?.openSettings() }
             ),
         ]
+
+        var pluginRows: [MeActionRow] = [
+            MeActionRow(
+                title: String(localized: "plugins.title", defaultValue: "插件中心"),
+                subtitle: String(localized: "plugins.subtitle", defaultValue: "管理内部插件与运行权限"),
+                symbolName: "puzzlepiece.extension.fill",
+                tintColor: .systemPurple,
+                isEnabled: true,
+                action: { [weak self] in self?.openPluginCenter() }
+            ),
+        ]
+        let registry = DexoPluginRuntime.shared.registry
+        if registry.isPluginEnabled(BuiltInPluginID.ldc, for: pluginScope)
+            || registry.isPluginEnabled(BuiltInPluginID.cdk, for: pluginScope) {
+            pluginRows.append(MeActionRow(
+                title: String(localized: "extensions.title", defaultValue: "元宇宙"),
+                subtitle: String(localized: "extensions.subtitle", defaultValue: "连接 LDC 与 CDK 服务"),
+                symbolName: "sparkles.rectangle.stack.fill",
+                tintColor: .systemIndigo,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openMetaverseServices() }
+            ))
+        }
+        if registry.isPluginEnabled(BuiltInPluginID.topicExport, for: pluginScope) {
+            pluginRows.append(MeActionRow(
+                title: String(localized: "topic.export.history", defaultValue: "导出历史"),
+                subtitle: String(localized: "me.action.export_history.subtitle", defaultValue: "查看并再次分享话题导出文件"),
+                symbolName: "square.and.arrow.up.on.square.fill",
+                tintColor: .systemGreen,
+                isEnabled: true,
+                action: { [weak self] in self?.openExportHistory() }
+            ))
+        }
+        rows.insert(contentsOf: pluginRows, at: min(6, rows.count))
         actionsCard.configure(title: String(localized: "me.actions.title"), rows: rows)
 
         if let authButton = (contentStackView.arrangedSubviews.last?.subviews.first as? UIButton) {
@@ -469,6 +510,18 @@ final class MeViewController: ObservableViewController {
             username: viewModel.currentUser?.username ?? authGate?.currentUsername()
         )
         navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openPluginCenter() {
+        let vc = PluginCenterViewController(
+            baseURL: api.baseURL,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    @objc private func pluginStateDidChange() {
+        updateUI()
     }
 
     private func openMetaverseServices() {

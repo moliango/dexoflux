@@ -5,6 +5,8 @@ final class InAppBrowserViewController: UIViewController {
     private let baseURL: URL
     private let store: BrowserHistoryStore
     private let initialURL: URL?
+    let hidesHostTabBarAtRoot: Bool
+    private let hidesBrowserControlBar: Bool
 
     private lazy var webView: WKWebView = {
         let configuration = WKWebViewConfiguration()
@@ -59,11 +61,20 @@ final class InAppBrowserViewController: UIViewController {
     private lazy var moreButton = makeControlButton(systemName: "ellipsis", action: #selector(moreTapped))
 
     private var progressObservation: NSKeyValueObservation?
-    init(api: DiscourseAPI, username: String?, initialURL: URL? = nil) {
+    private var popupWebView: WKWebView?
+    init(
+        api: DiscourseAPI,
+        username: String?,
+        initialURL: URL? = nil,
+        hidesHostTabBarAtRoot: Bool = false,
+        hidesBrowserControlBar: Bool = false
+    ) {
         let normalizedBase = api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.baseURL = URL(string: normalizedBase) ?? URL(string: "https://linux.do")!
         self.store = BrowserHistoryStore(baseURL: api.baseURL, username: username)
         self.initialURL = initialURL
+        self.hidesHostTabBarAtRoot = hidesHostTabBarAtRoot
+        self.hidesBrowserControlBar = hidesBrowserControlBar
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
     }
@@ -75,10 +86,12 @@ final class InAppBrowserViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = String(localized: "me.browser", defaultValue: "内置浏览器")
+        navigationItem.title = String(localized: "me.browser", defaultValue: "内置浏览器")
         view.backgroundColor = .systemBackground
         addressField.delegate = self
         configureControlBar()
+        controlBar.isHidden = hidesBrowserControlBar
+        controlBar.isUserInteractionEnabled = !hidesBrowserControlBar
         configureNavigationItem()
         backButton.accessibilityLabel = String(localized: "me.browser.back", defaultValue: "后退")
         forwardButton.accessibilityLabel = String(localized: "me.browser.forward", defaultValue: "前进")
@@ -126,9 +139,24 @@ final class InAppBrowserViewController: UIViewController {
         navigationController?.setToolbarHidden(true, animated: animated)
         store.reload()
         updateControlState()
+        if hidesHostTabBarAtRoot {
+            (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
+        }
     }
 
     private func configureNavigationItem() {
+        if hidesHostTabBarAtRoot {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "xmark"),
+                style: .plain,
+                target: self,
+                action: #selector(closeRootBrowserTapped)
+            )
+            navigationItem.leftBarButtonItem?.accessibilityLabel = String(
+                localized: "plugins.ldc_store.close",
+                defaultValue: "关闭 LD 士多"
+            )
+        }
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "books.vertical"),
             style: .plain,
@@ -237,6 +265,11 @@ final class InAppBrowserViewController: UIViewController {
         Task { await load(url) }
     }
 
+    @objc private func closeRootBrowserTapped() {
+        tabBarController?.selectedIndex = 0
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
+    }
+
     @objc private func backTapped() { webView.goBack() }
     @objc private func forwardTapped() { webView.goForward() }
     @objc private func reloadTapped() {
@@ -327,12 +360,33 @@ extension InAppBrowserViewController: WKNavigationDelegate {
             decisionHandler(.cancel)
             return
         }
-        guard BrowserHistoryStore.normalizedPageURL(url) != nil else {
-            decisionHandler(.cancel)
-            confirmExternalScheme(url)
+        if webView !== self.webView {
+            switch BrowserNavigationURLClassifier.classify(url) {
+            case .web:
+                self.webView.load(navigationAction.request)
+                popupWebView = nil
+                decisionHandler(.cancel)
+            case .internalWebKit:
+                decisionHandler(.allow)
+            case .externalApp:
+                popupWebView = nil
+                decisionHandler(.cancel)
+                confirmExternalScheme(url)
+            case .invalid:
+                popupWebView = nil
+                decisionHandler(.cancel)
+            }
             return
         }
-        decisionHandler(.allow)
+        switch BrowserNavigationURLClassifier.classify(url) {
+        case .web, .internalWebKit:
+            decisionHandler(.allow)
+        case .externalApp:
+            decisionHandler(.cancel)
+            confirmExternalScheme(url)
+        case .invalid:
+            decisionHandler(.cancel)
+        }
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -341,10 +395,19 @@ extension InAppBrowserViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        addressField.text = webView.url?.absoluteString
-        title = webView.title?.isEmpty == false ? webView.title : String(localized: "me.browser", defaultValue: "内置浏览器")
+        guard let url = webView.url else {
+            updateControlState()
+            return
+        }
+        guard BrowserNavigationURLClassifier.classify(url) == .web else {
+            updateControlState()
+            return
+        }
+        addressField.text = url.absoluteString
+        navigationItem.title = webView.title?.isEmpty == false
+            ? webView.title
+            : String(localized: "me.browser", defaultValue: "内置浏览器")
         updateControlState()
-        guard let url = webView.url else { return }
         do {
             try store.recordVisit(url: url, title: webView.title)
         } catch {
@@ -406,10 +469,25 @@ extension InAppBrowserViewController: WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
-            Task { await load(url) }
+        guard navigationAction.targetFrame == nil,
+              let url = navigationAction.request.url
+        else { return nil }
+        switch BrowserNavigationURLClassifier.classify(url) {
+        case .web:
+            webView.load(navigationAction.request)
+            return nil
+        case .internalWebKit:
+            let popup = WKWebView(frame: .zero, configuration: configuration)
+            popup.navigationDelegate = self
+            popup.uiDelegate = self
+            popupWebView = popup
+            return popup
+        case .externalApp:
+            confirmExternalScheme(url)
+            return nil
+        case .invalid:
+            return nil
         }
-        return nil
     }
 }
 

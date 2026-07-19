@@ -48,6 +48,8 @@ struct XiaohongshuTopicCardModel {
     let username: String?
     let categoryName: String?
     let categoryColor: UIColor?
+    let categoryPresentation: TopicCategoryBadgePresentation?
+    let categoryBaseURL: String
     let tags: [String]
     let replyCount: Int
     let views: Int
@@ -188,7 +190,9 @@ final class TopicCell: UITableViewCell {
         avatarURL: URL?,
         categoryName: String?,
         categoryColor: UIColor?,
-        tags: [String] = []
+        tags: [String] = [],
+        categoryPresentation: TopicCategoryBadgePresentation? = nil,
+        categoryBaseURL: String? = nil
     ) {
         let themeStyle = AppSettings.shared.themeStyle
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
@@ -202,7 +206,9 @@ final class TopicCell: UITableViewCell {
         configureBadges(
             categoryName: categoryName,
             categoryColor: categoryColor,
-            tags: tags
+            tags: tags,
+            categoryPresentation: categoryPresentation,
+            categoryBaseURL: categoryBaseURL
         )
 
         // Time
@@ -313,14 +319,24 @@ final class TopicCell: UITableViewCell {
     private func configureBadges(
         categoryName: String?,
         categoryColor: UIColor?,
-        tags: [String]
+        tags: [String],
+        categoryPresentation: TopicCategoryBadgePresentation?,
+        categoryBaseURL: String?
     ) {
         badgesStackView.arrangedSubviews.forEach { view in
             badgesStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
 
-        if let categoryName {
+        if let categoryPresentation, let categoryBaseURL {
+            badgesStackView.addArrangedSubview(
+                TopicTaxonomyBadgeView(
+                    category: categoryPresentation,
+                    baseURL: categoryBaseURL,
+                    variant: .compact
+                )
+            )
+        } else if let categoryName {
             let themedColor = TopicTagVisualStyle.categoryColor(for: categoryName, fallback: categoryColor)
             let categoryBadge = TopicBadgeView(
                 text: categoryName,
@@ -330,7 +346,11 @@ final class TopicCell: UITableViewCell {
         }
 
         for tag in tags.prefix(2) where !tag.isEmpty {
-            let tagBadge = TopicBadgeView(text: tag, style: .tag(color: TopicTagVisualStyle.color(for: tag)))
+            let tagBadge = TopicTaxonomyBadgeView(
+                tag: tag,
+                color: TopicTagVisualStyle.color(for: tag),
+                variant: .compact
+            )
             badgesStackView.addArrangedSubview(tagBadge)
         }
     }
@@ -780,12 +800,26 @@ private final class XiaohongshuTopicCardView: UIControl {
             badgeStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
-        if let categoryName = model.categoryName {
+        if let categoryPresentation = model.categoryPresentation {
+            badgeStackView.addArrangedSubview(
+                TopicTaxonomyBadgeView(
+                    category: categoryPresentation,
+                    baseURL: model.categoryBaseURL,
+                    variant: .compact
+                )
+            )
+        } else if let categoryName = model.categoryName {
             let themedColor = TopicTagVisualStyle.categoryColor(for: categoryName, fallback: model.categoryColor)
             badgeStackView.addArrangedSubview(TopicBadgeView(text: categoryName, style: .category(color: themedColor)))
         }
         if let tag = model.tags.first, !tag.isEmpty {
-            badgeStackView.addArrangedSubview(TopicBadgeView(text: tag, style: .tag(color: TopicTagVisualStyle.color(for: tag))))
+            badgeStackView.addArrangedSubview(
+                TopicTaxonomyBadgeView(
+                    tag: tag,
+                    color: TopicTagVisualStyle.color(for: tag),
+                    variant: .compact
+                )
+            )
         }
     }
 

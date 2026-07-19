@@ -177,7 +177,7 @@ final class RepliesViewController: UIViewController {
             AvatarImageLoader.url(
                 from: reply.avatarTemplate,
                 baseURL: baseURL,
-                size: 96
+                size: AvatarImageLoader.primaryAvatarPixelSize
             )
         }
     }

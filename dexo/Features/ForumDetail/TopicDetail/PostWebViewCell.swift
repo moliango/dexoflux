@@ -788,7 +788,7 @@ final class PostWebViewCell: UITableViewCell {
             on: avatarImageView,
             template: post.avatarTemplate,
             baseURL: baseURL,
-            size: 96
+            size: AvatarImageLoader.primaryAvatarPixelSize
         )
     }
 

@@ -355,6 +355,21 @@ final class MetaverseServicesViewController: UITableViewController {
     private let credentialStore: LDCMerchantCredentialsStore
     private var processing = Set<LinuxDoExtensionService>()
 
+    private var pluginScope: PluginScope {
+        PluginScope(baseURL: api.baseURL, username: username)
+    }
+
+    private var visibleServices: [LinuxDoExtensionService] {
+        let registry = DexoPluginRuntime.shared.registry
+        return LinuxDoExtensionService.allCases.filter { service in
+            registry.isPluginEnabled(pluginID(for: service), for: pluginScope)
+        }
+    }
+
+    private var isLDCPluginEnabled: Bool {
+        DexoPluginRuntime.shared.registry.isPluginEnabled(BuiltInPluginID.ldc, for: pluginScope)
+    }
+
     init(api: DiscourseAPI, username: String) {
         self.api = api
         self.username = username
@@ -371,11 +386,22 @@ final class MetaverseServicesViewController: UITableViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "service")
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refreshServices), for: .valueChanged)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(pluginStateDidChange),
+            name: PluginStateStore.stateDidChangeNotification,
+            object: nil
+        )
         Task { await refreshEnabledServices() }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? LinuxDoExtensionService.allCases.count : 1 }
+    @MainActor
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int { isLDCPluginEnabled ? 2 : 1 }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? visibleServices.count : 1 }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         section == 0 ? String(localized: "extensions.services", defaultValue: "我的服务") : String(localized: "extensions.ldc.reward", defaultValue: "LDC 打赏")
     }
@@ -384,7 +410,7 @@ final class MetaverseServicesViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "service", for: indexPath)
         var content = cell.defaultContentConfiguration()
         if indexPath.section == 0 {
-            let service = LinuxDoExtensionService.allCases[indexPath.row]
+            let service = visibleServices[indexPath.row]
             let enabled = cache.isEnabled(service)
             let info = cache.userInfo(service)
             content.image = UIImage(systemName: service.symbolName)
@@ -405,19 +431,19 @@ final class MetaverseServicesViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         if indexPath.section == 1 { showCredentialEditor(); return }
-        let service = LinuxDoExtensionService.allCases[indexPath.row]
+        let service = visibleServices[indexPath.row]
         if cache.isEnabled(service) { showEnabledActions(service, source: tableView.cellForRow(at: indexPath)) }
         else { Task { await authorize(service) } }
     }
 
     override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
         guard indexPath.section == 0 else { return }
-        showEnabledActions(LinuxDoExtensionService.allCases[indexPath.row], source: tableView.cellForRow(at: indexPath))
+        showEnabledActions(visibleServices[indexPath.row], source: tableView.cellForRow(at: indexPath))
     }
 
     @objc private func refreshServices() { Task { await refreshEnabledServices() } }
     private func refreshEnabledServices() async {
-        for service in LinuxDoExtensionService.allCases where cache.isEnabled(service) {
+        for service in visibleServices where cache.isEnabled(service) {
             do {
                 let info = try await LinuxDoExtensionOAuthCoordinator(service: service, forumBaseURL: api.baseURL).fetchUserInfo()
                 cache.setUserInfo(info, service: service)
@@ -425,6 +451,21 @@ final class MetaverseServicesViewController: UITableViewController {
         }
         refreshControl?.endRefreshing()
         tableView.reloadData()
+    }
+
+    @objc private func pluginStateDidChange() {
+        guard !visibleServices.isEmpty else {
+            navigationController?.popViewController(animated: true)
+            return
+        }
+        tableView.reloadData()
+    }
+
+    private func pluginID(for service: LinuxDoExtensionService) -> String {
+        switch service {
+        case .ldc: return BuiltInPluginID.ldc
+        case .cdk: return BuiltInPluginID.cdk
+        }
     }
 
     private func authorize(

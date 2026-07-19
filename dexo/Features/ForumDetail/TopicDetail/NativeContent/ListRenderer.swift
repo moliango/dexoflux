@@ -71,6 +71,8 @@ enum ListRenderer: BlockRenderer {
         textView.linkTextAttributes = [
             .foregroundColor: config.linkColor,
         ]
+        textView.preferredMeasurementWidth = config.contentWidth
+        textView.setContentCompressionResistancePriority(.required, for: .vertical)
         textView.translatesAutoresizingMaskIntoConstraints = false
         return textView
     }
