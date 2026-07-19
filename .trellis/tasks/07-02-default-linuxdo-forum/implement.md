@@ -723,3 +723,44 @@
    - Parse touched Swift files with `xcrun swiftc -frontend -parse` where practical.
    - Generate/build the project if the local Tuist/Xcode environment is available.
    - Run `git diff --check`.
+
+### Phase 7 User Profile And Me Completion
+
+Detailed plan: `docs/superpowers/plans/2026-07-10-user-profile-and-me-completion.md`.
+
+1. Add the app unit-test target and typed models for cards, actions, reactions, social lists, full summaries, and drafts.
+2. Extend `DiscourseRouter` and `DiscourseAPI` with permission-aware user, relationship, social, draft, created-topic, and empty-response mutation contracts.
+3. Add shared relationship state and a native private-message composer.
+4. Replace every preview-card placeholder with real permission-aware behavior.
+5. Replace the static profile panel with summary, activity, topics, replies, likes-received, and reactions sections with refresh and paging.
+6. Add profile search, sharing, biography detail, followers/following lists, and relationship actions.
+7. Add My Topics and Discourse browsing history using the existing topic cell/detail flow.
+8. Add server drafts, deletion, and restoration into topic, reply, and private-message composers.
+9. Add an account-scoped native browser with bookmarks and local visit history.
+10. Upgrade profile statistics to ordered metrics and grid/horizontal layouts without Connect data.
+11. Add real Markdown/HTML topic export together with account-scoped export history.
+12. Regenerate Tuist, run tests and the Simulator Debug build, audit fake actions, run the smoke matrix, and update PRD acceptance boxes.
+
+Validation commands:
+
+- `mise exec -- tuist generate`
+- `/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -workspace dexoflux.xcworkspace -scheme dexofluxTests -sdk iphonesimulator -configuration Debug test CODE_SIGNING_ALLOWED=NO`
+- `/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -workspace dexoflux.xcworkspace -scheme dexoflux -sdk iphonesimulator -configuration Debug build CODE_SIGNING_ALLOWED=NO`
+- `rg -n "unavailableActionTapped|action_unavailable|comingSoon|敬请期待" dexo/Features/ForumDetail/Me dexo/Features/ForumDetail/Export`
+
+Rollback points:
+
+- API/model changes must compile before UI wiring begins.
+- Preview actions must build before profile paging is introduced.
+- Me content pages must build before browser/export persistence is added.
+- Topic export and export history land together; neither is accepted alone.
+- Never revert pre-existing dirty changes in preview, Me, topic detail, reply composer, or project settings files.
+
+Phase 7 verification (2026-07-10):
+
+- [x] `mise exec -- tuist generate`
+- [x] `dexofluxTests` Simulator test run: 29 passed, 0 failed.
+- [x] `dexoflux` Simulator Debug build completed with exit code 0.
+- [x] App installed and launched on the iPhone 16 simulator with bundle id `com.naine.dexoflux`.
+- [x] Fake-action audit returned no `unavailableActionTapped`, `action_unavailable`, `comingSoon`, or `敬请期待` matches in Me/Export.
+- [ ] Authenticated live-server smoke remains manual because the verification simulator has no Linux.do login session.

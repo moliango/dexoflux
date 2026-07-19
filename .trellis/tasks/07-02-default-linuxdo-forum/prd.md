@@ -418,12 +418,12 @@ This project is a fork of another project and is being customized as a second-de
 - [x] Reply composer tools can insert common Markdown wrappers/prefixes without losing the current selection.
 - [x] Reply composer can upload images and attachments to Discourse and insert the returned Markdown.
 - [x] Reply composer preview mode renders a readable native Markdown preview and can return to editing.
-- [ ] User preview card private-message, follow, and overflow actions call real endpoints and reflect server permissions/current state.
-- [ ] Other-user profile search, private-message, follow, overflow, biography, and follower/following actions are functional.
-- [ ] Other-user profile summary, activity, topics, replies, likes received, and reactions sections load real data with refresh, pagination, empty, error, and retry behavior.
-- [ ] Me/Profile exposes functional my-topics, drafts, browsing-history, export-history, in-app-browser, and profile-stat configuration flows.
+- [x] User preview card private-message, follow, and overflow actions call real endpoints and reflect server permissions/current state.
+- [x] Other-user profile search, private-message, follow, overflow, biography, and follower/following actions are functional.
+- [x] Other-user profile summary, activity, topics, replies, likes received, and reactions sections load real data with refresh, pagination, empty, error, and retry behavior.
+- [x] Me/Profile exposes functional my-topics, drafts, browsing-history, export-history, in-app-browser, and profile-stat configuration flows.
 - [ ] Existing badges, invite links, private messages, bookmarks, trust requirements, settings, topic detail, and authentication flows still work after the profile expansion.
-- [ ] No user-profile or Me/Profile row is a fake action that only shows an unavailable/coming-soon message.
+- [x] No user-profile or Me/Profile row is a fake action that only shows an unavailable/coming-soon message.
 - [ ] Enabling DoH starts a lightweight local proxy for native API requests.
 - [ ] Network settings expose both the DoH switch and the currently effective DoH server URL.
 - [ ] Editing the DoH server URL switches the provider to custom and restarts/reconfigures the lightweight DoH service.

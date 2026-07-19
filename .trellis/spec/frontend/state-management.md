@@ -70,6 +70,7 @@ Questions to answer:
 - Tab bar controllers must update existing tab/root titles on language changes without rebuilding the navigation stack, so users are not kicked out of the current settings page.
 - Traditional Chinese language choices use regional preferred language codes (`zh-Hant-TW`, `zh-Hant-HK`) with resource fallbacks (`zh-Hant`, `zh-HK`, `zh-Hans`).
 - String catalog Traditional Chinese support must be complete enough to avoid falling back to English after the bundle selects a Traditional Chinese localization. If `zh-Hans` exists for a key, `zh-Hant` and `zh-HK` should exist too.
+- Xcode can auto-extract a new `String(localized:defaultValue:)` key with only the English default value. That key compiles successfully but falls back to English in Chinese UI. Every new user-facing action key must add `zh-Hans`, `zh-Hant`, and `zh-HK` values, and profile-action keys are guarded by `LocalizationCoverageTests`.
 - If adding new supported language codes to `Localizable.xcstrings`, also add them to `Project.swift` `defaultKnownRegions`.
 
 ---
@@ -77,6 +78,17 @@ Questions to answer:
 ## Server State
 
 <!-- How server data is cached and synchronized -->
+
+### GitHub Release Update Checks
+
+- DexoFlux stable releases use `v{marketingVersion}-build.{buildNumber}` tags. Parse both numeric marketing-version components and the numeric build; do not compare tags as plain strings or drop the build number.
+- `AppUpdateService` owns GitHub transport, Release decoding, ETag handling, the one-hour cache, and stale-cache fallback. UIKit controllers must consume `AppRelease` / `AppVersion` instead of decoding GitHub JSON themselves.
+- Automatic checks may return a cache younger than one hour without a network request. Manual checks always issue a conditional request, and HTTP `304` refreshes the cached fetch time.
+- HTTP `403`, `429`, `5xx`, and transient URL failures may return a stale cached Release. Without a cache, the service must throw so manual checks can show a recoverable localized error; automatic failures remain silent.
+- Drafts and prereleases never trigger the stable update prompt. A Release without `dexoflux-unsigned.ipa` remains valid because the GitHub Release page is the supported update destination.
+- The primary `ForumContainerViewController` may schedule one automatic check per process only after automatic checking is enabled. Enabling the setting during the current process should trigger the still-unscheduled check.
+- Automatic update UI must wait until the launch overlay is removed and the visible controller tree has no login, Cloudflare, composer, or other modal transition. Keep the Release pending while UI is busy and consume it only after presentation succeeds.
+- "Update Now" opens the GitHub Release page. Do not imply that DexoFlux can install an unsigned IPA in-app.
 
 ### Home Topic List Lifecycle Cancellation
 
@@ -117,18 +129,25 @@ Questions to answer:
 - Cookie source: `WebCookieStore.shared.syncFromWebView(..., names: ["cf_clearance"], for: baseURL)`.
 
 3. Contracts
-- In foreground verification, the Linux.do same-origin `/404` URL or loaded Discourse not-found page text (`该页面不存在` / `that page doesn't exist`) is treated as a verified landing page: sync `cf_clearance` if present, sync the WebView User-Agent, then post completion immediately.
-- Other non-challenge pages still require a non-empty `cf_clearance` matching the forum base URL before posting the completion notification.
+- Capture the initial native `cf_clearance` synchronously before registering `WKHTTPCookieStoreObserver` or starting any async WebView cookie synchronization.
+- Regular pages require a usable `cf_clearance`. Dexo's original verified-landing exceptions remain authoritative: an exact same-origin `/challenge` source `404`, a same-origin `/404` redirect, or a loaded Discourse not-found page without active challenge markers may sync Cookie/User-Agent best effort and complete automatically before the WK Cookie callback surfaces the value.
+- Do not open avatar, upload, or image resource URLs as the foreground verification target. Binary challenge URLs must fall back to the forum `/challenge` page so WKWebView receives a normal document navigation instead of a stalled Cloudflare image interstitial.
+- Foreground completion requires all three conditions: a usable `cf_clearance`, a loaded same-origin verified page, and no active Cloudflare challenge markers.
 - Background verification still requires a non-empty `cf_clearance` and a page without active challenge markers before posting completion, because there is no visible user-confirmed landing page.
 - Auto-triggered verification after a native Cloudflare challenge must delete stale `cf_clearance` first, then require a fresh value before success.
+- Foreground verification is exclusive per forum base URL. Cancel and await the matching background verification attempt before presenting, and ignore new background triggers while the foreground verifier is active.
+- Auto-triggered verification follows the original Dexo Cookie flow: capture the initial value only for freshness comparison, delete stale native/WebView `cf_clearance`, and do not restore it after failure or close. Manual Settings verification does not proactively delete the existing value.
 - After detecting a usable `cf_clearance`, capture `navigator.userAgent` from the same WebView and store it in `WebCookieStore.shared.userAgent` before native retry.
+- Topic Detail and Replies should react to completion by clearing failed avatar-prefetch state, re-prefetching their author avatars with the forum base URL, and reloading only currently visible rows.
 
 4. Validation & Error Matrix
-- Foreground same-origin `/404` URL or Discourse not-found page loaded -> sync cookies/User-Agent and post completion even if `cf_clearance` has not appeared in `WKHTTPCookieStore` yet.
+- Exact same-origin `/challenge` source `404` without `cf-mitigated: challenge` -> sync Cookie/User-Agent and complete automatically.
+- Same-origin `/404` redirect or recognized Discourse not-found page without active challenge markers -> sync Cookie/User-Agent and complete automatically.
+- Other original response URLs without a usable `cf_clearance` -> keep waiting and do not post completion.
 - Other redirect/page loaded but `cf_clearance` missing -> keep waiting and do not post completion.
 - `cf_clearance` present but active Cloudflare challenge markers still exist -> keep waiting and do not post completion.
-- `cf_clearance` present, no active challenge markers -> update User-Agent, post completion once, then auto-dismiss if applicable.
-- Manual close without `cf_clearance` -> close the sheet only; do not pretend native API verification succeeded.
+- Fresh `cf_clearance` present, verified page loaded, no active challenge markers -> update User-Agent, post completion once, then auto-dismiss if applicable.
+- Close without successful verification -> stop verification work and do not post completion; auto-triggered stale clearance remains deleted.
 
 5. Good/Base/Bad Cases
 - Good: User completes challenge, WebView receives `cf_clearance`, `ForumContainerViewController` hides the global shield, and page controllers such as Home receive completion notification to retry native data with Cookie + User-Agent headers.
@@ -136,14 +155,16 @@ Questions to answer:
 - Bad: a background `/404` probe loads without `cf_clearance`; the app must not mark verification complete because native API requests would still hit the shield.
 
 6. Tests Required
-- Assert that `completeVerification()` is reachable from either a foreground same-origin `/404` / Discourse not-found landing page or a non-empty `cf_clearance` for the base URL.
-- Assert foreground known verified redirects and loaded Discourse not-found pages post completion after syncing cookies/User-Agent, even when `cf_clearance` is not visible yet.
+- Assert auto verification rejects the unchanged initial `cf_clearance` and accepts a different non-empty value.
+- Assert completion requires both a loaded verified page and no active challenge markers.
+- Assert same-origin `/404` / Discourse not-found pages without `cf_clearance` do not complete.
 - Assert background known verified probes without `cf_clearance` schedule more checks instead of posting completion.
+- Assert image responses with `cf-mitigated: challenge` and Cloudflare HTML `403` / `429` / `503` are detected without requiring a response body.
 - Assert completion callback execution is idempotent when cookie-store observer, navigation finish, and Done button race.
 
 7. Wrong vs Correct
-- Wrong: Treating any non-challenge page as success and posting `cloudflareVerificationCompletedNotification` immediately.
-- Correct: In foreground verification, treat same-origin Linux.do `/404` or the loaded Discourse not-found page as the user-visible verified landing page and complete after syncing cookies/User-Agent; for other pages and background probes, require `cf_clearance` plus no active challenge markers.
+- Wrong: Treating `/404` or any non-challenge page as success before a usable Cookie exists, or letting background and foreground WebViews mutate the shared Cookie store concurrently.
+- Correct: Require Cookie + verified page + no challenge for ordinary completion, serialize foreground/background verification, and keep Dexo's original delete-without-restore behavior for stale auto-triggered clearance.
 
 ### Topic Detail Reaction Toggle State
 
@@ -184,6 +205,88 @@ Questions to answer:
 7. Wrong vs Correct
 - Wrong: Require `DiscourseTopicDetail.Reaction.count` for every reaction object and show "Operation failed" when the server omits it from `current_user_reaction`.
 - Correct: Treat reaction fields from the toggle endpoint as lossy server state, decode optional display fields defensively, and only surface an error when the request failed or the response is malformed beyond the tolerated contract.
+
+### Scenario: Account-Scoped Me Tools And Draft Restoration
+
+1. Scope / Trigger
+- Trigger: A Me feature persists browsing/export data locally or restores a server draft into a native composer.
+- Browser history, local bookmarks, profile-stat configuration, and export history are native app state; Discourse read history and drafts remain server state and must not be merged with local WebView history.
+
+2. Signatures
+- Account key: `AccountScopeKey.make(baseURL:username:) -> String`.
+- Browser store: `BrowserHistoryStore(baseURL:username:directoryURL:maxHistoryCount:)`.
+- Export store: `ExportHistoryStore(baseURL:username:directoryURL:)`.
+- Draft list: `GET /drafts.json?offset={offset}&limit={limit}`.
+- Draft deletion: `DELETE /drafts/{draftKey}.json?sequence={draftSequence}`.
+- My topics: `GET /topics/created-by/{username}.json?page={page}`.
+- Discourse read history: `GET /read.json?page={page}`.
+
+3. Contracts
+- Local account scope is the normalized forum base URL plus lowercased username; missing usernames use the explicit `guest` scope.
+- Local browser history is capped at 200 records by default. A repeated normalized URL moves to the front instead of creating a duplicate. URL fragments do not define separate history/bookmark records.
+- Browser and export JSON files live under Application Support and use atomic writes. Corrupt files load as empty and are replaced by the next successful mutation.
+- Server draft `data` may be either a JSON object or a JSON string containing an object. Preserve title, reply, category id, tags, archetype, action, and target recipients.
+- Draft routing is determined by `draft_key`: new-topic keys open `NewTopicComposerViewController`, topic/post keys open `ReplyComposerViewController`, and private-message keys open `PrivateMessageComposerViewController`.
+- A successfully submitted restored draft is deleted with its original key and sequence. Failed submission must retain the draft and editor contents.
+- Topic exports write Markdown or complete HTML under `Application Support/Exports/{accountScope}` and always add a success/failure history record.
+
+4. Validation & Error Matrix
+- Unsupported browser scheme -> reject before `WKWebView.load` and show a localized error.
+- Corrupt browser/export JSON -> expose empty state; next write atomically replaces the corrupt file.
+- Draft lacks private-message recipient -> do not open an empty recipient composer; show a recoverable error and keep/delete choices.
+- Reply draft target is not in the initial topic payload -> resolve the post id from `post_stream.stream`, fetch it, then open the composer; if still missing, show an error.
+- Draft delete fails -> keep the row and show the server error.
+- Export file is missing but history remains -> show a safe missing-file state; the record must still be deletable.
+- Export generation fails -> persist a failure record with the error and do not present a fake share sheet.
+
+5. Good/Base/Bad Cases
+- Good: `HTTPS://LINUX.DO/ + Sam` and `https://linux.do + sam` read the same local history while `alex` reads an isolated history.
+- Base: a guest opens the in-app browser; local records stay in the guest scope and do not leak into a later authenticated account.
+- Bad: one global `UserDefaults` array stores URLs for every account, or a restored draft opens an empty composer because its string-encoded `data` was ignored.
+
+6. Tests Required
+- Assert account isolation, base-URL normalization, URL deduplication, fragment removal, history bounds, corrupt-file recovery, and bookmark uniqueness.
+- Assert legacy `me.stats.selected` order migrates to `MeStatsConfiguration(layout: .grid)` and the new configuration round-trips.
+- Assert new-topic, topic/post reply, private-message, and unsupported draft keys map to the correct destination.
+- Assert Markdown removes cooked HTML tags while retaining readable text, and HTML escapes topic/author metadata while preserving cooked post markup.
+- Run the complete app unit-test scheme plus a Simulator Debug build after changing any of these contracts.
+
+7. Wrong vs Correct
+- Wrong: Treat `/read.json` as WebView history, delete drafts through `DELETE /drafts.json`, or key local records only by username.
+- Correct: Keep server and local history separate, delete `/drafts/{key}.json?sequence=N`, and scope local files by normalized `baseURL + username`.
+
+### Scenario: Discourse User Summary Badge Sideloads
+
+1. Scope / Trigger
+- Trigger: Decode `GET /u/{username}/summary.json` for Me or another user's profile summary.
+
+2. Signatures
+- Response model: `DiscourseUserSummaryResponse`.
+- Embedded field: `user_summary.badges`.
+- Sideloaded definitions: root `badges`.
+
+3. Contracts
+- `user_summary.badges` may contain reference objects with only `badge_id` and `count`; it is not guaranteed to contain `DiscourseBadge.name`.
+- Complete display definitions are taken from the response root `badges` array and merged into `DiscourseUserSummary.badges`.
+- Partial embedded references must never fail decoding of the entire user summary.
+
+4. Validation & Error Matrix
+- Embedded badge reference lacks `name` -> ignore it as a full definition and continue decoding.
+- Root badge definition contains `id`, `name`, and `badge_type_id` -> expose it in the merged summary.
+- Root badge definitions are missing -> expose an empty summary badge list rather than failing Me/Profile loading.
+
+5. Good/Base/Bad Cases
+- Good: embedded `{badge_id: 1, count: 2}` plus root `{id: 1, name: "Anniversary"}` renders `Anniversary`.
+- Base: no badge fields returns an empty badge section.
+- Bad: decoding `user_summary.badges` directly as `[DiscourseBadge]` throws `keyNotFound(name)` and blocks the entire Me page.
+
+6. Tests Required
+- Decode a response with embedded badge references and sideloaded root definitions; assert the merged name and id.
+- Keep the existing complete-root-badge summary decoding regression.
+
+7. Wrong vs Correct
+- Wrong: Make `DiscourseBadge.name` globally optional or replace missing names with empty strings.
+- Correct: Tolerate reference-shaped embedded entries and preserve strict complete badge definitions at the root boundary.
 
 ---
 
