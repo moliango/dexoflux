@@ -42,3 +42,39 @@ Aligned TopicDetail timeline/progress with FluxDo stream-based behavior and docu
 ### Next Steps
 
 - Continue the remaining `default-linuxdo-forum` follow-ups in later sessions.
+
+
+## Session 2: DexoFlux 1.4 插件、论坛体验与自动更新
+
+**Date**: 2026-07-19
+**Task**: DexoFlux 1.4 插件、论坛体验与自动更新
+**Branch**: `main`
+
+### Summary
+
+完成插件平台与 NewAPI/LD 士多集成，优化 Topic 与 TopicDetail 渲染、分页、操作区和头像缓存，实现 GitHub Releases 自动更新及新版更新页面，并将版本提升至 1.4。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f35e472` | (see git log) |
+| `5737b37` | (see git log) |
+| `992f4fb` | (see git log) |
+| `783b9cb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
