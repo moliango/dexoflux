@@ -75,12 +75,25 @@ final class SearchResultCell: UITableViewCell {
         ])
     }
 
-    func configure(with post: DiscourseSearchResult.SearchPost, baseURL: String) {
+    func configure(with post: DiscourseSearchResult.SearchPost, baseURL: String, isAIResult: Bool = false) {
         // Strip HTML tags from headline for plain text display
-        if let headline = post.topicTitleHeadline {
-            titleLabel.text = Self.cleanedSearchText(headline)
+        let title = post.topicTitleHeadline.map(Self.cleanedSearchText)
+        if isAIResult, let title {
+            // FluxDo 给 AI 语义搜索命中的结果加 AI 徽标
+            let text = NSMutableAttributedString(string: title + "  ")
+            let badge = NSAttributedString(
+                string: " AI ",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 10, weight: .bold),
+                    .foregroundColor: UIColor.white,
+                    .backgroundColor: UIColor.systemIndigo.withAlphaComponent(0.85),
+                    .baselineOffset: 2,
+                ]
+            )
+            text.append(badge)
+            titleLabel.attributedText = text
         } else {
-            titleLabel.text = nil
+            titleLabel.text = title
         }
 
         blurbLabel.text = Self.cleanedSearchText(post.blurb ?? "")
@@ -97,6 +110,7 @@ final class SearchResultCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         titleLabel.text = nil
+        titleLabel.attributedText = nil
         blurbLabel.text = nil
         usernameLabel.text = nil
         avatarImageView.sd_cancelCurrentImageLoad()

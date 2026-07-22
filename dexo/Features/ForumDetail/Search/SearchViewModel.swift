@@ -19,24 +19,46 @@ enum SearchSortOrder: String, CaseIterable {
 }
 
 final class SearchViewModel: DexoObservableObject {
+    private static let sortOrderDefaultsKey = "search.sort_order"
+
     var searchResults: [DiscourseSearchResult.SearchPost] = []
+    var userResults: [DiscourseSearchResult.SearchUser] = []
+    /// AI 语义搜索命中的 topicId（用于结果行的 AI 徽标）。
+    private(set) var aiTopicIds: Set<Int> = []
     var isSearching = false
     var canLoadMore = false
     var hasSearched = false
     var errorMessage: String?
 
+    var recentSearches: [String] = []
+
     var categories: [DiscourseCategory] = []
     var selectedCategoryId: Int?
-    var selectedTag: String?
-    var selectedSortOrder: SearchSortOrder = .relevance
+    var advancedFilter = SearchAdvancedFilter()
+
+    // 排序跨会话持久化（FluxDo 将其存在 search settings 中）。
+    var selectedSortOrder: SearchSortOrder {
+        didSet {
+            UserDefaults.standard.set(selectedSortOrder.rawValue, forKey: Self.sortOrderDefaultsKey)
+        }
+    }
 
     private let api: DiscourseAPI
     private var currentPage = 0
     private var currentTerm = ""
     private(set) var categoriesById: [Int: DiscourseCategory] = [:]
 
+    // AI 语义搜索：站点不支持时（403/404 等）本会话内静默停用。
+    private var aiSearchUnavailable = false
+    private var standardPosts: [DiscourseSearchResult.SearchPost] = []
+    private var aiPosts: [DiscourseSearchResult.SearchPost] = []
+    private var aiSearchTask: Task<Void, Never>?
+    private var searchGeneration = 0
+
     init(api: DiscourseAPI) {
         self.api = api
+        selectedSortOrder = UserDefaults.standard.string(forKey: Self.sortOrderDefaultsKey)
+            .flatMap(SearchSortOrder.init(rawValue:)) ?? .relevance
     }
 
     func selectedCategory() -> DiscourseCategory? {
@@ -67,10 +89,26 @@ final class SearchViewModel: DexoObservableObject {
         } catch {}
     }
 
+    // MARK: - Recent searches (server-side, FluxDo parity)
+
+    func loadRecentSearches() async {
+        recentSearches = (try? await api.fetchRecentSearches()) ?? []
+        notifyChanged()
+    }
+
+    func clearRecentSearches() async {
+        try? await api.clearRecentSearches()
+        recentSearches = []
+        notifyChanged()
+    }
+
+    // MARK: - Search
+
     func search(term: String) async {
         let query = buildQuery(term: term)
         guard !query.isEmpty else {
             searchResults = []
+            userResults = []
             hasSearched = false
             notifyChanged()
             return
@@ -81,15 +119,26 @@ final class SearchViewModel: DexoObservableObject {
         currentPage = 0
         hasSearched = true
         errorMessage = nil
+        searchGeneration += 1
+        aiPosts = []
+        aiTopicIds = []
         notifyChanged()
+
+        triggerAISearchIfNeeded(term: term, generation: searchGeneration)
 
         do {
             let result = try await api.search(term: query, page: 1, typeFilter: "topic")
-            searchResults = uniqueTopics(from: result.posts ?? [])
+            standardPosts = uniqueTopics(from: result.posts ?? [])
+            userResults = result.users ?? []
             currentPage = 1
-            canLoadMore = result.groupedSearchResult?.morePosts ?? false
+            canLoadMore = result.groupedSearchResult?.morePosts
+                ?? result.groupedSearchResult?.moreFullPageResults
+                ?? false
+            rebuildDisplayPosts()
         } catch {
+            standardPosts = []
             searchResults = []
+            userResults = []
             canLoadMore = false
             errorMessage = error.localizedDescription
         }
@@ -107,16 +156,78 @@ final class SearchViewModel: DexoObservableObject {
         do {
             let result = try await api.search(term: query, page: nextPage, typeFilter: "topic")
             let newPosts = uniqueTopics(from: result.posts ?? [])
-            let existingTopicIds = Set(searchResults.map(\.topicId))
-            let filtered = newPosts.filter { !existingTopicIds.contains($0.topicId) }
-            searchResults.append(contentsOf: filtered)
+            let existingTopicIds = Set(standardPosts.map(\.topicId))
+            standardPosts.append(contentsOf: newPosts.filter { !existingTopicIds.contains($0.topicId) })
             currentPage = nextPage
-            canLoadMore = result.groupedSearchResult?.morePosts ?? false
+            canLoadMore = result.groupedSearchResult?.morePosts
+                ?? result.groupedSearchResult?.moreFullPageResults
+                ?? false
+            rebuildDisplayPosts()
         } catch {
             canLoadMore = false
         }
         isSearching = false
         notifyChanged()
+    }
+
+    // MARK: - AI semantic search (RRF merge, FluxDo/Discourse parity)
+
+    private func triggerAISearchIfNeeded(term: String, generation: Int) {
+        aiSearchTask?.cancel()
+        guard !aiSearchUnavailable, selectedSortOrder == .relevance else { return }
+        aiSearchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await api.semanticSearch(term: term)
+                guard !Task.isCancelled, generation == searchGeneration else { return }
+                aiPosts = uniqueTopics(from: result.posts ?? [])
+                rebuildDisplayPosts()
+                notifyChanged()
+            } catch {
+                guard !Task.isCancelled else { return }
+                // 站点未启用 discourse-ai：静默停用，避免每次搜索都白打一发。
+                // 其他错误（超时、HTML 404 解码失败等）按 FluxDo 行为逐次静默忽略。
+                if let apiError = error as? DiscourseAPIError,
+                   apiError.isForbidden || apiError.errorType == "not_found" {
+                    aiSearchUnavailable = true
+                }
+            }
+        }
+    }
+
+    /// RRF（Reciprocal Rank Fusion，k=5，与 Discourse 前端一致）融合标准与 AI 结果。
+    private func rebuildDisplayPosts() {
+        aiTopicIds = Set(aiPosts.map(\.topicId)).subtracting(standardPosts.map(\.topicId))
+        guard selectedSortOrder == .relevance, !aiPosts.isEmpty else {
+            searchResults = standardPosts
+            return
+        }
+        guard !standardPosts.isEmpty else {
+            searchResults = aiPosts
+            return
+        }
+
+        let k = 5.0
+        var scores: [Int: Double] = [:]
+        var postsByTopic: [Int: DiscourseSearchResult.SearchPost] = [:]
+
+        for (index, post) in standardPosts.enumerated() {
+            scores[post.topicId] = 1.0 / (Double(index) + k)
+            postsByTopic[post.topicId] = post
+        }
+        for (index, post) in aiPosts.enumerated() {
+            let score = 1.0 / (Double(index) + k)
+            if let existing = scores[post.topicId] {
+                scores[post.topicId] = existing + score
+            } else {
+                scores[post.topicId] = score
+                postsByTopic[post.topicId] = post
+            }
+        }
+
+        searchResults = scores
+            .sorted { $0.value > $1.value }
+            .compactMap { postsByTopic[$0.key] }
     }
 
     private func buildQuery(term: String) -> String {
@@ -127,9 +238,7 @@ final class SearchViewModel: DexoObservableObject {
         if let catId = selectedCategoryId, let slug = categoriesById[catId]?.slug {
             parts.append("category:\(slug)")
         }
-        if let tag = selectedTag {
-            parts.append("tag:\(tag)")
-        }
+        parts.append(contentsOf: advancedFilter.queryParts())
         if selectedSortOrder != .relevance {
             parts.append("order:\(selectedSortOrder.rawValue)")
         }

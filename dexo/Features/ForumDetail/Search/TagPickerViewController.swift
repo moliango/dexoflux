@@ -6,6 +6,10 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
     private let currentTag: String?
     var onTagSelected: ((String?) -> Void)?
 
+    /// 多选模式（FluxDo 式高级筛选）：非 nil 时行为变为勾选 + 完成。
+    private var multiSelection: Set<String>?
+    var onTagsSelected: (([String]) -> Void)?
+
     private var tags: [DiscourseTag] = []
     private var searchTask: Task<Void, Never>?
 
@@ -46,7 +50,11 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
                 content.secondaryText = "\(tag.count)"
                 content.secondaryTextProperties.color = .secondaryLabel
                 cell.contentConfiguration = content
-                cell.accessoryType = tag.text == self.currentTag ? .checkmark : .none
+                if let multiSelection = self.multiSelection {
+                    cell.accessoryType = multiSelection.contains(tag.text) ? .checkmark : .none
+                } else {
+                    cell.accessoryType = tag.text == self.currentTag ? .checkmark : .none
+                }
             }
 
             return cell
@@ -80,6 +88,12 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
         super.init(nibName: nil, bundle: nil)
     }
 
+    /// 多选模式入口。
+    convenience init(api: DiscourseAPI, categoryId: Int?, selectedTags: [String]) {
+        self.init(api: api, categoryId: categoryId, selectedTag: nil)
+        multiSelection = Set(selectedTags)
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -97,6 +111,13 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
             target: self,
             action: #selector(cancelTapped)
         )
+        if multiSelection != nil {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .done,
+                target: self,
+                action: #selector(doneTapped)
+            )
+        }
 
         searchBar.delegate = self
 
@@ -154,7 +175,8 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
     private func applySnapshot() {
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
 
-        if currentTag != nil {
+        let showsClearRow = multiSelection.map { !$0.isEmpty } ?? (currentTag != nil)
+        if showsClearRow {
             snapshot.appendSections([0])
             snapshot.appendItems([Self.clearItem], toSection: 0)
         }
@@ -181,6 +203,11 @@ final class TagPickerViewController: UIViewController, UISearchBarDelegate {
     @objc private func cancelTapped() {
         dismiss(animated: true)
     }
+
+    @objc private func doneTapped() {
+        onTagsSelected?(Array(multiSelection ?? []).sorted())
+        dismiss(animated: true)
+    }
 }
 
 // MARK: - UITableViewDelegate
@@ -189,6 +216,22 @@ extension TagPickerViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard let identifier = dataSource.itemIdentifier(for: indexPath) else { return }
+
+        if var multiSelection {
+            if identifier == Self.clearItem {
+                multiSelection.removeAll()
+            } else if multiSelection.contains(identifier) {
+                multiSelection.remove(identifier)
+            } else {
+                multiSelection.insert(identifier)
+            }
+            self.multiSelection = multiSelection
+            applySnapshot()
+            var snapshot = dataSource.snapshot()
+            snapshot.reconfigureItems(snapshot.itemIdentifiers)
+            dataSource.apply(snapshot, animatingDifferences: false)
+            return
+        }
 
         if identifier == Self.clearItem {
             onTagSelected?(nil)
