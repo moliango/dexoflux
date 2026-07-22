@@ -10,6 +10,10 @@ let project = Project(
     ),
     packages: [
         .local(path: "Packages/CookedHTML"),
+        .remote(
+            url: "https://github.com/scinfu/SwiftSoup.git",
+            requirement: .upToNextMajor(from: "2.7.0")
+        ),
     ],
     settings: .settings(
         base: [
@@ -48,6 +52,7 @@ let project = Project(
                 .external(name: "SDWebImageSVGCoder"),
                 .external(name: "Lightbox"),
                 .package(product: "CookedHTML"),
+                .package(product: "SwiftSoup"),
             ],
             settings: .settings(
                 base: [
