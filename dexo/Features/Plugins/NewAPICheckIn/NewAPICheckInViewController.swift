@@ -2,11 +2,22 @@ import UIKit
 
 @MainActor
 final class NewAPICheckInViewController: UITableViewController {
+    private enum Section: Int, CaseIterable {
+        case overview
+        case platforms
+    }
+
     private let store: NewAPICheckInStore
     private let service: NewAPICheckInService
     private var platforms: [NewAPICheckInPlatform] = []
     private var runningPlatformIDs = Set<UUID>()
     private var isRunningBatch = false
+
+    // Auto-relogin queue: platforms whose sign-in came back authenticationExpired.
+    private var reloginQueue: [UUID] = []
+    private var pendingResignPlatformID: UUID?
+    private var isAutoReloginActive = false
+    private var lastLoginSaved = false
 
     init(store: NewAPICheckInStore, service: NewAPICheckInService) {
         self.store = store
@@ -29,60 +40,158 @@ final class NewAPICheckInViewController: UITableViewController {
         tableView.register(NewAPIPlatformCell.self, forCellReuseIdentifier: NewAPIPlatformCell.reuseIdentifier)
         tableView.backgroundColor = .systemGroupedBackground
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 118
-        tableView.separatorInset = UIEdgeInsets(top: 0, left: 86, bottom: 0, right: 16)
-        tableView.sectionHeaderTopPadding = 16
+        tableView.estimatedRowHeight = 76
+        tableView.separatorInset = UIEdgeInsets(top: 0, left: 76, bottom: 0, right: 16)
+        tableView.sectionHeaderTopPadding = 12
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refreshTriggered), for: .valueChanged)
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addPlatformTapped)),
-            UIBarButtonItem(
-                image: UIImage(systemName: "checkmark.circle.fill"),
-                style: .plain,
-                target: self,
-                action: #selector(signInAllTapped)
-            ),
-        ]
-        navigationItem.rightBarButtonItems?.last?.accessibilityLabel = String(
-            localized: "plugins.newapi.sign_in_all",
-            defaultValue: "全部签到"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .add,
+            target: self,
+            action: #selector(addPlatformTapped)
         )
-        updateEmptyState()
         Task { await reload() }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 1 }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard isAutoReloginActive else { return }
+        isAutoReloginActive = false
+        if lastLoginSaved {
+            let platformID = pendingResignPlatformID
+            pendingResignPlatformID = nil
+            Task {
+                if let platformID,
+                   let platform = await store.platforms().first(where: { $0.id == platformID }) {
+                    // Fresh cookie just saved — retry once, but never loop back into relogin.
+                    await signIn(platform, allowAutoRelogin: false)
+                }
+                processReloginQueueIfIdle()
+            }
+        } else {
+            // User backed out of the login page — stop bothering them.
+            reloginQueue.removeAll()
+        }
+    }
+
+    // MARK: - Static cells
+
+    private lazy var summaryCell: NewAPISummaryCell = {
+        let cell = NewAPISummaryCell()
+        cell.onSignInAll = { [weak self] in self?.signInAllTapped() }
+        return cell
+    }()
+
+    private lazy var autoReloginCell: UITableViewCell = {
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        var content = cell.defaultContentConfiguration()
+        content.text = String(localized: "plugins.newapi.auto_relogin", defaultValue: "自动重新登录")
+        content.secondaryText = String(
+            localized: "plugins.newapi.auto_relogin.help",
+            defaultValue: "登录失效时自动打开登录页刷新 Cookie"
+        )
+        content.textProperties.font = .systemFont(ofSize: 15, weight: .medium)
+        content.secondaryTextProperties.font = .systemFont(ofSize: 12)
+        content.secondaryTextProperties.color = .secondaryLabel
+        content.textToSecondaryTextVerticalPadding = 3
+        content.image = UIImage(systemName: "arrow.triangle.2.circlepath")
+        content.imageProperties.tintColor = AppSettings.shared.themeStyle.accentColor
+        content.imageProperties.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        cell.contentConfiguration = content
+        cell.selectionStyle = .none
+        let toggle = UISwitch()
+        toggle.isOn = NewAPICheckInRuntime.autoReloginEnabled
+        toggle.onTintColor = AppSettings.shared.themeStyle.accentColor
+        toggle.addTarget(self, action: #selector(autoReloginToggled(_:)), for: .valueChanged)
+        cell.accessoryView = toggle
+        return cell
+    }()
+
+    private lazy var emptyCell: UITableViewCell = {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .default
+        var content = cell.defaultContentConfiguration()
+        content.text = String(localized: "plugins.newapi.empty.title", defaultValue: "还没有平台")
+        content.secondaryText = String(
+            localized: "plugins.newapi.empty.action",
+            defaultValue: "点这里或右上角 + 添加 NewAPI 平台"
+        )
+        content.textProperties.font = .systemFont(ofSize: 15, weight: .semibold)
+        content.textProperties.alignment = .center
+        content.secondaryTextProperties.font = .systemFont(ofSize: 12)
+        content.secondaryTextProperties.color = .secondaryLabel
+        content.secondaryTextProperties.alignment = .center
+        content.textToSecondaryTextVerticalPadding = 4
+        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 22, leading: 16, bottom: 22, trailing: 16)
+        cell.contentConfiguration = content
+        return cell
+    }()
+
+    @objc private func autoReloginToggled(_ sender: UISwitch) {
+        NewAPICheckInRuntime.autoReloginEnabled = sender.isOn
+    }
+
+    // MARK: - Table data source
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        Section.allCases.count
+    }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        platforms.count
+        switch Section(rawValue: section) {
+        case .overview: return 2
+        case .platforms: return max(platforms.count, 1)
+        case nil: return 0
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        guard Section(rawValue: section) == .platforms else { return nil }
+        return platforms.isEmpty
+            ? String(localized: "plugins.newapi.section.platforms", defaultValue: "平台")
+            : String(
+                format: String(localized: "plugins.newapi.section.platforms_count", defaultValue: "平台 · %d"),
+                platforms.count
+            )
     }
 
     override func tableView(
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(
-            withIdentifier: NewAPIPlatformCell.reuseIdentifier,
-            for: indexPath
-        ) as? NewAPIPlatformCell else {
-            assertionFailure("NewAPIPlatformCell was not registered")
-            return UITableViewCell()
+        switch Section(rawValue: indexPath.section) {
+        case .overview:
+            return indexPath.row == 0 ? summaryCell : autoReloginCell
+        case .platforms, nil:
+            guard !platforms.isEmpty else { return emptyCell }
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: NewAPIPlatformCell.reuseIdentifier,
+                for: indexPath
+            ) as? NewAPIPlatformCell else {
+                assertionFailure("NewAPIPlatformCell was not registered")
+                return UITableViewCell()
+            }
+            let platform = platforms[indexPath.row]
+            cell.configure(
+                name: platform.name,
+                metaText: metaText(for: platform),
+                balance: balanceText(for: platform),
+                statusText: statusTitle(platform.lastStatus),
+                statusColor: tintColor(for: platform.lastStatus),
+                monogramSeed: URL(string: platform.baseURL)?.host ?? platform.name,
+                isRunning: runningPlatformIDs.contains(platform.id)
+            )
+            return cell
         }
-        let platform = platforms[indexPath.row]
-        cell.configure(
-            name: platform.name,
-            typeText: platformTypeText(for: platform),
-            sourceText: platformSourceText(for: platform),
-            balance: balanceText(for: platform),
-            statusText: statusText(for: platform),
-            statusColor: tintColor(for: platform.lastStatus),
-            isRunning: runningPlatformIDs.contains(platform.id)
-        )
-        return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        guard Section(rawValue: indexPath.section) == .platforms else { return }
+        guard !platforms.isEmpty else {
+            addPlatformTapped()
+            return
+        }
         let platform = platforms[indexPath.row]
         let controller = NewAPICheckInDetailViewController(
             platform: platform,
@@ -98,6 +207,7 @@ final class NewAPICheckInViewController: UITableViewController {
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
+        guard Section(rawValue: indexPath.section) == .platforms, !platforms.isEmpty else { return nil }
         let platform = platforms[indexPath.row]
         let delete = UIContextualAction(style: .destructive, title: String(localized: "common.delete", defaultValue: "删除")) { [weak self] _, _, completion in
             guard let self else { completion(false); return }
@@ -119,9 +229,11 @@ final class NewAPICheckInViewController: UITableViewController {
                 completion(true)
             }
         }
-        signIn.backgroundColor = .systemBlue
+        signIn.backgroundColor = AppSettings.shared.themeStyle.accentColor
         return UISwipeActionsConfiguration(actions: [delete, signIn])
     }
+
+    // MARK: - Actions
 
     @objc private func refreshTriggered() {
         Task { await reload() }
@@ -159,7 +271,7 @@ final class NewAPICheckInViewController: UITableViewController {
             navigationController?.pushViewController(NewAPICheckInHistoryViewController(store: store), animated: true)
         })
         sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
-        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.first
+        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
         present(sheet, animated: true)
     }
 
@@ -318,21 +430,32 @@ final class NewAPICheckInViewController: UITableViewController {
         return headers.removeValue(forKey: key)
     }
 
-    @objc private func signInAllTapped() {
+    private func signInAllTapped() {
         guard !isRunningBatch, !platforms.isEmpty else { return }
         isRunningBatch = true
-        navigationItem.rightBarButtonItems?.last?.isEnabled = false
+        refreshSummary()
         Task {
             let summary = await service.signInAll()
             isRunningBatch = false
-            navigationItem.rightBarButtonItems?.last?.isEnabled = true
             await reload()
+            let expired = platforms.filter { $0.lastStatus == .authenticationExpired }
+            let autoRelogin = NewAPICheckInRuntime.autoReloginEnabled && !expired.isEmpty
+            var message = summary.localizedSummary
+            if autoRelogin {
+                message += "\n" + String(
+                    localized: "plugins.newapi.auto_relogin.starting",
+                    defaultValue: "即将自动打开登录页刷新失效的平台。"
+                )
+            }
             let alert = UIAlertController(
                 title: String(localized: "plugins.newapi.batch_result", defaultValue: "签到结果"),
-                message: summary.localizedSummary,
+                message: message,
                 preferredStyle: .alert
             )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "确定"), style: .default))
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "确定"), style: .default) { [weak self] _ in
+                guard let self, autoRelogin else { return }
+                enqueueRelogin(expired.map(\.id))
+            })
             present(alert, animated: true)
         }
     }
@@ -362,36 +485,80 @@ final class NewAPICheckInViewController: UITableViewController {
         }
     }
 
-    private func signIn(_ platform: NewAPICheckInPlatform) async {
+    private func signIn(_ platform: NewAPICheckInPlatform, allowAutoRelogin: Bool = true) async {
         guard !runningPlatformIDs.contains(platform.id) else { return }
         runningPlatformIDs.insert(platform.id)
         tableView.reloadData()
-        _ = await service.signIn(platform)
+        let result = await service.signIn(platform)
         runningPlatformIDs.remove(platform.id)
         await reload()
+        if allowAutoRelogin,
+           result.status == .authenticationExpired,
+           NewAPICheckInRuntime.autoReloginEnabled {
+            enqueueRelogin([platform.id])
+        }
     }
+
+    // MARK: - Auto relogin
+
+    private func enqueueRelogin(_ platformIDs: [UUID]) {
+        for id in platformIDs where !reloginQueue.contains(id) {
+            reloginQueue.append(id)
+        }
+        processReloginQueueIfIdle()
+    }
+
+    private func processReloginQueueIfIdle() {
+        guard !isAutoReloginActive, !reloginQueue.isEmpty else { return }
+        guard presentedViewController == nil,
+              navigationController?.topViewController === self
+        else { return }
+        let platformID = reloginQueue.removeFirst()
+        guard let platform = platforms.first(where: { $0.id == platformID }),
+              let url = URL(string: platform.baseURL)
+        else {
+            processReloginQueueIfIdle()
+            return
+        }
+        isAutoReloginActive = true
+        lastLoginSaved = false
+        pendingResignPlatformID = nil
+        let controller = NewAPICheckInLoginViewController(
+            baseURL: url,
+            mode: (platform.platformType ?? .newAPI) == .custom ? .custom : .newAPI,
+            store: store,
+            service: service,
+            existingPlatform: platform
+        ) { [weak self] in
+            guard let self else { return }
+            lastLoginSaved = true
+            pendingResignPlatformID = platformID
+        }
+        navigationController?.pushViewController(controller, animated: true)
+    }
+
+    // MARK: - State
 
     private func reload() async {
         platforms = await store.platforms()
         refreshControl?.endRefreshing()
         tableView.reloadData()
-        navigationItem.rightBarButtonItems?.last?.isEnabled = !isRunningBatch && !platforms.isEmpty
-        updateEmptyState()
+        refreshSummary()
     }
 
-    private func updateEmptyState() {
-        guard platforms.isEmpty else {
-            tableView.backgroundView = nil
-            return
-        }
-        let label = UILabel()
-        label.text = String(localized: "plugins.newapi.empty.help", defaultValue: "还没有平台\n点右上角 + 添加")
-        label.numberOfLines = 0
-        label.textAlignment = .center
-        label.textColor = .secondaryLabel
-        label.font = .preferredFont(forTextStyle: .body)
-        tableView.backgroundView = label
+    private func refreshSummary() {
+        let signed = platforms.filter { $0.lastStatus == .success || $0.lastStatus == .alreadySigned }.count
+        let expired = platforms.filter { $0.lastStatus == .authenticationExpired }.count
+        summaryCell.update(
+            platformCount: platforms.count,
+            signedCount: signed,
+            expiredCount: expired,
+            isRunning: isRunningBatch,
+            canRun: !platforms.isEmpty
+        )
     }
+
+    // MARK: - Presentation helpers
 
     private func statusTitle(_ status: NewAPICheckInStatus?) -> String {
         switch status {
@@ -413,16 +580,21 @@ final class NewAPICheckInViewController: UITableViewController {
     private func tintColor(for status: NewAPICheckInStatus?) -> UIColor {
         switch status {
         case .success, .alreadySigned: return .systemGreen
-        case .authenticationExpired: return .systemRed
+        case .authenticationExpired: return .systemOrange
         case .serverError, .unknown: return .systemRed
-        case nil: return .systemGray3
+        case nil: return .systemGray
         }
     }
 
-    private func statusText(for platform: NewAPICheckInPlatform) -> String {
-        let title = statusTitle(platform.lastStatus)
-        guard let message = nonEmpty(platform.lastMessage), message != title else { return title }
-        return "\(title) · \(message)"
+    private func metaText(for platform: NewAPICheckInPlatform) -> String {
+        var parts: [String] = []
+        if let host = URL(string: platform.baseURL)?.host {
+            parts.append(host)
+        }
+        if let attemptedAt = platform.lastAttemptAt {
+            parts.append(Self.relativeFormatter.localizedString(for: attemptedAt, relativeTo: Date()))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func balanceText(for platform: NewAPICheckInPlatform) -> String? {
@@ -435,20 +607,11 @@ final class NewAPICheckInViewController: UITableViewController {
         return unit == "credit" || unit == "balance" ? "$\(formatted)" : formatted
     }
 
-    private func platformTypeText(for platform: NewAPICheckInPlatform) -> String {
-        switch platform.platformType ?? .newAPI {
-        case .newAPI: return "NEWAPI"
-        case .custom: return String(localized: "plugins.newapi.platform.type.custom", defaultValue: "自定义")
-        }
-    }
-
-    private func platformSourceText(for platform: NewAPICheckInPlatform) -> String {
-        switch platform.source ?? .webView {
-        case .webView: return "WebView"
-        case .curl: return "Curl"
-        case .manual: return String(localized: "plugins.newapi.platform.source.manual", defaultValue: "手动")
-        }
-    }
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -484,111 +647,165 @@ final class NewAPICheckInViewController: UITableViewController {
     }
 }
 
+// MARK: - Summary cell
+
+private final class NewAPISummaryCell: UITableViewCell {
+    var onSignInAll: (() -> Void)?
+
+    private let statsLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let signAllButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = String(localized: "plugins.newapi.sign_in_all", defaultValue: "全部签到")
+        config.image = UIImage(systemName: "checkmark.seal.fill")
+        config.imagePadding = 6
+        config.cornerStyle = .large
+        config.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
+        config.baseForegroundColor = .white
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        return button
+    }()
+
+    init() {
+        super.init(style: .default, reuseIdentifier: nil)
+        selectionStyle = .none
+        backgroundColor = .secondarySystemGroupedBackground
+
+        let stack = UIStackView(arrangedSubviews: [statsLabel, signAllButton])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16),
+        ])
+        signAllButton.addAction(UIAction { [weak self] _ in self?.onSignInAll?() }, for: .touchUpInside)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(platformCount: Int, signedCount: Int, expiredCount: Int, isRunning: Bool, canRun: Bool) {
+        var parts = [String(
+            format: String(localized: "plugins.newapi.summary.platforms", defaultValue: "%d 个平台"),
+            platformCount
+        )]
+        if signedCount > 0 {
+            parts.append(String(
+                format: String(localized: "plugins.newapi.summary.signed", defaultValue: "%d 已签到"),
+                signedCount
+            ))
+        }
+        if expiredCount > 0 {
+            parts.append(String(
+                format: String(localized: "plugins.newapi.summary.expired", defaultValue: "%d 待重新登录"),
+                expiredCount
+            ))
+        }
+        statsLabel.text = platformCount == 0
+            ? String(localized: "plugins.newapi.summary.empty", defaultValue: "添加平台后可一键完成每日签到")
+            : parts.joined(separator: " · ")
+
+        signAllButton.isEnabled = canRun && !isRunning
+        signAllButton.configuration?.showsActivityIndicator = isRunning
+        signAllButton.configuration?.title = isRunning
+            ? String(localized: "plugins.newapi.signing", defaultValue: "签到中…")
+            : String(localized: "plugins.newapi.sign_in_all", defaultValue: "全部签到")
+    }
+}
+
+// MARK: - Platform cell
+
 private final class NewAPIPlatformCell: UITableViewCell {
     static let reuseIdentifier = "NewAPIPlatformCell"
 
-    private let logoView = NewAPIPlatformLogoView()
+    private let monogramView = NewAPIMonogramView()
 
     private let nameLabel: UILabel = {
         let label = UILabel()
-        label.font = .preferredFont(forTextStyle: .headline)
-        label.adjustsFontForContentSizeCategory = true
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = .label
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
-    private let typeBadge = NewAPIBadgeLabel(
-        textColor: .systemGreen,
-        backgroundColor: .systemGreen.withAlphaComponent(0.12)
-    )
-    private let sourceBadge = NewAPIBadgeLabel(
-        textColor: .systemBlue,
-        backgroundColor: .systemBlue.withAlphaComponent(0.12)
-    )
-    private let balanceBadge = NewAPIBadgeLabel(
-        textColor: .systemGreen,
-        backgroundColor: .systemGreen.withAlphaComponent(0.12)
-    )
-
-    private let statusDot: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.layer.cornerRadius = 3.5
-        NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: 7),
-            view.heightAnchor.constraint(equalToConstant: 7),
-        ])
-        return view
-    }()
-
-    private let statusLabel: UILabel = {
+    private let metaLabel: UILabel = {
         let label = UILabel()
-        label.font = .preferredFont(forTextStyle: .caption1)
-        label.adjustsFontForContentSizeCategory = true
+        label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabel
         label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakMode = .byTruncatingMiddle
         return label
     }()
 
-    private let chevronView: UIImageView = {
-        let configuration = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-        let view = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: configuration))
-        view.tintColor = .tertiaryLabel
-        view.setContentHuggingPriority(.required, for: .horizontal)
-        return view
+    private let balanceLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        label.textColor = .systemGreen
+        label.textAlignment = .right
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
     }()
 
+    private let statusPill = NewAPIStatusPill()
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .secondarySystemGroupedBackground
-        selectedBackgroundView = Self.makeSelectedBackgroundView()
+        let selected = UIView()
+        selected.backgroundColor = .tertiarySystemGroupedBackground
+        selectedBackgroundView = selected
 
-        typeBadge.text = "NEWAPI"
-        sourceBadge.text = "WebView"
-        balanceBadge.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let textStack = UIStackView(arrangedSubviews: [nameLabel, metaLabel])
+        textStack.axis = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 4
 
-        let badgeStack = UIStackView(arrangedSubviews: [typeBadge, sourceBadge, balanceBadge])
-        badgeStack.axis = .horizontal
-        badgeStack.alignment = .center
-        badgeStack.spacing = 6
+        let trailingStack = UIStackView(arrangedSubviews: [balanceLabel, statusPill])
+        trailingStack.axis = .vertical
+        trailingStack.alignment = .trailing
+        trailingStack.spacing = 5
 
-        let statusStack = UIStackView(arrangedSubviews: [statusDot, statusLabel])
-        statusStack.axis = .horizontal
-        statusStack.alignment = .center
-        statusStack.spacing = 6
-
-        let informationStack = UIStackView(arrangedSubviews: [nameLabel, badgeStack, statusStack])
-        informationStack.translatesAutoresizingMaskIntoConstraints = false
-        informationStack.axis = .vertical
-        informationStack.alignment = .leading
-        informationStack.spacing = 7
-
-        [logoView, informationStack, chevronView, activityIndicator].forEach {
+        [monogramView, textStack, trailingStack, activityIndicator].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview($0)
         }
 
         NSLayoutConstraint.activate([
-            logoView.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
-            logoView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            logoView.widthAnchor.constraint(equalToConstant: 54),
-            logoView.heightAnchor.constraint(equalToConstant: 54),
+            monogramView.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            monogramView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            monogramView.widthAnchor.constraint(equalToConstant: 44),
+            monogramView.heightAnchor.constraint(equalToConstant: 44),
 
-            informationStack.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 14),
-            informationStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
-            informationStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
+            textStack.leadingAnchor.constraint(equalTo: monogramView.trailingAnchor, constant: 12),
+            textStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            textStack.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: 14),
+            textStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -14),
 
-            chevronView.leadingAnchor.constraint(greaterThanOrEqualTo: informationStack.trailingAnchor, constant: 10),
-            chevronView.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
-            chevronView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            trailingStack.leadingAnchor.constraint(greaterThanOrEqualTo: textStack.trailingAnchor, constant: 10),
+            trailingStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            trailingStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
 
-            activityIndicator.centerXAnchor.constraint(equalTo: chevronView.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: chevronView.centerYAnchor),
+            activityIndicator.centerXAnchor.constraint(equalTo: monogramView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: monogramView.centerYAnchor),
+
+            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
         ])
     }
 
@@ -599,153 +816,144 @@ private final class NewAPIPlatformCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         activityIndicator.stopAnimating()
-        chevronView.isHidden = false
-        balanceBadge.isHidden = true
+        monogramView.alpha = 1
+        balanceLabel.isHidden = true
     }
 
     func configure(
         name: String,
-        typeText: String,
-        sourceText: String,
+        metaText: String,
         balance: String?,
         statusText: String,
         statusColor: UIColor,
+        monogramSeed: String,
         isRunning: Bool
     ) {
         nameLabel.text = name
-        typeBadge.text = typeText
-        sourceBadge.text = sourceText
-        statusLabel.text = statusText
-        statusDot.backgroundColor = statusColor
-        if let balance {
-            balanceBadge.attributedText = Self.balanceBadgeText(balance)
-        } else {
-            balanceBadge.attributedText = nil
-        }
-        balanceBadge.isHidden = balance == nil
+        metaLabel.text = metaText
+        metaLabel.isHidden = metaText.isEmpty
+        balanceLabel.text = balance
+        balanceLabel.isHidden = balance == nil
+        statusPill.configure(text: statusText, color: statusColor)
+        monogramView.configure(seed: monogramSeed, letter: String(name.prefix(1)).uppercased())
 
-        chevronView.isHidden = isRunning
+        monogramView.alpha = isRunning ? 0.25 : 1
         if isRunning {
             activityIndicator.startAnimating()
         } else {
             activityIndicator.stopAnimating()
         }
 
-        accessibilityLabel = [name, typeText, sourceText, balance, statusText]
-            .compactMap { $0 }
-            .joined(separator: ", ")
+        accessibilityLabel = [name, metaText, balance, statusText].compactMap { $0 }.joined(separator: ", ")
         accessibilityTraits = .button
     }
+}
 
-    private static func balanceBadgeText(_ balance: String) -> NSAttributedString {
-        let text = NSMutableAttributedString()
-        if let image = UIImage(systemName: "creditcard.fill")?.withTintColor(.systemGreen, renderingMode: .alwaysOriginal) {
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            attachment.bounds = CGRect(x: 0, y: -1.5, width: 13, height: 10)
-            text.append(NSAttributedString(attachment: attachment))
-            text.append(NSAttributedString(string: "  "))
-        }
-        text.append(NSAttributedString(
-            string: balance,
-            attributes: [
-                .foregroundColor: UIColor.systemGreen,
-                .font: UIFont.systemFont(ofSize: 11.5, weight: .semibold),
-            ]
-        ))
-        return text
-    }
+// MARK: - Status pill
 
-    private static func makeSelectedBackgroundView() -> UIView {
+private final class NewAPIStatusPill: UIView {
+    private let dotView: UIView = {
         let view = UIView()
-        view.backgroundColor = .tertiarySystemGroupedBackground
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 3
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(equalToConstant: 6),
+            view.heightAnchor.constraint(equalToConstant: 6),
+        ])
         return view
-    }
-}
+    }()
 
-private final class NewAPIBadgeLabel: UILabel {
-    private let contentInsets = UIEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
-
-    init(textColor: UIColor, backgroundColor: UIColor) {
-        super.init(frame: .zero)
-        font = .systemFont(ofSize: 11.5, weight: .semibold)
-        adjustsFontForContentSizeCategory = true
-        self.textColor = textColor
-        self.backgroundColor = backgroundColor
-        textAlignment = .center
-        numberOfLines = 1
-        lineBreakMode = .byTruncatingTail
-        layer.cornerRadius = 7
-        layer.masksToBounds = true
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var intrinsicContentSize: CGSize {
-        let size = super.intrinsicContentSize
-        return CGSize(
-            width: size.width + contentInsets.left + contentInsets.right,
-            height: size.height + contentInsets.top + contentInsets.bottom
-        )
-    }
-
-    override func drawText(in rect: CGRect) {
-        super.drawText(in: rect.inset(by: contentInsets))
-    }
-}
-
-private final class NewAPIPlatformLogoView: UIView {
-    private let gradientLayer = CAGradientLayer()
-    private let colorView = UIView()
-    private let iconView: UIImageView = {
-        let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
-        let view = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: configuration))
-        view.tintColor = .white
-        view.contentMode = .center
-        return view
+    private let textLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        return label
     }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .tertiarySystemGroupedBackground
-        layer.cornerRadius = 14
-
-        colorView.translatesAutoresizingMaskIntoConstraints = false
-        colorView.layer.cornerRadius = 18
-        colorView.layer.masksToBounds = true
-        colorView.layer.addSublayer(gradientLayer)
-        addSubview(colorView)
-
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        colorView.addSubview(iconView)
-
-        gradientLayer.colors = [
-            UIColor.systemCyan.cgColor,
-            UIColor.systemPurple.cgColor,
-            UIColor.systemPink.cgColor,
-        ]
-        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
-        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
-
+        layer.cornerRadius = 10
+        layer.cornerCurve = .continuous
+        let stack = UIStackView(arrangedSubviews: [dotView, textLabel])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 5
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
         NSLayoutConstraint.activate([
-            colorView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            colorView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            colorView.widthAnchor.constraint(equalToConstant: 36),
-            colorView.heightAnchor.constraint(equalToConstant: 36),
-            iconView.centerXAnchor.constraint(equalTo: colorView.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: colorView.centerYAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 3.5),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3.5),
         ])
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func configure(text: String, color: UIColor) {
+        textLabel.text = text
+        textLabel.textColor = color
+        dotView.backgroundColor = color
+        backgroundColor = color.withAlphaComponent(0.12)
+    }
+}
+
+// MARK: - Monogram
+
+private final class NewAPIMonogramView: UIView {
+    private let gradientLayer = CAGradientLayer()
+
+    private let letterLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 19, weight: .bold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private static let gradientPalettes: [(UIColor, UIColor)] = [
+        (.systemBlue, .systemCyan),
+        (.systemIndigo, .systemPurple),
+        (.systemPink, .systemOrange),
+        (.systemTeal, .systemGreen),
+        (.systemPurple, .systemPink),
+        (.systemOrange, .systemYellow),
+    ]
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        layer.cornerRadius = 12
+        layer.cornerCurve = .continuous
+        layer.masksToBounds = true
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
+        layer.addSublayer(gradientLayer)
+        addSubview(letterLabel)
+        NSLayoutConstraint.activate([
+            letterLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            letterLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(seed: String, letter: String) {
+        letterLabel.text = letter
+        // Stable per-host palette so a platform keeps its color across launches.
+        let index = abs(seed.unicodeScalars.reduce(0) { $0 &* 31 &+ Int($1.value) }) % Self.gradientPalettes.count
+        let palette = Self.gradientPalettes[index]
+        gradientLayer.colors = [palette.0.cgColor, palette.1.cgColor]
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        gradientLayer.frame = colorView.bounds
+        gradientLayer.frame = bounds
     }
 }
 

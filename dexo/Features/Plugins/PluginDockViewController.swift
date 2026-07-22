@@ -83,7 +83,7 @@ final class PluginDockViewController: UIViewController {
         let stack = UIStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
-        stack.spacing = 8
+        stack.spacing = 6
         return stack
     }()
 
@@ -114,7 +114,7 @@ final class PluginDockViewController: UIViewController {
             handleButton.widthAnchor.constraint(equalToConstant: 44),
             handleButton.heightAnchor.constraint(equalToConstant: 44),
             handleCenterYConstraint!,
-            menuView.widthAnchor.constraint(equalToConstant: 230),
+            menuView.widthAnchor.constraint(equalToConstant: 250),
             menuView.centerYAnchor.constraint(equalTo: handleButton.centerYAnchor),
             menuStack.topAnchor.constraint(equalTo: menuView.contentView.topAnchor, constant: 12),
             menuStack.leadingAnchor.constraint(equalTo: menuView.contentView.leadingAnchor, constant: 12),
@@ -239,18 +239,26 @@ final class PluginDockViewController: UIViewController {
             menuStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        let header = UILabel()
+        header.text = String(localized: "plugin.dock.menu.title", defaultValue: "插件")
+        header.font = .systemFont(ofSize: 12, weight: .semibold)
+        header.textColor = .secondaryLabel
+        let headerContainer = UIStackView(arrangedSubviews: [header])
+        headerContainer.isLayoutMarginsRelativeArrangement = true
+        headerContainer.layoutMargins = UIEdgeInsets(top: 2, left: 10, bottom: 4, right: 10)
+        menuStack.addArrangedSubview(headerContainer)
         if registry.isPluginEnabled(BuiltInPluginID.newAPICheckIn, for: scope) {
             menuStack.addArrangedSubview(makeMenuButton(
                 title: String(localized: "plugins.newapi.title", defaultValue: "NewAPI 签到"),
                 subtitle: String(localized: "plugin.dock.newapi.subtitle", defaultValue: "管理账号并执行签到"),
-                image: UIImage(systemName: "checkmark.circle.fill")
+                image: PluginIconTile.image(kind: .newAPI, size: 34)
             ) { [weak self] in self?.openPlugin(.newAPI) })
         }
         if registry.isPluginEnabled(BuiltInPluginID.ldcStore, for: scope) {
             menuStack.addArrangedSubview(makeMenuButton(
                 title: String(localized: "plugins.ldc_store.title", defaultValue: "LD 士多"),
                 subtitle: String(localized: "plugin.dock.ldc_store.subtitle", defaultValue: "在独立窗口中浏览"),
-                image: UIImage(named: "LDStoreLogo") ?? UIImage(systemName: "shippingbox.fill")
+                image: PluginIconTile.image(kind: .ldcStore, size: 34)
             ) { [weak self] in self?.openPlugin(.ldcStore) })
         }
     }
@@ -270,18 +278,35 @@ final class PluginDockViewController: UIViewController {
     }
 
     private func makeMenuButton(title: String, subtitle: String, image: UIImage?, action: @escaping () -> Void) -> UIButton {
-        var configuration = UIButton.Configuration.tinted()
+        var configuration = UIButton.Configuration.plain()
         configuration.title = title
         configuration.subtitle = subtitle
         configuration.image = image
         configuration.imagePadding = 12
         configuration.titleAlignment = .leading
-        configuration.baseForegroundColor = settings.themeStyle.accentColor
-        configuration.background.cornerRadius = 15
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+        configuration.titlePadding = 2
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+            outgoing.foregroundColor = UIColor.label
+            return outgoing
+        }
+        configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 12)
+            outgoing.foregroundColor = UIColor.secondaryLabel
+            return outgoing
+        }
+        configuration.background.cornerRadius = 14
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
         let button = UIButton(configuration: configuration)
         button.contentHorizontalAlignment = .leading
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 62).isActive = true
+        button.configurationUpdateHandler = { button in
+            button.configuration?.background.backgroundColor = button.isHighlighted
+                ? UIColor.tertiarySystemFill
+                : .clear
+        }
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }
@@ -351,9 +376,13 @@ final class PluginDockViewController: UIViewController {
 
     private func makeWindow(for kind: PluginKind) -> PluginWindowContainerViewController {
         let content: UIViewController
+        let windowTitle: String
+        let windowIcon: UIImage?
         switch kind {
         case .newAPI:
             content = UINavigationController(rootViewController: NewAPICheckInRuntime.shared.makeViewController())
+            windowTitle = String(localized: "plugins.newapi.title", defaultValue: "NewAPI 签到")
+            windowIcon = PluginIconTile.image(kind: .newAPI, size: 22)
         case .ldcStore:
             let browser = InAppBrowserViewController(
                 api: api,
@@ -363,8 +392,10 @@ final class PluginDockViewController: UIViewController {
                 hidesBrowserControlBar: true
             )
             content = UINavigationController(rootViewController: browser)
+            windowTitle = String(localized: "plugins.ldc_store.title", defaultValue: "LD 士多")
+            windowIcon = PluginIconTile.image(kind: .ldcStore, size: 22)
         }
-        let window = PluginWindowContainerViewController(content: content)
+        let window = PluginWindowContainerViewController(content: content, title: windowTitle, icon: windowIcon)
         window.onMinimize = { [weak self, weak window] in
             guard let self, let window else { return }
             hideWindow(window, preserving: true)
@@ -464,9 +495,13 @@ private final class PluginWindowContainerViewController: UIViewController {
     var onClose: (() -> Void)?
 
     private let content: UIViewController
+    private let windowTitle: String
+    private let windowIcon: UIImage?
 
-    init(content: UIViewController) {
+    init(content: UIViewController, title: String, icon: UIImage?) {
         self.content = content
+        windowTitle = title
+        windowIcon = icon
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -481,9 +516,9 @@ private final class PluginWindowContainerViewController: UIViewController {
         view.layer.cornerRadius = 28
         view.layer.cornerCurve = .continuous
         view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.20
-        view.layer.shadowRadius = 30
-        view.layer.shadowOffset = CGSize(width: 0, height: 14)
+        view.layer.shadowOpacity = 0.18
+        view.layer.shadowRadius = 28
+        view.layer.shadowOffset = CGSize(width: 0, height: 12)
 
         let chrome = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
         chrome.translatesAutoresizingMaskIntoConstraints = false
@@ -492,6 +527,17 @@ private final class PluginWindowContainerViewController: UIViewController {
         chrome.layer.borderWidth = 1.0 / UIScreen.main.scale
         chrome.layer.borderColor = UIColor.white.withAlphaComponent(0.48).cgColor
         chrome.clipsToBounds = true
+
+        let iconView = UIImageView(image: windowIcon)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.contentMode = .scaleAspectFit
+
+        let titleLabel = UILabel()
+        titleLabel.text = windowTitle
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.textColor = .label
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let minimize = makeHeaderButton(
             systemName: "minus",
@@ -504,17 +550,22 @@ private final class PluginWindowContainerViewController: UIViewController {
             action: #selector(closeTapped)
         )
 
+        let separator = UIView()
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        separator.backgroundColor = UIColor.separator.withAlphaComponent(0.35)
+
         let contentContainer = UIView()
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.backgroundColor = .systemBackground
         contentContainer.layer.cornerRadius = 18
         contentContainer.layer.cornerCurve = .continuous
-        contentContainer.layer.borderWidth = 1.0 / UIScreen.main.scale
-        contentContainer.layer.borderColor = UIColor.separator.withAlphaComponent(0.22).cgColor
         contentContainer.clipsToBounds = true
 
         view.addSubview(chrome)
         chrome.contentView.addSubview(contentContainer)
+        chrome.contentView.addSubview(iconView)
+        chrome.contentView.addSubview(titleLabel)
+        chrome.contentView.addSubview(separator)
         chrome.contentView.addSubview(minimize)
         chrome.contentView.addSubview(close)
         addChild(content)
@@ -527,18 +578,34 @@ private final class PluginWindowContainerViewController: UIViewController {
             chrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chrome.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            close.topAnchor.constraint(equalTo: chrome.contentView.topAnchor, constant: 8),
-            close.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor, constant: -9),
-            close.widthAnchor.constraint(equalToConstant: 36),
-            close.heightAnchor.constraint(equalToConstant: 36),
+
+            iconView.leadingAnchor.constraint(equalTo: chrome.contentView.leadingAnchor, constant: 16),
+            iconView.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22),
+
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: minimize.leadingAnchor, constant: -10),
+
+            close.topAnchor.constraint(equalTo: chrome.contentView.topAnchor, constant: 9),
+            close.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor, constant: -10),
+            close.widthAnchor.constraint(equalToConstant: 32),
+            close.heightAnchor.constraint(equalToConstant: 32),
             minimize.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -6),
             minimize.centerYAnchor.constraint(equalTo: close.centerYAnchor),
-            minimize.widthAnchor.constraint(equalToConstant: 36),
-            minimize.heightAnchor.constraint(equalToConstant: 36),
-            contentContainer.topAnchor.constraint(equalTo: chrome.contentView.topAnchor, constant: 52),
-            contentContainer.leadingAnchor.constraint(equalTo: chrome.contentView.leadingAnchor, constant: 10),
-            contentContainer.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor, constant: -10),
-            contentContainer.bottomAnchor.constraint(equalTo: chrome.contentView.bottomAnchor, constant: -10),
+            minimize.widthAnchor.constraint(equalToConstant: 32),
+            minimize.heightAnchor.constraint(equalToConstant: 32),
+
+            separator.topAnchor.constraint(equalTo: close.bottomAnchor, constant: 9),
+            separator.leadingAnchor.constraint(equalTo: chrome.contentView.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+
+            contentContainer.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 8),
+            contentContainer.leadingAnchor.constraint(equalTo: chrome.contentView.leadingAnchor, constant: 8),
+            contentContainer.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor, constant: -8),
+            contentContainer.bottomAnchor.constraint(equalTo: chrome.contentView.bottomAnchor, constant: -8),
             content.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             content.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
             content.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
@@ -550,15 +617,13 @@ private final class PluginWindowContainerViewController: UIViewController {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setImage(
-            UIImage(systemName: systemName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)),
+            UIImage(systemName: systemName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)),
             for: .normal
         )
-        button.tintColor = .label
-        button.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.82)
-        button.layer.cornerRadius = 18
+        button.tintColor = .secondaryLabel
+        button.backgroundColor = UIColor.tertiarySystemFill
+        button.layer.cornerRadius = 16
         button.layer.cornerCurve = .continuous
-        button.layer.borderWidth = 1.0 / UIScreen.main.scale
-        button.layer.borderColor = UIColor.separator.withAlphaComponent(0.18).cgColor
         button.accessibilityLabel = accessibilityLabel
         button.addTarget(self, action: action, for: .touchUpInside)
         return button
@@ -566,4 +631,64 @@ private final class PluginWindowContainerViewController: UIViewController {
 
     @objc private func minimizeTapped() { onMinimize?() }
     @objc private func closeTapped() { onClose?() }
+}
+
+/// Pre-rendered rounded gradient tiles used by the dock menu and window title bar.
+enum PluginIconTile {
+    enum Kind {
+        case newAPI
+        case ldcStore
+    }
+
+    @MainActor
+    static func image(kind: Kind, size: CGFloat) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        let image = renderer.image { context in
+            let rect = CGRect(x: 0, y: 0, width: size, height: size)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: size * 0.28)
+            path.addClip()
+
+            switch kind {
+            case .newAPI:
+                drawGradient(in: context.cgContext, rect: rect, colors: [.systemTeal, .systemGreen])
+                drawSymbol("checkmark.seal.fill", in: rect, pointSize: size * 0.46)
+            case .ldcStore:
+                if let logo = UIImage(named: "LDStoreLogo") {
+                    logo.draw(in: rect)
+                } else {
+                    drawGradient(in: context.cgContext, rect: rect, colors: [.systemOrange, .systemPink])
+                    drawSymbol("shippingbox.fill", in: rect, pointSize: size * 0.46)
+                }
+            }
+        }
+        return image.withRenderingMode(.alwaysOriginal)
+    }
+
+    private static func drawGradient(in context: CGContext, rect: CGRect, colors: [UIColor]) {
+        let cgColors = colors.map(\.cgColor) as CFArray
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: cgColors,
+            locations: [0, 1]
+        ) else { return }
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: rect.minX, y: rect.minY),
+            end: CGPoint(x: rect.maxX, y: rect.maxY),
+            options: []
+        )
+    }
+
+    private static func drawSymbol(_ name: String, in rect: CGRect, pointSize: CGFloat) {
+        let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        guard let symbol = UIImage(systemName: name, withConfiguration: configuration)?
+            .withTintColor(.white, renderingMode: .alwaysOriginal)
+        else { return }
+        let symbolSize = symbol.size
+        let origin = CGPoint(
+            x: rect.midX - symbolSize.width / 2,
+            y: rect.midY - symbolSize.height / 2
+        )
+        symbol.draw(at: origin)
+    }
 }
