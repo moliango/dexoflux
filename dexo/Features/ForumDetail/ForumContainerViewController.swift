@@ -8,6 +8,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private(set) var forum: ForumInstance
     private let api: DiscourseAPI
+    private let notificationCoordinator: ForumNotificationCoordinator
     private let authManager = AuthManager.shared
     private let showsDismissButton: Bool
     private var launchOverlayStartedAt = Date()
@@ -21,6 +22,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
     private var appUpdateObservationToken: NSObjectProtocol?
     private var appDidBecomeActiveObservationToken: NSObjectProtocol?
+    private var notificationRouteObservationToken: NSObjectProtocol?
     private var pendingAppUpdateRetryTask: Task<Void, Never>?
     private var isPresentingCloudflareVerification = false
     private var shouldShowCloudflareShieldButton = false
@@ -110,7 +112,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     init(forum: ForumInstance, showsDismissButton: Bool = true) {
         self.forum = forum
-        self.api = DiscourseAPI(forum: forum)
+        let api = DiscourseAPI(forum: forum)
+        self.api = api
+        self.notificationCoordinator = ForumNotificationCoordinator(api: api)
         self.showsDismissButton = showsDismissButton
         super.init(nibName: nil, bundle: nil)
     }
@@ -139,6 +143,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         startObservingAuth()
         startObservingCloudflareChallenges()
         startObservingAppUpdates()
+        startObservingForumNotifications()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -146,6 +151,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if shouldShowCloudflareShieldButton {
             installCloudflareShieldButtonIfNeeded()
         }
+        presentPendingNotificationRouteIfPossible()
         guard !showsDismissButton else { return }
         AppUpdateCoordinator.shared.scheduleAutomaticCheckIfNeeded()
         presentPendingAppUpdateIfPossible()
@@ -207,6 +213,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let appDidBecomeActiveObservationToken {
             NotificationCenter.default.removeObserver(appDidBecomeActiveObservationToken)
         }
+        if let notificationRouteObservationToken {
+            NotificationCenter.default.removeObserver(notificationRouteObservationToken)
+        }
         launchOverlayFallbackTask?.cancel()
         pendingAppUpdateRetryTask?.cancel()
         NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
@@ -214,7 +223,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     }
 
     private func setupTabBar() {
-        let tabBarVC = ForumTabBarController(api: api, authGate: self)
+        let tabBarVC = ForumTabBarController(
+            api: api,
+            authGate: self,
+            notificationCoordinator: notificationCoordinator
+        )
         tabBarViewController = tabBarVC
         tabBarVC.onNavigationControllersChanged = { [weak self] in
             self?.configureNavItems()
@@ -233,6 +246,65 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         tabBarVC.configureTabBarSurface()
 
         tabBarVC.didMove(toParent: self)
+    }
+
+    private func startObservingForumNotifications() {
+        notificationCoordinator.startMonitoring()
+        notificationRouteObservationToken = NotificationCenter.default.addObserver(
+            forName: DexoObservableObject.didChangeNotification,
+            object: ForumNotificationRouteStore.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.presentPendingNotificationRouteIfPossible()
+        }
+    }
+
+    private func presentPendingNotificationRouteIfPossible() {
+        guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
+        guard ForumOverlayManager.shared.prepareForNotificationRoute(in: self) else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+                self?.presentPendingNotificationRouteIfPossible()
+            }
+            return
+        }
+        guard let route = ForumNotificationRouteStore.shared.consume(baseURL: api.baseURL) else { return }
+        if let notificationId = route.notificationId {
+            Task { [weak self] in
+                guard let self else { return }
+                await self.notificationCoordinator.markNotificationRead(id: notificationId)
+            }
+        }
+        guard let topicId = route.topicId else {
+            let notificationsViewController = NotificationsViewController(
+                api: api,
+                authGate: self,
+                notificationCoordinator: notificationCoordinator
+            )
+            let navigationController = UINavigationController(rootViewController: notificationsViewController)
+            navigationController.modalPresentationStyle = .pageSheet
+            if let sheet = navigationController.sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = true
+                sheet.preferredCornerRadius = 20
+            }
+            present(navigationController, animated: true)
+            return
+        }
+        guard let tabBarViewController,
+              let navigationController = tabBarViewController.navigationControllers.first
+        else {
+            ForumNotificationRouteStore.shared.enqueue(route)
+            return
+        }
+        tabBarViewController.selectedIndex = 0
+        navigationController.pushViewController(
+            TopicDetailViewController(
+                api: api,
+                topicId: topicId,
+                initialFloor: route.postNumber
+            ),
+            animated: true
+        )
     }
 
     private func setupPluginDock() {
@@ -869,6 +941,7 @@ private final class DexoLaunchLoadingView: UIView {
     private let valuesLabel = UILabel()
     private let loadingLabel = UILabel()
     private let dotsStackView = UIStackView()
+    private let versionLabel = UILabel()
     private var dotViews: [UIView] = []
     private let linuxDoTextColor = UIColor(red: 0.095, green: 0.096, blue: 0.105, alpha: 1)
     private let linuxDoYellow = UIColor(red: 1.0, green: 0.68, blue: 0.02, alpha: 1)
@@ -907,6 +980,13 @@ private final class DexoLaunchLoadingView: UIView {
         loadingLabel.text = String(localized: "launch.loading.subtitle")
         loadingLabel.textColor = linuxDoTextColor.withAlphaComponent(0.62)
         loadingLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 12,
+            weight: .medium,
+            fallback: .systemFont(ofSize: 12, weight: .medium)
+        )
+        versionLabel.text = AppVersion.installed().marketingDisplayString
+        versionLabel.textColor = linuxDoTextColor.withAlphaComponent(0.45)
+        versionLabel.font = AppSettings.shared.appInterfaceFont(
             ofSize: 12,
             weight: .medium,
             fallback: .systemFont(ofSize: 12, weight: .medium)
@@ -1007,6 +1087,12 @@ private final class DexoLaunchLoadingView: UIView {
         rootStackView.addArrangedSubview(loadingStack)
         addSubview(rootStackView)
 
+        versionLabel.textAlignment = .center
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        versionLabel.isAccessibilityElement = true
+        versionLabel.accessibilityIdentifier = "launch.version"
+        addSubview(versionLabel)
+
         let preferredLogoWidth = linuxLogoView.widthAnchor.constraint(equalToConstant: 300)
         preferredLogoWidth.priority = .defaultHigh
 
@@ -1019,6 +1105,11 @@ private final class DexoLaunchLoadingView: UIView {
             preferredLogoWidth,
             linuxLogoView.widthAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.widthAnchor, multiplier: 0.84),
             linuxLogoView.heightAnchor.constraint(equalTo: linuxLogoView.widthAnchor, multiplier: 1.0 / 3.0),
+
+            versionLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            versionLabel.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            versionLabel.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            versionLabel.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
         ])
     }
 

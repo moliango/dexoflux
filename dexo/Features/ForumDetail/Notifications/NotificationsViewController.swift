@@ -75,9 +75,13 @@ final class NotificationsViewController: ObservableViewController {
         return stack
     }()
 
-    init(api: DiscourseAPI, authGate: AuthGating? = nil) {
+    init(
+        api: DiscourseAPI,
+        authGate: AuthGating? = nil,
+        notificationCoordinator: ForumNotificationCoordinator
+    ) {
         self.api = api
-        self.viewModel = NotificationsViewModel(api: api)
+        self.viewModel = NotificationsViewModel(coordinator: notificationCoordinator)
         self.authGate = authGate
         super.init(nibName: nil, bundle: nil)
     }
@@ -125,14 +129,14 @@ final class NotificationsViewController: ObservableViewController {
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
         retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
 
-        Task {
-            await viewModel.loadNotifications()
-        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         configureCloseButtonIfNeeded()
+        Task {
+            await viewModel.loadNotifications()
+        }
     }
 
     override func updateUI() {

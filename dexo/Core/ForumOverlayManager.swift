@@ -101,6 +101,20 @@ final class ForumOverlayManager {
 
     // MARK: - Restore
 
+    func prepareForNotificationRoute(in container: ForumContainerViewController) -> Bool {
+        if currentContainer === container {
+            guard isMinimized || overlayWindow?.isHidden == true else { return true }
+            restore()
+            return false
+        }
+
+        if !isMinimized, overlayWindow?.isHidden == false {
+            minimize()
+            return false
+        }
+        return true
+    }
+
     func restore() {
         guard let currentContainer,
               let mainWindow,

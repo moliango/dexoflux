@@ -2,6 +2,7 @@ import UIKit
 
 final class ForumTabBarController: UITabBarController {
     private let api: DiscourseAPI
+    private let notificationCoordinator: ForumNotificationCoordinator
     private weak var authGate: AuthGating?
     private(set) var navigationControllers: [UINavigationController] = []
     var onNavigationControllersChanged: (() -> Void)?
@@ -12,6 +13,7 @@ final class ForumTabBarController: UITabBarController {
     private var settingsObservationToken: NSObjectProtocol?
     private var authObservationToken: NSObjectProtocol?
     private var pluginObservationToken: NSObjectProtocol?
+    private var notificationObservationToken: NSObjectProtocol?
     private var meAvatarLoadTask: Task<Void, Never>?
     private var renderedMeAvatarKey: String?
     private var pendingMeAvatarKey: String?
@@ -27,9 +29,14 @@ final class ForumTabBarController: UITabBarController {
         )
     }
 
-    init(api: DiscourseAPI, authGate: AuthGating? = nil) {
+    init(
+        api: DiscourseAPI,
+        authGate: AuthGating? = nil,
+        notificationCoordinator: ForumNotificationCoordinator
+    ) {
         self.api = api
         self.authGate = authGate
+        self.notificationCoordinator = notificationCoordinator
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -46,8 +53,10 @@ final class ForumTabBarController: UITabBarController {
         startObservingSettings()
         startObservingAuth()
         startObservingPlugins()
+        startObservingNotifications()
         configureTabBarSurface()
         refreshMeTabAvatarIcon()
+        applyNotificationBadge()
     }
 
     deinit {
@@ -59,6 +68,9 @@ final class ForumTabBarController: UITabBarController {
         }
         if let pluginObservationToken {
             NotificationCenter.default.removeObserver(pluginObservationToken)
+        }
+        if let notificationObservationToken {
+            NotificationCenter.default.removeObserver(notificationObservationToken)
         }
         meAvatarLoadTask?.cancel()
     }
@@ -370,6 +382,16 @@ private extension ForumTabBarController {
         }
     }
 
+    func startObservingNotifications() {
+        notificationObservationToken = NotificationCenter.default.addObserver(
+            forName: DexoObservableObject.didChangeNotification,
+            object: notificationCoordinator,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyNotificationBadge()
+        }
+    }
+
     func handleSettingsChanged() {
         resetScrollHiddenTabBarForSettingsChange()
         configureTabBarSurface()
@@ -477,6 +499,7 @@ private extension ForumTabBarController {
 
         configureTabBarSurface()
         refreshMeTabAvatarIcon()
+        applyNotificationBadge()
         onNavigationControllersChanged?()
     }
 
@@ -630,8 +653,12 @@ private extension ForumTabBarController {
                 identifier: "home",
                 title: String(localized: "tab.home"),
                 symbolName: "house"
-            ) { [api, authGate] in
-                HomeViewController(api: api, authGate: authGate)
+            ) { [api, authGate, notificationCoordinator] in
+                HomeViewController(
+                    api: api,
+                    authGate: authGate,
+                    notificationCoordinator: notificationCoordinator
+                )
             },
         ]
 
@@ -702,14 +729,18 @@ private extension ForumTabBarController {
             identifier: item.rawValue,
             title: item.title,
             symbolName: item.symbolName
-        ) { [api, authGate] in
+        ) { [api, authGate, notificationCoordinator] in
             switch item {
             case .history:
                 return BrowsingHistoryViewController(api: api, authGate: authGate)
             case .search:
                 return SearchViewController(api: api)
             case .notifications:
-                return NotificationsViewController(api: api, authGate: authGate)
+                return NotificationsViewController(
+                    api: api,
+                    authGate: authGate,
+                    notificationCoordinator: notificationCoordinator
+                )
             case .messages:
                 let controller = MessagesViewController(api: api, authGate: authGate)
                 controller.hidesBottomBarWhenPushed = false
@@ -717,6 +748,30 @@ private extension ForumTabBarController {
             case .bookmarks:
                 return BookmarksViewController(api: api, authGate: authGate)
             }
+        }
+    }
+
+    func applyNotificationBadge() {
+        for identifier in ["home", "notifications"] {
+            guard let index = tabIdentifiers.firstIndex(of: identifier),
+                  index < navigationControllers.count
+            else { continue }
+            navigationControllers[index].tabBarItem.badgeValue = nil
+            if #available(iOS 18.0, *), index < tabs.count {
+                tabs[index].badgeValue = nil
+            }
+        }
+
+        let targetIdentifier = tabIdentifiers.contains("notifications") ? "notifications" : "home"
+        guard let index = tabIdentifiers.firstIndex(of: targetIdentifier),
+              index < navigationControllers.count
+        else { return }
+        let unreadCount = notificationCoordinator.unreadCount
+        let badgeValue = unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil
+        navigationControllers[index].tabBarItem.badgeValue = badgeValue
+        navigationControllers[index].tabBarItem.badgeColor = .systemRed
+        if #available(iOS 18.0, *), index < tabs.count {
+            tabs[index].badgeValue = badgeValue
         }
     }
 }

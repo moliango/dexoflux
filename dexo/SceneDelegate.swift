@@ -24,6 +24,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidDisconnect(_ scene: UIScene) {}
     func sceneDidBecomeActive(_ scene: UIScene) {
         refreshWebSessionAfterForeground(reason: "scene_did_become_active")
+        if let window {
+            ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
+        }
     }
     func sceneWillResignActive(_ scene: UIScene) {}
     func sceneWillEnterForeground(_ scene: UIScene) {
@@ -33,6 +36,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidEnterBackground(_ scene: UIScene) {
 //        ProxyManager.shared.stop()
+        BackgroundNotificationRefreshService.shared.scheduleIfNeeded()
     }
 
     private func refreshWebSessionAfterForeground(reason: String) {

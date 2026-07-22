@@ -1,56 +1,27 @@
 import Foundation
 
+@MainActor
 final class NotificationsViewModel: DexoObservableObject {
-    var notifications: [DiscourseNotification] = []
-    var isLoading = false
-    var errorMessage: String?
-    var requiresLogin = false
+    var notifications: [DiscourseNotification] { coordinator.notifications }
+    var isLoading: Bool { coordinator.isLoading }
+    var errorMessage: String? { coordinator.errorMessage }
+    var requiresLogin: Bool { coordinator.requiresLogin }
 
-    private let api: DiscourseAPI
+    private let coordinator: ForumNotificationCoordinator
 
-    init(api: DiscourseAPI) {
-        self.api = api
+    init(coordinator: ForumNotificationCoordinator) {
+        self.coordinator = coordinator
     }
 
     func loadNotifications() async {
-        isLoading = true
-        errorMessage = nil
-        requiresLogin = false
-        notifyChanged()
-        do {
-            let result = try await api.fetchNotifications()
-            notifications = result.notifications
-        } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
-                requiresLogin = true
-            }
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
-        notifyChanged()
+        await coordinator.refresh(forceList: true, deliverAlerts: false)
     }
 
     func markNotificationRead(id: Int) async {
-        guard let index = notifications.firstIndex(where: { $0.id == id }) else { return }
-        guard !notifications[index].read else { return }
-        notifications[index] = notifications[index].markingRead()
-        notifyChanged()
-        do {
-            try await api.markNotificationRead(id: id)
-        } catch {
-            // Keep the optimistic local read state; failing to mark-read should not block navigation.
-        }
+        await coordinator.markNotificationRead(id: id)
     }
 
     func markAllRead() async {
-        guard notifications.contains(where: { !$0.read }) else { return }
-        notifications = notifications.map { $0.markingRead() }
-        notifyChanged()
-        do {
-            try await api.markAllNotificationsRead()
-        } catch {
-            errorMessage = error.localizedDescription
-            notifyChanged()
-        }
+        await coordinator.markAllRead()
     }
 }
