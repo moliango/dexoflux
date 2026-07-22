@@ -40,6 +40,7 @@ final class HomeViewController: ObservableViewController {
 
     private let api: DiscourseAPI
     private let viewModel: HomeViewModel
+    private let notificationCoordinator: ForumNotificationCoordinator
     private weak var authGate: AuthGating?
     private var categoryTabButtons: [Int?: UIButton] = [:]
     private var categoryTabOrder: [Int?] = []
@@ -69,6 +70,13 @@ final class HomeViewController: ObservableViewController {
     private var incomingTopicsUsesTopSpace = false
     private var isTopRefreshGeometryLocked = false
     private var topRefreshGeometryLockID = 0
+    /// 刷新/回弹窗口：冻结滚动驱动的 tab bar 显隐，避免和 contentOffset 抖动打架。
+    private var isTabBarScrollFrozenForRefresh = false
+    private var tabBarScrollFreezeID = 0
+    /// 加载下一页及 contentSize 稳定窗口。
+    private var isTabBarScrollFrozenForLoadMore = false
+    private var tabBarLoadMoreFreezeID = 0
+    private var wasLoadingMoreTopics = false
     private var loadingSkeletonTopConstraint: NSLayoutConstraint?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
@@ -139,6 +147,17 @@ final class HomeViewController: ObservableViewController {
         button.accessibilityLabel = String(localized: "notifications.title")
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
+    }()
+
+    private let notificationBadgeView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .systemRed
+        view.layer.cornerRadius = 4.5
+        view.layer.borderWidth = 1.5
+        view.isHidden = true
+        view.isUserInteractionEnabled = false
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
 
     private let categoryManagerButton: UIButton = {
@@ -550,10 +569,15 @@ final class HomeViewController: ObservableViewController {
         return rc
     }()
 
-    init(api: DiscourseAPI, authGate: AuthGating? = nil) {
+    init(
+        api: DiscourseAPI,
+        authGate: AuthGating? = nil,
+        notificationCoordinator: ForumNotificationCoordinator
+    ) {
         self.api = api
         self.viewModel = HomeViewModel(api: api)
         self.authGate = authGate
+        self.notificationCoordinator = notificationCoordinator
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -712,6 +736,12 @@ final class HomeViewController: ObservableViewController {
 
         loadingSkeletonView.setSkeletonActive(true, animated: false)
         tableView.isHidden = true
+        // 后台 latest.json 缓存先填列表，再走网络刷新。
+        viewModel.hydrateFromBackgroundCacheIfNeeded()
+        if !viewModel.topics.isEmpty {
+            isInitialTopicLoadPending = false
+            updateUI()
+        }
         reloadTopics()
         Task {
             await api.loadOrFetchEmojiMap()
@@ -745,6 +775,8 @@ final class HomeViewController: ObservableViewController {
         navigationController?.setNavigationBarHidden(true, animated: animated)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
         updateTabBarVisibilityForCurrentScroll(animated: false)
+        viewModel.restoreBackgroundTopicUpdates()
+        updateIncomingTopicsHeader()
         startIncomingTopicsPolling()
         reloadAfterBecomingVisibleIfNeeded()
     }
@@ -807,6 +839,8 @@ final class HomeViewController: ObservableViewController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.viewModel.restoreBackgroundTopicUpdates()
+            self?.updateIncomingTopicsHeader()
             self?.reloadAfterBecomingVisibleIfNeeded()
         }
     }
@@ -886,6 +920,7 @@ final class HomeViewController: ObservableViewController {
     private func setupHeader() {
         searchRowStackView.addArrangedSubview(searchButton)
         searchRowStackView.addArrangedSubview(notificationButton)
+        notificationButton.addSubview(notificationBadgeView)
 
         categoryScrollView.addSubview(categoryStackView)
         headerContainer.addSubview(searchRowStackView)
@@ -901,6 +936,10 @@ final class HomeViewController: ObservableViewController {
             searchButton.heightAnchor.constraint(equalToConstant: 40),
             notificationButton.widthAnchor.constraint(equalToConstant: 40),
             notificationButton.heightAnchor.constraint(equalToConstant: 40),
+            notificationBadgeView.topAnchor.constraint(equalTo: notificationButton.topAnchor, constant: 5),
+            notificationBadgeView.trailingAnchor.constraint(equalTo: notificationButton.trailingAnchor, constant: -5),
+            notificationBadgeView.widthAnchor.constraint(equalToConstant: 9),
+            notificationBadgeView.heightAnchor.constraint(equalToConstant: 9),
 
             categoryScrollView.topAnchor.constraint(equalTo: searchRowStackView.bottomAnchor, constant: 8),
             categoryScrollView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
@@ -1032,6 +1071,7 @@ final class HomeViewController: ObservableViewController {
 
     override func updateUI() {
         applyThemeStyle()
+        updateNotificationBadge()
         // Login-required state
         if viewModel.requiresLogin {
             setCreateMenuVisible(false, animated: false)
@@ -1082,6 +1122,9 @@ final class HomeViewController: ObservableViewController {
             errorLabel.isHidden = true
         }
         applyTopicSnapshot()
+        if shouldFreezeTabBarScrollControl {
+            lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+        }
 
         if viewModel.isLoading && !showsInitialSkeleton && viewModel.topics.isEmpty {
             activityIndicator.startAnimating()
@@ -1096,6 +1139,7 @@ final class HomeViewController: ObservableViewController {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
         }
+        syncTabBarFreezeWithLoadMoreState()
     }
 
     private func applyTopicSnapshot(animatingDifferences: Bool? = nil) {
@@ -1112,11 +1156,17 @@ final class HomeViewController: ObservableViewController {
             tableView.indexPathsForVisibleRows?.compactMap { dataSource.itemIdentifier(for: $0) } ?? []
         )
         let idsNeedingReconfigure = itemIdentifiers.filter { visibleExistingIds.contains($0) }
-        let shouldAnimateSnapshot = animatingDifferences ?? (
-            view.window != nil
+        // load more / contentSize 突变窗口禁止 diffable 动画，否则 offset 会抖并带动 tab bar。
+        let shouldAnimateSnapshot: Bool
+        if let animatingDifferences {
+            shouldAnimateSnapshot = animatingDifferences
+        } else if shouldFreezeTabBarScrollControl || viewModel.isLoadingMore {
+            shouldAnimateSnapshot = false
+        } else {
+            shouldAnimateSnapshot = view.window != nil
                 && !tableView.isDragging
                 && !tableView.isDecelerating
-        )
+        }
 
         if !needsInitialSnapshot, currentIds == itemIdentifiers {
             if !idsNeedingReconfigure.isEmpty {
@@ -1193,6 +1243,7 @@ final class HomeViewController: ObservableViewController {
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
         }
+        // 只收 geometry lock；tab bar 等 lock 释放后再 restore，避开 endRefreshing 回弹窗口。
         finishTopRefreshGeometryLockIfNeeded()
     }
 
@@ -1206,8 +1257,9 @@ final class HomeViewController: ObservableViewController {
         if refreshControl.isRefreshing {
             refreshControl.endRefreshing()
         }
-        finishTopRefreshGeometryLockIfNeeded()
+        // 先 updateUI 再收 lock；restore 只在 lock 真正 release 时做一次。
         updateUI()
+        finishTopRefreshGeometryLockIfNeeded()
     }
 
     private func postInitialContentReadyIfNeeded() {
@@ -1233,7 +1285,11 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func notificationsTapped() {
-        let notificationsVC = NotificationsViewController(api: api, authGate: authGate)
+        let notificationsVC = NotificationsViewController(
+            api: api,
+            authGate: authGate,
+            notificationCoordinator: notificationCoordinator
+        )
         notificationsVC.onTopicSelected = { [weak self] topicId in
             guard let self else { return }
             let detailVC = TopicDetailViewController(api: self.api, topicId: topicId)
@@ -1247,6 +1303,13 @@ final class HomeViewController: ObservableViewController {
             sheet.preferredCornerRadius = 20
         }
         present(nav, animated: true)
+    }
+
+    private func updateNotificationBadge() {
+        let unreadCount = notificationCoordinator.unreadCount
+        notificationBadgeView.isHidden = unreadCount == 0
+        notificationBadgeView.layer.borderColor = headerContainer.backgroundColor?.cgColor
+        notificationButton.accessibilityValue = unreadCount > 0 ? String(unreadCount) : nil
     }
 
     @objc private func categoryManagerTapped() {
@@ -1313,7 +1376,6 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func incomingTopicsTapped() {
-        setHomeTabBarHidden(false, animated: true)
         beginTopRefreshGeometryLock(animated: true)
         incomingTopicsRetryTask?.cancel()
         incomingTopicsRetryTask = nil
@@ -1432,13 +1494,11 @@ final class HomeViewController: ObservableViewController {
 
     private func refreshFromFloatingActionButton() {
         setFABMode(.create, animated: true)
-        setHomeTabBarHidden(false, animated: true)
         beginTopRefreshGeometryLock(animated: true)
         reloadTopics()
     }
 
     private func refreshFromEmptyState() {
-        setHomeTabBarHidden(false, animated: true)
         beginTopRefreshGeometryLock(animated: false)
         reloadTopics()
     }
@@ -1477,7 +1537,10 @@ final class HomeViewController: ObservableViewController {
 
     private func updateIncomingTopicsHeader() {
         let count = viewModel.incomingTopicIds.count
-        guard viewModel.listMode == .latest, count > 0 else {
+        guard viewModel.listMode == .latest,
+              viewModel.selectedCategoryId == nil,
+              count > 0
+        else {
             setIncomingTopicsBannerVisible(false, animated: view.window != nil)
             setIncomingTopicsInlineBannerVisible(false)
             updateIncomingTopicsPlacement(animated: false)
@@ -1638,6 +1701,7 @@ final class HomeViewController: ObservableViewController {
     private func beginTopRefreshGeometryLock(animated: Bool) {
         topRefreshGeometryLockID += 1
         isTopRefreshGeometryLocked = true
+        beginTabBarScrollFreezeForRefresh()
         normalizeTopRefreshGeometry(animated: animated)
     }
 
@@ -1659,6 +1723,7 @@ final class HomeViewController: ObservableViewController {
         normalizeTopRefreshGeometry(animated: false)
         if release {
             isTopRefreshGeometryLocked = false
+            endTabBarScrollFreezeForRefresh()
         }
     }
 
@@ -2007,13 +2072,108 @@ final class HomeViewController: ObservableViewController {
         }
     }
 
+    /// 是否接近列表底部（即将/正在分页）。这个区间 contentSize 最容易跳。
+    private var isNearTopicListBottomForPagination: Bool {
+        let contentHeight = tableView.contentSize.height
+        guard contentHeight > tableView.bounds.height else { return false }
+        let visibleBottom = tableView.contentOffset.y
+            + tableView.bounds.height
+            - tableView.adjustedContentInset.bottom
+        // 大约最后几屏高度，覆盖 willDisplay 提前 5 行触发的窗口。
+        return (contentHeight - visibleBottom) < max(tableView.bounds.height * 1.2, 480)
+    }
+
+    /// 刷新 / 加载下一页 / 触底滚动 / settle 窗口：不要用 deltaY 改 tab bar。
+    private var shouldFreezeTabBarScrollControl: Bool {
+        if isTopRefreshGeometryLocked
+            || refreshControl.isRefreshing
+            || isTabBarScrollFrozenForRefresh
+            || viewModel.isLoadingMore
+            || isTabBarScrollFrozenForLoadMore {
+            return true
+        }
+        // 上滑接近底部时提前冻结：loadMore 真正开始前 footer/contentSize 已可能变化。
+        if AppSettings.shared.bottomBarAutoHideEnabled,
+           isNearTopicListBottomForPagination,
+           (tableView.isDragging || tableView.isDecelerating) {
+            return true
+        }
+        return false
+    }
+
     private func updateTabBarVisibilityForCurrentScroll(animated: Bool) {
+        guard !shouldFreezeTabBarScrollControl else { return }
         let y = tableView.contentOffset.y + tableView.contentInset.top
         if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 4 {
             setHomeTabBarHidden(false, animated: animated)
         } else if y > 40 {
             setHomeTabBarHidden(true, animated: animated)
         }
+    }
+
+    /// 进入顶部刷新：只冻结滚动显隐，不主动 pin 显隐 tab bar（主动改会和 geometry/inset 抖动）。
+    private func beginTabBarScrollFreezeForRefresh() {
+        tabBarScrollFreezeID += 1
+        isTabBarScrollFrozenForRefresh = true
+        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+    }
+
+    /// 顶部刷新 settle 后解冻，恢复上滑隐藏/下滑显示。
+    private func endTabBarScrollFreezeForRefresh() {
+        tabBarScrollFreezeID += 1
+        let freezeID = tabBarScrollFreezeID
+        // 稍晚解冻，吃掉 endRefreshing 回弹。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.tabBarScrollFreezeID == freezeID else { return }
+            self.isTabBarScrollFrozenForRefresh = false
+            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+        }
+    }
+
+    private func beginTabBarScrollFreezeForLoadMore() {
+        tabBarLoadMoreFreezeID += 1
+        isTabBarScrollFrozenForLoadMore = true
+        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+    }
+
+    private func endTabBarScrollFreezeForLoadMore() {
+        tabBarLoadMoreFreezeID += 1
+        let freezeID = tabBarLoadMoreFreezeID
+        // contentSize / footer 切换后多等一会儿；若仍在惯性滚动则继续延后解冻。
+        scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 0)
+    }
+
+    private func scheduleLoadMoreTabBarUnfreeze(freezeID: Int, attempt: Int) {
+        let delay: TimeInterval = attempt == 0 ? 0.2 : 0.15
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.tabBarLoadMoreFreezeID == freezeID else { return }
+            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+            // 还在滑 / 还在 loading / 仍贴底：继续冻，最多约 1s。
+            let stillBusy = self.viewModel.isLoadingMore
+                || self.tableView.isDragging
+                || self.tableView.isDecelerating
+                || self.isNearTopicListBottomForPagination
+            if stillBusy, attempt < 6 {
+                self.scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: attempt + 1)
+                return
+            }
+            self.isTabBarScrollFrozenForLoadMore = false
+            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+        }
+    }
+
+    /// 跟踪 loadMore 状态，在加载中与刚结束时冻结 tab bar 滚动显隐。
+    private func syncTabBarFreezeWithLoadMoreState() {
+        let loadingMore = viewModel.isLoadingMore
+        if loadingMore {
+            if !wasLoadingMoreTopics {
+                beginTabBarScrollFreezeForLoadMore()
+            }
+            lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+        } else if wasLoadingMoreTopics {
+            endTabBarScrollFreezeForLoadMore()
+        }
+        wasLoadingMoreTopics = loadingMore
     }
 
     private func setHomeTabBarHidden(_ hidden: Bool, animated: Bool) {
@@ -2845,6 +3005,12 @@ extension HomeViewController: UITableViewDelegate {
             setFABMode(.create, animated: true)
         }
 
+        // 刷新/加载下一页窗口冻结显隐；非冻结时：上滑隐藏、下滑显示。
+        if shouldFreezeTabBarScrollControl {
+            // 冻结期间仍更新基准，避免解冻瞬间 deltaY 爆表再次抖动。
+            lastHomeScrollY = y
+            return
+        }
         if !AppSettings.shared.bottomBarAutoHideEnabled {
             setHomeTabBarHidden(false, animated: true)
         } else if y <= 4 || deltaY < -3 {
@@ -2892,6 +3058,8 @@ extension HomeViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let totalRows = tableView.numberOfRows(inSection: 0)
         if indexPath.row >= totalRows - 5 {
+            // 触发分页前先冻结，覆盖 footer 切换与请求发出前的空窗。
+            beginTabBarScrollFreezeForLoadMore()
             Task {
                 await viewModel.loadMoreTopics()
             }

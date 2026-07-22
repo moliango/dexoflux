@@ -66,6 +66,7 @@ final class HomeViewModel: DexoObservableObject {
     var selectedCategoryId: Int?
 
     private let api: DiscourseAPI
+    private let backgroundTopicUpdateStore: BackgroundTopicUpdateStore
     private var currentPage = 0
     private var usersById: [Int: DiscourseTopicList.User] = [:]
     private var categoryIndex = DiscourseCategoryIndex()
@@ -73,8 +74,12 @@ final class HomeViewModel: DexoObservableObject {
     private var categoryMetadataTask: Task<Void, Never>?
     private var hasLoadedFullCategoryMetadata = false
 
-    init(api: DiscourseAPI) {
+    init(
+        api: DiscourseAPI,
+        backgroundTopicUpdateStore: BackgroundTopicUpdateStore = .shared
+    ) {
         self.api = api
+        self.backgroundTopicUpdateStore = backgroundTopicUpdateStore
     }
 
     private var canBrowseTopics: Bool {
@@ -150,7 +155,20 @@ final class HomeViewModel: DexoObservableObject {
         return true
     }
 
+    /// 冷启动/列表为空时，先用后台刷新缓存填满列表，避免只剩“查看 N 个新话题”横幅。
+    func hydrateFromBackgroundCacheIfNeeded() {
+        guard isGlobalLatestList, topics.isEmpty else { return }
+        guard let cached = BackgroundTopicListCache.load(baseURL: api.baseURL) else { return }
+        topics = cached.topicList.topics
+        canLoadMore = cached.topicList.moreTopicsUrl != nil
+        indexUsers(cached.users)
+        indexCategories(cached.categories, source: .topicList)
+        incomingTopicIds = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
+        notifyChanged()
+    }
+
     func loadTopics(retryingExplicitCancellation: Bool = false) async {
+
         isLoading = true
         errorMessage = nil
         requiresLogin = false
@@ -179,10 +197,22 @@ final class HomeViewModel: DexoObservableObject {
 
         do {
             startLoadingCategoriesIfNeeded()
+            // 网络返回前先露出后台缓存，避免首页空白只剩 incoming banner。
+            if topics.isEmpty {
+                hydrateFromBackgroundCacheIfNeeded()
+            }
             let result = try await fetchTopics(page: 0)
             try Task.checkCancellation()
             topics = result.topicList.topics
-            incomingTopicIds = []
+            if isGlobalLatestList {
+                backgroundTopicUpdateStore.establishForegroundBaselineIfNeeded(
+                    topics,
+                    baseURL: api.baseURL
+                )
+                incomingTopicIds = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
+            } else {
+                incomingTopicIds = []
+            }
             shouldRetryIncomingTopicsAfterCloudflare = false
             isBlockedByCloudflare = false
             canLoadMore = result.topicList.moreTopicsUrl != nil
@@ -234,6 +264,10 @@ final class HomeViewModel: DexoObservableObject {
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
             logTopicCategoryDiagnostics(context: "loadMore", topics: newTopics)
+            // 仍在 isLoadingMore=true 时通知 UI：方便冻结 tab bar，避免 contentSize 突增时显隐打架。
+            if !newTopics.isEmpty {
+                notifyChanged()
+            }
         } catch is CancellationError {
             // A newer refresh replaced this request.
         } catch {
@@ -250,7 +284,7 @@ final class HomeViewModel: DexoObservableObject {
             clearProtectedContentForLoginRequired(invalidateSession: true)
             return
         }
-        guard listMode == .latest, !topics.isEmpty, !isLoading else { return }
+        guard isGlobalLatestList, !topics.isEmpty, !isLoading else { return }
         do {
             guard let firstCurrentTopicId = topics.first?.id else { return }
             var page = 0
@@ -279,7 +313,10 @@ final class HomeViewModel: DexoObservableObject {
                 page += 1
             }
 
-            let incomingIds = incomingTopicIds(from: latestTopics)
+            let incomingIds = backgroundTopicUpdateStore.processBackgroundSnapshot(
+                latestTopics,
+                baseURL: api.baseURL
+            )
             if incomingIds != incomingTopicIds {
                 incomingTopicIds = incomingIds
                 indexUsers(latestUsers)
@@ -347,6 +384,12 @@ final class HomeViewModel: DexoObservableObject {
                 indexCategories(incomingCategories, source: .topicList)
             }
             incomingTopicIds.removeAll()
+            if isGlobalLatestList {
+                backgroundTopicUpdateStore.replaceForegroundBaseline(
+                    topics,
+                    baseURL: api.baseURL
+                )
+            }
             shouldRetryIncomingTopicsAfterCloudflare = false
         } catch is CancellationError {
             // A newer refresh replaced this request.
@@ -374,6 +417,14 @@ final class HomeViewModel: DexoObservableObject {
         if clearSelection {
             selectedCategoryId = nil
         }
+        notifyChanged()
+    }
+
+    func restoreBackgroundTopicUpdates() {
+        guard isGlobalLatestList else { return }
+        let persistedTopicIDs = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
+        guard persistedTopicIDs != incomingTopicIds else { return }
+        incomingTopicIds = persistedTopicIDs
         notifyChanged()
     }
 
@@ -468,6 +519,11 @@ final class HomeViewModel: DexoObservableObject {
 
         switch listMode {
         case .latest:
+            if page == 0, selectedCategoryId == nil {
+                let fetch = try await api.fetchLatestTopicsWithRawData(page: page)
+                BackgroundTopicListCache.save(fetch.rawData, baseURL: api.baseURL)
+                return fetch.list
+            }
             return try await api.fetchLatestTopics(page: page)
         case .newTopics:
             return try await api.fetchNewTopics(page: page)
@@ -480,35 +536,8 @@ final class HomeViewModel: DexoObservableObject {
         }
     }
 
-    private func incomingTopicIds(from latestTopics: [DiscourseTopicList.Topic]) -> [Int] {
-        guard let firstCurrentTopicId = topics.first?.id else { return [] }
-        var currentTopicsById: [Int: DiscourseTopicList.Topic] = [:]
-        for topic in topics {
-            currentTopicsById[topic.id] = topic
-        }
-        var ids: [Int] = []
-        var seenIds = Set<Int>()
-        var hasReachedFirstCurrentTopic = false
-
-        for topic in latestTopics {
-            if topic.id == firstCurrentTopicId {
-                hasReachedFirstCurrentTopic = true
-            }
-
-            let isBeforeFirstCurrentTopic = !hasReachedFirstCurrentTopic && topic.id != firstCurrentTopicId
-            let isUpdatedExistingTopic = currentTopicsById[topic.id].map { hasTopicUpdate(latest: topic, current: $0) } ?? false
-
-            if (isBeforeFirstCurrentTopic || isUpdatedExistingTopic), seenIds.insert(topic.id).inserted {
-                ids.append(topic.id)
-            }
-        }
-        return ids
-    }
-
-    private func hasTopicUpdate(latest: DiscourseTopicList.Topic, current: DiscourseTopicList.Topic) -> Bool {
-        latest.postsCount != current.postsCount
-            || latest.replyCount != current.replyCount
-            || latest.lastPostedAt != current.lastPostedAt
+    private var isGlobalLatestList: Bool {
+        listMode == .latest && selectedCategoryId == nil
     }
 
     private func indexUsers(_ users: [DiscourseTopicList.User]?) {

@@ -119,6 +119,8 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
         KeychainHelper.deleteLegacyRSAKeyPair(for: baseURL)
         WebCookieStore.shared.clearCookies(for: baseURL)
         MeProfileCacheStore.clear(baseURL: baseURL)
+        ForumLocalNotificationPresenter.shared.removeApplicationBadge(baseURL: baseURL)
+        BackgroundTopicUpdateStore.shared.clear(baseURL: baseURL)
         usernameCache.removeValue(forKey: baseURL)
 
         // Clear username from DB
@@ -134,6 +136,8 @@ final class AuthManager: DexoObservableObject, @unchecked Sendable {
         KeychainHelper.deleteLegacyRSAKeyPair(for: baseURL)
         WebCookieStore.shared.clearCookies(for: baseURL)
         MeProfileCacheStore.clear(baseURL: baseURL)
+        ForumLocalNotificationPresenter.shared.removeApplicationBadge(baseURL: baseURL)
+        BackgroundTopicUpdateStore.shared.clear(baseURL: baseURL)
         usernameCache.removeValue(forKey: baseURL)
         notifyChanged()
     }
