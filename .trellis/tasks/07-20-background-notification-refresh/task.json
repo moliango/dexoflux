@@ -1,0 +1,31 @@
+{
+  "id": "background-notification-refresh",
+  "name": "background-notification-refresh",
+  "title": "后台通知刷新",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Naine",
+  "assignee": "Naine",
+  "createdAt": "2026-07-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-20-background-refresh-runtime",
+    "07-20-background-notification-sync",
+    "07-20-background-notification-delivery",
+    "07-20-background-topic-update-count"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
