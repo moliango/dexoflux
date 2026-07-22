@@ -184,6 +184,7 @@
 
     },
     "action.open" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -453,6 +454,941 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加論壇"
+          }
+        }
+      }
+    },
+    "ai.advanced.context" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "默认上下文范围"
+          }
+        }
+      }
+    },
+    "ai.advanced.context.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开 AI 助手时默认携带的话题楼层数量。"
+          }
+        }
+      }
+    },
+    "ai.advanced.system_prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义系统提示词"
+          }
+        }
+      }
+    },
+    "ai.advanced.system_prompt.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "会追加在默认系统提示之后，留空表示不追加。"
+          }
+        }
+      }
+    },
+    "ai.advanced.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "高级设置"
+          }
+        }
+      }
+    },
+    "ai.chat.ask_headline" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 会基于话题内容为你解答"
+          }
+        }
+      }
+    },
+    "ai.chat.ask_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "向 AI 助手提问"
+          }
+        }
+      }
+    },
+    "ai.chat.error" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请求失败：%@"
+          }
+        }
+      }
+    },
+    "ai.chat.go_configure" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "去配置"
+          }
+        }
+      }
+    },
+    "ai.chat.input.placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入消息..."
+          }
+        }
+      }
+    },
+    "ai.chat.more_prompts" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更多"
+          }
+        }
+      }
+    },
+    "ai.chat.new_session" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "新对话"
+          }
+        }
+      }
+    },
+    "ai.chat.no_model" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请先在 AI 模型服务中配置并选择默认模型"
+          }
+        }
+      }
+    },
+    "ai.chat.pick_model" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择模型"
+          }
+        }
+      }
+    },
+    "ai.chat.thinking" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "思考中…"
+          }
+        }
+      }
+    },
+    "ai.chat.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 助手"
+          }
+        }
+      }
+    },
+    "ai.context.all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部楼层"
+          }
+        }
+      }
+    },
+    "ai.context.first_post" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅主帖"
+          }
+        }
+      }
+    },
+    "ai.context.first5" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "前 5 楼"
+          }
+        }
+      }
+    },
+    "ai.context.first10" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "前 10 楼"
+          }
+        }
+      }
+    },
+    "ai.context.first20" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "前 20 楼"
+          }
+        }
+      }
+    },
+    "ai.error.bad_payload" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "响应格式无法解析"
+          }
+        }
+      }
+    },
+    "ai.error.forbidden" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没有访问权限"
+          }
+        }
+      }
+    },
+    "ai.error.invalid_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "API 地址无效"
+          }
+        }
+      }
+    },
+    "ai.error.key_invalid" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "API Key 无效或已过期"
+          }
+        }
+      }
+    },
+    "ai.error.not_found" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "接口不存在，请检查 API 地址"
+          }
+        }
+      }
+    },
+    "ai.error.rate_limited" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请求过于频繁，请稍后再试"
+          }
+        }
+      }
+    },
+    "ai.error.request_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请求失败（%d）"
+          }
+        }
+      }
+    },
+    "ai.error.server" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "服务器错误（%d）"
+          }
+        }
+      }
+    },
+    "ai.history.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有聊天记录"
+          }
+        }
+      }
+    },
+    "ai.history.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "聊天记录"
+          }
+        }
+      }
+    },
+    "ai.hub.default_model" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "默认模型"
+          }
+        }
+      }
+    },
+    "ai.hub.providers" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "供应商"
+          }
+        }
+      }
+    },
+    "ai.hub.providers.count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 个供应商"
+          }
+        }
+      }
+    },
+    "ai.hub.providers.none" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有配置 AI 供应商"
+          }
+        }
+      }
+    },
+    "ai.model.tag.image" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "生图"
+          }
+        }
+      }
+    },
+    "ai.model.tag.reasoning" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "推理"
+          }
+        }
+      }
+    },
+    "ai.model.tag.tool" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "工具"
+          }
+        }
+      }
+    },
+    "ai.model.tag.vision" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "视觉"
+          }
+        }
+      }
+    },
+    "ai.preset.highlights" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "有什么值得关注的"
+          }
+        }
+      }
+    },
+    "ai.preset.highlights.prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "这个话题中有哪些值得关注的信息或亮点？"
+          }
+        }
+      }
+    },
+    "ai.preset.summarize" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "总结这个话题"
+          }
+        }
+      }
+    },
+    "ai.preset.summarize.prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请简要总结这个话题的主要内容和讨论要点。"
+          }
+        }
+      }
+    },
+    "ai.preset.translate" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "翻译主帖"
+          }
+        }
+      }
+    },
+    "ai.preset.translate.prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请将主帖内容翻译成英文。"
+          }
+        }
+      }
+    },
+    "ai.preset.viewpoints" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "列出主要观点"
+          }
+        }
+      }
+    },
+    "ai.preset.viewpoints.prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请列出这个话题中各楼层的主要观点和立场。"
+          }
+        }
+      }
+    },
+    "ai.presets.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加快捷词"
+          }
+        }
+      }
+    },
+    "ai.presets.edit" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑快捷词"
+          }
+        }
+      }
+    },
+    "ai.presets.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有快捷词，点右上角 + 添加"
+          }
+        }
+      }
+    },
+    "ai.presets.footer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "快捷词显示在 AI 助手底部，点按即可向 AI 发送对应内容。"
+          }
+        }
+      }
+    },
+    "ai.presets.manage.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "管理 AI 助手底部的快捷词"
+          }
+        }
+      }
+    },
+    "ai.presets.manage.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "快捷词管理"
+          }
+        }
+      }
+    },
+    "ai.presets.name" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "名称，例如 总结这个话题"
+          }
+        }
+      }
+    },
+    "ai.presets.prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "发送给 AI 的内容"
+          }
+        }
+      }
+    },
+    "ai.presets.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "快捷词"
+          }
+        }
+      }
+    },
+    "ai.provider.delete" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删除供应商"
+          }
+        }
+      }
+    },
+    "ai.provider.delete.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "供应商配置与钥匙串中的 API Key 都会被删除。"
+          }
+        }
+      }
+    },
+    "ai.provider.delete.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删除供应商？"
+          }
+        }
+      }
+    },
+    "ai.provider.fetch_models" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拉取模型列表"
+          }
+        }
+      }
+    },
+    "ai.provider.fetching" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在拉取模型…"
+          }
+        }
+      }
+    },
+    "ai.provider.key.saved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已保存，留空表示不修改"
+          }
+        }
+      }
+    },
+    "ai.provider.models.anthropic.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Anthropic 使用预置模型列表。"
+          }
+        }
+      }
+    },
+    "ai.provider.models.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拉取后可按需启用；重新拉取会保留已有的启用状态。"
+          }
+        }
+      }
+    },
+    "ai.provider.name.placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "名称，例如 My NewAPI"
+          }
+        }
+      }
+    },
+    "ai.provider.need_key" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请先填写 API 地址和 API Key"
+          }
+        }
+      }
+    },
+    "ai.provider.need_key_new" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请填写 API Key"
+          }
+        }
+      }
+    },
+    "ai.provider.need_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请填写 API 地址"
+          }
+        }
+      }
+    },
+    "ai.provider.section.basics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "基本信息 · %@"
+          }
+        }
+      }
+    },
+    "ai.provider.section.basics.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "地址未包含 /v1 时会自动补全；以 # 结尾表示严格使用原始地址。API Key 保存在钥匙串。"
+          }
+        }
+      }
+    },
+    "ai.provider.section.models" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "模型"
+          }
+        }
+      }
+    },
+    "ai.provider.section.models_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "模型 · %d 已启用"
+          }
+        }
+      }
+    },
+    "ai.provider.test" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "测试连接"
+          }
+        }
+      }
+    },
+    "ai.provider.test.no_model" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请先拉取并启用至少一个模型"
+          }
+        }
+      }
+    },
+    "ai.provider.test.ok" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接成功（%@）"
+          }
+        }
+      }
+    },
+    "ai.provider.testing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "测试中…"
+          }
+        }
+      }
+    },
+    "ai.service.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加供应商"
+          }
+        }
+      }
+    },
+    "ai.service.add.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择接口类型"
+          }
+        }
+      }
+    },
+    "ai.service.default_model.none" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未选择"
+          }
+        }
+      }
+    },
+    "ai.service.default_model.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择默认模型"
+          }
+        }
+      }
+    },
+    "ai.service.empty.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点这里或右上角 + 添加"
+          }
+        }
+      }
+    },
+    "ai.service.empty.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有 AI 供应商"
+          }
+        }
+      }
+    },
+    "ai.service.provider.models" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 个模型已启用"
+          }
+        }
+      }
+    },
+    "ai.service.section.providers.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "支持 OpenAI 兼容接口（如 NewAPI 网关）、Gemini 和 Anthropic。API Key 保存在钥匙串中。"
+          }
+        }
+      }
+    },
+    "ai.service.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 模型服务"
           }
         }
       }
@@ -2854,6 +3790,28 @@
         }
       }
     },
+    "invites.advanced.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "邀请成员"
+          }
+        }
+      }
+    },
+    "invites.copied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已复制"
+          }
+        }
+      }
+    },
     "invites.copy" : {
       "localizations" : {
         "en" : {
@@ -2883,6 +3841,7 @@
       }
     },
     "invites.create.action" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2911,29 +3870,30 @@
       }
     },
     "invites.create.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creates a one-day invite link and copies it after success."
+            "value" : "Choose a validity period to create an invite link; it is copied after success."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "创建一个 1 天有效的邀请码，成功后自动复制。"
+            "value" : "选择有效期创建邀请链接，成功后自动复制。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創建一個 1 天有效的邀請碼，成功後自動複製。"
+            "value" : "選擇有效期創建邀請連結，成功後自動複製。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創建一個 1 天有效的邀請碼，成功後自動複製。"
+            "value" : "選擇有效期創建邀請連結，成功後自動複製。"
           }
         }
       }
@@ -2966,6 +3926,17 @@
         }
       }
     },
+    "invites.creating" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建中…"
+          }
+        }
+      }
+    },
     "invites.description.placeholder" : {
       "localizations" : {
         "en" : {
@@ -2990,6 +3961,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "描述，可不填"
+          }
+        }
+      }
+    },
+    "invites.email.helper" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "填写后仅该邮箱可使用此邀请"
+          }
+        }
+      }
+    },
+    "invites.email.placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "限制邮箱（可选）"
           }
         }
       }
@@ -3022,7 +4015,74 @@
         }
       }
     },
+    "invites.error.rate_limited" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建过于频繁，邀请链接约每 24 小时可创建一次。"
+          }
+        }
+      }
+    },
+    "invites.expiry.days_chip" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 天"
+          }
+        }
+      }
+    },
+    "invites.expiry.never" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "永久"
+          }
+        }
+      }
+    },
+    "invites.expiry.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "有效期"
+          }
+        }
+      }
+    },
+    "invites.fixed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "固定"
+          }
+        }
+      }
+    },
+    "invites.latest.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最新邀请链接"
+          }
+        }
+      }
+    },
     "invites.loading" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3046,6 +4106,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在加載邀請鏈接…"
+          }
+        }
+      }
+    },
+    "invites.max_redemptions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "可使用次数"
+          }
+        }
+      }
+    },
+    "invites.meta.expiry" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ 到期"
+          }
+        }
+      }
+    },
+    "invites.meta.never" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "永久有效"
+          }
+        }
+      }
+    },
+    "invites.meta.usage" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "可使用 1 次"
+          }
+        }
+      }
+    },
+    "invites.options.collapse" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收起选项"
+          }
+        }
+      }
+    },
+    "invites.options.expand" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "展开选项"
           }
         }
       }
@@ -3074,6 +4200,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分享"
+          }
+        }
+      }
+    },
+    "invites.summary.days" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建一个 %d 天有效的邀请链接，最多可使用 1 次，成功后自动复制。"
+          }
+        }
+      }
+    },
+    "invites.summary.never" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建一个永久有效的邀请链接，最多可使用 1 次，成功后自动复制。"
           }
         }
       }
@@ -3272,6 +4420,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要登錄"
+          }
+        }
+      }
+    },
+    "me.action.ai.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "管理 AI 供应商与模型"
           }
         }
       }
@@ -7286,6 +8445,17 @@
         }
       }
     },
+    "plugin.dock.menu.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "插件"
+          }
+        }
+      }
+    },
     "plugin.dock.newapi.subtitle" : {
       "localizations" : {
         "en" : {
@@ -7495,6 +8665,39 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "实验版支持 Token、User ID 和 Cookie Header，凭证会保存到 Keychain。"
+          }
+        }
+      }
+    },
+    "plugins.newapi.auto_relogin" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自动重新登录"
+          }
+        }
+      }
+    },
+    "plugins.newapi.auto_relogin.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "登录失效时自动打开登录页刷新 Cookie"
+          }
+        }
+      }
+    },
+    "plugins.newapi.auto_relogin.starting" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "即将自动打开登录页刷新失效的平台。"
           }
         }
       }
@@ -7785,13 +8988,24 @@
         }
       }
     },
-    "plugins.newapi.empty.help" : {
+    "plugins.newapi.empty.action" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "还没有平台\n点右上角 + 添加"
+            "value" : "点这里或右上角 + 添加 NewAPI 平台"
+          }
+        }
+      }
+    },
+    "plugins.newapi.empty.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有平台"
           }
         }
       }
@@ -8321,6 +9535,7 @@
       }
     },
     "plugins.newapi.platform.source.manual" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8349,6 +9564,7 @@
       }
     },
     "plugins.newapi.platform.type.custom" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8376,6 +9592,28 @@
         }
       }
     },
+    "plugins.newapi.section.platforms" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "平台"
+          }
+        }
+      }
+    },
+    "plugins.newapi.section.platforms_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "平台 · %d"
+          }
+        }
+      }
+    },
     "plugins.newapi.sign_in" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8394,6 +9632,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "全部签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.signing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "签到中…"
           }
         }
       }
@@ -8449,6 +9698,50 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "未知结果"
+          }
+        }
+      }
+    },
+    "plugins.newapi.summary.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加平台后可一键完成每日签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.summary.expired" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 待重新登录"
+          }
+        }
+      }
+    },
+    "plugins.newapi.summary.platforms" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 个平台"
+          }
+        }
+      }
+    },
+    "plugins.newapi.summary.signed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 已签到"
           }
         }
       }
@@ -8810,6 +10103,90 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "說點什麼..."
+          }
+        }
+      }
+    },
+    "post.edit.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯"
+          }
+        }
+      }
+    },
+    "post.edit.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Comment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑评论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯評論"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯評論"
+          }
+        }
+      }
+    },
+    "post.edit.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This comment cannot be edited right now."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这条评论当前无法编辑。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這則評論目前無法編輯。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這則評論目前無法編輯。"
           }
         }
       }
@@ -10327,6 +11704,39 @@
         }
       }
     },
+    "search.filter.advanced" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "筛选"
+          }
+        }
+      }
+    },
+    "search.filter.advanced_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "筛选 · %d"
+          }
+        }
+      }
+    },
+    "search.filter.after" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开始日期"
+          }
+        }
+      }
+    },
     "search.filter.all_categories" : {
       "localizations" : {
         "en" : {
@@ -10356,6 +11766,7 @@
       }
     },
     "search.filter.all_tags" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10379,6 +11790,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部標籤"
+          }
+        }
+      }
+    },
+    "search.filter.before" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "结束日期"
+          }
+        }
+      }
+    },
+    "search.filter.clear_all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除全部筛选"
+          }
+        }
+      }
+    },
+    "search.filter.dates" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "时间范围"
           }
         }
       }
@@ -10440,6 +11884,61 @@
         }
       }
     },
+    "search.filter.none" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不限"
+          }
+        }
+      }
+    },
+    "search.filter.status" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "话题状态"
+          }
+        }
+      }
+    },
+    "search.filter.tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标签"
+          }
+        }
+      }
+    },
+    "search.filter.tags.select" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择标签"
+          }
+        }
+      }
+    },
+    "search.filter.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "高级筛选"
+          }
+        }
+      }
+    },
     "search.no_results" : {
       "localizations" : {
         "en" : {
@@ -10492,6 +11991,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索話題..."
+          }
+        }
+      }
+    },
+    "search.recent.clear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清空"
+          }
+        }
+      }
+    },
+    "search.recent.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近搜索"
           }
         }
       }
@@ -10632,6 +12153,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "相關性"
+          }
+        }
+      }
+    },
+    "search.status.archived" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已归档"
+          }
+        }
+      }
+    },
+    "search.status.closed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已关闭"
+          }
+        }
+      }
+    },
+    "search.status.open" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未关闭"
+          }
+        }
+      }
+    },
+    "search.status.solved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已解决"
+          }
+        }
+      }
+    },
+    "search.status.unsolved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未解决"
           }
         }
       }
@@ -17153,6 +18729,259 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "生成分享图片"
+          }
+        }
+      }
+    },
+    "trust.error.login" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "登录后可查看信任等级进度"
+          }
+        }
+      }
+    },
+    "trust.error.retry" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "trust.fallback.note" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "以下进度来自个人统计数据，非 Connect 实时数据。"
+          }
+        }
+      }
+    },
+    "trust.fallback.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "升至信任级别 %d 的参考要求"
+          }
+        }
+      }
+    },
+    "trust.fallback.title.max" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "信任级别参考要求"
+          }
+        }
+      }
+    },
+    "trust.req.days_visited" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "访问天数"
+          }
+        }
+      }
+    },
+    "trust.req.flagged_posts" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "被举报帖子"
+          }
+        }
+      }
+    },
+    "trust.req.flagging_users" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "发起举报用户"
+          }
+        }
+      }
+    },
+    "trust.req.likes_given" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "送出赞"
+          }
+        }
+      }
+    },
+    "trust.req.likes_given_short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点赞"
+          }
+        }
+      }
+    },
+    "trust.req.likes_received" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "获赞"
+          }
+        }
+      }
+    },
+    "trust.req.posts_read" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已读帖子"
+          }
+        }
+      }
+    },
+    "trust.req.reading_time" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "阅读时间"
+          }
+        }
+      }
+    },
+    "trust.req.replies" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复"
+          }
+        }
+      }
+    },
+    "trust.req.silenced" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "被禁言"
+          }
+        }
+      }
+    },
+    "trust.req.suspended" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "被封禁"
+          }
+        }
+      }
+    },
+    "trust.req.topics_entered" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浏览话题"
+          }
+        }
+      }
+    },
+    "trust.req.visits" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "访问次数"
+          }
+        }
+      }
+    },
+    "trust.section.activity" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "活动"
+          }
+        }
+      }
+    },
+    "trust.section.compliance" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "合规"
+          }
+        }
+      }
+    },
+    "trust.section.interaction" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "互动"
+          }
+        }
+      }
+    },
+    "trust.unit.days" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "天"
+          }
+        }
+      }
+    },
+    "trust.unit.minutes" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分钟"
           }
         }
       }
