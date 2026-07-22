@@ -3,10 +3,11 @@ import Foundation
 struct DiscourseSearchResult: Decodable {
     let posts: [SearchPost]?
     let topics: [SearchTopic]?
+    let users: [SearchUser]?
     let groupedSearchResult: GroupedSearchResult?
 
     enum CodingKeys: String, CodingKey {
-        case posts, topics
+        case posts, topics, users
         case groupedSearchResult = "grouped_search_result"
     }
 
@@ -52,12 +53,26 @@ struct DiscourseSearchResult: Decodable {
         }
     }
 
+    struct SearchUser: Decodable, Identifiable {
+        let id: Int
+        let username: String
+        let name: String?
+        let avatarTemplate: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, username, name
+            case avatarTemplate = "avatar_template"
+        }
+    }
+
     struct GroupedSearchResult: Decodable {
         let morePosts: Bool?
+        let moreFullPageResults: Bool?
         let term: String?
 
         enum CodingKeys: String, CodingKey {
             case morePosts = "more_posts"
+            case moreFullPageResults = "more_full_page_results"
             case term
         }
     }

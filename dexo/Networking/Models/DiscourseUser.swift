@@ -14,10 +14,55 @@ struct DiscourseCurrentUser: Codable {
     let username: String
     let name: String?
     let avatarTemplate: String?
+    let unreadNotifications: Int?
+    let unreadHighPriorityNotifications: Int?
+    let allUnreadNotificationsCount: Int?
+    let seenNotificationId: Int?
+    let notificationChannelPosition: Int?
+
+    var effectiveUnreadNotificationCount: Int {
+        if let allUnreadNotificationsCount {
+            return max(allUnreadNotificationsCount, 0)
+        }
+        return max((unreadNotifications ?? 0) + (unreadHighPriorityNotifications ?? 0), 0)
+    }
+
+    var hasOfficialUnreadNotificationCount: Bool {
+        allUnreadNotificationsCount != nil
+            || unreadNotifications != nil
+            || unreadHighPriorityNotifications != nil
+    }
+
+    init(
+        id: Int,
+        username: String,
+        name: String?,
+        avatarTemplate: String?,
+        unreadNotifications: Int? = nil,
+        unreadHighPriorityNotifications: Int? = nil,
+        allUnreadNotificationsCount: Int? = nil,
+        seenNotificationId: Int? = nil,
+        notificationChannelPosition: Int? = nil
+    ) {
+        self.id = id
+        self.username = username
+        self.name = name
+        self.avatarTemplate = avatarTemplate
+        self.unreadNotifications = unreadNotifications
+        self.unreadHighPriorityNotifications = unreadHighPriorityNotifications
+        self.allUnreadNotificationsCount = allUnreadNotificationsCount
+        self.seenNotificationId = seenNotificationId
+        self.notificationChannelPosition = notificationChannelPosition
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, username, name
         case avatarTemplate = "avatar_template"
+        case unreadNotifications = "unread_notifications"
+        case unreadHighPriorityNotifications = "unread_high_priority_notifications"
+        case allUnreadNotificationsCount = "all_unread_notifications_count"
+        case seenNotificationId = "seen_notification_id"
+        case notificationChannelPosition = "notification_channel_position"
     }
 }
 
@@ -303,12 +348,13 @@ struct DiscourseInviteLink: Decodable, Identifiable {
         id = decodedId ?? nested?.id ?? Self.stableId(inviteKey ?? inviteLink ?? description ?? "")
     }
 
-    var effectiveURLString: String? {
+    func effectiveURLString(baseURL: String) -> String? {
         if let inviteLink, !inviteLink.isEmpty {
             return inviteLink
         }
         if let inviteKey, !inviteKey.isEmpty {
-            return "https://linux.do/invites/\(inviteKey)"
+            let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return "\(trimmedBase)/invites/\(inviteKey)"
         }
         return nil
     }

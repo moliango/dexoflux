@@ -12,6 +12,8 @@ enum DiscourseRouter {
     case categories
     case topic(id: Int, trackVisit: Bool)
     case topicPosts(topicId: Int, postIds: [Int])
+    case post(id: Int)
+    case updatePost(id: Int)
     case topicNotificationLevel(topicId: Int)
     case updateTopic(topicId: Int)
     case notifications
@@ -28,6 +30,9 @@ enum DiscourseRouter {
     case currentUser
     case emojis
     case search(term: String, page: Int, typeFilter: String?)
+    case semanticSearch(term: String)
+    case recentSearches
+    case clearRecentSearches
     case tags
     case tagSearch(query: String, categoryId: Int?)
     case bookmarks(username: String)
@@ -60,9 +65,9 @@ enum DiscourseRouter {
         case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
              .topicNotificationLevel:
             return .post
-        case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic:
+        case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
             return .put
-        case .deleteBookmark, .unfollow, .deleteDraft:
+        case .deleteBookmark, .unfollow, .deleteDraft, .clearRecentSearches:
             return .delete
         default:
             return .get
@@ -97,6 +102,8 @@ enum DiscourseRouter {
         case .topicPosts(let topicId, let postIds):
             let ids = postIds.map { "post_ids[]=\($0)" }.joined(separator: "&")
             return "/t/\(topicId)/posts.json?\(ids)"
+        case .post(let id), .updatePost(let id):
+            return "/posts/\(id).json"
         case .topicNotificationLevel(let topicId):
             return "/t/\(topicId)/notifications"
         case .updateTopic(let topicId):
@@ -131,6 +138,11 @@ enum DiscourseRouter {
             let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
             let filter = typeFilter.map { "&type_filter=\(Self.queryValue($0))" } ?? ""
             return "/search.json?q=\(encoded)&page=\(page)\(filter)"
+        case .semanticSearch(let term):
+            let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
+            return "/discourse-ai/embeddings/semantic-search?q=\(encoded)"
+        case .recentSearches, .clearRecentSearches:
+            return "/u/recent-searches.json"
         case .tags:
             return "/tags.json"
         case .tagSearch(let query, let categoryId):

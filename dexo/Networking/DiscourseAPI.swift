@@ -2,6 +2,13 @@ import Alamofire
 import Foundation
 import UniformTypeIdentifiers
 
+enum PostEditingRequest {
+    static func parameters(raw: String) -> Parameters {
+        let post: Parameters = ["raw": raw]
+        return ["post": post]
+    }
+}
+
 enum PrivateMessageFilter: Int, CaseIterable {
     case inbox
     case sent
@@ -20,6 +27,15 @@ private enum DiscourseRequestAuthMode: String {
     case none
     case cloudflareOnly = "cfOnly"
     case webCookie
+}
+
+enum DiscourseAPIExecutionContext {
+    case foreground
+    case backgroundRefresh
+
+    var allowsInteractiveWebRecovery: Bool {
+        self == .foreground
+    }
 }
 
 private func discourseRequestAuthMode(baseURL _: String, url: URL) -> DiscourseRequestAuthMode {
@@ -90,6 +106,7 @@ final class DiscourseAPI {
     static let cloudflareResponseURLUserInfoKey = "responseURL"
 
     let baseURL: String
+    private let executionContext: DiscourseAPIExecutionContext
     private(set) var emojiReady: Bool = false
     private let interceptor: DiscourseAuthInterceptor
     private let composerUploadClientId = UUID().uuidString.lowercased()
@@ -117,13 +134,21 @@ final class DiscourseAPI {
         return newSession
     }
 
-    init(forum: ForumInstance) {
+    init(
+        forum: ForumInstance,
+        executionContext: DiscourseAPIExecutionContext = .foreground
+    ) {
         self.baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.executionContext = executionContext
         self.interceptor = DiscourseAuthInterceptor(baseURL: baseURL)
     }
 
-    init(baseURL: String) {
+    init(
+        baseURL: String,
+        executionContext: DiscourseAPIExecutionContext = .foreground
+    ) {
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.executionContext = executionContext
         self.interceptor = DiscourseAuthInterceptor(baseURL: self.baseURL)
     }
 
@@ -165,6 +190,10 @@ final class DiscourseAPI {
         interceptor.invalidateCSRFToken()
     }
 
+    func cancelPendingRequests() {
+        session.cancelAllRequests()
+    }
+
     static func isExplicitlyCancelledRequest(_ error: Error) -> Bool {
         if let afError = error as? AFError,
            case .explicitlyCancelled = afError {
@@ -181,6 +210,24 @@ final class DiscourseAPI {
 
     func fetchLatestTopics(page: Int = 0) async throws -> DiscourseTopicList {
         try await request(route: .latestTopics(page: page))
+    }
+
+    /// 后台刷新用：同时拿到解码结果与原始 JSON（原始数据写入话题列表缓存，
+    /// 供首页冷启动/空列表时立即渲染）。
+    func fetchLatestTopicsWithRawData(page: Int = 0) async throws -> (list: DiscourseTopicList, rawData: Data) {
+        let response = try await performRequest(route: .latestTopics(page: page))
+        do {
+            let list = try JSONDecoder().decode(DiscourseTopicList.self, from: response.data)
+            return (list, response.data)
+        } catch {
+            throw DiscourseDecodingError(
+                route: .latestTopics(page: page),
+                url: response.url,
+                statusCode: response.statusCode,
+                underlying: error,
+                bodyPreview: Self.bodyPreview(from: response.data)
+            )
+        }
     }
 
     func fetchTopicsByIds(_ ids: [Int]) async throws -> DiscourseTopicList {
@@ -280,6 +327,33 @@ final class DiscourseAPI {
 
     func fetchPostReplies(postId: Int) async throws -> [DiscourseTopicDetail.Post] {
         try await request(route: .postReplies(postId: postId))
+    }
+
+    func fetchPost(id: Int) async throws -> DiscourseTopicDetail.Post {
+        let route = DiscourseRouter.post(id: id)
+        let response = try await performRequest(route: route)
+        let decoder = JSONDecoder()
+        if let wrapped = try? decoder.decode(DiscoursePostResponse.self, from: response.data) {
+            return wrapped.post
+        }
+        do {
+            return try decoder.decode(DiscourseTopicDetail.Post.self, from: response.data)
+        } catch {
+            throw DiscourseDecodingError(
+                route: route,
+                url: response.url,
+                statusCode: response.statusCode,
+                underlying: error,
+                bodyPreview: Self.bodyPreview(from: response.data)
+            )
+        }
+    }
+
+    func updatePost(id: Int, raw: String) async throws {
+        try await requestVoid(
+            route: .updatePost(id: id),
+            parameters: PostEditingRequest.parameters(raw: raw)
+        )
     }
 
     func fetchCurrentUser() async throws -> DiscourseCurrentUser {
@@ -443,6 +517,27 @@ final class DiscourseAPI {
 
     func search(term: String, page: Int = 0, typeFilter: String? = nil) async throws -> DiscourseSearchResult {
         try await request(route: .search(term: term, page: page, typeFilter: typeFilter))
+    }
+
+    /// Discourse AI 语义搜索；站点未启用 discourse-ai 时会以 403/404 失败。
+    func semanticSearch(term: String) async throws -> DiscourseSearchResult {
+        try await request(route: .semanticSearch(term: term))
+    }
+
+    func fetchRecentSearches() async throws -> [String] {
+        struct RecentSearchesResponse: Decodable {
+            let recentSearches: [String]
+
+            enum CodingKeys: String, CodingKey {
+                case recentSearches = "recent_searches"
+            }
+        }
+        let response: RecentSearchesResponse = try await request(route: .recentSearches)
+        return response.recentSearches
+    }
+
+    func clearRecentSearches() async throws {
+        try await requestVoid(route: .clearRecentSearches)
     }
 
     func searchTopic(topicId: Int, term: String, page: Int = 0) async throws -> DiscourseSearchResult {
@@ -903,7 +998,7 @@ final class DiscourseAPI {
         return response.invites
     }
 
-    func createInvite(description: String?, expiresAt: Date?) async throws -> DiscourseInviteLink {
+    func createInvite(description: String?, expiresAt: Date?, email: String? = nil) async throws -> DiscourseInviteLink {
         var params: [String: Any] = [
             "max_redemptions_allowed": 1,
         ]
@@ -912,6 +1007,9 @@ final class DiscourseAPI {
         }
         if let expiresAt {
             params["expires_at"] = ISO8601DateFormatter().string(from: expiresAt)
+        }
+        if let email, !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["email"] = email.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return try await request(route: .createInvite, parameters: params)
     }
@@ -998,11 +1096,14 @@ final class DiscourseAPI {
         }
 
         if Self.isCloudflareChallengeResponse(response.response, data: response.data) {
-            Self.postCloudflareChallengeDetected(baseURL: baseURL, responseURL: response.response?.url)
+            if executionContext.allowsInteractiveWebRecovery {
+                Self.postCloudflareChallengeDetected(baseURL: baseURL, responseURL: response.response?.url)
+            }
             throw Self.cloudflareChallengeError()
         }
 
-        if allowAuthRecovery,
+        if executionContext.allowsInteractiveWebRecovery,
+           allowAuthRecovery,
            await shouldRetryAfterWebSessionRefresh(
                route: route,
                statusCode: response.response?.statusCode,
@@ -1020,7 +1121,9 @@ final class DiscourseAPI {
         if let httpResponse = response.response, let url = httpResponse.url,
            shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: url) {
             WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: url)
-            await WebSessionRefreshService.shared.ensureInBackground(baseURL: baseURL, reason: "api_response_cookie")
+            if executionContext.allowsInteractiveWebRecovery {
+                await WebSessionRefreshService.shared.ensureInBackground(baseURL: baseURL, reason: "api_response_cookie")
+            }
         }
 
         if let statusCode = response.response?.statusCode, !(200 ..< 300).contains(statusCode) {
