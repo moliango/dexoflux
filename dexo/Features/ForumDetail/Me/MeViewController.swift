@@ -1,7 +1,6 @@
 import SafariServices
 import SDWebImage
 import UIKit
-import WebKit
 
 final class MeViewController: ObservableViewController {
     private let api: DiscourseAPI
@@ -257,6 +256,14 @@ final class MeViewController: ObservableViewController {
                 tintColor: .systemCyan,
                 isEnabled: true,
                 action: { [weak self] in self?.openBrowser() }
+            ),
+            MeActionRow(
+                title: String(localized: "ai.service.title", defaultValue: "AI 模型服务"),
+                subtitle: String(localized: "me.action.ai.subtitle", defaultValue: "管理 AI 供应商与模型"),
+                symbolName: "cpu.fill",
+                tintColor: .systemTeal,
+                isEnabled: true,
+                action: { [weak self] in self?.openAIModelService() }
             ),
             MeActionRow(
                 title: String(localized: "me.badges"),
@@ -553,7 +560,11 @@ final class MeViewController: ObservableViewController {
     }
 
     private func openTrustRequirements() {
-        let vc = TrustRequirementsViewController()
+        let vc = TrustRequirementsViewController(
+            api: api,
+            username: viewModel.currentUser?.username,
+            trustLevel: viewModel.userProfile?.trustLevel ?? 0
+        )
         navigationController?.pushViewController(vc, animated: true)
     }
 
@@ -569,6 +580,10 @@ final class MeViewController: ObservableViewController {
     private func openSettings() {
         let vc = SettingsViewController()
         navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openAIModelService() {
+        navigationController?.pushViewController(AIModelServiceViewController(api: api), animated: true)
     }
 
     private func openUserWebPath(_ path: String) {
@@ -748,244 +763,6 @@ extension UserBadgesViewController: UITableViewDelegate {
         guard let topicId = sections[indexPath.section].1[indexPath.row].topicId else { return }
         let detail = TopicDetailViewController(api: api, topicId: topicId)
         navigationController?.pushViewController(detail, animated: true)
-    }
-}
-
-private final class InviteLinksViewController: UIViewController {
-    private let api: DiscourseAPI
-    private let username: String
-    private var invites: [DiscourseInviteLink] = []
-    private var isLoading = false
-    private var errorMessage: String?
-
-    private lazy var tableView: UITableView = {
-        let table = UITableView(frame: .zero, style: .insetGrouped)
-        table.translatesAutoresizingMaskIntoConstraints = false
-        table.dataSource = self
-        table.delegate = self
-        return table
-    }()
-
-    private let stateLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.textColor = .secondaryLabel
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        return label
-    }()
-
-    private lazy var refreshControl: UIRefreshControl = {
-        let control = UIRefreshControl()
-        control.addTarget(self, action: #selector(refreshPulled), for: .valueChanged)
-        return control
-    }()
-
-    init(api: DiscourseAPI, username: String) {
-        self.api = api
-        self.username = username
-        super.init(nibName: nil, bundle: nil)
-        hidesBottomBarWhenPushed = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = String(localized: "me.invite_links")
-        view.backgroundColor = .systemGroupedBackground
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(createTapped))
-        tableView.refreshControl = refreshControl
-
-        view.addSubview(tableView)
-        view.addSubview(stateLabel)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            stateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            stateLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-        ])
-
-        loadInvites()
-    }
-
-    private func loadInvites() {
-        isLoading = true
-        errorMessage = nil
-        updateState()
-        Task {
-            do {
-                invites = try await api.fetchPendingInvites(username: username)
-            } catch {
-                errorMessage = error.localizedDescription
-                invites = []
-            }
-            isLoading = false
-            refreshControl.endRefreshing()
-            tableView.reloadData()
-            updateState()
-        }
-    }
-
-    private func updateState() {
-        tableView.isHidden = invites.isEmpty
-        stateLabel.isHidden = !invites.isEmpty
-        if isLoading {
-            stateLabel.text = String(localized: "invites.loading")
-        } else if let errorMessage {
-            stateLabel.text = errorMessage
-        } else {
-            stateLabel.text = String(localized: "invites.empty")
-        }
-    }
-
-    @objc private func refreshPulled() {
-        loadInvites()
-    }
-
-    @objc private func createTapped() {
-        let alert = UIAlertController(
-            title: String(localized: "invites.create.title"),
-            message: String(localized: "invites.create.message"),
-            preferredStyle: .alert
-        )
-        alert.addTextField { textField in
-            textField.placeholder = String(localized: "invites.description.placeholder")
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "invites.create.action"), style: .default) { [weak self] _ in
-            guard let self else { return }
-            let description = alert.textFields?.first?.text
-            let expiresAt = Calendar.current.date(byAdding: .day, value: 1, to: Date())
-            Task {
-                do {
-                    let invite = try await self.api.createInvite(description: description, expiresAt: expiresAt)
-                    self.invites.insert(invite, at: 0)
-                    self.tableView.reloadData()
-                    self.updateState()
-                    if let url = invite.effectiveURLString {
-                        UIPasteboard.general.string = url
-                    }
-                } catch {
-                    self.errorMessage = error.localizedDescription
-                    self.updateState()
-                }
-            }
-        })
-        present(alert, animated: true)
-    }
-
-    private func showActions(for invite: DiscourseInviteLink, sourceView: UIView) {
-        guard let urlString = invite.effectiveURLString else { return }
-        let alert = UIAlertController(title: urlString, message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: String(localized: "invites.copy"), style: .default) { _ in
-            UIPasteboard.general.string = urlString
-        })
-        alert.addAction(UIAlertAction(title: String(localized: "invites.share"), style: .default) { [weak self] _ in
-            let activity = UIActivityViewController(activityItems: [urlString], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = sourceView
-            self?.present(activity, animated: true)
-        })
-        if let url = URL(string: urlString) {
-            alert.addAction(UIAlertAction(title: String(localized: "action.open"), style: .default) { [weak self] _ in
-                self?.present(SFSafariViewController(url: url), animated: true)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = sourceView
-        alert.popoverPresentationController?.sourceRect = sourceView.bounds
-        present(alert, animated: true)
-    }
-}
-
-extension InviteLinksViewController: UITableViewDataSource {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        invites.count
-    }
-
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let invite = invites[indexPath.row]
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: "link.circle.fill")
-        content.imageProperties.tintColor = .systemCyan
-        content.text = invite.effectiveURLString ?? String(localized: "invites.unknown")
-        content.secondaryText = invite.description ?? invite.expiresAt ?? invite.createdAt
-        content.secondaryTextProperties.color = .secondaryLabel
-        content.textProperties.font = .systemFont(ofSize: 14, weight: .semibold)
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
-        return cell
-    }
-}
-
-extension InviteLinksViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        guard let cell = tableView.cellForRow(at: indexPath) else { return }
-        showActions(for: invites[indexPath.row], sourceView: cell)
-    }
-}
-
-private final class TrustRequirementsViewController: UIViewController, WKNavigationDelegate {
-    private let webView: WKWebView = {
-        let webView = WKWebView(frame: .zero)
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        return webView
-    }()
-
-    private let progressView: UIProgressView = {
-        let progressView = UIProgressView(progressViewStyle: .default)
-        progressView.translatesAutoresizingMaskIntoConstraints = false
-        return progressView
-    }()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = String(localized: "me.trust_requirements")
-        view.backgroundColor = .systemBackground
-        webView.navigationDelegate = self
-
-        view.addSubview(webView)
-        view.addSubview(progressView)
-        NSLayoutConstraint.activate([
-            progressView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            progressView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            progressView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-
-            webView.topAnchor.constraint(equalTo: progressView.bottomAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
-        webView.addObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: .new, context: nil)
-        if let url = URL(string: "https://connect.linux.do/") {
-            webView.load(URLRequest(url: url))
-        }
-    }
-
-    deinit {
-        webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
-    }
-
-    override func observeValue(
-        forKeyPath keyPath: String?,
-        of object: Any?,
-        change: [NSKeyValueChangeKey: Any]?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        guard keyPath == #keyPath(WKWebView.estimatedProgress) else { return }
-        progressView.progress = Float(webView.estimatedProgress)
-        progressView.isHidden = webView.estimatedProgress >= 1
     }
 }
 
