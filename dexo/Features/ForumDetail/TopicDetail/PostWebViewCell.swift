@@ -542,6 +542,7 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didTapShowRepliesForPostId postId: Int)
     func postCell(didTapToggleDetails detailsIndex: Int, postId: Int)
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post)
+    func postCell(didTapEditPost post: DiscourseTopicDetail.Post)
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool)
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
@@ -648,6 +649,17 @@ final class PostWebViewCell: UITableViewCell {
         return button
     }()
 
+    private let editButton: UIButton = {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        button.setImage(UIImage(systemName: "pencil", withConfiguration: config), for: .normal)
+        button.tintColor = .tertiaryLabel
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isHidden = true
+        button.accessibilityLabel = String(localized: "post.edit.action", defaultValue: "编辑")
+        return button
+    }()
+
     private let separatorLine: UIView = {
         let view = UIView()
         view.backgroundColor = .separator
@@ -675,6 +687,7 @@ final class PostWebViewCell: UITableViewCell {
         contentView.addSubview(replyToLabel)
         contentView.addSubview(snapshotImageView)
         contentView.addSubview(showRepliesButton)
+        contentView.addSubview(editButton)
         contentView.addSubview(replyButton)
         contentView.addSubview(copyLinkButton)
         contentView.addSubview(separatorLine)
@@ -718,6 +731,11 @@ final class PostWebViewCell: UITableViewCell {
             replyButton.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             replyButton.widthAnchor.constraint(equalToConstant: 26),
 
+            editButton.topAnchor.constraint(equalTo: snapshotImageView.bottomAnchor),
+            editButton.trailingAnchor.constraint(equalTo: replyButton.leadingAnchor),
+            editButton.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+            editButton.widthAnchor.constraint(equalToConstant: 26),
+
             separatorLine.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             separatorLine.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             separatorLine.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -730,6 +748,7 @@ final class PostWebViewCell: UITableViewCell {
         showRepliesButton.addTarget(self, action: #selector(repliesButtonTapped), for: .touchUpInside)
         copyLinkButton.addTarget(self, action: #selector(copyLinkTapped), for: .touchUpInside)
         replyButton.addTarget(self, action: #selector(replyButtonTapped), for: .touchUpInside)
+        editButton.addTarget(self, action: #selector(editButtonTapped), for: .touchUpInside)
 
         avatarImageView.isUserInteractionEnabled = true
         let avatarTap = UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
@@ -750,6 +769,7 @@ final class PostWebViewCell: UITableViewCell {
         self.postId = post.id
         self.postLink = postLink
         self.currentPost = post
+        editButton.isHidden = !PostEditingPolicy.canShowEditAction(for: post)
         usernameLabel.text = post.username
         timeLabel.text = Self.formatDate(post.createdAt)
         snapshotImageView.image = snapshot
@@ -870,6 +890,11 @@ final class PostWebViewCell: UITableViewCell {
         delegate?.postCell(didTapReplyToPost: post)
     }
 
+    @objc private func editButtonTapped() {
+        guard let post = currentPost else { return }
+        delegate?.postCell(didTapEditPost: post)
+    }
+
     @objc private func avatarTapped() {
         guard let username = currentPost?.username else { return }
         delegate?.postCell(didTapAvatarForUsername: username)
@@ -895,6 +920,7 @@ final class PostWebViewCell: UITableViewCell {
         postId = 0
         postLink = nil
         currentPost = nil
+        editButton.isHidden = true
         usernameLabel.text = nil
         timeLabel.text = nil
         floorLabel.text = nil

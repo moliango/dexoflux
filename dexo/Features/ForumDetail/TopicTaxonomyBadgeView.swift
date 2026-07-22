@@ -22,7 +22,7 @@ final class TopicTaxonomyBadgeView: UIControl {
         var cornerRadius: CGFloat {
             switch self {
             case .compact: return 6
-            case .regular: return 14
+            case .regular: return 9
             }
         }
 
@@ -52,7 +52,7 @@ final class TopicTaxonomyBadgeView: UIControl {
         isInteractive: Bool = false
     ) {
         super.init(frame: .zero)
-        let fallbackColor = Self.color(fromHex: presentation.colorHex) ?? .systemGray
+        let fallbackColor = TopicTaxonomyColor.resolve(hex: presentation.colorHex) ?? .systemGray
         let color = AppSettings.shared.themeStyle.topicCategoryColor(
             for: presentation.name,
             fallback: fallbackColor
@@ -81,7 +81,7 @@ final class TopicTaxonomyBadgeView: UIControl {
         super.init(frame: .zero)
         let tagPresentation = TopicTagIconCatalog.presentation(for: tag)
         let iconColor = tagPresentation
-            .flatMap { Self.color(fromHex: $0.colorHex) }
+            .flatMap { TopicTaxonomyColor.resolve(hex: $0.colorHex) }
             ?? color
         let iconView: UIView?
         if let tagPresentation {
@@ -260,14 +260,4 @@ final class TopicTaxonomyBadgeView: UIControl {
         return settings.appInterfaceFont(matching: .systemFont(ofSize: adjustedPointSize, weight: weight))
     }
 
-    private static func color(fromHex hex: String) -> UIColor? {
-        let normalized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        guard normalized.count == 6, let value = UInt64(normalized, radix: 16) else { return nil }
-        return UIColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
-    }
 }

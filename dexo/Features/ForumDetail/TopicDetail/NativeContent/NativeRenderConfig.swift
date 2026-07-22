@@ -12,6 +12,7 @@ struct NativeRenderConfig {
     let postId: Int?
     let galleryImageURLs: [URL]
     let topicTagNames: Set<String>
+    let topicCategoryPresentation: TopicCategoryBadgePresentation?
     let defaultLineSpacing: CGFloat
     let defaultParagraphSpacing: CGFloat
 
@@ -26,6 +27,7 @@ struct NativeRenderConfig {
         postId: Int? = nil,
         galleryImageURLs: [URL] = [],
         topicTagNames: Set<String> = [],
+        topicCategoryPresentation: TopicCategoryBadgePresentation? = nil,
         defaultLineSpacing: CGFloat = 4,
         defaultParagraphSpacing: CGFloat = 5
     ) {
@@ -39,6 +41,7 @@ struct NativeRenderConfig {
         self.postId = postId
         self.galleryImageURLs = galleryImageURLs
         self.topicTagNames = topicTagNames
+        self.topicCategoryPresentation = topicCategoryPresentation
         self.defaultLineSpacing = defaultLineSpacing
         self.defaultParagraphSpacing = defaultParagraphSpacing
     }
@@ -58,7 +61,8 @@ struct NativeRenderConfig {
         baseURL: String? = nil,
         postId: Int? = nil,
         galleryImageURLs: [URL] = [],
-        topicTagNames: Set<String> = []
+        topicTagNames: Set<String> = [],
+        topicCategoryPresentation: TopicCategoryBadgePresentation? = nil
     ) -> NativeRenderConfig {
         let settings = AppSettings.shared
         let comfortMode = settings.readingComfortMode
@@ -84,6 +88,7 @@ struct NativeRenderConfig {
             postId: postId,
             galleryImageURLs: galleryImageURLs,
             topicTagNames: topicTagNames,
+            topicCategoryPresentation: topicCategoryPresentation,
             defaultLineSpacing: comfortMode ? 3 : 2,
             defaultParagraphSpacing: comfortMode ? 5 : 3
         )
@@ -94,7 +99,10 @@ struct NativeRenderConfig {
         lineSpacing: CGFloat? = nil,
         paragraphSpacing: CGFloat? = nil
     ) -> NSAttributedString {
-        let result = NSMutableAttributedString(attributedString: inlines.attributedString(config: attributedStringConfig))
+        let result = NSMutableAttributedString()
+        for inline in inlines {
+            result.append(attributedString(for: inline))
+        }
         guard result.length > 0 else { return result }
 
         let lineSpacing = lineSpacing ?? defaultLineSpacing
@@ -106,6 +114,132 @@ struct NativeRenderConfig {
             .paragraphStyle,
             value: paragraphStyle,
             range: NSRange(location: 0, length: result.length)
+        )
+        return result
+    }
+
+    private func attributedString(for inline: InlineNode) -> NSAttributedString {
+        let taxonomy: (text: String, href: String, type: String?)?
+        switch inline {
+        case .hashtag(let text, let href, let type):
+            taxonomy = (text, href, type)
+        case .link(let href, let children):
+            let linkedText = plainText(from: children).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard linkedText.hasPrefix("#"), linkedText.count > 1 else {
+                return inline.attributedString(config: attributedStringConfig)
+            }
+            let text = String(linkedText.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = URL(string: href)?.path.lowercased() ?? href.lowercased()
+            let type = path.contains("/c/") ? "category" : (path.contains("/tag/") ? "tag" : nil)
+            taxonomy = (text, href, type)
+        default:
+            taxonomy = nil
+        }
+        guard let taxonomy else {
+            return inline.attributedString(config: attributedStringConfig)
+        }
+        let (text, href, type) = taxonomy
+
+        if HeadingPresentationPolicy.shouldRenderTagBadge(
+            level: 1,
+            text: text,
+            topicTagNames: topicTagNames
+        ) {
+            let tagPresentation = TopicTagIconCatalog.presentation(for: text)
+            return inlineTaxonomyString(
+                text: text,
+                href: href,
+                iconName: tagPresentation?.iconName,
+                textColor: TopicTagVisualStyle.color(for: text),
+                iconColor: tagPresentation
+                    .flatMap { TopicTaxonomyColor.resolve(hex: $0.colorHex) }
+                    ?? TopicTagVisualStyle.color(for: text)
+            )
+        }
+
+        if type?.lowercased() == "category",
+           let category = topicCategoryPresentation,
+           HeadingPresentationPolicy.shouldRenderCategoryBadge(
+               level: 1,
+               text: text,
+               categoryName: category.name
+           ) {
+            let iconName: String?
+            switch category.iconSource {
+            case .fontAwesome(let name): iconName = name
+            case .lock: iconName = "lock"
+            case .logo, .dot: iconName = nil
+            }
+            return inlineTaxonomyString(
+                text: text,
+                href: href,
+                iconName: iconName,
+                textColor: linkColor,
+                iconColor: linkColor
+            )
+        }
+
+        return inline.attributedString(config: attributedStringConfig)
+    }
+
+    private func plainText(from inlines: [InlineNode]) -> String {
+        inlines.map { inline in
+            switch inline {
+            case .text(let text), .styledText(let text, _), .code(let text):
+                return text
+            case .link(_, let children), .spoiler(let children):
+                return plainText(from: children)
+            case .mention(let username, _):
+                return "@\(username)"
+            case .mentionGroup(let name, _):
+                return "@\(name)"
+            case .hashtag(let text, _, _):
+                return "#\(text)"
+            case .image(_, let alt, _, _, _):
+                return alt ?? ""
+            case .lineBreak:
+                return "\n"
+            }
+        }.joined()
+    }
+
+    private func inlineTaxonomyString(
+        text: String,
+        href: String,
+        iconName: String?,
+        textColor: UIColor,
+        iconColor: UIColor
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        // Only emit FA PUA glyphs when the icon font actually loads.
+        // Falling back to the body font turns private-use codepoints into
+        // random CJK tofu that sits on top of the post body ("掩盖").
+        if let iconName,
+           let glyph = DiscourseFontAwesomeIcon.glyph(for: iconName),
+           let iconFont = UIFont(
+               name: DiscourseFontAwesomeIcon.fontName,
+               size: max(baseFont.pointSize - 1, 1)
+           ) {
+            result.append(NSAttributedString(
+                string: "\(glyph) ",
+                attributes: [
+                    .font: iconFont,
+                    .foregroundColor: iconColor,
+                ]
+            ))
+        }
+        let linkedTextStart = result.length
+        result.append(NSAttributedString(
+            string: text,
+            attributes: [
+                .font: baseFont.weighted(.semibold),
+                .foregroundColor: textColor,
+            ]
+        ))
+        result.addAttribute(
+            .link,
+            value: href,
+            range: NSRange(location: linkedTextStart, length: result.length - linkedTextStart)
         )
         return result
     }

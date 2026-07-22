@@ -7,6 +7,11 @@ enum BoostInputResult {
     case reply(String)
 }
 
+enum ReplyComposerSubmissionMode: Equatable {
+    case reply
+    case edit(postId: Int)
+}
+
 final class BoostInputViewController: UIViewController {
     private static let maxVisibleLength = 16
     private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":[\\w\\-+]+:")
@@ -272,7 +277,9 @@ final class ReplyComposerViewController: UIViewController {
     private let replyToPost: DiscourseTopicDetail.Post?
     private let baseURL: String
     private let initialText: String?
+    private let submissionMode: ReplyComposerSubmissionMode
     var onPostCreated: (() -> Void)?
+    var onPostUpdated: ((Int) -> Void)?
 
     private var currentPanel: ComposerPanel = .none
     private var hasLoadedForumEmojis = false
@@ -456,13 +463,15 @@ final class ReplyComposerViewController: UIViewController {
         topicId: Int,
         replyToPost: DiscourseTopicDetail.Post?,
         baseURL: String,
-        initialText: String? = nil
+        initialText: String? = nil,
+        submissionMode: ReplyComposerSubmissionMode = .reply
     ) {
         self.api = api
         self.topicId = topicId
         self.replyToPost = replyToPost
         self.baseURL = baseURL
         self.initialText = initialText
+        self.submissionMode = submissionMode
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -475,10 +484,18 @@ final class ReplyComposerViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        if let username = replyToPost?.username {
-            headerTitleLabel.text = String(format: String(localized: "reply.title.to %@"), username)
-        } else {
-            headerTitleLabel.text = String(localized: "reply.title.topic")
+        switch submissionMode {
+        case .reply:
+            if let username = replyToPost?.username {
+                headerTitleLabel.text = String(format: String(localized: "reply.title.to %@"), username)
+            } else {
+                headerTitleLabel.text = String(localized: "reply.title.topic")
+            }
+        case .edit:
+            headerTitleLabel.text = String(localized: "post.edit.title", defaultValue: "编辑评论")
+            var configuration = sendButton.configuration
+            configuration?.title = String(localized: "common.save")
+            sendButton.configuration = configuration
         }
 
         view.addSubview(grabberView)
@@ -1150,17 +1167,25 @@ final class ReplyComposerViewController: UIViewController {
 
         Task {
             do {
-                let response = try await api.createReply(
-                    topicId: topicId,
-                    replyToPostNumber: replyToPost?.postNumber,
-                    raw: raw
-                )
-                if response.isEnqueued {
-                    presentQueuedAlert()
-                    return
-                }
-                dismiss(animated: true) { [weak self] in
-                    self?.onPostCreated?()
+                switch submissionMode {
+                case .reply:
+                    let response = try await api.createReply(
+                        topicId: topicId,
+                        replyToPostNumber: replyToPost?.postNumber,
+                        raw: raw
+                    )
+                    if response.isEnqueued {
+                        presentQueuedAlert()
+                        return
+                    }
+                    dismiss(animated: true) { [weak self] in
+                        self?.onPostCreated?()
+                    }
+                case .edit(let postId):
+                    try await api.updatePost(id: postId, raw: raw)
+                    dismiss(animated: true) { [weak self] in
+                        self?.onPostUpdated?(postId)
+                    }
                 }
             } catch {
                 sendButton.isEnabled = true

@@ -48,7 +48,8 @@ private class DetailsCardView: UIView {
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs,
-            topicTagNames: config.topicTagNames
+            topicTagNames: config.topicTagNames,
+            topicCategoryPresentation: config.topicCategoryPresentation
         )
 
         // MARK: Header

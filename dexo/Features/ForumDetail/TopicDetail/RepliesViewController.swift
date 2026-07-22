@@ -249,6 +249,12 @@ extension RepliesViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            self?.loadAndPresentPostEditor(postId: post.id)
+        }
+    }
+
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool) {
         performAuthenticated { [weak self] in
             guard let self else { return }
@@ -516,5 +522,40 @@ extension RepliesViewController: PostCellDelegate {
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
         }
         present(composer, animated: true)
+    }
+
+    private func loadAndPresentPostEditor(postId: Int) {
+        Task {
+            do {
+                let editablePost = try await api.fetchPost(id: postId)
+                guard editablePost.canEdit, let raw = editablePost.raw else {
+                    throw DiscourseAPIError(
+                        messages: [String(localized: "post.edit.unavailable", defaultValue: "这条评论当前无法编辑。")],
+                        errorType: "post_not_editable"
+                    )
+                }
+                let composer = ReplyComposerViewController(
+                    api: api,
+                    topicId: topicId,
+                    replyToPost: nil,
+                    baseURL: baseURL,
+                    initialText: raw,
+                    submissionMode: .edit(postId: postId)
+                )
+                composer.onPostUpdated = { [weak self] _ in
+                    guard let self else { return }
+                    Task { await self.loadReplies() }
+                }
+                composer.modalPresentationStyle = .pageSheet
+                if let sheet = composer.sheetPresentationController {
+                    sheet.detents = [.large()]
+                    sheet.prefersGrabberVisible = false
+                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                }
+                present(composer, animated: true)
+            } catch {
+                showPostActionError(error)
+            }
+        }
     }
 }

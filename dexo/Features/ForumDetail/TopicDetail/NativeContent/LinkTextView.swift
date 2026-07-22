@@ -22,14 +22,36 @@ final class LinkTextView: UITextView {
     /// Blur intensity for inline spoiler (0 = none, 1 = full).
     private static let blurFraction: CGFloat = 0.7
 
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        commonInit()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonInit()
+    }
+
+    private func commonInit() {
+        // Prevent underestimated height from painting text into the next block (covers/masks next line).
+        clipsToBounds = true
+        isScrollEnabled = false
+        textContainer.lineFragmentPadding = 0
+        textContainerInset = .zero
+    }
+
     override var intrinsicContentSize: CGSize {
-        let measurementWidth = bounds.width > 0 ? bounds.width : preferredMeasurementWidth
-        guard !isScrollEnabled, measurementWidth > 0 else {
+        let measurementWidth = bounds.width > 1 ? bounds.width : preferredMeasurementWidth
+        guard !isScrollEnabled, measurementWidth > 1 else {
             return super.intrinsicContentSize
         }
+        // Ensure layout manager uses the measurement width before first layout pass.
+        let usableWidth = max(measurementWidth - textContainerInset.left - textContainerInset.right, 1)
+        textContainer.size = CGSize(width: usableWidth, height: .greatestFiniteMagnitude)
         let fittingSize = CGSize(width: measurementWidth, height: .greatestFiniteMagnitude)
         let measured = sizeThatFits(fittingSize)
-        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height + 2))
+        // Extra padding avoids first-line clip when UIStackView compresses UITextView height.
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height + 4))
     }
 
     deinit {
@@ -55,6 +77,12 @@ final class LinkTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if bounds.width > 1 {
+            let usableWidth = max(bounds.width - textContainerInset.left - textContainerInset.right, 1)
+            if abs(textContainer.size.width - usableWidth) > 0.5 {
+                textContainer.size = CGSize(width: usableWidth, height: .greatestFiniteMagnitude)
+            }
+        }
         if abs(bounds.width - lastIntrinsicWidth) > 0.5 {
             lastIntrinsicWidth = bounds.width
             invalidateIntrinsicContentSize()

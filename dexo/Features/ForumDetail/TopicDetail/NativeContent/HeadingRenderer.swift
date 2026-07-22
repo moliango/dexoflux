@@ -15,6 +15,16 @@ enum HeadingPresentationPolicy {
         return topicTagNames.contains { normalize($0) == normalizedText }
     }
 
+    static func shouldRenderCategoryBadge(
+        level: Int,
+        text: String,
+        categoryName: String?
+    ) -> Bool {
+        guard level == 1, let categoryName else { return false }
+        let normalizedText = normalize(text)
+        return !normalizedText.isEmpty && normalize(categoryName) == normalizedText
+    }
+
     private static func normalize(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -30,6 +40,18 @@ enum HeadingRenderer: BlockRenderer {
         guard case .heading(let level, let inlines) = block else { return UIView() }
 
         let headingText = plainHeadingText(from: inlines)
+        if let category = config.topicCategoryPresentation,
+           HeadingPresentationPolicy.shouldRenderCategoryBadge(
+               level: level,
+               text: headingText,
+               categoryName: category.name
+           ) {
+            return TopicTaxonomyBadgeView(
+                category: category,
+                baseURL: config.baseURL ?? "",
+                variant: .regular
+            )
+        }
         if HeadingPresentationPolicy.shouldRenderTagBadge(
             level: level,
             text: headingText,
@@ -64,7 +86,8 @@ enum HeadingRenderer: BlockRenderer {
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs,
-            topicTagNames: config.topicTagNames
+            topicTagNames: config.topicTagNames,
+            topicCategoryPresentation: config.topicCategoryPresentation
         )
 
         let attributedText = headingConfig.styledAttributedString(
@@ -84,10 +107,11 @@ enum HeadingRenderer: BlockRenderer {
         textView.textContainer.lineFragmentPadding = 0
         textView.backgroundColor = .clear
         textView.dataDetectorTypes = []
+        // 首次测量时 bounds 还是 0，必须给测量宽度，否则标题高度被低估、
+        // 文本视图偏短导致首行被顶出可视区（内容顶部“被掩盖”）。
+        textView.preferredMeasurementWidth = config.contentWidth
         textView.attributedText = attributedText
-        textView.linkTextAttributes = [
-            .foregroundColor: config.linkColor,
-        ]
+        textView.linkTextAttributes = [:]
         textView.translatesAutoresizingMaskIntoConstraints = false
         return textView
     }

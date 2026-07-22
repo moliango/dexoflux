@@ -18,9 +18,8 @@ enum ParagraphRenderer: BlockRenderer {
         textView.backgroundColor = .clear
         textView.dataDetectorTypes = []
         textView.attributedText = config.styledAttributedString(from: inlines, paragraphSpacing: 0)
-        textView.linkTextAttributes = [
-            .foregroundColor: config.linkColor,
-        ]
+        // Inline taxonomy links carry their own server-derived color.
+        textView.linkTextAttributes = [:]
         textView.preferredMeasurementWidth = config.contentWidth
         textView.setContentCompressionResistancePriority(.required, for: .vertical)
         textView.translatesAutoresizingMaskIntoConstraints = false

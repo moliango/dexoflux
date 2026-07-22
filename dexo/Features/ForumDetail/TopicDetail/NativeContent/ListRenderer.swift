@@ -45,7 +45,10 @@ enum ListRenderer: BlockRenderer {
             ])
             result.append(bulletAttr)
 
-            let itemAttr = item.content.attributedString(config: config.attributedStringConfig)
+            let itemAttr = config.styledAttributedString(
+                from: item.content,
+                paragraphSpacing: 0
+            )
             result.append(itemAttr)
 
             if index < items.count - 1 {
@@ -68,9 +71,7 @@ enum ListRenderer: BlockRenderer {
         textView.backgroundColor = .clear
         textView.dataDetectorTypes = []
         textView.attributedText = result
-        textView.linkTextAttributes = [
-            .foregroundColor: config.linkColor,
-        ]
+        textView.linkTextAttributes = [:]
         textView.preferredMeasurementWidth = config.contentWidth
         textView.setContentCompressionResistancePriority(.required, for: .vertical)
         textView.translatesAutoresizingMaskIntoConstraints = false

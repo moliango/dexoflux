@@ -1,5 +1,18 @@
 import UIKit
 
+enum TopicTaxonomyColor {
+    static func resolve(hex: String) -> UIColor? {
+        let normalized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard normalized.count == 6, let value = UInt64(normalized, radix: 16) else { return nil }
+        return UIColor(
+            red: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+}
+
 enum DiscourseFontAwesomeIcon {
     static let fontName = "FontAwesome5Free-Solid"
 

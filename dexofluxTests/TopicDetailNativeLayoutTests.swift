@@ -1,3 +1,4 @@
+import CookedHTML
 import XCTest
 @testable import dexoflux
 
@@ -84,6 +85,123 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         XCTAssertFalse(HeadingPresentationPolicy.usesAccentRail)
     }
 
+    func testHeadingUsesCategoryBadgeOnlyForCurrentCategory() {
+        XCTAssertTrue(
+            HeadingPresentationPolicy.shouldRenderCategoryBadge(
+                level: 1,
+                text: " 公益推广 ",
+                categoryName: "公益推广"
+            )
+        )
+        XCTAssertFalse(
+            HeadingPresentationPolicy.shouldRenderCategoryBadge(
+                level: 1,
+                text: "开源项目介绍",
+                categoryName: "公益推广"
+            )
+        )
+        XCTAssertFalse(
+            HeadingPresentationPolicy.shouldRenderCategoryBadge(
+                level: 2,
+                text: "公益推广",
+                categoryName: "公益推广"
+            )
+        )
+    }
+
+    func testInlineTopicHashtagUsesIconAndTextInsteadOfHashPrefix() {
+        let config = NativeRenderConfig.default(
+            contentWidth: 320,
+            baseURL: "https://linux.do",
+            topicTagNames: ["公益推广"]
+        )
+        let attributed = config.styledAttributedString(from: [
+            .hashtag(
+                text: "公益推广",
+                href: "https://linux.do/tag/公益推广",
+                type: "tag"
+            ),
+        ])
+
+        XCTAssertFalse(attributed.string.hasPrefix("#"))
+        XCTAssertTrue(attributed.string.hasSuffix("公益推广"))
+        XCTAssertNotNil(attributed.attribute(.link, at: 0, effectiveRange: nil))
+        XCTAssertGreaterThan(attributed.length, "公益推广".utf16.count)
+    }
+
+    func testLinkedHashTextUsesTopicTagIconRendering() {
+        let config = NativeRenderConfig.default(
+            contentWidth: 320,
+            baseURL: "https://linux.do",
+            topicTagNames: ["公益推广"]
+        )
+        let attributed = config.styledAttributedString(from: [
+            .link(
+                href: "https://linux.do/tag/公益推广",
+                children: [.text("#公益推广")]
+            ),
+        ])
+
+        XCTAssertFalse(attributed.string.hasPrefix("#"))
+        XCTAssertTrue(attributed.string.hasSuffix("公益推广"))
+        XCTAssertGreaterThan(attributed.length, "公益推广".utf16.count)
+    }
+
+    func testRegularTaxonomyBadgeUsesCompactRoundedRectangle() {
+        XCTAssertEqual(TopicTaxonomyBadgeView.Variant.regular.cornerRadius, 9)
+    }
+
+    func testListRendererAppliesInlineTopicTagIconRendering() throws {
+        let config = NativeRenderConfig.default(
+            contentWidth: 320,
+            baseURL: "https://linux.do",
+            topicTagNames: ["公益推广"]
+        )
+        let block = ContentBlock.list(
+            ordered: false,
+            items: [
+                ListItem(content: [
+                    .text("我的帖子已经打上 "),
+                    .link(
+                        href: "https://linux.do/tag/公益推广",
+                        children: [.text("#公益推广")]
+                    ),
+                    .text(" 标签：是"),
+                ]),
+            ]
+        )
+
+        let view = ListRenderer.render(block, config: config, delegate: nil)
+        let textView = try XCTUnwrap(view as? LinkTextView)
+        let rendered = try XCTUnwrap(textView.attributedText)
+        let glyph = try XCTUnwrap(
+            TopicTagIconCatalog.presentation(for: "公益推广")
+                .flatMap { DiscourseFontAwesomeIcon.glyph(for: $0.iconName) }
+        )
+
+        XCTAssertFalse(rendered.string.contains("#公益推广"))
+        XCTAssertTrue(rendered.string.contains("公益推广"))
+        XCTAssertTrue(rendered.string.contains(glyph))
+        XCTAssertNil(textView.linkTextAttributes[.foregroundColor])
+
+        let tagRange = (rendered.string as NSString).range(of: "公益推广")
+        let renderedColor = try XCTUnwrap(
+            rendered.attribute(.foregroundColor, at: tagRange.location, effectiveRange: nil) as? UIColor
+        )
+        XCTAssertEqual(renderedColor, TopicTagVisualStyle.color(for: "公益推广"))
+        let glyphRange = (rendered.string as NSString).range(of: glyph)
+        let glyphColor = try XCTUnwrap(
+            rendered.attribute(.foregroundColor, at: glyphRange.location, effectiveRange: nil) as? UIColor
+        )
+        let iconColor = try XCTUnwrap(
+            TopicTagIconCatalog.presentation(for: "公益推广")
+                .flatMap { TopicTaxonomyColor.resolve(hex: $0.colorHex) }
+        )
+        XCTAssertEqual(glyphColor, iconColor)
+        XCTAssertNil(rendered.attribute(.link, at: glyphRange.location, effectiveRange: nil))
+        XCTAssertNotNil(rendered.attribute(.link, at: tagRange.location, effectiveRange: nil))
+    }
+
     func testPostActionAreaKeepsStableWidthAfterPaginationReuse() throws {
         let cell = PostNativeCell(style: .default, reuseIdentifier: PostNativeCell.reuseIdentifier)
         cell.frame = CGRect(x: 0, y: 0, width: 402, height: 320)
@@ -94,26 +212,31 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         )
         cell.layoutIfNeeded()
         let initialActions = try XCTUnwrap(actionStack(in: cell))
-        let initialSupplementary = try XCTUnwrap(
-            view(in: cell, accessibilityIdentifier: "post.supplementary.footer")
+        let initialReactions = try XCTUnwrap(
+            view(in: cell, accessibilityIdentifier: "post.reactions.summary")
+        )
+        XCTAssertFalse(initialReactions.isHidden)
+        XCTAssertEqual(
+            initialActions.arrangedSubviews.first?.accessibilityIdentifier,
+            "post.reactions.summary"
         )
         let initialWidth = initialActions.bounds.width
-        XCTAssertEqual(initialWidth, 194, accuracy: 0.5)
-        XCTAssertFalse(initialSupplementary.isHidden)
-        XCTAssertEqual(initialSupplementary.bounds.height, PostNativeCell.bottomBarHeight, accuracy: 0.5)
+        XCTAssertGreaterThan(initialWidth, 194)
 
         cell.prepareForReuse()
         configure(cell, post: try decodePost(includesActionMetadata: false))
         cell.layoutIfNeeded()
         let reusedActions = try XCTUnwrap(actionStack(in: cell))
+        let reusedReactions = try XCTUnwrap(
+            view(in: cell, accessibilityIdentifier: "post.reactions.summary")
+        )
         let reusedSupplementary = try XCTUnwrap(
             view(in: cell, accessibilityIdentifier: "post.supplementary.footer")
         )
-        let reusedWidth = reusedActions.bounds.width
 
-        XCTAssertEqual(initialWidth, reusedWidth, accuracy: 0.5)
+        XCTAssertEqual(reusedActions.bounds.width, 194, accuracy: 0.5)
+        XCTAssertTrue(reusedReactions.isHidden)
         XCTAssertTrue(reusedSupplementary.isHidden)
-        XCTAssertEqual(reusedSupplementary.bounds.height, 0, accuracy: 0.5)
 
         let reusedButtons = descendants(in: reusedActions).compactMap { $0 as? PostActionButton }
         XCTAssertEqual(reusedButtons.count, 5)
@@ -123,7 +246,7 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         }
     }
 
-    func testPostFooterUsesTwoRowsWhenSupplementaryActionsNeedSpace() throws {
+    func testPostFooterKeepsSingleRowWithSupplementaryActions() throws {
         let cell = PostNativeCell(style: .default, reuseIdentifier: PostNativeCell.reuseIdentifier)
         cell.frame = CGRect(x: 0, y: 0, width: 320, height: 360)
         configure(
@@ -137,8 +260,8 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         let actions = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.action.footer"))
 
         XCTAssertFalse(supplementary.isHidden)
-        XCTAssertLessThanOrEqual(supplementary.frame.maxY, actions.frame.minY + 0.5)
-        XCTAssertEqual(actions.bounds.width, 194, accuracy: 0.5)
+        XCTAssertEqual(supplementary.frame.midY, actions.frame.midY, accuracy: 1)
+        XCTAssertLessThanOrEqual(supplementary.frame.maxX, actions.frame.minX + 0.5)
         XCTAssertLessThanOrEqual(actions.frame.maxX, actions.superview?.bounds.maxX ?? 0)
     }
 
@@ -182,7 +305,7 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
 
         let expectedHeight = ceil(textView.sizeThatFits(
             CGSize(width: 180, height: CGFloat.greatestFiniteMagnitude)
-        ).height + 2)
+        ).height + 4)
         XCTAssertEqual(textView.intrinsicContentSize.height, expectedHeight)
         XCTAssertGreaterThan(expectedHeight, textView.font?.lineHeight ?? 0)
     }

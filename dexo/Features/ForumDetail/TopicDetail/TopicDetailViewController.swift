@@ -320,7 +320,8 @@ final class TopicDetailViewController: ObservableViewController {
             baseURL: self.baseURL,
             postId: post.id,
             galleryImageURLs: galleryImageURLs,
-            topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? [])
+            topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? []),
+            topicCategoryPresentation: self.viewModel.categoryPresentation
         )
         let hasUnsupported = self.viewModel.unsupportedPostIds.contains(postId)
 
@@ -642,6 +643,7 @@ final class TopicDetailViewController: ObservableViewController {
             || lastContentFontScope != settings.contentFontScope
             || lastInterfaceFontScalePercent != settings.interfaceFontScalePercent
             || didChangeThemeStyle
+            || didChangeCategoryPresentation
         lastReadingComfortMode = settings.readingComfortMode
         lastContentFontSize = settings.contentFontSize
         lastContentFontScalePercent = settings.contentFontScalePercent
@@ -1354,7 +1356,28 @@ final class TopicDetailViewController: ObservableViewController {
             menu: UIMenu(children: actions)
         )
         moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
-        navigationItem.rightBarButtonItems = [moreButton, searchButton]
+        let aiButton = UIBarButtonItem(
+            image: UIImage(systemName: "sparkles"),
+            style: .plain,
+            target: self,
+            action: #selector(aiAssistantTapped)
+        )
+        aiButton.accessibilityLabel = String(localized: "ai.chat.title", defaultValue: "AI 助手")
+        navigationItem.rightBarButtonItems = [moreButton, aiButton, searchButton]
+    }
+
+    @objc private func aiAssistantTapped() {
+        let chat = AIChatSheetViewController(
+            api: api,
+            topicId: topicId,
+            topicTitle: viewModel.topic?.title
+        )
+        if let sheet = chat.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+            sheet.largestUndimmedDetentIdentifier = .medium
+        }
+        present(chat, animated: true)
     }
 
     @objc private func pluginStateDidChange() {
@@ -2810,6 +2833,12 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            self?.loadAndPresentPostEditor(postId: post.id)
+        }
+    }
+
     private func presentBoostInput(for post: DiscourseTopicDetail.Post) {
         let input = BoostInputViewController(api: api)
         input.onSubmit = { [weak self] result in
@@ -2860,5 +2889,47 @@ extension TopicDetailViewController: PostCellDelegate {
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
         }
         present(composer, animated: true)
+    }
+
+    private func loadAndPresentPostEditor(postId: Int) {
+        Task {
+            do {
+                let editablePost = try await api.fetchPost(id: postId)
+                guard editablePost.canEdit, let raw = editablePost.raw else {
+                    throw DiscourseAPIError(
+                        messages: [String(localized: "post.edit.unavailable", defaultValue: "这条评论当前无法编辑。")],
+                        errorType: "post_not_editable"
+                    )
+                }
+                let composer = ReplyComposerViewController(
+                    api: api,
+                    topicId: topicId,
+                    replyToPost: nil,
+                    baseURL: baseURL,
+                    initialText: raw,
+                    submissionMode: .edit(postId: postId)
+                )
+                composer.onPostUpdated = { [weak self] updatedPostId in
+                    guard let self else { return }
+                    Task {
+                        do {
+                            try await self.viewModel.reloadPost(postId: updatedPostId)
+                            self.reloadPostCell(postId: updatedPostId)
+                        } catch {
+                            self.showPostActionError(error)
+                        }
+                    }
+                }
+                composer.modalPresentationStyle = .pageSheet
+                if let sheet = composer.sheetPresentationController {
+                    sheet.detents = [.large()]
+                    sheet.prefersGrabberVisible = false
+                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                }
+                present(composer, animated: true)
+            } catch {
+                showPostActionError(error)
+            }
+        }
     }
 }

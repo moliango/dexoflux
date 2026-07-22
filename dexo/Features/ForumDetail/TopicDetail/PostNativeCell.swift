@@ -35,6 +35,12 @@ final class PostActionButton: UIButton {
     }
 }
 
+enum PostEditingPolicy {
+    static func canShowEditAction(for post: DiscourseTopicDetail.Post) -> Bool {
+        post.canEdit
+    }
+}
+
 enum TopicDetailTypography {
     static func interfaceFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
         let settings = AppSettings.shared
@@ -128,10 +134,12 @@ final class PostNativeCell: UITableViewCell {
         )?.withRenderingMode(.alwaysTemplate) ?? UIImage()
     }()
     static func renderContentWidth(for tableWidth: CGFloat, isFirstPost: Bool) -> CGFloat {
+        // tableView 首次 dequeue 时 bounds 可能仍是 0，回退到屏幕宽度，避免 preferredMeasurementWidth=0 导致正文首行被掩盖。
+        let resolvedWidth = tableWidth > 1 ? tableWidth : UIScreen.main.bounds.width
         let contentInset = isFirstPost ? Metrics.firstPostContentInset : 0
         let cardOuterHorizontal = isFirstPost ? Metrics.cardOuterHorizontal : Metrics.replyCardOuterHorizontal
         let horizontalInset = (cardOuterHorizontal + Metrics.cardInner + contentInset) * 2
-        return max(tableWidth - horizontalInset, 0)
+        return max(resolvedWidth - horizontalInset, 1)
     }
 
     static func firstPostRenderContentWidth(for tableWidth: CGFloat) -> CGFloat {
@@ -154,7 +162,6 @@ final class PostNativeCell: UITableViewCell {
         static let reactionSlotWidth: CGFloat = 42
         static let actionButtonWidth: CGFloat = 36
         static let actionSpacing: CGFloat = 2
-        static let supplementaryFooterSpacing: CGFloat = 4
         static let minimumReplyCardHeight: CGFloat = 80
     }
 
@@ -170,8 +177,6 @@ final class PostNativeCell: UITableViewCell {
     private var cardBottomConstraint: NSLayoutConstraint?
     private var cardLeadingConstraint: NSLayoutConstraint?
     private var cardTrailingConstraint: NSLayoutConstraint?
-    private var supplementaryFooterHeightConstraint: NSLayoutConstraint?
-    private var actionStackTopConstraint: NSLayoutConstraint?
 
     private let cardView: UIView = {
         let view = UIView()
@@ -369,9 +374,9 @@ final class PostNativeCell: UITableViewCell {
         button.isHidden = true
         button.translatesAutoresizingMaskIntoConstraints = false
         button.titleLabel?.numberOfLines = 1
-        button.titleLabel?.lineBreakMode = .byClipping
+        button.titleLabel?.lineBreakMode = .byTruncatingTail
         button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.init(999), for: .horizontal)
         return button
     }()
 
@@ -398,6 +403,7 @@ final class PostNativeCell: UITableViewCell {
         sv.alignment = .center
         sv.isHidden = true
         sv.isUserInteractionEnabled = false
+        sv.accessibilityIdentifier = "post.reactions.summary"
         sv.translatesAutoresizingMaskIntoConstraints = false
         return sv
     }()
@@ -548,8 +554,8 @@ final class PostNativeCell: UITableViewCell {
         }
         reactionStackView.addArrangedSubview(reactionCountLabel)
         reactionCountLabel.isHidden = true
-        bottomLeftStack.addArrangedSubview(reactionStackView)
         reactionPillControl.addSubview(reactButton)
+        actionStackView.addArrangedSubview(reactionStackView)
         actionStackView.addArrangedSubview(reactionPillControl)
         actionStackView.addArrangedSubview(boostButton)
         actionStackView.addArrangedSubview(bookmarkButton)
@@ -588,13 +594,6 @@ final class PostNativeCell: UITableViewCell {
         let sharedIssueButtonMinWidthConstraint = sharedIssueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
         sharedIssueButtonMinWidthConstraint.priority = .init(999)
         self.sharedIssueButtonMinWidthConstraint = sharedIssueButtonMinWidthConstraint
-        let supplementaryFooterHeightConstraint = bottomLeftStack.heightAnchor.constraint(equalToConstant: 0)
-        self.supplementaryFooterHeightConstraint = supplementaryFooterHeightConstraint
-        let actionStackTopConstraint = actionStackView.topAnchor.constraint(
-            equalTo: contentCardView.bottomAnchor,
-            constant: Metrics.actionTop
-        )
-        self.actionStackTopConstraint = actionStackTopConstraint
 
         let cardTopConstraint = cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Metrics.cardOuterVertical)
         let cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Metrics.cardOuterVertical)
@@ -659,10 +658,10 @@ final class PostNativeCell: UITableViewCell {
             contentTrailingConstraint,
             contentBottomConstraint,
 
-            bottomLeftStack.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
+            bottomLeftStack.centerYAnchor.constraint(equalTo: actionStackView.centerYAnchor),
             bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
-            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
-            supplementaryFooterHeightConstraint,
+            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
+            bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             sharedIssueButtonMinWidthConstraint,
             sharedIssueButton.heightAnchor.constraint(equalToConstant: Metrics.sharedIssueButtonHeight),
 
@@ -671,7 +670,7 @@ final class PostNativeCell: UITableViewCell {
             sharedIssueCountLabel.heightAnchor.constraint(equalToConstant: 18),
             sharedIssueCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
-            actionStackTopConstraint,
+            actionStackView.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
             actionStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             actionStackView.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
             { let c = actionStackView.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -8); c.priority = .init(999); return c }(),
@@ -1397,14 +1396,9 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func updateFooterLayout() {
-        let showsSupplementaryFooter = !sharedIssueButton.isHidden
-            || !showRepliesButton.isHidden
-            || !reactionStackView.isHidden
-        bottomLeftStack.isHidden = !showsSupplementaryFooter
-        supplementaryFooterHeightConstraint?.constant = showsSupplementaryFooter ? Self.bottomBarHeight : 0
-        actionStackTopConstraint?.constant = Metrics.actionTop + (showsSupplementaryFooter
-            ? Self.bottomBarHeight + Metrics.supplementaryFooterSpacing
-            : 0)
+        // ponytail: single footer row — on very narrow widths (320pt) with shared issue +
+        // replies + wide reactions, the left buttons truncate instead of wrapping to a second row.
+        bottomLeftStack.isHidden = sharedIssueButton.isHidden && showRepliesButton.isHidden
     }
 
     private func configureReactionButton(for post: DiscourseTopicDetail.Post) {
@@ -1476,7 +1470,18 @@ final class PostNativeCell: UITableViewCell {
         ) { [weak self] _ in
             self?.bookmarkButtonTapped()
         }
-        moreButton.menu = UIMenu(title: "", children: [bookmarkAction, copyAction])
+        var actions: [UIMenuElement] = []
+        if let post = currentPost, PostEditingPolicy.canShowEditAction(for: post) {
+            actions.append(UIAction(
+                title: String(localized: "post.edit.action", defaultValue: "编辑"),
+                image: UIImage(systemName: "pencil")
+            ) { [weak self] _ in
+                guard let self, let post = self.currentPost else { return }
+                self.delegate?.postCell(didTapEditPost: post)
+            })
+        }
+        actions.append(contentsOf: [bookmarkAction, copyAction])
+        moreButton.menu = UIMenu(title: "", children: actions)
     }
 
     private func configureActionButton(
