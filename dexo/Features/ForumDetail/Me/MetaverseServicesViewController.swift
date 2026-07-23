@@ -143,17 +143,25 @@ final class LinuxDoExtensionHTTPClient {
             WebCookieStore.shared.setCookies(responseCookies)
         }
         if DiscourseAPI.isCloudflareChallengeResponse(http, data: data) {
-            guard let scheme = url.scheme, let host = url.host else {
-                throw LinuxDoExtensionError.invalidResponse
+            // connect.linux.do 的 OAuth 同意页也会带 cloudflare 脚本标记；
+            // 若已能解析 approve 链接，说明不是挑战页，继续静默授权。
+            let bodyText = String(data: data, encoding: .utf8) ?? ""
+            let isOAuthConsentPage = bodyText.contains("/oauth2/approve/")
+                || bodyText.localizedCaseInsensitiveContains("LINUX DO Connect")
+                || bodyText.localizedCaseInsensitiveContains("获取你的用户基本信息")
+            if !isOAuthConsentPage {
+                guard let scheme = url.scheme, let host = url.host else {
+                    throw LinuxDoExtensionError.invalidResponse
+                }
+                var components = URLComponents()
+                components.scheme = scheme
+                components.host = host
+                components.port = url.port
+                guard let challengedBaseURL = components.url else {
+                    throw LinuxDoExtensionError.invalidResponse
+                }
+                throw LinuxDoExtensionError.cloudflare(challengedBaseURL, http.url)
             }
-            var components = URLComponents()
-            components.scheme = scheme
-            components.host = host
-            components.port = url.port
-            guard let challengedBaseURL = components.url else {
-                throw LinuxDoExtensionError.invalidResponse
-            }
-            throw LinuxDoExtensionError.cloudflare(challengedBaseURL, http.url)
         }
         guard (200..<400).contains(http.statusCode) else {
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -221,18 +229,31 @@ final class LinuxDoExtensionOAuthCoordinator {
     }
 
     func authorize(from viewController: UIViewController) async throws -> LinuxDoExtensionUserInfo? {
+        // FluxDo 同款静默 OAuth：API 拉授权页 → 原生确认弹窗 → approve → callback，不打开内置浏览器。
         let loginData = try await client.request(service.baseURL.appendingPathComponent("api/v1/oauth/login"))
         let authURLString = try JSONDecoder().decode(LinuxDoExtensionEnvelope<String>.self, from: loginData).data
         guard let authURL = URL(string: authURLString) else { throw LinuxDoExtensionError.invalidResponse }
+
+        // 模拟业务页加载完成再跳 OAuth 同意页
+        try await Task.sleep(nanoseconds: UInt64.random(in: 600_000_000...1_200_000_000))
+
         let pageData = try await client.request(authURL, followRedirects: false)
         guard let html = String(data: pageData, encoding: .utf8),
               let approvePath = Self.approvePath(in: html)
         else { throw LinuxDoExtensionError.authorizationPage }
 
-        _ = viewController
         guard let approveURL = URL(string: approvePath, relativeTo: URL(string: "https://connect.linux.do"))?.absoluteURL else {
             throw LinuxDoExtensionError.authorizationPage
         }
+
+        let allowed = await Self.presentAuthorizationConfirm(
+            from: viewController,
+            service: service
+        )
+        guard allowed else { return nil }
+
+        try await Task.sleep(nanoseconds: UInt64.random(in: 400_000_000...900_000_000))
+
         let approveResponse = try await client.requestResponse(
             approveURL,
             followRedirects: false
@@ -246,6 +267,8 @@ final class LinuxDoExtensionOAuthCoordinator {
               let state = components.queryItems?.first(where: { $0.name == "state" })?.value
         else { throw LinuxDoExtensionError.callback }
 
+        try await Task.sleep(nanoseconds: UInt64.random(in: 300_000_000...700_000_000))
+
         _ = try await client.request(
             service.baseURL.appendingPathComponent("api/v1/oauth/callback"),
             method: "POST",
@@ -253,6 +276,46 @@ final class LinuxDoExtensionOAuthCoordinator {
             headers: ["X-Requested-With": "XMLHttpRequest"]
         )
         return try await fetchUserInfo()
+    }
+
+    @MainActor
+    private static func presentAuthorizationConfirm(
+        from viewController: UIViewController,
+        service: LinuxDoExtensionService
+    ) async -> Bool {
+        let message: String
+        switch service {
+        case .ldc:
+            message = String(
+                localized: "extensions.auth.ldc.message",
+                defaultValue: "Linux.do Credit 将获取你的基本信息，是否允许？"
+            )
+        case .cdk:
+            message = String(
+                localized: "extensions.auth.cdk.message",
+                defaultValue: "Linux.do CDK 将获取你的基本信息，是否允许？"
+            )
+        }
+        return await withCheckedContinuation { continuation in
+            let alert = UIAlertController(
+                title: String(localized: "extensions.auth.confirm_title", defaultValue: "授权确认"),
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(
+                title: String(localized: "extensions.auth.deny", defaultValue: "拒绝"),
+                style: .cancel
+            ) { _ in
+                continuation.resume(returning: false)
+            })
+            alert.addAction(UIAlertAction(
+                title: String(localized: "extensions.auth.allow", defaultValue: "允许"),
+                style: .default
+            ) { _ in
+                continuation.resume(returning: true)
+            })
+            viewController.present(alert, animated: true)
+        }
     }
 
     func fetchUserInfo() async throws -> LinuxDoExtensionUserInfo {
@@ -265,12 +328,19 @@ final class LinuxDoExtensionOAuthCoordinator {
     }
 
     private static func approvePath(in html: String) -> String? {
-        let pattern = #"href=[\"']([^\"']*/oauth2/approve/[^\"']*)[\"']"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
-              let range = Range(match.range(at: 1), in: html)
-        else { return nil }
-        return String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
+        let patterns = [
+            #"href=["']([^"']*/oauth2/approve/[^"']*)["']"#,
+            #"action=["']([^"']*/oauth2/approve/[^"']*)["']"#,
+            #"["'](/oauth2/approve/[^"']+)["']"#,
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+                  let range = Range(match.range(at: 1), in: html)
+            else { continue }
+            return String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
+        }
+        return nil
     }
 
     private static func callbackURL(from data: Data) -> URL? {
@@ -500,11 +570,14 @@ final class MetaverseServicesViewController: UITableViewController {
         baseURL: URL,
         responseURL: URL?
     ) {
+        // 验证页只用站点根地址换 cf_clearance，绝不用 OAuth 同意页 URL（否则会整页嵌进 WebView）。
+        let verificationURL = service.baseURL
         let verifier = CloudflareVerificationViewController(
-            baseURL: baseURL,
-            responseURL: responseURL,
-            verificationURL: responseURL
-                ?? service.baseURL.appendingPathComponent("api/v1/oauth/login"),
+            baseURL: baseURL.host?.contains("connect.linux.do") == true
+                ? URL(string: "https://connect.linux.do")!
+                : service.baseURL,
+            responseURL: nil,
+            verificationURL: verificationURL,
             autoDismissOnSuccess: true
         ) { [weak self] in
             guard let self else { return }

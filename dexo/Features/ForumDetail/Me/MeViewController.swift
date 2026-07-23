@@ -10,8 +10,12 @@ final class MeViewController: ObservableViewController {
     private let statsPreferences = MeStatsPreferences()
     private let profileCard = MeProfileCardView()
     private let statsCard = MeStatsCardView()
+    private let balanceCard = MeBalanceCardView()
+    private let quickActionsCard = MeQuickActionsCardView()
     private let actionsCard = MeActionCardView()
     private let loadingSkeletonView = MeDashboardSkeletonView()
+    private var balanceCache: LinuxDoExtensionCache?
+    private var balanceRefreshTask: Task<Void, Never>?
 
     private var pluginScope: PluginScope {
         PluginScope(
@@ -129,6 +133,8 @@ final class MeViewController: ObservableViewController {
         }
 
         configureActionRows(isLoggedIn: isLoggedIn)
+        configureQuickActions(isLoggedIn: isLoggedIn)
+        configureBalanceCard(isLoggedIn: isLoggedIn)
     }
 
     private func setupLayout() {
@@ -141,6 +147,8 @@ final class MeViewController: ObservableViewController {
 
         contentStackView.addArrangedSubview(profileCard)
         contentStackView.addArrangedSubview(statsCard)
+        contentStackView.addArrangedSubview(balanceCard)
+        contentStackView.addArrangedSubview(quickActionsCard)
         contentStackView.addArrangedSubview(actionsCard)
         contentStackView.addArrangedSubview(makeAuthButtonContainer())
 
@@ -175,6 +183,9 @@ final class MeViewController: ObservableViewController {
         statsCard.onCustomizeTapped = { [weak self] in
             self?.showStatsCustomizer()
         }
+        balanceCard.onSelect = { [weak self] service in
+            self?.handleBalanceServiceTap(service)
+        }
     }
 
     private func applyThemeStyle() {
@@ -208,31 +219,8 @@ final class MeViewController: ObservableViewController {
 
     private func configureActionRows(isLoggedIn: Bool) {
         let trustLevel = viewModel.userProfile?.trustLevel ?? 0
+        // 我的主题 / 书签 / 草稿 / 浏览历史 已迁移到快捷入口四宫格，账号功能列表不再重复展示。
         var rows: [MeActionRow] = [
-            MeActionRow(
-                title: String(localized: "me.my_topics", defaultValue: "我的主题"),
-                subtitle: String(localized: "me.action.my_topics.subtitle", defaultValue: "查看我创建的话题"),
-                symbolName: "text.bubble.fill",
-                tintColor: .systemBlue,
-                isEnabled: isLoggedIn,
-                action: { [weak self] in self?.openMyTopics() }
-            ),
-            MeActionRow(
-                title: String(localized: "me.discourse_history", defaultValue: "浏览历史"),
-                subtitle: String(localized: "me.action.discourse_history.subtitle", defaultValue: "查看在论坛中读过的话题"),
-                symbolName: "clock.arrow.circlepath",
-                tintColor: .systemTeal,
-                isEnabled: isLoggedIn,
-                action: { [weak self] in self?.openDiscourseHistory() }
-            ),
-            MeActionRow(
-                title: String(localized: "me.drafts", defaultValue: "草稿"),
-                subtitle: String(localized: "me.action.drafts.subtitle", defaultValue: "继续编辑保存的内容"),
-                symbolName: "doc.text.fill",
-                tintColor: .systemBrown,
-                isEnabled: isLoggedIn,
-                action: { [weak self] in self?.openDrafts() }
-            ),
             MeActionRow(
                 title: String(localized: "messages.title"),
                 subtitle: String(localized: "me.action.messages.subtitle"),
@@ -242,16 +230,8 @@ final class MeViewController: ObservableViewController {
                 action: { [weak self] in self?.openMessages() }
             ),
             MeActionRow(
-                title: String(localized: "me.bookmarks"),
-                subtitle: String(localized: "me.action.bookmarks.subtitle"),
-                symbolName: "bookmark.fill",
-                tintColor: .systemOrange,
-                isEnabled: isLoggedIn,
-                action: { [weak self] in self?.openBookmarks() }
-            ),
-            MeActionRow(
-                title: String(localized: "me.browser", defaultValue: "内置浏览器"),
-                subtitle: String(localized: "me.action.browser.subtitle", defaultValue: "浏览网页并管理本地书签与历史"),
+                title: String(localized: "me.browser.home", defaultValue: "网页浏览"),
+                subtitle: String(localized: "me.action.browser.subtitle", defaultValue: "收藏、历史与内置浏览器"),
                 symbolName: "safari.fill",
                 tintColor: .systemCyan,
                 isEnabled: true,
@@ -460,6 +440,184 @@ final class MeViewController: ObservableViewController {
         navigationController?.pushViewController(vc, animated: true)
     }
 
+
+    private func configureQuickActions(isLoggedIn: Bool) {
+        quickActionsCard.configure(items: [
+            MeQuickActionItem(
+                title: String(localized: "me.quick.topics", defaultValue: "我的话题"),
+                symbolName: "doc.text.fill",
+                tintColor: .systemBlue,
+                action: { [weak self] in self?.openMyTopics() }
+            ),
+            MeQuickActionItem(
+                title: String(localized: "me.quick.bookmarks", defaultValue: "我的书签"),
+                symbolName: "bookmark.fill",
+                tintColor: .systemOrange,
+                action: { [weak self] in self?.openBookmarks() }
+            ),
+            MeQuickActionItem(
+                title: String(localized: "me.quick.drafts", defaultValue: "我的草稿"),
+                symbolName: "envelope.fill",
+                tintColor: .systemTeal,
+                action: { [weak self] in self?.openDrafts() }
+            ),
+            MeQuickActionItem(
+                title: String(localized: "me.quick.history", defaultValue: "浏览历史"),
+                symbolName: "clock.fill",
+                tintColor: .systemPurple,
+                action: { [weak self] in self?.openDiscourseHistory() }
+            ),
+        ])
+        quickActionsCard.alpha = isLoggedIn ? 1 : 0.55
+        quickActionsCard.isUserInteractionEnabled = true
+    }
+
+    private func configureBalanceCard(isLoggedIn: Bool) {
+        guard isLoggedIn, let username = viewModel.currentUser?.username ?? authGate?.currentUsername() else {
+            balanceCard.isHidden = true
+            balanceRefreshTask?.cancel()
+            return
+        }
+        let cache = LinuxDoExtensionCache(baseURL: api.baseURL, username: username)
+        balanceCache = cache
+        let registry = DexoPluginRuntime.shared.registry
+        let scope = pluginScope
+        var rows: [MeBalanceRowModel] = []
+
+        if registry.isPluginEnabled(BuiltInPluginID.ldc, for: scope) {
+            let info = cache.userInfo(.ldc)
+            let connected = cache.isEnabled(.ldc)
+            let income = Self.dailyIncomeText(
+                gamificationScore: viewModel.userProfile?.gamificationScore,
+                communityBalance: info?.communityBalance
+            )
+            rows.append(
+                MeBalanceRowModel(
+                    service: .ldc,
+                    title: String(localized: "me.balance.ldc", defaultValue: "LDC 余额"),
+                    valueText: connected ? (info?.balanceText ?? "--") : String(localized: "extensions.connect", defaultValue: "点击连接"),
+                    dailyIncomeText: connected ? income : nil,
+                    isLoading: false,
+                    isConnected: connected
+                )
+            )
+        }
+        if registry.isPluginEnabled(BuiltInPluginID.cdk, for: scope) {
+            let info = cache.userInfo(.cdk)
+            let connected = cache.isEnabled(.cdk)
+            rows.append(
+                MeBalanceRowModel(
+                    service: .cdk,
+                    title: String(localized: "me.balance.cdk", defaultValue: "CDK 积分"),
+                    valueText: connected ? (info?.balanceText ?? "--") : String(localized: "extensions.connect", defaultValue: "点击连接"),
+                    dailyIncomeText: nil,
+                    isLoading: false,
+                    isConnected: connected
+                )
+            )
+        }
+        balanceCard.configure(rows: rows)
+        refreshBalancesIfNeeded(username: username)
+    }
+
+    private static func dailyIncomeText(gamificationScore: Int?, communityBalance: String?) -> String? {
+        guard let score = gamificationScore,
+              let community = communityBalance,
+              let balance = Double(community)
+        else { return nil }
+        let income = Int((Double(score) - balance).rounded())
+        if income > 0 { return "+\(income)" }
+        if income < 0 { return "\(income)" }
+        return "+0"
+    }
+
+    private func refreshBalancesIfNeeded(username: String) {
+        balanceRefreshTask?.cancel()
+        let registry = DexoPluginRuntime.shared.registry
+        let scope = pluginScope
+        let services = [LinuxDoExtensionService.ldc, .cdk].filter {
+            registry.isPluginEnabled($0 == .ldc ? BuiltInPluginID.ldc : BuiltInPluginID.cdk, for: scope)
+                && (balanceCache?.isEnabled($0) == true)
+        }
+        guard !services.isEmpty else { return }
+        balanceRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            for service in services {
+                do {
+                    let info = try await LinuxDoExtensionOAuthCoordinator(
+                        service: service,
+                        forumBaseURL: self.api.baseURL
+                    ).fetchUserInfo()
+                    self.balanceCache?.setUserInfo(info, service: service)
+                } catch {
+                    // 保持缓存展示，静默失败
+                }
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.configureBalanceCard(isLoggedIn: true)
+            }
+        }
+    }
+
+    private func handleBalanceServiceTap(_ service: LinuxDoExtensionService) {
+        guard let username = viewModel.currentUser?.username ?? authGate?.currentUsername() else {
+            loginTapped()
+            return
+        }
+        let cache = balanceCache ?? LinuxDoExtensionCache(baseURL: api.baseURL, username: username)
+        balanceCache = cache
+        if cache.isEnabled(service) {
+            let browser = InAppBrowserViewController(
+                api: api,
+                username: username,
+                initialURL: service.dashboardURL
+            )
+            navigationController?.pushViewController(browser, animated: true)
+            return
+        }
+        // 未连接：FluxDo 同款原生授权确认，不先打开内置浏览器。
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let info = try await LinuxDoExtensionOAuthCoordinator(
+                    service: service,
+                    forumBaseURL: self.api.baseURL
+                ).authorize(from: self)
+                guard let info else { return }
+                cache.setEnabled(true, service: service)
+                cache.setUserInfo(info, service: service)
+                await MainActor.run {
+                    self.configureBalanceCard(isLoggedIn: true)
+                }
+            } catch LinuxDoExtensionError.cloudflare(let baseURL, _) {
+                await MainActor.run {
+                    let verifier = CloudflareVerificationViewController(
+                        baseURL: service.baseURL,
+                        responseURL: nil,
+                        verificationURL: service.baseURL,
+                        autoDismissOnSuccess: true
+                    ) { [weak self] in
+                        self?.handleBalanceServiceTap(service)
+                    }
+                    let nav = UINavigationController(rootViewController: verifier)
+                    nav.modalPresentationStyle = .pageSheet
+                    self.present(nav, animated: true)
+                }
+            } catch {
+                await MainActor.run {
+                    let alert = UIAlertController(
+                        title: nil,
+                        message: error.localizedDescription,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
     private func openMyTopics() {
         guard let username = viewModel.currentUser?.username else {
             loginTapped()
@@ -512,7 +670,7 @@ final class MeViewController: ObservableViewController {
     }
 
     private func openBrowser() {
-        let vc = InAppBrowserViewController(
+        let vc = WebBrowsingHomeViewController(
             api: api,
             username: viewModel.currentUser?.username ?? authGate?.currentUsername()
         )
@@ -1651,7 +1809,7 @@ private final class MeActionRowView: UIControl {
     }
 }
 
-private class MeCardSurfaceView: UIView {
+class MeCardSurfaceView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false

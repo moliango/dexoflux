@@ -2832,13 +2832,68 @@
         }
       }
     },
+    "extensions.auth.allow" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "允许"
+          }
+        }
+      }
+    },
+    "extensions.auth.cdk.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Linux.do CDK 将获取你的基本信息，是否允许？"
+          }
+        }
+      }
+    },
+    "extensions.auth.confirm_title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "授权确认"
+          }
+        }
+      }
+    },
+    "extensions.auth.deny" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拒绝"
+          }
+        }
+      }
+    },
+    "extensions.auth.ldc.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Linux.do Credit 将获取你的基本信息，是否允许？"
+          }
+        }
+      }
+    },
     "extensions.connect" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "点击连接账户"
+            "value" : "点击连接"
           }
         }
       }
@@ -3309,6 +3364,138 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯我的分類"
+          }
+        }
+      }
+    },
+    "home.drawer.all_topics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部话题"
+          }
+        }
+      }
+    },
+    "home.drawer.categories" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类"
+          }
+        }
+      }
+    },
+    "home.drawer.categories.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无分类"
+          }
+        }
+      }
+    },
+    "home.drawer.edit_pins" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "home.drawer.open" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开分类侧栏"
+          }
+        }
+      }
+    },
+    "home.drawer.open_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点按打开；长按管理置顶分类"
+          }
+        }
+      }
+    },
+    "home.drawer.tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标签"
+          }
+        }
+      }
+    },
+    "home.drawer.tags.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无标签"
+          }
+        }
+      }
+    },
+    "home.drawer.tags.loading" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加载标签…"
+          }
+        }
+      }
+    },
+    "home.drawer.tags.not_found" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未找到标签"
+          }
+        }
+      }
+    },
+    "home.drawer.tags.other" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "其他标签"
+          }
+        }
+      }
+    },
+    "home.drawer.tags.search" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索标签…"
           }
         }
       }
@@ -4464,6 +4651,7 @@
       }
     },
     "me.action.bookmarks.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4520,6 +4708,7 @@
       }
     },
     "me.action.discourse_history.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4660,6 +4849,7 @@
       }
     },
     "me.action.my_topics.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4799,6 +4989,28 @@
         }
       }
     },
+    "me.balance.cdk" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "CDK 积分"
+          }
+        }
+      }
+    },
+    "me.balance.ldc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "LDC 余额"
+          }
+        }
+      }
+    },
     "me.bookmarks" : {
       "localizations" : {
         "en" : {
@@ -4856,29 +5068,30 @@
       }
     },
     "me.browser" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In-App Browser"
+            "value" : "Web Browsing"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "内置浏览器"
+            "value" : "网页浏览"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "內置瀏覽器"
+            "value" : "網頁瀏覽"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "內置瀏覽器"
+            "value" : "網頁瀏覽"
           }
         }
       }
@@ -4963,6 +5176,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回"
+          }
+        }
+      }
+    },
+    "me.browser.bookmark_added" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已收藏"
+          }
+        }
+      }
+    },
+    "me.browser.bookmark_count %d" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 个收藏"
+          }
+        }
+      }
+    },
+    "me.browser.bookmark_removed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已取消收藏"
           }
         }
       }
@@ -5159,6 +5405,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製連結"
+          }
+        }
+      }
+    },
+    "me.browser.downloads" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下载管理"
+          }
+        }
+      }
+    },
+    "me.browser.downloads.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有下载记录"
+          }
+        }
+      }
+    },
+    "me.browser.downloads.hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网页内触发的下载由系统处理，文件可在「文件」App 中查看。"
+          }
+        }
+      }
+    },
+    "me.browser.downloads.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查看下载的文件"
           }
         }
       }
@@ -5360,30 +5650,52 @@
         }
       }
     },
+    "me.browser.history.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查看浏览过的网页"
+          }
+        }
+      }
+    },
     "me.browser.home" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Linux.do Home"
+            "value" : "Web Browsing"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Linux.do 首页"
+            "value" : "网页浏览"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Linux.do 首頁"
+            "value" : "網頁瀏覽"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Linux.do 首頁"
+            "value" : "網頁瀏覽"
+          }
+        }
+      }
+    },
+    "me.browser.input_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入网址"
           }
         }
       }
@@ -5466,6 +5778,17 @@
         }
       }
     },
+    "me.browser.link_copied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "链接已复制"
+          }
+        }
+      }
+    },
     "me.browser.open_external" : {
       "localizations" : {
         "en" : {
@@ -5490,6 +5813,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在系統瀏覽器開啟"
+          }
+        }
+      }
+    },
+    "me.browser.page" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浏览器"
           }
         }
       }
@@ -5551,6 +5885,7 @@
       }
     },
     "me.browser.share" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6470,6 +6805,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L4 領袖"
+          }
+        }
+      }
+    },
+    "me.quick.bookmarks" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我的书签"
+          }
+        }
+      }
+    },
+    "me.quick.drafts" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我的草稿"
+          }
+        }
+      }
+    },
+    "me.quick.history" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浏览历史"
+          }
+        }
+      }
+    },
+    "me.quick.topics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我的话题"
           }
         }
       }
@@ -8604,17 +8983,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "内部插件"
-          }
-        }
-      }
-    },
-    "plugins.ldc_store.close" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "关闭 LD 士多"
           }
         }
       }
@@ -12600,6 +12968,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "外觀設定"
+          }
+        }
+      }
+    },
+    "settings.appearance.category_drawer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类侧栏（FluxDo）"
+          }
+        }
+      }
+    },
+    "settings.appearance.category_drawer.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开启后可从左缘右滑打开分类/标签侧栏，菜单键同步打开侧栏"
           }
         }
       }

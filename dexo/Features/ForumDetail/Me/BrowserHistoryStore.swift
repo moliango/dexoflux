@@ -23,7 +23,9 @@ enum BrowserNavigationURLClassifier {
 
 enum AccountScopeKey {
     static func make(baseURL: String, username: String?) -> String {
-        "\(normalizedBaseURL(baseURL))|\(normalizedUsername(username))"
+        // 与论坛实例归一化一致，避免 https://linux.do 与 https://linux.do/ 分成两份数据。
+        let normalized = ForumInstance.normalizedBaseURL(baseURL)
+        return "\(normalized)|\(normalizedUsername(username))"
     }
 
     private static func normalizedUsername(_ username: String?) -> String {
@@ -61,6 +63,23 @@ struct BrowserPageRecord: Codable, Hashable, Identifiable {
 }
 
 final class BrowserHistoryStore {
+    private static var cache: [String: BrowserHistoryStore] = [:]
+    private static let cacheLock = NSLock()
+
+    /// 同账号/论坛共用同一 store，避免“浏览了但历史是空的”。
+    static func shared(baseURL: String, username: String?) -> BrowserHistoryStore {
+        let key = AccountScopeKey.make(baseURL: baseURL, username: username)
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let existing = cache[key] {
+            existing.reload()
+            return existing
+        }
+        let store = BrowserHistoryStore(baseURL: baseURL, username: username)
+        cache[key] = store
+        return store
+    }
+
     private struct StorageFile: Codable {
         var accounts: [AccountData] = []
     }
@@ -85,14 +104,26 @@ final class BrowserHistoryStore {
         maxHistoryCount: Int = 200
     ) {
         self.scopeKey = AccountScopeKey.make(baseURL: baseURL, username: username)
-        self.directoryURL = directoryURL ?? FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        if let directoryURL {
+            self.directoryURL = directoryURL
+        } else {
+            let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            self.directoryURL = root.appendingPathComponent("DexoFlux/Browser", isDirectory: true)
+        }
         self.maxHistoryCount = max(1, maxHistoryCount)
+        try? FileManager.default.createDirectory(at: self.directoryURL, withIntermediateDirectories: true)
         reload()
     }
 
     static func storageURL(in directoryURL: URL) -> URL {
         directoryURL.appendingPathComponent("dexo_browser_data.json")
+    }
+
+    /// 兼容旧路径：Application Support 根目录的历史文件。
+    private static func legacyStorageURL() -> URL {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("dexo_browser_data.json")
     }
 
     func reload() {
@@ -217,11 +248,20 @@ final class BrowserHistoryStore {
 
     private func loadStorage() -> StorageFile {
         let url = Self.storageURL(in: directoryURL)
-        guard let data = try? Data(contentsOf: url),
-              let storage = try? JSONDecoder().decode(StorageFile.self, from: data) else {
-            return StorageFile()
+        if let data = try? Data(contentsOf: url),
+           let storage = try? JSONDecoder().decode(StorageFile.self, from: data) {
+            return storage
         }
-        return storage
+        // 迁移旧位置数据，避免用户感觉「历史/书签是空的」。
+        let legacy = Self.legacyStorageURL()
+        if legacy != url,
+           let data = try? Data(contentsOf: legacy),
+           let storage = try? JSONDecoder().decode(StorageFile.self, from: data) {
+            try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+            return storage
+        }
+        return StorageFile()
     }
 
     static func normalizedPageURL(_ url: URL) -> URL? {
