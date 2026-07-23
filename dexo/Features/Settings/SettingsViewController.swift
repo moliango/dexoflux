@@ -165,6 +165,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
     private let fontScopeRow = ReadingToggleRowView()
     private let incomingTopicsFloatingRow = ReadingToggleRowView()
     private let pluginDockRow = ReadingToggleRowView()
+    private let categoryDrawerSwipeRow = ReadingToggleRowView()
     private let xiaohongshuStaggeredCardsRow = ReadingToggleRowView()
     private var renderedLanguage: AppSettings.AppLanguage?
     private var renderedThemeStyle: AppSettings.ThemeStyle?
@@ -319,6 +320,13 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             updateUI()
         }
+        categoryDrawerSwipeRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.homeCategoryDrawerSwipeEnabled = isOn
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
+
         xiaohongshuStaggeredCardsRow.onValueChanged = { [weak self] isOn in
             guard let self else { return }
             settings.xiaohongshuCardsStaggered = isOn
@@ -395,7 +403,16 @@ private final class AppearanceSettingsViewController: ObservableViewController {
             accentColor: settings.themeStyle.accentColor,
             backgroundColor: settings.themeStyle.topicCardBackgroundColor
         )
+        categoryDrawerSwipeRow.configure(
+            title: String(localized: "settings.appearance.category_drawer", defaultValue: "分类侧栏（FluxDo）"),
+            subtitle: String(localized: "settings.appearance.category_drawer.subtitle", defaultValue: "开启后可从左缘右滑打开分类/标签侧栏，菜单键同步打开侧栏"),
+            symbolName: "sidebar.left",
+            isOn: settings.homeCategoryDrawerSwipeEnabled,
+            accentColor: settings.themeStyle.accentColor,
+            backgroundColor: settings.themeStyle.topicCardBackgroundColor
+        )
         homeSection.addArrangedSubview(pluginDockRow)
+        homeSection.addArrangedSubview(categoryDrawerSwipeRow)
         contentStack.addArrangedSubview(homeSection)
 
         let iconSection = verticalSection(

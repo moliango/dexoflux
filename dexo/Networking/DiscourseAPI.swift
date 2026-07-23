@@ -563,6 +563,11 @@ final class DiscourseAPI {
         try await request(route: .tags)
     }
 
+    /// 侧栏标签区：保留 /tags.json 的 extras.tag_groups 分组结构。
+    func fetchSiteTagGroups() async throws -> [DiscourseSiteTagGroup] {
+        try await fetchTags().tagGroups
+    }
+
     func searchTags(query: String = "", categoryId: Int? = nil) async throws -> [DiscourseTag] {
         struct TagSearchResponse: Decodable {
             let results: [TagSearchItem]

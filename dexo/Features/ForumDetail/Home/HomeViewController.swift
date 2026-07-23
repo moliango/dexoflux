@@ -78,6 +78,9 @@ final class HomeViewController: ObservableViewController {
     private var tabBarLoadMoreFreezeID = 0
     private var wasLoadingMoreTopics = false
     private var loadingSkeletonTopConstraint: NSLayoutConstraint?
+    private let categoryDrawer = HomeCategoryDrawerView()
+    private var categoryDrawerEdgePan: UIScreenEdgePanGestureRecognizer?
+    private var didLoadCategoryDrawerTags = false
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
     private var lastNetworkStatus: NWPath.Status?
@@ -720,6 +723,9 @@ final class HomeViewController: ObservableViewController {
         searchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
         notificationButton.addTarget(self, action: #selector(notificationsTapped), for: .touchUpInside)
         categoryManagerButton.addTarget(self, action: #selector(categoryManagerTapped), for: .touchUpInside)
+        let managerLongPress = UILongPressGestureRecognizer(target: self, action: #selector(categoryManagerLongPressed(_:)))
+        categoryManagerButton.addGestureRecognizer(managerLongPress)
+        setupCategoryDrawer()
         loginButton.addTarget(self, action: #selector(loginTapped), for: .touchUpInside)
         createTopicMenuButton.addTarget(self, action: #selector(createTopicMenuTapped), for: .touchUpInside)
         draftsMenuButton.addTarget(self, action: #selector(draftsMenuTapped), for: .touchUpInside)
@@ -1313,6 +1319,22 @@ final class HomeViewController: ObservableViewController {
     }
 
     @objc private func categoryManagerTapped() {
+        if AppSettings.shared.homeCategoryDrawerSwipeEnabled {
+            refreshCategoryDrawerContent()
+            view.bringSubviewToFront(categoryDrawer)
+            categoryDrawer.open(animated: true)
+            return
+        }
+        presentCategoryPinManager()
+    }
+
+    @objc private func categoryManagerLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        presentCategoryPinManager()
+    }
+
+    private func presentCategoryPinManager() {
         let manager = CategoryTabManagerViewController(
             categories: viewModel.allSelectableCategories(),
             pinnedCategoryIds: AppSettings.shared.homePinnedCategoryIds,
@@ -2186,6 +2208,7 @@ final class HomeViewController: ObservableViewController {
 
     private func handleSettingsChanged() {
         setHomeTabBarHidden(false, animated: false)
+        updateCategoryDrawerModeUI()
         applyThemeStyle()
         updateFilterButton()
         updateCategoryButton()
@@ -2199,6 +2222,115 @@ final class HomeViewController: ObservableViewController {
         if usesXiaohongshuCardLayout {
             tableView.beginUpdates()
             tableView.endUpdates()
+        }
+    }
+
+
+    private func setupCategoryDrawer() {
+        categoryDrawer.translatesAutoresizingMaskIntoConstraints = false
+        categoryDrawer.isHidden = true
+        view.addSubview(categoryDrawer)
+        NSLayoutConstraint.activate([
+            categoryDrawer.topAnchor.constraint(equalTo: view.topAnchor),
+            categoryDrawer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            categoryDrawer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            categoryDrawer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        categoryDrawer.onSelectCategory = { [weak self] categoryId in
+            self?.selectCategory(categoryId)
+        }
+        categoryDrawer.onSelectTag = { [weak self] (tagName: String) in
+            guard let self else { return }
+            let tagVC = TagTopicsViewController(api: self.api, tagName: tagName)
+            self.navigationController?.pushViewController(tagVC, animated: true)
+        }
+        categoryDrawer.onEditPinned = { [weak self] in
+            self?.categoryDrawer.close(animated: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self?.presentCategoryPinManager()
+            }
+        }
+        categoryDrawer.onOpenChanged = { [weak self] isOpen in
+            self?.tableView.isScrollEnabled = !isOpen
+        }
+
+        let edgePan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(categoryDrawerEdgePanned(_:)))
+        edgePan.edges = .left
+        edgePan.delegate = self
+        view.addGestureRecognizer(edgePan)
+        categoryDrawerEdgePan = edgePan
+        updateCategoryDrawerModeUI()
+    }
+
+    private func updateCategoryDrawerModeUI() {
+        let enabled = AppSettings.shared.homeCategoryDrawerSwipeEnabled
+        categoryDrawerEdgePan?.isEnabled = enabled
+        var config = categoryManagerButton.configuration ?? .plain()
+        if enabled {
+            config.image = UIImage(systemName: "sidebar.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
+            categoryManagerButton.accessibilityLabel = String(localized: "home.drawer.open", defaultValue: "打开分类侧栏")
+            categoryManagerButton.accessibilityHint = String(localized: "home.drawer.open_hint", defaultValue: "点按打开；长按管理置顶分类")
+        } else {
+            config.image = UIImage(systemName: "line.3.horizontal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
+            categoryManagerButton.accessibilityLabel = String(localized: "home.category_manager.title")
+            categoryManagerButton.accessibilityHint = nil
+        }
+        categoryManagerButton.configuration = config
+        if !enabled {
+            categoryDrawer.close(animated: false)
+        }
+    }
+
+    private func refreshCategoryDrawerContent() {
+        categoryDrawer.configure(
+            categories: viewModel.categories,
+            selectedCategoryId: viewModel.selectedCategoryId,
+            baseURL: api.baseURL,
+            displayNameProvider: { [weak self] category in
+                self?.viewModel.categoryDisplayName(for: category) ?? category.name
+            }
+        )
+        loadCategoryDrawerTagsIfNeeded()
+    }
+
+    private func loadCategoryDrawerTagsIfNeeded() {
+        guard AppSettings.shared.homeCategoryDrawerSwipeEnabled else { return }
+        if didLoadCategoryDrawerTags {
+            return
+        }
+        categoryDrawer.setTagGroups([], isLoading: true)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let groups = try await self.api.fetchSiteTagGroups()
+                await MainActor.run {
+                    self.didLoadCategoryDrawerTags = true
+                    self.categoryDrawer.setTagGroups(groups, isLoading: false)
+                }
+            } catch {
+                await MainActor.run {
+                    self.categoryDrawer.setTagGroups([], isLoading: false)
+                }
+            }
+        }
+    }
+
+
+    @objc private func categoryDrawerEdgePanned(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard AppSettings.shared.homeCategoryDrawerSwipeEnabled else { return }
+        let tx = gesture.translation(in: view).x
+        let velocity = gesture.velocity(in: view).x
+        switch gesture.state {
+        case .began:
+            refreshCategoryDrawerContent()
+            view.bringSubviewToFront(categoryDrawer)
+            categoryDrawer.prepareForInteractiveOpen()
+        case .changed:
+            categoryDrawer.setInteractiveProgress(max(0, min(1, tx / 304)))
+        case .ended, .cancelled:
+            categoryDrawer.settle(velocityDx: velocity)
+        default:
+            break
         }
     }
 

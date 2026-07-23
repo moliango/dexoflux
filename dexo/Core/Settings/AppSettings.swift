@@ -436,6 +436,15 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    /// FluxDo 风格：左缘右滑打开分类/标签侧栏。关闭时保持现有分类 tab + 下拉菜单。
+    var homeCategoryDrawerSwipeEnabled: Bool {
+        get { bool(forKey: "homeCategoryDrawerSwipeEnabled", defaultValue: false) }
+        set {
+            defaults.set(newValue, forKey: "homeCategoryDrawerSwipeEnabled")
+            notifyChanged()
+        }
+    }
+
     var autoCheckForUpdates: Bool {
         get { bool(forKey: "autoCheckForUpdates", defaultValue: true) }
         set {
