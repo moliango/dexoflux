@@ -322,7 +322,7 @@ final class HomeViewController: ObservableViewController {
         let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
         return XiaohongshuTopicCardModel(
             id: topic.id,
-            title: topic.fancyTitle,
+            title: TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title),
             excerpt: topic.excerpt,
             avatarURL: avatarURL,
             username: viewModel.username(for: topic),
@@ -779,6 +779,9 @@ final class HomeViewController: ObservableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
+        // Always surface tab bar when home becomes visible; passive offset checks
+        // previously could leave it hidden after first-launch layout jumps.
+        setHomeTabBarHidden(false, animated: false)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
         updateTabBarVisibilityForCurrentScroll(animated: false)
         viewModel.restoreBackgroundTopicUpdates()
@@ -1271,6 +1274,9 @@ final class HomeViewController: ObservableViewController {
     private func postInitialContentReadyIfNeeded() {
         guard !didPostInitialContentReady else { return }
         didPostInitialContentReady = true
+        // First paint/bind can thrash contentOffset; re-assert tab bar after first content.
+        setHomeTabBarHidden(false, animated: false)
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
         NotificationCenter.default.post(
             name: Self.initialContentReadyNotification,
             object: self,
@@ -2124,12 +2130,17 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func updateTabBarVisibilityForCurrentScroll(animated: Bool) {
+        // Passive layout / appear / inset changes must NEVER hide the tab bar.
+        // Only user-driven scroll (see scrollViewDidScroll) may collapse it.
+        // Hiding here caused intermittent "tab bar missing on first launch" when
+        // contentOffset/insets jumped above 40pt after first data bind.
         guard !shouldFreezeTabBarScrollControl else { return }
         let y = tableView.contentOffset.y + tableView.contentInset.top
-        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 4 {
-            setHomeTabBarHidden(false, animated: animated)
-        } else if y > 40 {
-            setHomeTabBarHidden(true, animated: animated)
+        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 || isHomeTabBarHidden {
+            // Always restore when near top or when already stuck hidden without user scroll.
+            if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 {
+                setHomeTabBarHidden(false, animated: animated)
+            }
         }
     }
 
@@ -2200,9 +2211,14 @@ final class HomeViewController: ObservableViewController {
 
     private func setHomeTabBarHidden(_ hidden: Bool, animated: Bool) {
         guard AppSettings.shared.bottomBarAutoHideEnabled || !hidden else { return }
-        guard isHomeTabBarHidden != hidden else { return }
+        let tabBarController = tabBarController as? ForumTabBarController
+        let tabBarVisiblyBroken = !hidden && (tabBarController?.tabBar.isHidden == true)
+        guard isHomeTabBarHidden != hidden || tabBarVisiblyBroken else { return }
         isHomeTabBarHidden = hidden
-        (tabBarController as? ForumTabBarController)?.setTabBarHiddenByScroll(hidden, animated: animated)
+        tabBarController?.setTabBarHiddenByScroll(hidden, animated: animated && !tabBarVisiblyBroken)
+        if !hidden {
+            tabBarController?.syncTabBarVisibilityForCurrentContent()
+        }
         updateBottomChrome(animated: animated)
     }
 
@@ -3145,9 +3161,20 @@ extension HomeViewController: UITableViewDelegate {
         }
         if !AppSettings.shared.bottomBarAutoHideEnabled {
             setHomeTabBarHidden(false, animated: true)
-        } else if y <= 4 || deltaY < -3 {
+            return
+        }
+        // Near top always show.
+        if y <= 8 || deltaY < -3 {
             setHomeTabBarHidden(false, animated: true)
-        } else if y > 40, deltaY > 3 {
+            return
+        }
+        // Only hide from real user interaction, never from programmatic offset jumps
+        // (first load, banner insert, contentSize changes, inset adjustments).
+        let userDriven = scrollView.isDragging
+            || scrollView.isDecelerating
+            || scrollView.panGestureRecognizer.state == .began
+            || scrollView.panGestureRecognizer.state == .changed
+        if userDriven, y > 40, deltaY > 3 {
             setHomeTabBarHidden(true, animated: true)
         }
     }

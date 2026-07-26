@@ -1528,6 +1528,12 @@ final class ReadingSettingsViewController: ObservableViewController {
         case defaultExpandRelatedLinks
         case bottomBarAutoHide
         case openExternalLinksInAppBrowser
+        case clipboardTopicLinkPrompt
+        case showUserSignatures
+        case nestedReplyView
+        case showTopicCardTags
+        case showTopicCardCategory
+        case showTopicCardCounts
         case hideScrollIndicators
 
         var title: String {
@@ -1536,6 +1542,12 @@ final class ReadingSettingsViewController: ObservableViewController {
             case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links")
             case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation")
             case .openExternalLinksInAppBrowser: return String(localized: "settings.reading.in_app_browser")
+            case .clipboardTopicLinkPrompt: return String(localized: "settings.reading.clipboard_topic", defaultValue: "剪贴板话题链接")
+            case .showUserSignatures: return String(localized: "settings.reading.signatures", defaultValue: "显示用户签名")
+            case .nestedReplyView: return String(localized: "settings.reading.nested", defaultValue: "树形回复视图")
+            case .showTopicCardTags: return String(localized: "settings.card.tags", defaultValue: "卡片显示标签")
+            case .showTopicCardCategory: return String(localized: "settings.card.category", defaultValue: "卡片显示分类")
+            case .showTopicCardCounts: return String(localized: "settings.card.counts", defaultValue: "卡片显示计数")
             case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators")
             }
         }
@@ -1546,6 +1558,12 @@ final class ReadingSettingsViewController: ObservableViewController {
             case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links.subtitle")
             case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation.subtitle")
             case .openExternalLinksInAppBrowser: return String(localized: "settings.reading.in_app_browser.subtitle")
+            case .clipboardTopicLinkPrompt: return String(localized: "settings.reading.clipboard_topic.subtitle", defaultValue: "回到前台时提示打开复制的话题链接")
+            case .showUserSignatures: return String(localized: "settings.reading.signatures.subtitle", defaultValue: "在帖子下方显示签名")
+            case .nestedReplyView: return String(localized: "settings.reading.nested.subtitle", defaultValue: "详情页按回复关系缩进展示")
+            case .showTopicCardTags: return String(localized: "settings.card.tags.subtitle", defaultValue: "列表卡片是否显示标签")
+            case .showTopicCardCategory: return String(localized: "settings.card.category.subtitle", defaultValue: "列表卡片是否显示分类")
+            case .showTopicCardCounts: return String(localized: "settings.card.counts.subtitle", defaultValue: "列表卡片是否显示回复数")
             case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators.subtitle")
             }
         }
@@ -1556,6 +1574,12 @@ final class ReadingSettingsViewController: ObservableViewController {
             case .defaultExpandRelatedLinks: return "link"
             case .bottomBarAutoHide: return "arrow.up.and.down"
             case .openExternalLinksInAppBrowser: return "rectangle.portrait.and.arrow.right"
+            case .clipboardTopicLinkPrompt: return "doc.on.clipboard"
+            case .showUserSignatures: return "signature"
+            case .nestedReplyView: return "list.bullet.indent"
+            case .showTopicCardTags: return "tag"
+            case .showTopicCardCategory: return "folder"
+            case .showTopicCardCounts: return "number"
             case .hideScrollIndicators: return "scroll"
             }
         }
@@ -1656,6 +1680,12 @@ final class ReadingSettingsViewController: ObservableViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(makeToggleRow(for: .bottomBarAutoHide))
         stack.addArrangedSubview(makeToggleRow(for: .openExternalLinksInAppBrowser))
+        stack.addArrangedSubview(makeToggleRow(for: .clipboardTopicLinkPrompt))
+        stack.addArrangedSubview(makeToggleRow(for: .showUserSignatures))
+        stack.addArrangedSubview(makeToggleRow(for: .nestedReplyView))
+        stack.addArrangedSubview(makeToggleRow(for: .showTopicCardCategory))
+        stack.addArrangedSubview(makeToggleRow(for: .showTopicCardTags))
+        stack.addArrangedSubview(makeToggleRow(for: .showTopicCardCounts))
         stack.addArrangedSubview(makeToggleRow(for: .hideScrollIndicators))
         return makeSection(
             title: String(localized: "settings.reading.section.basic"),
@@ -1743,6 +1773,18 @@ final class ReadingSettingsViewController: ObservableViewController {
             return settings.bottomBarAutoHideEnabled
         case .openExternalLinksInAppBrowser:
             return settings.openExternalLinksInAppBrowser
+        case .clipboardTopicLinkPrompt:
+            return settings.clipboardTopicLinkPromptEnabled
+        case .showUserSignatures:
+            return settings.showUserSignatures
+        case .nestedReplyView:
+            return settings.nestedReplyViewEnabled
+        case .showTopicCardTags:
+            return settings.showTopicCardTags
+        case .showTopicCardCategory:
+            return settings.showTopicCardCategory
+        case .showTopicCardCounts:
+            return settings.showTopicCardCounts
         case .hideScrollIndicators:
             return settings.hideScrollIndicators
         }
@@ -1758,6 +1800,18 @@ final class ReadingSettingsViewController: ObservableViewController {
             settings.bottomBarAutoHideEnabled = isOn
         case .openExternalLinksInAppBrowser:
             settings.openExternalLinksInAppBrowser = isOn
+        case .clipboardTopicLinkPrompt:
+            settings.clipboardTopicLinkPromptEnabled = isOn
+        case .showUserSignatures:
+            settings.showUserSignatures = isOn
+        case .nestedReplyView:
+            settings.nestedReplyViewEnabled = isOn
+        case .showTopicCardTags:
+            settings.showTopicCardTags = isOn
+        case .showTopicCardCategory:
+            settings.showTopicCardCategory = isOn
+        case .showTopicCardCounts:
+            settings.showTopicCardCounts = isOn
         case .hideScrollIndicators:
             settings.hideScrollIndicators = isOn
         }
@@ -4702,6 +4756,44 @@ private final class DohDebugLogViewController: UIViewController {
 }
 
 enum CloudflareVerificationPolicy {
+    /// After a successful pass, suppress challenge re-prompts while cookies propagate
+    /// and Topic Detail / image retries settle.
+    private static let verificationGraceDuration: TimeInterval = 30
+    private static var verificationGraceUntilByBaseURL: [String: Date] = [:]
+    private static let graceLock = NSLock()
+
+    static func normalizedBaseKey(_ value: String) -> String {
+        value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    }
+
+    static func markVerificationGrace(baseURL: String, duration: TimeInterval = verificationGraceDuration) {
+        let key = normalizedBaseKey(baseURL)
+        graceLock.lock()
+        verificationGraceUntilByBaseURL[key] = Date().addingTimeInterval(duration)
+        graceLock.unlock()
+        DohDebugLog.record("verification grace armed base=\(key) duration=\(Int(duration))s", subsystem: "CF")
+    }
+
+    static func markVerificationGrace(baseURL: URL, duration: TimeInterval = verificationGraceDuration) {
+        markVerificationGrace(baseURL: baseURL.absoluteString, duration: duration)
+    }
+
+    static func isInVerificationGrace(baseURL: String, now: Date = Date()) -> Bool {
+        let key = normalizedBaseKey(baseURL)
+        graceLock.lock()
+        defer { graceLock.unlock() }
+        guard let until = verificationGraceUntilByBaseURL[key] else { return false }
+        if now < until {
+            return true
+        }
+        verificationGraceUntilByBaseURL[key] = nil
+        return false
+    }
+
+    static func isInVerificationGrace(baseURL: URL, now: Date = Date()) -> Bool {
+        isInVerificationGrace(baseURL: baseURL.absoluteString, now: now)
+    }
+
     static func verificationURL(baseURL: URL, responseURL: URL?) -> URL {
         _ = responseURL
         return URL(string: "/challenge", relativeTo: baseURL)?.absoluteURL ?? baseURL
@@ -5169,6 +5261,7 @@ final class CloudflareVerificationViewController: UIViewController {
     private func completeVerification() {
         guard !didDetectClearance else { return }
         log("foreground complete base=\(baseURL.absoluteString)")
+        CloudflareVerificationPolicy.markVerificationGrace(baseURL: baseURL)
         didDetectClearance = true
         needsVerificationRecheck = false
         verificationCheckTask?.cancel()

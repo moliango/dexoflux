@@ -311,6 +311,22 @@ final class MeViewController: ObservableViewController {
                 action: { [weak self] in self?.openExportHistory() }
             ))
         }
+        pluginRows.append(MeActionRow(
+            title: String(localized: "pending.title", defaultValue: "待审内容"),
+            subtitle: String(localized: "pending.subtitle", defaultValue: "查看送审中的主题与回复"),
+            symbolName: "hourglass",
+            tintColor: .systemOrange,
+            isEnabled: isLoggedIn,
+            action: { [weak self] in self?.openPendingPosts() }
+        ))
+        pluginRows.append(MeActionRow(
+            title: String(localized: "notion.settings.title", defaultValue: "Notion 同步"),
+            subtitle: String(localized: "notion.settings.subtitle", defaultValue: "配置 Token 并把话题同步到 Notion"),
+            symbolName: "tray.and.arrow.up.fill",
+            tintColor: .systemGray,
+            isEnabled: true,
+            action: { [weak self] in self?.openNotionSettings() }
+        ))
         rows.insert(contentsOf: pluginRows, at: min(6, rows.count))
         actionsCard.configure(title: String(localized: "me.actions.title"), rows: rows)
 
@@ -702,6 +718,25 @@ final class MeViewController: ObservableViewController {
 
     private func openExportHistory() {
         let vc = ExportHistoryViewController(
+            baseURL: api.baseURL,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
+        navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openPendingPosts() {
+        guard let username = viewModel.currentUser?.username ?? authGate?.currentUsername() else {
+            loginTapped()
+            return
+        }
+        navigationController?.pushViewController(
+            PendingPostsViewController(api: api, username: username),
+            animated: true
+        )
+    }
+
+    private func openNotionSettings() {
+        let vc = NotionSettingsViewController(
             baseURL: api.baseURL,
             username: viewModel.currentUser?.username ?? authGate?.currentUsername()
         )

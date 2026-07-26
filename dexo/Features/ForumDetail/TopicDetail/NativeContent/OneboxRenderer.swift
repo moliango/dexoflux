@@ -35,12 +35,14 @@ final class OneboxCardView: UIView {
     weak var delegate: PostCellDelegate?
     private let sourceURL: String?
     private let config: NativeRenderConfig
+    private let refererBaseURL: String?
     private let imageView = UIImageView()
     private let faviconView = UIImageView()
 
     init(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String?, containerWidth: CGFloat, config: NativeRenderConfig) {
         self.sourceURL = sourceURL
         self.config = config
+        self.refererBaseURL = config.baseURL
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -73,7 +75,7 @@ final class OneboxCardView: UIView {
         let faviconSize: CGFloat = 16
 
         if let faviconURL, let url = URL(string: faviconURL) {
-            ForumImageLoader.setImage(on: faviconView, url: url)
+            ForumImageLoader.setImage(on: faviconView, url: url, cloudflareBaseURL: config.baseURL)
             headerStack.addArrangedSubview(faviconView)
             NSLayoutConstraint.activate([
                 faviconView.widthAnchor.constraint(equalToConstant: faviconSize),
@@ -183,8 +185,19 @@ final class OneboxCardView: UIView {
                 imageView.heightAnchor.constraint(equalToConstant: 72),
             ])
 
-            ForumImageLoader.setImage(on: imageView, url: url) { [weak self] _, _, _, _ in
-                self?.imageView.backgroundColor = .clear
+            ForumImageLoader.setImage(on: imageView, url: url, cloudflareBaseURL: config.baseURL) { [weak self] image, _, _, _ in
+                if image != nil {
+                    self?.imageView.backgroundColor = .clear
+                }
+            }
+            // External beds: also try FluxDo-style URLSession path.
+            if let host = url.host?.lowercased(),
+               !(host == "linux.do" || host.hasSuffix(".linux.do")) {
+                ExternalImageFetcher.fetch(url: url, refererBaseURL: config.baseURL) { [weak self] image in
+                    guard let self, let image else { return }
+                    self.imageView.image = image
+                    self.imageView.backgroundColor = .clear
+                }
             }
         }
 

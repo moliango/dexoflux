@@ -139,6 +139,171 @@ final class BlockExtractorTests: XCTestCase {
         }
     }
 
+
+    func testBareAutoLinkedImageURLPromotesToImageBlock() {
+        let url = "https://pan.644222.xyz/raw/C5F1D31007AC3AB3B1134F88C12E1F0.jpg"
+        let html = "<p><a href=\"\(url)\">\(url)</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, let alt, _, _, let href) = blocks[0] {
+            XCTAssertEqual(src, url)
+            XCTAssertNil(alt)
+            XCTAssertEqual(href, url)
+        } else {
+            XCTFail("Expected image block, got \(blocks[0])")
+        }
+    }
+
+    func testBareBadgeURLWithoutExtensionPromotesToImageBlock() {
+        let url = "https://prompt.iwooji.com/badge?u=alieismy&t=linux-do"
+        let html = "<p><a href=\"\(url)\">\(url)</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, let href) = blocks[0] {
+            XCTAssertEqual(src, url)
+            XCTAssertEqual(href, url)
+        } else {
+            XCTFail("Expected image block for badge URL, got \(blocks[0])")
+        }
+    }
+
+    func testSoleParagraphImageLinkPromotesEvenWithCustomLabel() {
+        // FluxDo-style: a paragraph that is only an image link becomes an image block.
+        let html = "<p><a href=\"https://example.com/photo.jpg\">click here</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, "https://example.com/photo.jpg")
+        } else {
+            XCTFail("Expected image block, got \(blocks[0])")
+        }
+    }
+
+    func testInlineImageLinkWithCustomLabelIsNotPromoted() {
+        let html = "<p>see <a href=\"https://example.com/photo.jpg\">click here</a> please</p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .paragraph(let inlines) = blocks[0] {
+            XCTAssertTrue(inlines.contains { if case .link = $0 { return true }; return false })
+        } else {
+            XCTFail("Expected paragraph, got \(blocks[0])")
+        }
+    }
+
+    func testHeaderlessOneboxAsideWithImageURLTitlePromotesToImageBlock() {
+        let url = "https://pan.644222.xyz/raw/C5F1D31007AC3AB3B1134F88C12E1F0.jpg"
+        let html = """
+        <aside class="onebox allowlistedgeneric"><article class="onebox-body">\
+        <h3><a href="\(url)" target="_blank" rel="noopener nofollow ugc">\(url)</a></h3>\
+        </article></aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, url)
+        } else {
+            XCTFail("Expected image block from headerless onebox, got \(blocks[0])")
+        }
+    }
+
+    func testHeaderlessOneboxAsideWithBadgeURLPromotesToImageBlock() {
+        let url = "https://prompt.iwooji.com/badge?u=alieismy&t=linux-do&tc=%236966ea"
+        let html = """
+        <aside class="onebox"><article class="onebox-body">\
+        <h3><a href="\(url.replacingOccurrences(of: "&", with: "&amp;"))">\(url)</a></h3>\
+        </article></aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, url)
+        } else {
+            XCTFail("Expected image block from badge onebox, got \(blocks[0])")
+        }
+    }
+
+    func testRichOneboxWithRealTitleStaysOnebox() {
+        let html = """
+        <aside class="onebox githubrepo"><header class="source"><a href="https://github.com/foo/bar">github.com</a></header>\
+        <article class="onebox-body"><img src="https://opengraph.githubassets.com/x/foo/bar.png" class="thumbnail">\
+        <h3><a href="https://github.com/foo/bar">GitHub - foo/bar</a></h3>\
+        <p>A sample repository description.</p></article></aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .onebox = blocks[0] {
+        } else {
+            XCTFail("Expected onebox to stay onebox, got \(blocks[0])")
+        }
+    }
+
+    func testBareImageURLAfterTextSplitsParagraph() {
+        let url = "https://cdn.example.com/a.png"
+        let html = "<p>see this<br><a href=\"\(url)\">\(url)</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 2, "Expected text + image, got \(blocks)")
+        if case .paragraph(let inlines) = blocks[0] {
+            XCTAssertEqual(inlines, [.text("see this")])
+        } else {
+            XCTFail("Expected leading paragraph, got \(blocks[0])")
+        }
+        if case .image(let src, _, _, _, _) = blocks[1] {
+            XCTAssertEqual(src, url)
+        } else {
+            XCTFail("Expected trailing image, got \(blocks[1])")
+        }
+    }
+
+    func testPlainTextImageURLPromotesToImageBlock() {
+        let url = "https://cdn.example.com/plain.webp"
+        let html = "<p>\(url)</p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, url)
+        } else {
+            XCTFail("Expected image from plain text URL, got \(blocks[0])")
+        }
+    }
+
+
+    func testSoleImageLinkPromotesEvenWhenLabelDiffers() {
+        let href = "https://cdn.example.com/shot.jpeg"
+        let html = "<p><a href=\"\(href)\">cdn.example.com</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, href)
+        } else {
+            XCTFail("Expected image from sole link with domain label, got \(blocks[0])")
+        }
+    }
+
+    func testTruncatedAutoLinkLabelStillPromotes() {
+        let href = "https://prompt.iwooji.com/badge?u=alieismy&t=linux-do&w=hello&ec=717c6028"
+        let label = String(href.prefix(40)) + "..."
+        let html = "<p><a href=\"\(href)\">\(label)</a></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, href)
+        } else {
+            XCTFail("Expected image from truncated label link, got \(blocks[0])")
+        }
+    }
+
+    func testMultilinePlainTextImageURLPromotes() {
+        let url = "https://cdn.example.com/path/to/photo.png"
+        let html = "<p>https://cdn.example.com/path/<br>to/photo.png</p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1)
+        if case .image(let src, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(src, url)
+        } else {
+            XCTFail("Expected image from multiline plain URL, got \(blocks[0])")
+        }
+    }
+
     // MARK: - Details
 
     func testDetails() {

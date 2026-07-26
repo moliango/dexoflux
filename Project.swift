@@ -63,6 +63,7 @@ let project = Project(
                     "CURRENT_PROJECT_VERSION": "1",
                     "GENERATE_INFOPLIST_FILE": "YES",
                     "INFOPLIST_KEY_CFBundleDisplayName": "DexoFlux",
+                    "INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription": "用于保存话题分享图片到相册",
                     "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
                     "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations": "UIInterfaceOrientationPortrait",

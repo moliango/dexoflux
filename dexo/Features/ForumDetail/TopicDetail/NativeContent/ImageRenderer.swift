@@ -25,9 +25,20 @@ final class TappableImageContainer: UIView {
     /// Images narrower than this are displayed proportionally smaller on screen.
     private static let referenceWidth: CGFloat = 690
 
-    init(url: URL, width: Int?, height: Int?, containerWidth: CGFloat, href: URL? = nil, galleryImageURLs: [URL] = []) {
+    private let refererBaseURL: String?
+
+    init(
+        url: URL,
+        width: Int?,
+        height: Int?,
+        containerWidth: CGFloat,
+        href: URL? = nil,
+        galleryImageURLs: [URL] = [],
+        refererBaseURL: String? = nil
+    ) {
         imageURL = href ?? url
         self.galleryImageURLs = galleryImageURLs
+        self.refererBaseURL = refererBaseURL
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -80,14 +91,7 @@ final class TappableImageContainer: UIView {
 
         let hasOriginalSize = width != nil && height != nil
 
-        ForumImageLoader.setImage(on: imageView, url: url) { [weak self] image, _, _, _ in
-            guard let self, let image else { return }
-            self.imageView.backgroundColor = .clear
-            if !hasOriginalSize {
-                let ratio = containerWidth / image.size.width
-                self.imageHeightConstraint.constant = image.size.height * ratio
-            }
-        }
+        loadImage(url: url, containerWidth: containerWidth, hasOriginalSize: hasOriginalSize)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(imageTapped))
         addGestureRecognizer(tap)
@@ -97,6 +101,67 @@ final class TappableImageContainer: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private func loadImage(url: URL, containerWidth: CGFloat, hasOriginalSize: Bool) {
+        let apply: (UIImage?) -> Void = { [weak self] image in
+            guard let self else { return }
+            guard let image else {
+                self.imageView.backgroundColor = .tertiarySystemFill
+                self.imageView.contentMode = .center
+                let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
+                self.imageView.image = UIImage(
+                    systemName: "photo.badge.exclamationmark",
+                    withConfiguration: config
+                )
+                self.imageView.tintColor = .tertiaryLabel
+                return
+            }
+            self.imageView.backgroundColor = .clear
+            self.imageView.contentMode = .scaleAspectFill
+            self.imageView.tintColor = nil
+            self.imageView.image = image
+            if !hasOriginalSize, image.size.width > 0 {
+                let ratio = containerWidth / image.size.width
+                self.imageHeightConstraint.constant = image.size.height * ratio
+                self.invalidateIntrinsicContentSize()
+                self.superview?.setNeedsLayout()
+            }
+        }
+
+        // Prefer FluxDo-style URLSession fetch for third-party hosts (badge / image beds).
+        // Keep SDWebImage for forum hosts (secure-uploads + CF cookie semantics).
+        if shouldUseExternalFetcher(for: url) {
+            ExternalImageFetcher.fetch(url: url, refererBaseURL: refererBaseURL, completion: apply)
+            return
+        }
+
+        ForumImageLoader.setImage(
+            on: imageView,
+            url: url,
+            cloudflareBaseURL: refererBaseURL
+        ) { image, _, _, _ in
+            apply(image)
+        }
+    }
+
+    private func shouldUseExternalFetcher(for url: URL) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return true }
+        if let base = refererBaseURL,
+           let baseHost = URL(string: base)?.host?.lowercased(),
+           !baseHost.isEmpty {
+            if host == baseHost || host.hasSuffix("." + baseHost) {
+                return false
+            }
+        }
+        if host == "linux.do" || host.hasSuffix(".linux.do") {
+            return false
+        }
+        // Forum CDN still works better with SDWebImage cookie path when needed.
+        if host.contains("ldstatic.com") {
+            return true
+        }
+        return true
     }
 
     @objc private func imageTapped() {
@@ -138,16 +203,25 @@ enum ImageRenderer: BlockRenderer {
     }
 
     static func render(_ block: ContentBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) -> UIView {
-        guard case .image(let src, _, let width, let height, let href) = block,
-              let url = URL(string: src)
-        else {
+        guard case .image(let src, _, let width, let height, let href) = block else {
             return UIView()
         }
 
-        let hrefURL: URL? = {
-            guard let href, !href.isEmpty else { return nil }
-            return URL(string: href)
-        }()
+        let primaryURL = Self.makeURL(src)
+        let hrefURL = href.flatMap(Self.makeURL)
+
+        // FluxDo-style badge/music cards: parse query params and draw a native card.
+        // Prefer href (original link) when present.
+        if let cardURL = hrefURL ?? primaryURL,
+           let model = BadgeCardModel.parse(url: cardURL) {
+            let card = BadgeCardView(model: model, containerWidth: config.contentWidth)
+            card.delegate = delegate
+            return card
+        }
+
+        guard let url = primaryURL else {
+            return UIView()
+        }
 
         let container = TappableImageContainer(
             url: url,
@@ -155,9 +229,22 @@ enum ImageRenderer: BlockRenderer {
             height: height,
             containerWidth: config.contentWidth,
             href: hrefURL,
-            galleryImageURLs: config.galleryImageURLs
+            galleryImageURLs: config.galleryImageURLs,
+            refererBaseURL: config.baseURL
         )
         container.delegate = delegate
         return container
+    }
+
+    private static func makeURL(_ raw: String) -> URL? {
+        let cleaned = raw
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&#38;", with: "&")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: cleaned) { return url }
+        if let encoded = cleaned.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) {
+            return URL(string: encoded)
+        }
+        return nil
     }
 }

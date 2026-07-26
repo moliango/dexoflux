@@ -440,11 +440,14 @@ final class ReplyComposerViewController: UIViewController {
         return label
     }()
 
-    private lazy var emojiPickerView: EmojiPickerView = {
-        let picker = EmojiPickerView()
+    private lazy var emojiPickerView: EmojiStickerPanelView = {
+        let picker = EmojiStickerPanelView()
         picker.translatesAutoresizingMaskIntoConstraints = false
         picker.onEmojiSelected = { [weak self] emoji in
             self?.insertText(emoji)
+        }
+        picker.onStickerMarkdownSelected = { [weak self] markdown in
+            self?.insertText(markdown + "\n")
         }
         return picker
     }()
@@ -511,6 +514,8 @@ final class ReplyComposerViewController: UIViewController {
 
         setupToolbar()
         setupCustomPanel()
+        emojiPickerView.presentingViewController = self
+        PresenceService.shared.attach(api: api)
 
         NSLayoutConstraint.activate([
             grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
@@ -575,7 +580,13 @@ final class ReplyComposerViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        PresenceService.shared.enter(topicId: topicId)
         textView.becomeFirstResponder()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        PresenceService.shared.leave()
     }
 
     private static func makeCircleToolbarButton(systemName: String, accessibilityLabel: String) -> UIButton {
@@ -930,6 +941,8 @@ final class ReplyComposerViewController: UIViewController {
             insertBlock("\n> [!note]\n> \(String(localized: "reply.tool.placeholder.note"))\n")
         case .template:
             insertTemplate()
+        case .aiReview:
+            runAIPostReview()
         }
 
         if tool.closesPanelAfterAction {
@@ -1025,7 +1038,35 @@ final class ReplyComposerViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    private func insertTemplate() {
+    
+    private func runAIPostReview() {
+        let content = composerRawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return }
+        let hud = UIAlertController(title: String(localized: "ai.review.running", defaultValue: "AI 预审中…"), message: nil, preferredStyle: .alert)
+        present(hud, animated: true)
+        Task {
+            do {
+                let result = try await AIPostReviewService.reviewDraft(title: nil, content: content, categoryName: nil)
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        let alert = UIAlertController(title: String(localized: "ai.review.result", defaultValue: "预审结果"), message: result, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        let alert = UIAlertController(title: String(localized: "common.error", defaultValue: "错误"), message: error.localizedDescription, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            }
+        }
+    }
+
+private func insertTemplate() {
         let alert = UIAlertController(
             title: String(localized: "reply.tool.template"),
             message: nil,
@@ -1312,6 +1353,7 @@ enum ComposerMarkdownTool: CaseIterable {
     case quote
     case note
     case template
+    case aiReview
 
     var title: String {
         switch self {
@@ -1327,6 +1369,7 @@ enum ComposerMarkdownTool: CaseIterable {
         case .quote: return String(localized: "reply.tool.quote")
         case .note: return String(localized: "reply.tool.note")
         case .template: return String(localized: "reply.tool.template")
+        case .aiReview: return String(localized: "reply.tool.ai_review", defaultValue: "AI 预审")
         }
     }
 
@@ -1344,12 +1387,13 @@ enum ComposerMarkdownTool: CaseIterable {
         case .quote: return "quote.closing"
         case .note: return "note.text"
         case .template: return "doc.on.clipboard"
+        case .aiReview: return "sparkles"
         }
     }
 
     var closesPanelAfterAction: Bool {
         switch self {
-        case .image, .attachment:
+        case .image, .attachment, .aiReview:
             return false
         default:
             return true

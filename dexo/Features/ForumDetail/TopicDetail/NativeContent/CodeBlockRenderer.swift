@@ -9,8 +9,12 @@ enum CodeBlockRenderer: BlockRenderer {
 
     static func render(_ block: ContentBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) -> UIView {
         guard case .codeBlock(let language, let code) = block else { return UIView() }
+        let normalized = language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if let diagram = MermaidFlowchartParser.parse(language: language, code: code) {
-            return MermaidFlowchartView(diagram: diagram, config: config)
+            return MermaidFlowchartView(diagram: diagram, source: code, config: config)
+        }
+        if normalized == "mermaid" || normalized == "mmd" {
+            return MermaidSourcePreviewView(source: code, config: config)
         }
         return MacStyleCodeBlockView(language: language, code: code, config: config)
     }
@@ -228,7 +232,63 @@ private enum MermaidFlowchartParser {
     }
 }
 
+private final class MermaidSourcePreviewView: UIView {
+    private let source: String
+    init(source: String, config: NativeRenderConfig) {
+        self.source = source
+        // continue init below
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = config.codeBackgroundColor
+        layer.cornerRadius = 10
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        label.textColor = UIColor.label
+        label.text = String(source.prefix(400))
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setTitle(String(localized: "mermaid.open", defaultValue: "全屏查看 Mermaid"), for: .normal)
+        button.addAction(UIAction { [weak self] _ in
+            self?.openViewer()
+        }, for: .touchUpInside)
+        addSubview(label)
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            button.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 8),
+            button.leadingAnchor.constraint(equalTo: label.leadingAnchor),
+            button.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+        ])
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    private func openViewer() {
+        guard let vc = nearestViewController() else { return }
+        let nav = UINavigationController(rootViewController: MermaidViewerViewController(source: source))
+        vc.present(nav, animated: true)
+    }
+}
+
 private final class MermaidFlowchartView: UIView {
+    @objc private func openMermaidViewer() {
+        guard let vc = nearestViewController() else { return }
+        let nav = UINavigationController(rootViewController: MermaidViewerViewController(source: source))
+        vc.present(nav, animated: true)
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        guard gestureRecognizers?.isEmpty != false else { return }
+        isUserInteractionEnabled = true
+        let tap = UITapGestureRecognizer(target: self, action: #selector(openMermaidViewer))
+        tap.numberOfTapsRequired = 2
+        addGestureRecognizer(tap)
+    }
+
     private enum Metrics {
         static let maxViewportHeight: CGFloat = 520
         static let minViewportHeight: CGFloat = 118
@@ -236,7 +296,10 @@ private final class MermaidFlowchartView: UIView {
         static let nodeVerticalPadding: CGFloat = 11
     }
 
-    init(diagram: MermaidFlowchartDiagram, config: NativeRenderConfig) {
+    private let source: String
+    init(diagram: MermaidFlowchartDiagram, source: String, config: NativeRenderConfig) {
+        self.source = source
+        // continue init below
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
@@ -693,5 +756,17 @@ private final class MacStyleCodeBlockView: UIView {
         let contentWidth = ceil(maxLineWidth)
         let contentHeight = ceil(CGFloat(lineCount) * lineHeight) + Metrics.verticalPadding * 2
         return (contentWidth, max(contentHeight, 54))
+    }
+}
+
+
+private extension UIView {
+    func nearestViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let vc = current as? UIViewController { return vc }
+            responder = current.next
+        }
+        return nil
     }
 }

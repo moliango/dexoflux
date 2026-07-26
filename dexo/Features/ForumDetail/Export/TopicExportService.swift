@@ -77,6 +77,25 @@ final class TopicExportService {
         return outputURL
     }
 
+    func markdownString(
+        topicId: Int,
+        title: String,
+        posts: [DiscourseTopicDetail.Post],
+        range: TopicExportRange
+    ) -> String {
+        let sortedPosts = posts
+            .filter { $0.actionCode == nil }
+            .sorted { $0.postNumber < $1.postNumber }
+        let selectedPosts: [DiscourseTopicDetail.Post]
+        switch range {
+        case .firstPost:
+            selectedPosts = Array(sortedPosts.prefix(1))
+        case .loadedPosts:
+            selectedPosts = sortedPosts
+        }
+        return makeMarkdown(topicId: topicId, title: title, posts: selectedPosts)
+    }
+
     private func makeMarkdown(
         topicId: Int,
         title: String,

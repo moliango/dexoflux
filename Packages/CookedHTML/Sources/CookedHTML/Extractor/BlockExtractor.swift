@@ -20,7 +20,7 @@ enum BlockExtractor {
         for child in parent.getChildNodes() {
             blocks.append(contentsOf: extractNode(child, options: options))
         }
-        return mergeInlineImageBlocks(blocks).compactMap { trimBlock($0) }
+        return finalizeBlocks(mergeInlineImageBlocks(blocks))
     }
 
     /// Extract annotated blocks (block + source HTML) from a parent element's children.
@@ -43,7 +43,9 @@ enum BlockExtractor {
         }
         // Apply the same inline-image merging as extract(), preserving sourceHTML by
         // concatenating the HTML of merged siblings.
-        guard raw.count > 1 else { return raw }
+        guard raw.count > 1 else {
+            return finalizeAnnotatedBlocks(raw)
+        }
         var result: [AnnotatedBlock] = []
         for annotated in raw {
             guard let lastIndex = result.indices.last else {
@@ -71,7 +73,7 @@ enum BlockExtractor {
             }
             result.append(annotated)
         }
-        return result
+        return finalizeAnnotatedBlocks(result)
     }
 
     /// Extract content blocks from a single DOM node.
@@ -563,6 +565,212 @@ enum BlockExtractor {
         }
 
         return result
+    }
+
+    /// Promote bare auto-linked image URLs and recurse into nested containers.
+    private static func finalizeBlocks(_ blocks: [ContentBlock]) -> [ContentBlock] {
+        blocks
+            .flatMap { promoteImageLinks(in: $0) }
+            .compactMap { trimBlock($0) }
+    }
+
+    private static func finalizeAnnotatedBlocks(_ blocks: [AnnotatedBlock]) -> [AnnotatedBlock] {
+        blocks.flatMap { annotated in
+            promoteImageLinks(in: annotated.block).compactMap { block in
+                guard let trimmed = trimBlock(block) else { return nil }
+                return AnnotatedBlock(block: trimmed, sourceHTML: annotated.sourceHTML)
+            }
+        }
+    }
+
+    /// Discourse leaves failed image oneboxes as auto-linked URLs. Promote those to image blocks
+    /// so native rendering matches FluxDo-style clients.
+    private static func promoteImageLinks(in block: ContentBlock) -> [ContentBlock] {
+        switch block {
+        case .paragraph(let inlines):
+            return splitParagraphPromotingImageLinks(inlines)
+
+        case .blockquote(let blocks):
+            return [.blockquote(blocks: blocks.flatMap { promoteImageLinks(in: $0) })]
+
+        case .discourseQuote(
+            let username,
+            let avatarURL,
+            let topicTitle,
+            let topicURL,
+            let categoryName,
+            let categoryURL,
+            let quotePostNumber,
+            let content
+        ):
+            return [
+                .discourseQuote(
+                    username: username,
+                    avatarURL: avatarURL,
+                    topicTitle: topicTitle,
+                    topicURL: topicURL,
+                    categoryName: categoryName,
+                    categoryURL: categoryURL,
+                    quotePostNumber: quotePostNumber,
+                    content: content.flatMap { promoteImageLinks(in: $0) }
+                )
+            ]
+
+        case .details(let summary, let content):
+            return [.details(summary: summary, content: content.flatMap { promoteImageLinks(in: $0) })]
+
+        case .spoiler(let blocks):
+            return [.spoiler(blocks: blocks.flatMap { promoteImageLinks(in: $0) })]
+
+        case .list(let ordered, let items):
+            let promotedItems = items.map { item in
+                ListItem(
+                    content: item.content,
+                    children: item.children.flatMap { promoteImageLinks(in: $0) }
+                )
+            }
+            return [.list(ordered: ordered, items: promotedItems)]
+
+        case .table(let headers, let rows):
+            let promotedHeaders = headers.map { cell in cell.flatMap { promoteImageLinks(in: $0) } }
+            let promotedRows = rows.map { row in
+                row.map { cell in cell.flatMap { promoteImageLinks(in: $0) } }
+            }
+            return [.table(headers: promotedHeaders, rows: promotedRows)]
+
+        case .onebox(let sourceURL, let title, let description, let imageURL, let imageWidth, let imageHeight, _):
+            // Image-only onebox (or source/title itself is an image URL) → full image block like FluxDo.
+            // linux.do may emit minimal asides where the body h3 anchor text IS the URL and there
+            // is no header, so title/description count as "empty" when they are just URL text.
+            let titleText = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let descriptionText = (description ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let titleURL = ImageURLDetector.normalizeURLString(titleText.replacingOccurrences(of: "&amp;", with: "&"))
+            let candidate = [imageURL, sourceURL, ImageURLDetector.isImageURL(titleURL) ? titleURL : nil]
+                .compactMap { $0 }
+                .first { ImageURLDetector.isImageURL($0) }
+            if let candidate,
+               titleText.isEmpty || ImageURLDetector.shouldPromoteLink(href: candidate, label: titleText),
+               descriptionText.isEmpty || ImageURLDetector.shouldPromoteLink(href: candidate, label: descriptionText) {
+                return [.image(src: candidate, alt: nil, width: imageWidth, height: imageHeight, href: sourceURL ?? candidate)]
+            }
+            if let sourceURL, ImageURLDetector.isImageURL(sourceURL), imageURL == nil {
+                return [.image(src: sourceURL, alt: title, width: nil, height: nil, href: sourceURL)]
+            }
+            return [block]
+
+        default:
+            return [block]
+        }
+    }
+
+    private static func splitParagraphPromotingImageLinks(_ inlines: [InlineNode]) -> [ContentBlock] {
+        let trimmedAll = inlines.trimmedWhitespace()
+        let substantial = trimmedAll.filter { inline in
+            switch inline {
+            case .lineBreak:
+                return false
+            case .text(let text), .styledText(let text, _):
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            default:
+                return true
+            }
+        }
+
+        // Whole-paragraph sole link whose href is image-like (ignore <br>/whitespace).
+        if substantial.count == 1, case .link(let href, _) = substantial[0] {
+            let cleaned = ImageURLDetector.normalizeURLString(href.replacingOccurrences(of: "&amp;", with: "&"))
+            if ImageURLDetector.isImageURL(cleaned) {
+                return [.image(src: cleaned, alt: nil, width: nil, height: nil, href: cleaned)]
+            }
+        }
+
+        // Whole-paragraph bare text URL, including text split by <br>/whitespace.
+        if let plainURL = ImageURLDetector.soleImageURL(fromPlainInlines: trimmedAll) {
+            return [.image(src: plainURL, alt: nil, width: nil, height: nil, href: plainURL)]
+        }
+
+        var result: [ContentBlock] = []
+        var textInlines: [InlineNode] = []
+
+        func flushText() {
+            let trimmed = textInlines.trimmedWhitespace()
+            if trimmed.isEmpty { return }
+            if let plainURL = ImageURLDetector.soleImageURL(fromPlainInlines: trimmed) {
+                result.append(.image(src: plainURL, alt: nil, width: nil, height: nil, href: plainURL))
+            } else {
+                result.append(.paragraph(trimmed))
+            }
+            textInlines.removeAll(keepingCapacity: true)
+        }
+
+        for inline in inlines {
+            // Promote auto-linked image URLs (label is the URL itself); keep custom-labeled
+            // links like [click here](a.jpg) inline unless they are the sole paragraph content.
+            if let imageBlock = imageBlock(from: inline, soleInParagraph: false) {
+                flushText()
+                result.append(imageBlock)
+            } else {
+                textInlines.append(inline)
+            }
+        }
+        flushText()
+        return result.isEmpty ? [] : result
+    }
+
+    private static func imageBlock(from inline: InlineNode, soleInParagraph: Bool) -> ContentBlock? {
+        switch inline {
+        case .link(let href, let children):
+            // <a href="..."><img></a> with a non-emoji image becomes a tappable block image.
+            if children.count == 1,
+               case .image(let src, let alt, let width, let height, let isEmoji) = children[0],
+               !isEmoji {
+                return .image(src: src, alt: alt, width: width, height: height, href: href)
+            }
+
+            let cleaned = ImageURLDetector.normalizeURLString(href.replacingOccurrences(of: "&amp;", with: "&"))
+            // Prefer promoting any image-like href. Custom markdown labels like
+            // [click here](a.jpg) mid-sentence are uncommon on linux.do; sole
+            // image embeds are the dominant failure mode.
+            if ImageURLDetector.isImageURL(cleaned) {
+                if soleInParagraph {
+                    return .image(src: cleaned, alt: nil, width: nil, height: nil, href: cleaned)
+                }
+                let label = plainText(from: children)
+                if ImageURLDetector.shouldPromoteLink(href: cleaned, label: label) {
+                    return .image(src: cleaned, alt: nil, width: nil, height: nil, href: cleaned)
+                }
+                // Even custom labels: if the link is image-like and label looks empty/URL-ish, promote.
+                let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedLabel.isEmpty || trimmedLabel.lowercased().hasPrefix("http") {
+                    return .image(src: cleaned, alt: nil, width: nil, height: nil, href: cleaned)
+                }
+            }
+            return nil
+
+        default:
+            return nil
+        }
+    }
+
+    private static func plainText(from inlines: [InlineNode]) -> String {
+        inlines.map { inline in
+            switch inline {
+            case .text(let text), .styledText(let text, _), .code(let text):
+                return text
+            case .link(_, let children), .spoiler(let children):
+                return plainText(from: children)
+            case .mention(let username, _):
+                return "@\(username)"
+            case .mentionGroup(let name, _):
+                return "@\(name)"
+            case .hashtag(let text, _, _):
+                return "#\(text)"
+            case .image(_, let alt, _, _, _):
+                return alt ?? ""
+            case .lineBreak:
+                return "\n"
+            }
+        }.joined()
     }
 
     /// Merge blocks that result from SwiftSoup splitting inline content into separate top-level nodes.

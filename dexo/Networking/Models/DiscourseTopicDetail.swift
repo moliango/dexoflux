@@ -398,6 +398,10 @@ struct DiscourseTopicDetail: Decodable {
         let pollsVotes: [String: [String]]
         var boosts: [Boost]
         var canBoost: Bool
+        let whisper: Bool
+        let version: Int
+        let userSignature: String?
+        let wiki: Bool
 
         enum CodingKeys: String, CodingKey {
             case id, name, username, cooked, raw, yours
@@ -431,6 +435,10 @@ struct DiscourseTopicDetail: Decodable {
             case pollsVotes = "polls_votes"
             case boosts
             case canBoost = "can_boost"
+            case whisper
+            case version
+            case userSignature = "user_signature"
+            case wiki
         }
 
         init(from decoder: Decoder) throws {
@@ -473,7 +481,14 @@ struct DiscourseTopicDetail: Decodable {
             pollsVotes = (try? container.decodeIfPresent(LossyPollVotesValue.self, forKey: .pollsVotes)?.value) ?? [:]
             boosts = (try? container.decodeIfPresent([Boost].self, forKey: .boosts)) ?? []
             canBoost = (try? container.decodeIfPresent(Bool.self, forKey: .canBoost)) ?? false
+            whisper = (try? container.decodeIfPresent(Bool.self, forKey: .whisper)) ?? false
+            version = container.decodeLossyInt(forKey: .version) ?? 1
+            userSignature = try? container.decodeNonEmptyStringIfPresent(forKey: .userSignature)
+            wiki = (try? container.decodeIfPresent(Bool.self, forKey: .wiki)) ?? false
         }
+
+        var showEditsIndicator: Bool { version > 1 || wiki }
+        var editsCount: Int { version > 1 ? version - 1 : 0 }
     }
 }
 

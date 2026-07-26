@@ -195,11 +195,14 @@ final class NewTopicComposerViewController: UIViewController {
         return label
     }()
 
-    private lazy var emojiPickerView: EmojiPickerView = {
-        let picker = EmojiPickerView()
+    private lazy var emojiPickerView: EmojiStickerPanelView = {
+        let picker = EmojiStickerPanelView()
         picker.translatesAutoresizingMaskIntoConstraints = false
         picker.onEmojiSelected = { [weak self] emoji in
             self?.replaceSelection(with: emoji)
+        }
+        picker.onStickerMarkdownSelected = { [weak self] markdown in
+            self?.replaceSelection(with: markdown + "\n")
         }
         return picker
     }()
@@ -276,6 +279,7 @@ final class NewTopicComposerViewController: UIViewController {
         setupConstraints()
         setupToolbar()
         setupCustomPanel()
+        emojiPickerView.presentingViewController = self
 
         titleField.text = initialTitle
         textView.text = initialRaw
@@ -669,8 +673,36 @@ final class NewTopicComposerViewController: UIViewController {
         case .quote: applyLinePrefix("> ")
         case .note: replaceSelection(with: "\n> [!note]\n> \(String(localized: "reply.tool.placeholder.note"))\n")
         case .template: insertTemplate()
+        case .aiReview: runAIPostReview()
         }
         if tool.closesPanelAfterAction { closePanel(returnToKeyboard: true) }
+    }
+
+    private func runAIPostReview() {
+        let content = (textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return }
+        let hud = UIAlertController(title: String(localized: "ai.review.running", defaultValue: "AI 预审中…"), message: nil, preferredStyle: .alert)
+        present(hud, animated: true)
+        Task {
+            do {
+                let result = try await AIPostReviewService.reviewDraft(title: nil, content: content, categoryName: nil)
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        let alert = UIAlertController(title: String(localized: "ai.review.result", defaultValue: "预审结果"), message: result, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        let alert = UIAlertController(title: String(localized: "common.error", defaultValue: "错误"), message: error.localizedDescription, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            }
+        }
     }
 
     private func replaceSelection(with text: String) {

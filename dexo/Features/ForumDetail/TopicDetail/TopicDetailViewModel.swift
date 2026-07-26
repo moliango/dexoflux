@@ -38,7 +38,8 @@ enum TopicDetailHTMLParsing {
     }
 
     nonisolated private static func parse(post: TopicDetailPostHTML, baseURL: String) -> TopicDetailParsedPost {
-        let annotated = CookedHTMLParser.parseAnnotated(html: post.cooked, baseURL: baseURL)
+        let cooked = PostImageLinkPreprocessor.rewrite(post.cooked)
+        let annotated = CookedHTMLParser.parseAnnotated(html: cooked, baseURL: baseURL)
         return TopicDetailParsedPost(
             postId: post.postId,
             annotatedBlocks: annotated,
@@ -514,6 +515,82 @@ final class TopicDetailViewModel: DexoObservableObject {
 
     func loadTopic(id: Int, containerWidth: CGFloat) async {
         await loadTopic(id: id, containerWidth: containerWidth, retryingExplicitCancellation: false)
+    }
+
+    /// After Cloudflare verification: keep a recovery message, retry fetch with backoff,
+    /// and avoid wiping the page into a permanent CF error while grace is active.
+    func recoverAfterCloudflare(id: Int, containerWidth: CGFloat) async {
+        isLoading = true
+        errorMessage = String(
+            localized: "cloudflare.recovering",
+            defaultValue: "验证已通过，正在重新加载…"
+        )
+        notifyChanged()
+
+        let delays: [UInt64] = [
+            300_000_000,
+            700_000_000,
+            1_200_000_000,
+            2_000_000_000,
+        ]
+        var lastError: String?
+        for (index, delay) in delays.enumerated() {
+            try? await Task.sleep(nanoseconds: delay)
+            do {
+                let detail = try await api.fetchTopic(id: id, trackVisit: true)
+                topic = detail
+                startLoadingCategoryMetadata(for: detail.categoryId)
+                allPostIds = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
+                loadedPostIds = Set(detail.postStream.posts.map(\.id))
+                firstPost = detail.postStream.posts.first
+                loadedRangeStart = 0
+                if let lastLoadedId = detail.postStream.posts.last?.id,
+                   let lastIndex = allPostIds.firstIndex(of: lastLoadedId) {
+                    loadedRangeEnd = lastIndex + 1
+                } else {
+                    loadedRangeEnd = detail.postStream.posts.count
+                }
+                parseGeneration += 1
+                let generation = parseGeneration
+                parsedBlocks = [:]
+                unsupportedPostIds = []
+                let postsToRender = detail.postStream.posts
+                if postsToRender.isEmpty {
+                    isReady = true
+                    isLoading = false
+                    errorMessage = nil
+                    notifyChanged()
+                    return
+                }
+                guard await parseAndStore(posts: postsToRender, generation: generation) else { return }
+                isReady = true
+                isLoading = false
+                errorMessage = nil
+                notifyChanged()
+                return
+            } catch {
+                lastError = error.localizedDescription
+                let isCF = lastError?.localizedCaseInsensitiveContains("cloudflare") == true
+                if isCF, index < delays.count - 1 {
+                    errorMessage = String(
+                        localized: "cloudflare.recovering",
+                        defaultValue: "验证已通过，正在重新加载…"
+                    )
+                    notifyChanged()
+                    continue
+                }
+                errorMessage = lastError
+            }
+        }
+        isLoading = false
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: api.baseURL),
+           (lastError?.localizedCaseInsensitiveContains("cloudflare") == true) {
+            errorMessage = String(
+                localized: "cloudflare.recovering_failed",
+                defaultValue: "验证已通过，但内容仍在加载。请稍候下拉刷新，或退出后重新进入。"
+            )
+        }
+        notifyChanged()
     }
 
     private func loadTopic(id: Int, containerWidth: CGFloat, retryingExplicitCancellation: Bool) async {

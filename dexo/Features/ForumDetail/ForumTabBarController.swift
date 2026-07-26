@@ -81,8 +81,20 @@ final class ForumTabBarController: UITabBarController {
         applyCurrentTabBarLayout()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // If we became visible as root home, never stay stuck with a scroll-hidden bar.
+        if !shouldHideTabBarForCurrentContent, isTabBarHiddenByScroll == false, tabBar.isHidden {
+            applyVisibleTabBarLayout()
+        }
+    }
+
     func setTabBarHiddenByScroll(_ hidden: Bool, animated: Bool) {
-        guard isTabBarHiddenByScroll != hidden else { return }
+        // Also recover when flag says visible but tabBar was left hidden by a
+        // interrupted animation / layout pass (first-launch flakiness).
+        let alreadyAligned = isTabBarHiddenByScroll == hidden
+            && (hidden || (!tabBar.isHidden && tabBar.transform == .identity))
+        guard !alreadyAligned else { return }
         isTabBarHiddenByScroll = hidden
 
         guard animated else {

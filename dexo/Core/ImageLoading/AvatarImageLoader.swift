@@ -103,7 +103,9 @@ enum AvatarImageLoader {
         let uniqueURLs = uniqueUnprefetchedURLs(urls)
         guard !uniqueURLs.isEmpty else { return }
 
-        let grouped = Dictionary(grouping: uniqueURLs) { requestHeaderSignature(for: $0) }
+        let grouped = Dictionary(grouping: uniqueURLs) {
+            requestHeaderSignature(for: $0, cloudflareBaseURL: cloudflareBaseURL)
+        }
         for urls in grouped.values {
             let requestContext: [SDWebImageContextOption: Any]?
             if let firstURL = urls.first {
@@ -161,7 +163,7 @@ enum AvatarImageLoader {
         cloudflareBaseURL: String? = nil
     ) -> [SDWebImageContextOption: Any]? {
         var context: [SDWebImageContextOption: Any] = [:]
-        let headers = requestHeaders(for: url)
+        let headers = requestHeaders(for: url, cloudflareBaseURL: cloudflareBaseURL)
         if !headers.isEmpty {
             context[SDWebImageContextOption.downloadRequestModifier] = SDWebImageDownloaderRequestModifier(
                 headers: headers
@@ -198,26 +200,78 @@ enum AvatarImageLoader {
         return "\(scheme)://\(host)"
     }
 
-    private static func requestHeaderSignature(for url: URL) -> String {
-        let headers = requestHeaders(for: url)
+    private static func requestHeaderSignature(for url: URL, cloudflareBaseURL: String? = nil) -> String {
+        let headers = requestHeaders(for: url, cloudflareBaseURL: cloudflareBaseURL)
         return headers
             .sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: "&")
     }
 
-    private static func requestHeaders(for url: URL) -> [String: String] {
-        var headers: [String: String] = [:]
-        let cookieHeader = WebCookieStore.shared.cookieHeader(for: url)
-        if !cookieHeader.isEmpty {
-            headers["Cookie"] = cookieHeader
-        }
+    private static func requestHeaders(
+        for url: URL,
+        cloudflareBaseURL: String? = nil
+    ) -> [String: String] {
+        // Align with FluxDo DioHttpClient image headers:
+        // Accept */* + Accept-Language; main domain may need cookies;
+        // third-party hosts must not send cookies (and often need forum Referer).
+        var headers: [String: String] = [
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        ]
 
         let userAgent = WebCookieStore.shared.userAgent
         if let userAgent, !userAgent.isEmpty {
             headers["User-Agent"] = userAgent
+        } else {
+            headers["User-Agent"] =
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         }
+
+        if isMainDomain(url, baseURL: cloudflareBaseURL) {
+            let cookieHeader = WebCookieStore.shared.cookieHeader(for: url)
+            if !cookieHeader.isEmpty {
+                headers["Cookie"] = cookieHeader
+            }
+        }
+
+        if let referer = refererHeader(for: url, baseURL: cloudflareBaseURL) {
+            headers["Referer"] = referer
+        }
+
         return headers
+    }
+
+    /// Main forum host (and subdomains) need session cookies for secure-uploads.
+    /// External image hosts must stay cookieless — same split as FluxDo.
+    private static func isMainDomain(_ url: URL, baseURL: String?) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        if let baseURL,
+           let baseHost = URL(string: baseURL)?.host?.lowercased(),
+           !baseHost.isEmpty {
+            if host == baseHost || host.hasSuffix("." + baseHost) {
+                return true
+            }
+        }
+        // Fallback for linux.do family when baseURL is temporarily unavailable.
+        if host == "linux.do" || host.hasSuffix(".linux.do") {
+            return true
+        }
+        return false
+    }
+
+    private static func refererHeader(for url: URL, baseURL: String?) -> String? {
+        // Always attach forum origin as Referer for non-main hosts (image beds / badge APIs).
+        guard !isMainDomain(url, baseURL: baseURL) else { return nil }
+        guard let baseURL, let base = URL(string: baseURL), base.scheme != nil, base.host != nil else {
+            return "https://linux.do/"
+        }
+        var components = URLComponents()
+        components.scheme = base.scheme
+        components.host = base.host
+        components.port = base.port
+        components.path = "/"
+        return components.string
     }
 }
 
@@ -225,12 +279,13 @@ enum ForumImageLoader {
     @discardableResult
     static func loadImage(
         with url: URL,
+        cloudflareBaseURL: String? = nil,
         completed: @escaping (UIImage?) -> Void
     ) -> SDWebImageOperation? {
         SDWebImageManager.shared.loadImage(
             with: url,
             options: AvatarImageLoader.options,
-            context: AvatarImageLoader.context(for: url),
+            context: AvatarImageLoader.context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil
         ) { image, _, _, _, _, _ in
             completed(image)
@@ -241,6 +296,7 @@ enum ForumImageLoader {
         on imageView: UIImageView,
         url: URL?,
         placeholder: UIImage? = nil,
+        cloudflareBaseURL: String? = nil,
         completed: SDExternalCompletionBlock? = nil
     ) {
         guard let url else {
@@ -253,7 +309,7 @@ enum ForumImageLoader {
             with: url,
             placeholderImage: placeholder,
             options: AvatarImageLoader.options,
-            context: AvatarImageLoader.context(for: url),
+            context: AvatarImageLoader.context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil,
             completed: completed
         )

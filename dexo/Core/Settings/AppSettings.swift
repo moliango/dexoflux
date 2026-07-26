@@ -841,6 +841,62 @@ final class AppSettings: DexoObservableObject {
         }
     }
 
+    var clipboardTopicLinkPromptEnabled: Bool {
+        get { bool(forKey: "clipboardTopicLinkPromptEnabled", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "clipboardTopicLinkPromptEnabled")
+            notifyChanged()
+        }
+    }
+
+    var showUserSignatures: Bool {
+        get { bool(forKey: "showUserSignatures", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "showUserSignatures")
+            notifyChanged()
+        }
+    }
+
+    var nestedReplyViewEnabled: Bool {
+        get { bool(forKey: "nestedReplyViewEnabled", defaultValue: false) }
+        set {
+            defaults.set(newValue, forKey: "nestedReplyViewEnabled")
+            notifyChanged()
+        }
+    }
+
+    var showTopicCardExcerpt: Bool {
+        get { bool(forKey: "showTopicCardExcerpt", defaultValue: false) }
+        set {
+            defaults.set(newValue, forKey: "showTopicCardExcerpt")
+            notifyChanged()
+        }
+    }
+
+    var showTopicCardTags: Bool {
+        get { bool(forKey: "showTopicCardTags", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "showTopicCardTags")
+            notifyChanged()
+        }
+    }
+
+    var showTopicCardCategory: Bool {
+        get { bool(forKey: "showTopicCardCategory", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "showTopicCardCategory")
+            notifyChanged()
+        }
+    }
+
+    var showTopicCardCounts: Bool {
+        get { bool(forKey: "showTopicCardCounts", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "showTopicCardCounts")
+            notifyChanged()
+        }
+    }
+
     var defaultExpandRelatedLinks: Bool {
         get { defaults.bool(forKey: "defaultExpandRelatedLinks") }
         set {

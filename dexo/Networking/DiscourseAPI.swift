@@ -998,7 +998,26 @@ final class DiscourseAPI {
         try await request(route: .userBadges(username: username))
     }
 
-    func fetchPendingInvites(username: String) async throws -> [DiscourseInviteLink] {
+    
+    func fetchPendingPosts(username: String) async throws -> [DiscoursePendingPost] {
+        let response: DiscoursePendingPostsResponse = try await request(route: .pendingPosts(username: username))
+        return response.pendingPosts
+    }
+
+    func fetchPostRevision(postId: Int, revision: String = "latest") async throws -> DiscoursePostRevision {
+        try await request(route: .postRevision(postId: postId, revision: revision))
+    }
+
+
+    func updatePresence(clientId: String, presentChannels: [String], leaveChannels: [String]) async throws {
+        var params: [String: Any] = ["client_id": clientId]
+        // Discourse accepts array-style params; Alamofire encodes them.
+        if !presentChannels.isEmpty { params["present_channels"] = presentChannels }
+        if !leaveChannels.isEmpty { params["leave_channels"] = leaveChannels }
+        let _: EmptyResponse = try await request(route: .presenceUpdate, parameters: params)
+    }
+
+func fetchPendingInvites(username: String) async throws -> [DiscourseInviteLink] {
         let response: DiscoursePendingInvitesResponse = try await request(route: .pendingInvites(username: username))
         return response.invites
     }
@@ -1263,6 +1282,13 @@ final class DiscourseAPI {
     }
 
     static func postCloudflareChallengeDetected(baseURL: String, responseURL: URL?) {
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL) {
+            DohDebugLog.record(
+                "challenge ignored during grace base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")",
+                subsystem: "CF"
+            )
+            return
+        }
         DohDebugLog.record(
             "challenge detected base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")",
             subsystem: "CF"

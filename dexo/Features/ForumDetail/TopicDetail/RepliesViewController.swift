@@ -165,7 +165,7 @@ final class RepliesViewController: UIViewController {
 
     private func prefetchReplyImages() {
         let contentURLs = parsedBlocks.values.flatMap(\.imageSourceURLs).compactMap(URL.init(string:))
-        ForumImageLoader.prefetch(urls: contentURLs)
+        ForumImageLoader.prefetch(urls: contentURLs, cloudflareBaseURL: baseURL)
         AvatarImageLoader.prefetch(
             urls: replyAvatarURLs(),
             cloudflareBaseURL: baseURL

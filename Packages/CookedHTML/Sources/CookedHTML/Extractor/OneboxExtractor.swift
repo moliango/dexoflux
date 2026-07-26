@@ -4,9 +4,12 @@ import SwiftSoup
 /// Extracts Discourse onebox blocks (`aside.onebox`).
 enum OneboxExtractor {
     static func extract(from element: Element, options: ParseOptions) -> ContentBlock {
-        // Source URL from header > a
+        // Source URL from header > a, falling back to the first body anchor for
+        // minimal asides (e.g. image oneboxes without a header).
         let sourceURL: String? = {
-            guard let anchor = try? element.select("header a").first() else { return nil }
+            let headerAnchor = (try? element.select("header a").first()) ?? nil
+            let bodyAnchor = (try? element.select("a[href]").first()) ?? nil
+            guard let anchor = headerAnchor ?? bodyAnchor else { return nil }
             let href = (try? anchor.attr("href")) ?? ""
             return href.isEmpty ? nil : URLResolver.resolve(href, baseURL: options.baseURL)
         }()

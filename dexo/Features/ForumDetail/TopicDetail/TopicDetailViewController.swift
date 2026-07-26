@@ -372,6 +372,9 @@ final class TopicDetailViewController: ObservableViewController {
         return label
     }()
 
+    private var renderedTopicTitle: String?
+    private var emojiUpdateObserver: NSObjectProtocol?
+
     private let tagsContainer: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
@@ -493,6 +496,9 @@ final class TopicDetailViewController: ObservableViewController {
         if let cloudflareCompletionObservationToken {
             NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
         }
+        if let emojiUpdateObserver {
+            NotificationCenter.default.removeObserver(emojiUpdateObserver)
+        }
         NotificationCenter.default.removeObserver(
             self,
             name: PluginStateStore.stateDidChangeNotification,
@@ -503,6 +509,14 @@ final class TopicDetailViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        emojiUpdateObserver = NotificationCenter.default.addObserver(
+            forName: EmojiStore.didUpdateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let renderedTopicTitle else { return }
+            self.configureTitleLabel(renderedTopicTitle)
+        }
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
         title = String(localized: "topic_detail.default_title")
@@ -659,7 +673,7 @@ final class TopicDetailViewController: ObservableViewController {
 
         // Title header (set once, but rebuild when canLoadEarlier changes after a jump)
         if let topic = viewModel.topic, !hasTitleHeader {
-            let displayTitle = topic.fancyTitle ?? topic.title
+            let displayTitle = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
             configureTitleLabel(displayTitle)
             updateTitleHeader()
             hasTitleHeader = true
@@ -714,7 +728,13 @@ final class TopicDetailViewController: ObservableViewController {
             }
             tableView.isHidden = false
             var seen = Set<Int>()
-            let readyIds = viewModel.visiblePosts.compactMap { post -> Int? in
+            let sourcePosts: [DiscourseTopicDetail.Post] = {
+                if AppSettings.shared.nestedReplyViewEnabled {
+                    return NestedReplyOrdering.ordered(viewModel.visiblePosts).map { $0.post }
+                }
+                return viewModel.visiblePosts
+            }()
+            let readyIds = sourcePosts.compactMap { post -> Int? in
                 guard viewModel.parsedBlocks[post.id] != nil,
                       seen.insert(post.id).inserted else { return nil }
                 return post.id
@@ -791,7 +811,7 @@ final class TopicDetailViewController: ObservableViewController {
         let contentURLs = newPostIds.flatMap { postId in
             viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
         }
-        ForumImageLoader.prefetch(urls: contentURLs)
+        ForumImageLoader.prefetch(urls: contentURLs, cloudflareBaseURL: baseURL)
         AvatarImageLoader.prefetch(
             urls: avatarURLs(forPostIds: newPostIds),
             cloudflareBaseURL: baseURL
@@ -825,22 +845,44 @@ final class TopicDetailViewController: ObservableViewController {
               ForumInstance.normalizedBaseURL(verifiedBaseURL) == ForumInstance.normalizedBaseURL(baseURL)
         else { return }
 
-        let readyPostIds = viewModel.posts.compactMap { post in
-            viewModel.parsedBlocks[post.id] == nil ? nil : post.id
-        }
-        AvatarImageLoader.credentialsDidChange(
-            for: baseURL,
-            retrying: avatarURLs(forPostIds: readyPostIds)
+        // Flip CF error copy immediately so dismiss doesn't leave "still need to verify".
+        viewModel.errorMessage = String(
+            localized: "cloudflare.recovering",
+            defaultValue: "验证已通过，正在重新加载…"
         )
-        prefetchedImagePostIds.removeAll()
-        prefetchContentImages(forPostIds: readyPostIds)
+        viewModel.notifyChanged()
+        errorLabel.text = viewModel.errorMessage
+        errorLabel.isHidden = false
+        loadingSkeletonView.setSkeletonActive(true, animated: true)
+
         Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            await self.viewModel.loadTopic(
+            await WebCookieStore.shared.forceSyncCloudflareClearance(for: self.baseURL)
+            self.api.resetSession()
+
+            let readyPostIds = self.viewModel.posts.compactMap { post in
+                self.viewModel.parsedBlocks[post.id] == nil ? nil : post.id
+            }
+            AvatarImageLoader.credentialsDidChange(
+                for: self.baseURL,
+                retrying: self.avatarURLs(forPostIds: readyPostIds)
+            )
+            self.prefetchedImagePostIds.removeAll()
+
+            await self.viewModel.recoverAfterCloudflare(
                 id: self.topicId,
                 containerWidth: self.view.bounds.width
             )
+
+            await MainActor.run {
+                self.loadingSkeletonView.setSkeletonActive(false, animated: true)
+                if self.viewModel.isReady {
+                    let ids = self.viewModel.posts.compactMap {
+                        self.viewModel.parsedBlocks[$0.id] == nil ? nil : $0.id
+                    }
+                    self.prefetchContentImages(forPostIds: ids)
+                }
+            }
         }
     }
 
@@ -1020,79 +1062,25 @@ final class TopicDetailViewController: ObservableViewController {
 
     // MARK: - Emoji Title
 
-    private static let emojiPattern = try! NSRegularExpression(pattern: ":[\\w\\-+]+:")
-
     private func configureTitleLabel(_ title: String) {
-        guard !EmojiStore.lookupMap.isEmpty else {
-            titleLabel.text = title
-            navTitleLabel.text = title
-            return
-        }
-        let matches = Self.emojiPattern.matches(in: title, range: NSRange(title.startIndex..., in: title))
-        let hasEmoji = matches.contains(where: {
-            let nsTitle = title as NSString
-            let full = nsTitle.substring(with: $0.range)
-            let code = String(full.dropFirst().dropLast())
-            return EmojiStore.url(for: code) != nil
-        })
-        guard hasEmoji else {
-            titleLabel.text = title
-            navTitleLabel.text = title
-            return
-        }
-
-        let headerResult = buildEmojiAttributedString(title, font: titleLabel.font ?? TopicDetailTypography.topicTitleFont())
-        let navResult = buildEmojiAttributedString(title, font: navTitleLabel.font ?? .systemFont(ofSize: 17, weight: .semibold))
-
-        titleLabel.attributedText = headerResult
-        navTitleLabel.attributedText = navResult
+        renderedTopicTitle = title
+        let headerFont = titleLabel.font ?? TopicDetailTypography.topicTitleFont()
+        let navFont = navTitleLabel.font ?? .systemFont(ofSize: 17, weight: .semibold)
+        TitleEmojiRenderer.apply(
+            title,
+            to: titleLabel,
+            font: headerFont,
+            textColor: titleLabel.textColor,
+            baseURL: baseURL
+        )
+        TitleEmojiRenderer.apply(
+            title,
+            to: navTitleLabel,
+            font: navFont,
+            textColor: navTitleLabel.textColor,
+            baseURL: baseURL
+        )
         navTitleLabel.sizeToFit()
-        loadTitleEmojiImages(in: headerResult, label: titleLabel)
-        loadTitleEmojiImages(in: navResult, label: navTitleLabel)
-    }
-
-    private func buildEmojiAttributedString(_ title: String, font: UIFont) -> NSMutableAttributedString {
-        let matches = Self.emojiPattern.matches(in: title, range: NSRange(title.startIndex..., in: title))
-        let result = NSMutableAttributedString()
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        var lastEnd = title.startIndex
-
-        for match in matches {
-            guard let fullRange = Range(match.range, in: title) else { continue }
-            let code = String(title[fullRange].dropFirst().dropLast())
-
-            if lastEnd < fullRange.lowerBound {
-                result.append(NSAttributedString(string: String(title[lastEnd..<fullRange.lowerBound]), attributes: attrs))
-            }
-
-            if let urlString = EmojiStore.url(for: code), let url = URL(string: urlString) {
-                let attachment = EmojiTextAttachment()
-                attachment.emojiURL = url
-                attachment.bounds = CGRect(x: 0, y: font.descender, width: font.lineHeight, height: font.lineHeight)
-                result.append(NSAttributedString(attachment: attachment))
-            } else {
-                result.append(NSAttributedString(string: String(title[fullRange]), attributes: attrs))
-            }
-
-            lastEnd = fullRange.upperBound
-        }
-
-        if lastEnd < title.endIndex {
-            result.append(NSAttributedString(string: String(title[lastEnd...]), attributes: attrs))
-        }
-        return result
-    }
-
-    private func loadTitleEmojiImages(in attributedString: NSMutableAttributedString, label: UILabel) {
-        attributedString.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributedString.length)) { value, _, _ in
-            guard let attachment = value as? EmojiTextAttachment, let url = attachment.emojiURL else { return }
-            ForumImageLoader.loadImage(with: url) { [weak self] image in
-                guard let image, let self else { return }
-                attachment.image = image
-                label.setNeedsDisplay()
-                self.view.setNeedsLayout()
-            }
-        }
     }
 
     // MARK: - Reading Tracking
@@ -1256,10 +1244,20 @@ final class TopicDetailViewController: ObservableViewController {
                 }
             )
         }
+        let notionMenus = NotionSyncScope.allCases.map { scope in
+            UIAction(title: scope.title) { [weak self] _ in
+                self?.syncTopicToNotion(scope: scope)
+            }
+        }
+        let notionMenu = UIMenu(
+            title: String(localized: "notion.sync", defaultValue: "同步到 Notion"),
+            image: UIImage(systemName: "tray.and.arrow.up"),
+            children: notionMenus
+        )
         return UIMenu(
             title: String(localized: "topic.export", defaultValue: "导出话题"),
             image: UIImage(systemName: "square.and.arrow.up"),
-            children: formatMenus
+            children: formatMenus + [notionMenu]
         )
     }
 
@@ -1482,24 +1480,156 @@ final class TopicDetailViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func shareTopicImage() {
+    private func shareTopicImage(postId: Int? = nil) {
         guard let topic = viewModel.topic else { return }
-        let displayTitle = topic.fancyTitle ?? topic.title
-        let firstPost = viewModel.posts.first(where: { $0.actionCode == nil })
-        let excerpt = firstPost?.cooked.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression) ?? ""
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 1350))
-        let image = renderer.image { context in
-            UIColor.systemBackground.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 1350))
-            let titleAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 56, weight: .bold), .foregroundColor: UIColor.label]
-            let bodyAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 34), .foregroundColor: UIColor.secondaryLabel]
-            (displayTitle as NSString).draw(in: CGRect(x: 72, y: 92, width: 936, height: 260), withAttributes: titleAttributes)
-            (String(excerpt.prefix(500)) as NSString).draw(in: CGRect(x: 72, y: 390, width: 936, height: 700), withAttributes: bodyAttributes)
-            ("\(baseURL)/t/\(topicId)" as NSString).draw(in: CGRect(x: 72, y: 1190, width: 936, height: 80), withAttributes: bodyAttributes)
+        let post: DiscourseTopicDetail.Post? = {
+            if let postId {
+                return viewModel.posts.first(where: { $0.id == postId })
+            }
+            return viewModel.posts.first(where: { $0.postNumber == 1 && $0.actionCode == nil })
+                ?? viewModel.posts.first(where: { $0.actionCode == nil })
+        }()
+        guard let post else {
+            showPostActionError(NSError(domain: "ShareImage", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "share.image.no_content", defaultValue: "暂无可分享内容")]))
+            return
         }
-        let activity = UIActivityViewController(activityItems: [image], applicationActivities: nil)
-        activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.first
-        present(activity, animated: true)
+
+        let displayTitle = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
+        let authorName = (post.name?.isEmpty == false ? post.name! : post.username)
+        let createdAtText: String? = {
+            let createdAt = post.createdAt
+            guard !createdAt.isEmpty else { return nil }
+            return TopicCell.formatDate(createdAt)
+        }()
+        let avatarURL = AvatarImageLoader.url(from: post.avatarTemplate, baseURL: baseURL, size: 120)
+        let host = URL(string: baseURL)?.host?.lowercased() ?? ""
+        let brandName = host.contains("linux.do") ? "LINUX DO" : "DexoFlux"
+        let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let shareURL = "\(trimmedBase)/t/\(topicId)/\(post.postNumber)"
+
+        let preview = ShareImagePreviewViewController(
+            model: .init(
+                topicId: topicId,
+                baseURL: baseURL,
+                title: displayTitle,
+                brandName: brandName,
+                authorName: authorName,
+                username: post.username,
+                createdAtText: createdAtText,
+                avatarURL: avatarURL,
+                cookedHTML: post.cooked,
+                shareURL: shareURL,
+                postNumber: post.postNumber
+            )
+        )
+        present(preview, animated: true)
+    }
+
+
+    private func syncTopicToNotion(scope: NotionSyncScope, duplicate: NotionDuplicateAction = .skip) {
+        guard let topic = viewModel.topic else { return }
+        let username = findAuthGating()?.currentUsername()
+        let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
+        guard let token = NotionConfigStore.shared.token(scopeKey: scopeKey), !token.isEmpty,
+              NotionConfigStore.shared.isComplete(scopeKey: scopeKey) else {
+            let alert = UIAlertController(
+                title: String(localized: "notion.not_configured", defaultValue: "请先配置 Notion"),
+                message: String(localized: "notion.not_configured.message", defaultValue: "在「我的」里打开 Notion 同步并填写 Token 与 Database ID"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        let config = NotionConfigStore.shared.loadConfig(scopeKey: scopeKey)
+        let title = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
+        let posts = viewModel.posts
+        let hud = UIAlertController(
+            title: String(localized: "notion.syncing", defaultValue: "正在同步到 Notion…"),
+            message: nil,
+            preferredStyle: .alert
+        )
+        present(hud, animated: true)
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let service = NotionSyncService(config: config, token: token, baseURL: self.baseURL)
+                let result = try await service.syncTopic(
+                    topicId: self.topicId,
+                    title: title,
+                    posts: posts,
+                    scope: scope,
+                    onDuplicate: duplicate
+                )
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        if result.duplicated && duplicate == .skip {
+                            let ask = UIAlertController(
+                                title: String(localized: "notion.duplicate.title", defaultValue: "Notion 中已存在"),
+                                message: String(localized: "notion.duplicate.message", defaultValue: "该话题已同步过，选择跳过或覆盖"),
+                                preferredStyle: .alert
+                            )
+                            ask.addAction(UIAlertAction(title: String(localized: "notion.duplicate.skip", defaultValue: "跳过"), style: .cancel))
+                            ask.addAction(UIAlertAction(title: String(localized: "notion.open_page", defaultValue: "打开已有页面"), style: .default) { _ in
+                                if let url = URL(string: result.pageURL) {
+                                    UIApplication.shared.open(url)
+                                }
+                            })
+                            ask.addAction(UIAlertAction(title: String(localized: "notion.duplicate.overwrite", defaultValue: "覆盖"), style: .destructive) { [weak self] _ in
+                                self?.syncTopicToNotion(scope: scope, duplicate: .overwrite)
+                            })
+                            self.present(ask, animated: true)
+                        } else {
+                            self.presentNotionSuccess(result)
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    hud.dismiss(animated: true) {
+                        self.showPostActionError(error)
+                    }
+                }
+            }
+        }
+    }
+
+    private func maybeAutoSyncNotionAfterBookmark() {
+        let username = findAuthGating()?.currentUsername()
+        let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
+        let config = NotionConfigStore.shared.loadConfig(scopeKey: scopeKey)
+        guard config.autoSyncOnBookmark,
+              let token = NotionConfigStore.shared.token(scopeKey: scopeKey),
+              NotionConfigStore.shared.isComplete(scopeKey: scopeKey),
+              let topic = viewModel.topic
+        else { return }
+        Task {
+            let service = NotionSyncService(config: config, token: token, baseURL: baseURL)
+            _ = try? await service.syncTopic(
+                topicId: topicId,
+                title: TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title),
+                posts: viewModel.posts,
+                scope: config.syncScope,
+                onDuplicate: .skip
+            )
+        }
+    }
+
+    private func presentNotionSuccess(_ result: NotionSyncResult) {
+        let alert = UIAlertController(
+            title: String(localized: "notion.sync.success", defaultValue: "同步成功"),
+            message: String(localized: "notion.sync.success_message", defaultValue: "已写入 Notion"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "notion.open_page", defaultValue: "打开页面"), style: .default) { _ in
+            if let url = URL(string: result.pageURL) {
+                UIApplication.shared.open(url)
+            }
+        })
+        present(alert, animated: true)
     }
 
     private func exportTopic(format: TopicExportFormat, range: TopicExportRange) {
@@ -1507,7 +1637,7 @@ final class TopicDetailViewController: ObservableViewController {
             showPostActionError(TopicExportError.noPosts)
             return
         }
-        let title = topic.fancyTitle ?? topic.title
+        let title = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
         let posts = viewModel.posts
         let username = findAuthGating()?.currentUsername()
         let service = TopicExportService(baseURL: baseURL, username: username)
@@ -1558,6 +1688,7 @@ final class TopicDetailViewController: ObservableViewController {
                         try await self.api.deleteBookmark(id: bookmarkId)
                     } else {
                         _ = try await self.api.createBookmark(topicId: self.topicId)
+                        await MainActor.run { self.maybeAutoSyncNotionAfterBookmark() }
                     }
                     await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
                 } catch {
@@ -1858,7 +1989,7 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
         let timeline = TopicTimelineSheetViewController(
             currentIndex: currentVisibleFloor(),
             stream: stream,
-            title: viewModel.topic?.fancyTitle ?? viewModel.topic?.title
+            title: TitleEmojiRenderer.plainTitle(fancyTitle: viewModel.topic?.fancyTitle, title: viewModel.topic?.title ?? "")
         )
         timeline.onJumpToPostId = { [weak self] postId in
             self?.jumpToPostId(postId)
@@ -2831,6 +2962,16 @@ extension TopicDetailViewController: PostCellDelegate {
         performAuthenticated { [weak self] in
             self?.presentReplyComposer(for: post)
         }
+    }
+
+    func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {
+        shareTopicImage(postId: post.id)
+    }
+
+    func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post) {
+        let vc = PostRevisionViewController(api: api, postId: post.id)
+        let nav = UINavigationController(rootViewController: vc)
+        present(nav, animated: true)
     }
 
     func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {

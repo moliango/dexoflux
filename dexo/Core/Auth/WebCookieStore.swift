@@ -163,6 +163,22 @@ final class WebCookieStore {
         if !newCookies.isEmpty { setCookies(newCookies) }
     }
 
+    /// Pull latest cf_clearance (and related) from the default WK store used by foreground verification.
+    @MainActor
+    func forceSyncCloudflareClearance(for baseURLString: String) async {
+        guard let url = URL(string: baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) else { return }
+        await syncFromWebView(
+            .default(),
+            names: ["cf_clearance"],
+            for: url
+        )
+        let has = hasCookie(named: "cf_clearance", for: url)
+        DohDebugLog.record(
+            "force synced cf_clearance base=\(url.absoluteString) has=\(has)",
+            subsystem: "CF"
+        )
+    }
+
     @MainActor
     func syncFromWebView(_ dataStore: WKWebsiteDataStore, names: Set<String>? = nil, for url: URL? = nil) async {
         let webViewCookies = await withCheckedContinuation { cont in

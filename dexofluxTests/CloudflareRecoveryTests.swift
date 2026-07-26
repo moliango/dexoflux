@@ -159,4 +159,11 @@ final class CloudflareRecoveryTests: XCTestCase {
 
         XCTAssertFalse(DiscourseAPI.isCloudflareChallengeResponse(response, data: nil))
     }
+    func testVerificationGraceSuppressesImmediateRepromptWindow() {
+        let base = "https://linux.do"
+        CloudflareVerificationPolicy.markVerificationGrace(baseURL: base, duration: 5)
+        XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: base))
+        XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: "https://LINUX.DO/"))
+    }
+
 }

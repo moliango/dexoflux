@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 
 final class ForumContainerViewController: UIViewController, AuthGating {
-    private static let cloudflareShieldSuppressionDuration: TimeInterval = 6
+    private static let cloudflareShieldSuppressionDuration: TimeInterval = 30
     private static let launchOverlayMinimumDuration: TimeInterval = 1.15
     private static let launchOverlayMaximumDurationNanoseconds: UInt64 = 4_200_000_000
 
@@ -307,6 +307,46 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         )
     }
 
+    func openTopicFromExternalLink(topicId: Int, postNumber: Int?) {
+        guard let tabBarViewController,
+              let navigationController = tabBarViewController.navigationControllers.first
+        else { return }
+        tabBarViewController.selectedIndex = 0
+        // Avoid stacking duplicates of same topic on top.
+        if let existing = navigationController.viewControllers.reversed().first(where: { ($0 as? TopicDetailViewController) != nil }) as? TopicDetailViewController {
+            // still push a fresh VC for simplicity and correct floor
+        }
+        navigationController.pushViewController(
+            TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber),
+            animated: true
+        )
+    }
+
+    func presentClipboardTopicLinkIfNeeded() {
+        guard AppSettings.shared.clipboardTopicLinkPromptEnabled else { return }
+        guard let info = ClipboardTopicLinkService.shared.check(forumBaseURL: forum.baseURL, enabled: true) else { return }
+        // Defer slightly so we don't fight launch transitions.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            // Re-check in case user already navigated away / disabled.
+            guard AppSettings.shared.clipboardTopicLinkPromptEnabled else { return }
+            guard self.presentedViewController == nil else { return }
+            let alert = UIAlertController(
+                title: String(localized: "clipboard.topic.title", defaultValue: "打开话题链接？"),
+                message: String(localized: "clipboard.topic.message", defaultValue: "检测到剪贴板中的论坛话题链接"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "忽略"), style: .cancel, handler: { _ in
+                ClipboardTopicLinkService.shared.markPrompted(info)
+            }))
+            alert.addAction(UIAlertAction(title: String(localized: "clipboard.topic.open", defaultValue: "打开"), style: .default, handler: { [weak self] _ in
+                ClipboardTopicLinkService.shared.markPrompted(info)
+                self?.openTopicFromExternalLink(topicId: info.topicId, postNumber: info.postNumber)
+            }))
+            self.present(alert, animated: true)
+        }
+    }
+
     private func setupPluginDock() {
         let dock = PluginDockViewController(api: api, username: forum.username)
         pluginDockViewController = dock
@@ -599,6 +639,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
         guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
         let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURLString) {
+            logCloudflareState("challenge ignored during verification grace base=\(baseURLString)")
+            setCloudflareShieldButtonVisible(false, animated: true)
+            return
+        }
         pendingCloudflareBaseURL = baseURL
         pendingCloudflareResponseURL = responseURL
         guard !isCloudflareShieldSuppressed() else {
@@ -622,6 +667,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private func handleCloudflareNeedsUserInteraction(_ notification: Notification) {
         guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURLString) {
+            logCloudflareState("user-interaction prompt ignored during verification grace base=\(baseURLString)")
+            return
+        }
         guard let baseURL = URL(string: baseURLString) ?? URL(string: forum.baseURL) else { return }
         let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
         pendingCloudflareBaseURL = baseURL
@@ -643,10 +692,12 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard let baseURLString = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
         guard normalizedBaseURL(baseURLString) == normalizedBaseURL(forum.baseURL) else { return }
         logCloudflareState("verification completed base=\(baseURLString)")
+        CloudflareVerificationPolicy.markVerificationGrace(baseURL: baseURLString)
         pendingCloudflareBaseURL = nil
         pendingCloudflareResponseURL = nil
         suppressCloudflareShieldTemporarily()
         setCloudflareShieldButtonVisible(false, animated: true)
+        api.resetSession()
         refreshVisiblePageAfterCloudflareVerification()
     }
 
@@ -811,6 +862,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func handleCloudflareVerificationClosed() {
         isPresentingCloudflareVerification = false
+        if let pending = pendingCloudflareBaseURL,
+           CloudflareVerificationPolicy.isInVerificationGrace(baseURL: pending) {
+            setCloudflareShieldButtonVisible(false, animated: true)
+            return
+        }
         guard pendingCloudflareBaseURL != nil, !isCloudflareShieldSuppressed() else { return }
         setCloudflareShieldButtonVisible(true, animated: true)
     }
@@ -1198,6 +1254,10 @@ final class CloudflareBackgroundVerificationService {
             log("skipped reason=\(reason) base=\(key) skip=foreground_verification")
             return false
         }
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL) {
+            log("skipped reason=\(reason) base=\(key) skip=verification_grace")
+            return true
+        }
 
         if let active = activeAttempts[key] {
             log("joined active attempt reason=\(reason) base=\(key)")
@@ -1206,6 +1266,14 @@ final class CloudflareBackgroundVerificationService {
 
         if !force, let lastAttempt = lastAttemptAt[key],
            Date().timeIntervalSince(lastAttempt) < attemptCooldown {
+            // Critical: cooldown must NOT force another human challenge if we already
+            // hold clearance / are in post-pass grace. That caused Topic Detail to
+            // re-prompt immediately after a successful pass while image retries settled.
+            if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL)
+                || WebCookieStore.shared.hasCookie(named: "cf_clearance", for: baseURL) {
+                log("skipped reason=\(reason) base=\(key) skip=attempt_cooldown_with_clearance")
+                return true
+            }
             log("skipped reason=\(reason) base=\(key) skip=attempt_cooldown")
             postNeedsUserInteraction(baseURL: baseURL, responseURL: responseURL, reason: "cooldown")
             return false
@@ -1228,6 +1296,7 @@ final class CloudflareBackgroundVerificationService {
 
         if ok {
             log("completed reason=\(reason) base=\(key)")
+            CloudflareVerificationPolicy.markVerificationGrace(baseURL: baseURL)
             NotificationCenter.default.post(
                 name: DiscourseAPI.cloudflareVerificationCompletedNotification,
                 object: nil,
@@ -1235,6 +1304,10 @@ final class CloudflareBackgroundVerificationService {
                     DiscourseAPI.cloudflareBaseURLUserInfoKey: key.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
                 ]
             )
+        } else if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL)
+            || WebCookieStore.shared.hasCookie(named: "cf_clearance", for: baseURL) {
+            // Avoid re-prompting right after a successful pass when a flaky retry fails.
+            log("failed but clearance/grace present reason=\(reason) base=\(key); skip user prompt")
         } else {
             postNeedsUserInteraction(baseURL: baseURL, responseURL: responseURL, reason: reason)
         }
@@ -1243,6 +1316,11 @@ final class CloudflareBackgroundVerificationService {
     }
 
     private func postNeedsUserInteraction(baseURL: URL, responseURL: URL?, reason: String) {
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL)
+            || WebCookieStore.shared.hasCookie(named: "cf_clearance", for: baseURL) {
+            log("needs user interaction suppressed reason=\(reason) base=\(baseURL.absoluteString) grace_or_clearance=true")
+            return
+        }
         log("needs user interaction reason=\(reason) base=\(baseURL.absoluteString)")
         var userInfo: [String: Any] = [
             DiscourseAPI.cloudflareBaseURLUserInfoKey: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")),

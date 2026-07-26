@@ -51,6 +51,9 @@ enum DiscourseRouter {
     case createdTopics(username: String, page: Int)
     case userBadges(username: String)
     case pendingInvites(username: String)
+    case pendingPosts(username: String)
+    case postRevision(postId: Int, revision: String)
+    case presenceUpdate
     case createInvite
     case createBookmark
     case deleteBookmark(id: Int)
@@ -63,7 +66,7 @@ enum DiscourseRouter {
     var method: HTTPMethod {
         switch self {
         case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
-             .topicNotificationLevel:
+             .topicNotificationLevel, .presenceUpdate:
             return .post
         case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
             return .put
@@ -186,6 +189,12 @@ enum DiscourseRouter {
             return "/user-badges/\(username.lowercased()).json?grouped=true"
         case .pendingInvites(let username):
             return "/u/\(username)/invited/pending"
+        case .pendingPosts(let username):
+            return "/posts/\(username)/pending.json"
+        case .postRevision(let postId, let revision):
+            return "/posts/\(postId)/revisions/\(revision).json"
+        case .presenceUpdate:
+            return "/presence/update.json"
         case .createInvite:
             return "/invites"
         case .createBookmark:

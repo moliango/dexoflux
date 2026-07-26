@@ -26,6 +26,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         refreshWebSessionAfterForeground(reason: "scene_did_become_active")
         if let window {
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
+            if let container = window.rootViewController as? ForumContainerViewController {
+                container.presentClipboardTopicLinkIfNeeded()
+            } else if let container = window.rootViewController?.children.compactMap({ $0 as? ForumContainerViewController }).first {
+                container.presentClipboardTopicLinkIfNeeded()
+            }
         }
     }
     func sceneWillResignActive(_ scene: UIScene) {}

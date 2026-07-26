@@ -543,6 +543,8 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didTapToggleDetails detailsIndex: Int, postId: Int)
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post)
     func postCell(didTapEditPost post: DiscourseTopicDetail.Post)
+    func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post)
+    func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post)
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool)
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
@@ -945,4 +947,10 @@ final class PostWebViewCell: UITableViewCell {
         relative.unitsStyle = .abbreviated
         return relative.localizedString(for: date, relativeTo: Date())
     }
+}
+
+
+extension PostCellDelegate {
+    func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {}
+    func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post) {}
 }

@@ -303,6 +303,28 @@ final class PostNativeCell: UITableViewCell {
         return label
     }()
 
+    private let whisperBadge: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = .systemPurple
+        label.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.12)
+        label.layer.cornerRadius = 8
+        label.clipsToBounds = true
+        label.textAlignment = .center
+        label.isHidden = true
+        label.text = "  " + String(localized: "post.whisper", defaultValue: "悄悄话") + "  "
+        return label
+    }()
+
+    private let editsButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.titleLabel?.font = .systemFont(ofSize: 11, weight: .semibold)
+        button.isHidden = true
+        return button
+    }()
+
     private let floorLabel: UILabel = {
         let label = UILabel()
         label.font = .monospacedDigitSystemFont(ofSize: 11.75, weight: .regular)
@@ -541,6 +563,8 @@ final class PostNativeCell: UITableViewCell {
         cardView.addSubview(metaLineStackView)
         cardView.addSubview(timeLabel)
         cardView.addSubview(floorLabel)
+        cardView.addSubview(whisperBadge)
+        cardView.addSubview(editsButton)
         cardView.addSubview(sourceButton)
         cardView.addSubview(replyToLabel)
         cardView.addSubview(contentCardView)
@@ -646,6 +670,10 @@ final class PostNativeCell: UITableViewCell {
 
             floorLabel.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 2),
             floorLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
+            whisperBadge.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+            whisperBadge.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 6),
+            editsButton.centerYAnchor.constraint(equalTo: floorLabel.centerYAnchor),
+            editsButton.trailingAnchor.constraint(equalTo: floorLabel.leadingAnchor, constant: -4),
 
             contentCardTopConstraint,
             contentCardView.topAnchor.constraint(greaterThanOrEqualTo: avatarImageView.bottomAnchor, constant: Metrics.contentTop),
@@ -816,6 +844,8 @@ final class PostNativeCell: UITableViewCell {
             }
             contentStackView.addArrangedSubview(relatedLinksView)
         }
+        configureWhisperAndEdits(for: post)
+        configureSignature(for: post, config: config)
         adjustNativeContentSpacing()
 
         AvatarImageLoader.setImage(
@@ -845,6 +875,7 @@ final class PostNativeCell: UITableViewCell {
 
     private static func needsBreathingRoomBefore(_ view: UIView) -> Bool {
         view is TappableImageContainer
+            || view is BadgeCardView
             || view is VideoCardView
             || view is OneboxCardView
             || view is FallbackBlockView
@@ -979,6 +1010,78 @@ final class PostNativeCell: UITableViewCell {
         userTitleLabel.attributedText = nil
         userTitleLabel.text = title
         userTitleLabel.textColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.82)
+    }
+
+
+    private func configureWhisperAndEdits(for post: DiscourseTopicDetail.Post) {
+        whisperBadge.isHidden = !post.whisper
+        if currentPost?.showEditsIndicator == true {
+            editsButton.isHidden = false
+            editsButton.setTitle(String(localized: "revision.edits", defaultValue: "已编辑"), for: .normal)
+            editsButton.removeTarget(nil, action: nil, for: .allEvents)
+            editsButton.addAction(UIAction { [weak self] _ in
+                guard let self, let post = self.currentPost else { return }
+                self.delegate?.postCell(didTapShowRevisionForPost: post)
+            }, for: .touchUpInside)
+        } else {
+            editsButton.isHidden = true
+        }
+    }
+
+    private func configureSignature(for post: DiscourseTopicDetail.Post, config: NativeRenderConfig) {
+        guard AppSettings.shared.showUserSignatures,
+              let signature = post.userSignature?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !signature.isEmpty
+        else { return }
+
+        // discourse-signatures plugin contract (FluxDo parity):
+        // advanced mode → cooked HTML; normal mode → the value IS an image URL.
+        // ponytail: site-setting gates (first_post_only / show_in_categories /
+        // signatures_max_image_height) are not fetched yet; upgrade path is
+        // reading site.json like FluxDo's PreloadedDataService.
+        let content: UIView
+        if signature.contains("<") {
+            let blocks = CookedHTMLParser.parseAnnotated(
+                html: PostImageLinkPreprocessor.rewrite(signature),
+                baseURL: config.baseURL
+            )
+            let views = NativeContentRenderer.renderBlocks(blocks, config: config, delegate: delegate)
+            guard !views.isEmpty else { return }
+            let stack = UIStackView(arrangedSubviews: views)
+            stack.axis = .vertical
+            stack.spacing = 6
+            views.forEach { setupTextViews(in: $0) }
+            content = stack
+        } else if Self.isValidSignatureImageURL(signature) {
+            content = ImageRenderer.render(
+                .image(src: signature, alt: nil, width: nil, height: nil, href: signature),
+                config: config,
+                delegate: delegate
+            )
+        } else {
+            // Legacy dirty data (arbitrary plain text) — web and FluxDo hide it entirely.
+            return
+        }
+
+        // Web-style <hr> separator above the signature.
+        let divider = UIView()
+        divider.backgroundColor = UIColor.separator.withAlphaComponent(0.3)
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale).isActive = true
+
+        let wrapper = UIStackView(arrangedSubviews: [divider, content])
+        wrapper.axis = .vertical
+        wrapper.spacing = 8
+        contentStackView.addArrangedSubview(wrapper)
+    }
+
+    private static func isValidSignatureImageURL(_ value: String) -> Bool {
+        guard value.hasPrefix("http://") || value.hasPrefix("https://"),
+              value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              let url = URL(string: value) ?? URL(string: value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value),
+              let host = url.host, !host.isEmpty
+        else { return false }
+        return true
     }
 
     private func configureHeaderBadges(for post: DiscourseTopicDetail.Post, baseURL: String) {
@@ -1464,6 +1567,13 @@ final class PostNativeCell: UITableViewCell {
         let copyAction = UIAction(title: "复制链接", image: UIImage(systemName: "link")) { [weak self] _ in
             self?.copyLinkTapped()
         }
+        let copyHTMLAction = UIAction(
+            title: String(localized: "post.copy_html", defaultValue: "复制原始HTML"),
+            image: UIImage(systemName: "chevron.left.forwardslash.chevron.right")
+        ) { [weak self] _ in
+            guard let cooked = self?.currentPost?.cooked, !cooked.isEmpty else { return }
+            UIPasteboard.general.string = cooked
+        }
         let bookmarkAction = UIAction(
             title: isBookmarked ? "取消收藏" : "收藏",
             image: UIImage(systemName: isBookmarked ? "bookmark.slash" : "bookmark")
@@ -1480,7 +1590,23 @@ final class PostNativeCell: UITableViewCell {
                 self.delegate?.postCell(didTapEditPost: post)
             })
         }
-        actions.append(contentsOf: [bookmarkAction, copyAction])
+        let shareImageAction = UIAction(
+            title: String(localized: "topic.share_image", defaultValue: "生成分享图片"),
+            image: UIImage(systemName: "photo")
+        ) { [weak self] _ in
+            guard let self, let post = self.currentPost else { return }
+            self.delegate?.postCell(didTapShareImageForPost: post)
+        }
+        if currentPost?.showEditsIndicator == true {
+            actions.append(UIAction(
+                title: String(localized: "revision.title", defaultValue: "编辑历史"),
+                image: UIImage(systemName: "clock.arrow.circlepath")
+            ) { [weak self] _ in
+                guard let self, let post = self.currentPost else { return }
+                self.delegate?.postCell(didTapShowRevisionForPost: post)
+            })
+        }
+        actions.append(contentsOf: [bookmarkAction, copyAction, copyHTMLAction, shareImageAction])
         moreButton.menu = UIMenu(title: "", children: actions)
     }
 

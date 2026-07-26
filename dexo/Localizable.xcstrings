@@ -1294,6 +1294,28 @@
         }
       }
     },
+    "ai.review.result" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "预审结果"
+          }
+        }
+      }
+    },
+    "ai.review.running" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 预审中…"
+          }
+        }
+      }
+    },
     "ai.service.add" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -1757,6 +1779,39 @@
         }
       }
     },
+    "clipboard.topic.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "检测到剪贴板中的论坛话题链接"
+          }
+        }
+      }
+    },
+    "clipboard.topic.open" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开"
+          }
+        }
+      }
+    },
+    "clipboard.topic.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开话题链接？"
+          }
+        }
+      }
+    },
     "cloudflare.challenge.required" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -1764,6 +1819,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "需要完成 Cloudflare 验证后重试。"
+          }
+        }
+      }
+    },
+    "cloudflare.recovering" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "验证已通过，正在重新加载…"
+          }
+        }
+      }
+    },
+    "cloudflare.recovering_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "验证已通过，但内容仍在加载。请稍候下拉刷新，或退出后重新进入。"
           }
         }
       }
@@ -2003,6 +2080,17 @@
         }
       }
     },
+    "common.create" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建"
+          }
+        }
+      }
+    },
     "common.delete" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -2144,6 +2232,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟"
+          }
+        }
+      }
+    },
+    "common.paste" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "粘贴"
           }
         }
       }
@@ -7385,6 +7484,17 @@
         }
       }
     },
+    "mermaid.open" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全屏查看 Mermaid"
+          }
+        }
+      }
+    },
     "messages.count %lld" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8792,6 +8902,556 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回復"
+          }
+        }
+      }
+    },
+    "notion.auto_sync_bookmark" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收藏时自动同步"
+          }
+        }
+      }
+    },
+    "notion.auto_sync_desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收藏话题后后台同步到 Notion（需已完成配置）"
+          }
+        }
+      }
+    },
+    "notion.configured" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已配置完成"
+          }
+        }
+      }
+    },
+    "notion.configured.detail" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Database %@ · Token 已保存在 Keychain"
+          }
+        }
+      }
+    },
+    "notion.create_template_db" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "一键创建模板 Database"
+          }
+        }
+      }
+    },
+    "notion.database_created" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Database 已创建，ID 已填入"
+          }
+        }
+      }
+    },
+    "notion.db_create_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建失败：%@"
+          }
+        }
+      }
+    },
+    "notion.disconnect" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "断开"
+          }
+        }
+      }
+    },
+    "notion.disconnect.confirm" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "将清除本机 Notion Token 与 Database 配置"
+          }
+        }
+      }
+    },
+    "notion.disconnected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已断开 Notion"
+          }
+        }
+      }
+    },
+    "notion.duplicate.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "该话题已同步过，选择跳过或覆盖"
+          }
+        }
+      }
+    },
+    "notion.duplicate.overwrite" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "覆盖"
+          }
+        }
+      }
+    },
+    "notion.duplicate.skip" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
+    "notion.duplicate.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Notion 中已存在"
+          }
+        }
+      }
+    },
+    "notion.edit_config" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "修改配置"
+          }
+        }
+      }
+    },
+    "notion.fill_token_and_db" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请填写 Token 和 Database ID"
+          }
+        }
+      }
+    },
+    "notion.not_configured" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请先配置 Notion"
+          }
+        }
+      }
+    },
+    "notion.not_configured.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在「我的」里打开 Notion 同步并填写 Token 与 Database ID"
+          }
+        }
+      }
+    },
+    "notion.open_integrations" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开 Notion Integrations"
+          }
+        }
+      }
+    },
+    "notion.open_page" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开已有页面"
+          }
+        }
+      }
+    },
+    "notion.parent_page_prompt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "粘贴已分享给 Integration 的 Page ID 或 Page 链接"
+          }
+        }
+      }
+    },
+    "notion.save_and_test" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存并测试连接"
+          }
+        }
+      }
+    },
+    "notion.scope.all_loaded" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部已加载帖子"
+          }
+        }
+      }
+    },
+    "notion.scope.first_post" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅主帖"
+          }
+        }
+      }
+    },
+    "notion.settings.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "配置 Token 并把话题同步到 Notion"
+          }
+        }
+      }
+    },
+    "notion.settings.testing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "测试中…"
+          }
+        }
+      }
+    },
+    "notion.settings.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Notion 同步"
+          }
+        }
+      }
+    },
+    "notion.step1.body" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1. 打开 notion.so/my-integrations\n2. 新建 Internal Integration 并关联 workspace\n3. 复制 Internal Integration Secret\n4. 粘贴到下方输入框"
+          }
+        }
+      }
+    },
+    "notion.step1.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "创建 Integration 获取 Token"
+          }
+        }
+      }
+    },
+    "notion.step2.body" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "把 Integration 通过 Connections 分享给目标 Page/Database。可粘贴 Database ID，或提供 Page ID 一键创建模板 Database（含 Name/URL/Topic ID/Post ID 等字段）。"
+          }
+        }
+      }
+    },
+    "notion.step2.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "准备 Database"
+          }
+        }
+      }
+    },
+    "notion.step3.body" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "测试通过后配置生效，可在话题导出菜单选择同步到 Notion。"
+          }
+        }
+      }
+    },
+    "notion.step3.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存并测试"
+          }
+        }
+      }
+    },
+    "notion.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "将帖子完整同步到你的 Notion Database"
+          }
+        }
+      }
+    },
+    "notion.sync" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步到 Notion"
+          }
+        }
+      }
+    },
+    "notion.sync_options" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步选项"
+          }
+        }
+      }
+    },
+    "notion.sync_scope" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "默认同步范围"
+          }
+        }
+      }
+    },
+    "notion.sync.success" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步成功"
+          }
+        }
+      }
+    },
+    "notion.sync.success_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已写入 Notion"
+          }
+        }
+      }
+    },
+    "notion.syncing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在同步到 Notion…"
+          }
+        }
+      }
+    },
+    "notion.test_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接失败：%@"
+          }
+        }
+      }
+    },
+    "notion.test_ok" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接成功：%@"
+          }
+        }
+      }
+    },
+    "notion.token_required" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请先填写 Integration Token"
+          }
+        }
+      }
+    },
+    "notion.token_security_note" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Integration Token 仅保存在本机 Keychain，不会写入普通配置备份文件。"
+          }
+        }
+      }
+    },
+    "pending.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无待审内容"
+          }
+        }
+      }
+    },
+    "pending.new_topic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "新主题"
+          }
+        }
+      }
+    },
+    "pending.reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复"
+          }
+        }
+      }
+    },
+    "pending.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查看送审中的主题与回复"
+          }
+        }
+      }
+    },
+    "pending.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "待审内容"
+          }
+        }
+      }
+    },
+    "pending.untitled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "待审内容"
           }
         }
       }
@@ -10475,6 +11135,17 @@
         }
       }
     },
+    "post.copy_html" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "复制原始HTML"
+          }
+        }
+      }
+    },
     "post.edit.action" : {
       "localizations" : {
         "en" : {
@@ -10919,6 +11590,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已提交審核"
+          }
+        }
+      }
+    },
+    "post.whisper" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "悄悄话"
           }
         }
       }
@@ -11368,6 +12050,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回復話題"
+          }
+        }
+      }
+    },
+    "reply.tool.ai_review" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 预审"
           }
         }
       }
@@ -12068,6 +12761,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在上傳..."
+          }
+        }
+      }
+    },
+    "revision.edits" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已编辑"
+          }
+        }
+      }
+    },
+    "revision.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑历史"
           }
         }
       }
@@ -13942,6 +14657,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示在底欄"
+          }
+        }
+      }
+    },
+    "settings.card.category" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "卡片显示分类"
+          }
+        }
+      }
+    },
+    "settings.card.category.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "列表卡片是否显示分类"
+          }
+        }
+      }
+    },
+    "settings.card.counts" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "卡片显示计数"
+          }
+        }
+      }
+    },
+    "settings.card.counts.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "列表卡片是否显示回复数"
+          }
+        }
+      }
+    },
+    "settings.card.tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "卡片显示标签"
+          }
+        }
+      }
+    },
+    "settings.card.tags.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "列表卡片是否显示标签"
           }
         }
       }
@@ -16244,6 +17025,28 @@
         }
       }
     },
+    "settings.reading.clipboard_topic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "剪贴板话题链接"
+          }
+        }
+      }
+    },
+    "settings.reading.clipboard_topic.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回到前台时提示打开复制的话题链接"
+          }
+        }
+      }
+    },
     "settings.reading.collapse_navigation" : {
       "localizations" : {
         "en" : {
@@ -16524,6 +17327,28 @@
         }
       }
     },
+    "settings.reading.nested" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "树形回复视图"
+          }
+        }
+      }
+    },
+    "settings.reading.nested.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "详情页按回复关系缩进展示"
+          }
+        }
+      }
+    },
     "settings.reading.preview.sample_body" : {
       "localizations" : {
         "en" : {
@@ -16716,6 +17541,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "閱讀"
+          }
+        }
+      }
+    },
+    "settings.reading.signatures" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "显示用户签名"
+          }
+        }
+      }
+    },
+    "settings.reading.signatures.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在帖子下方显示签名"
           }
         }
       }
@@ -17086,6 +17933,160 @@
         }
       }
     },
+    "share.image.no_content" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无可分享内容"
+          }
+        }
+      }
+    },
+    "share.image.permission_denied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无法保存"
+          }
+        }
+      }
+    },
+    "share.image.permission_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请在设置中允许写入相册。"
+          }
+        }
+      }
+    },
+    "share.image.save" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存到相册"
+          }
+        }
+      }
+    },
+    "share.image.saved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已保存"
+          }
+        }
+      }
+    },
+    "share.image.saved_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "图片已保存到相册。"
+          }
+        }
+      }
+    },
+    "share.image.share" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分享"
+          }
+        }
+      }
+    },
+    "share.image.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分享图片"
+          }
+        }
+      }
+    },
+    "share.theme.black" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "纯黑"
+          }
+        }
+      }
+    },
+    "share.theme.blue" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "蓝调"
+          }
+        }
+      }
+    },
+    "share.theme.classic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "经典"
+          }
+        }
+      }
+    },
+    "share.theme.dark" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "深色"
+          }
+        }
+      }
+    },
+    "share.theme.green" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "绿野"
+          }
+        }
+      }
+    },
+    "share.theme.white" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "纯白"
+          }
+        }
+      }
+    },
     "shared_issue.author_title" : {
       "localizations" : {
         "en" : {
@@ -17367,6 +18368,127 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "點擊揭示"
+          }
+        }
+      }
+    },
+    "sticker.add_from_market" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "+ 从市场添加"
+          }
+        }
+      }
+    },
+    "sticker.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有表情包"
+          }
+        }
+      }
+    },
+    "sticker.market.base_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "市场地址"
+          }
+        }
+      }
+    },
+    "sticker.market.base_url_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "修改后会清空市场缓存"
+          }
+        }
+      }
+    },
+    "sticker.market.count_suffix" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "个表情"
+          }
+        }
+      }
+    },
+    "sticker.market.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "市场暂无表情包"
+          }
+        }
+      }
+    },
+    "sticker.market.reset_default" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "恢复默认"
+          }
+        }
+      }
+    },
+    "sticker.market.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "表情包市场"
+          }
+        }
+      }
+    },
+    "sticker.recent" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近使用"
+          }
+        }
+      }
+    },
+    "sticker.tab.emoji" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "表情"
+          }
+        }
+      }
+    },
+    "sticker.tab.sticker" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "表情包"
           }
         }
       }
