@@ -48,7 +48,40 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         return button
     }()
 
-    private lazy var advancedFilterButton: UIButton = {
+    private lazy var sortTitleLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 14, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.text = String(localized: "search.sort.prefix", defaultValue: "排序：")
+        return label
+    }()
+
+    private lazy var aiSearchSwitch: UISwitch = {
+        let control = UISwitch()
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.addTarget(self, action: #selector(aiSearchToggled(_:)), for: .valueChanged)
+        return control
+    }()
+
+    private lazy var aiSparkleView: UIImageView = {
+        let view = UIImageView(image: UIImage(systemName: "sparkles"))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.tintColor = .systemPurple
+        view.contentMode = .scaleAspectFit
+        return view
+    }()
+
+    private lazy var resultCountLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }()
+
+        private lazy var advancedFilterButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addAction(UIAction { [weak self] _ in
@@ -91,6 +124,10 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(SearchResultCell.self, forCellReuseIdentifier: SearchResultCell.reuseIdentifier)
         tv.delegate = self
+        tv.separatorStyle = .none
+        tv.backgroundColor = .systemGroupedBackground
+        tv.rowHeight = UITableView.automaticDimension
+        tv.estimatedRowHeight = 140
         return tv
     }()
 
@@ -101,9 +138,14 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         else {
             return UITableViewCell()
         }
+        let topic = self.viewModel.topic(for: post.topicId)
+        let category = topic?.categoryId.flatMap { self.viewModel.categoriesById[$0] }
         cell.configure(
             with: post,
+            topic: topic,
             baseURL: self.api.baseURL,
+            categoryName: self.viewModel.categoryDisplayName(for: category),
+            categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
             isAIResult: self.viewModel.aiTopicIds.contains(post.topicId)
         )
         return cell
@@ -151,7 +193,9 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         super.viewDidLoad()
         observe(viewModel)
         title = String(localized: "search.title")
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .systemGroupedBackground
+        filterBar.backgroundColor = .systemGroupedBackground
+        tableView.backgroundColor = .systemGroupedBackground
         definesPresentationContext = true
 
         searchController.searchBar.delegate = self
@@ -159,6 +203,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         navigationItem.hidesSearchBarWhenScrolling = false
 
         setupFilterBar()
+        aiSearchSwitch.transform = CGAffineTransform(scaleX: 0.78, y: 0.78)
         updateFilterButtons()
 
         view.addSubview(tableView)
@@ -201,9 +246,13 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
     private func setupFilterBar() {
         view.addSubview(filterBar)
+        filterBar.addSubview(sortTitleLabel)
         filterBar.addSubview(categoryButton)
         filterBar.addSubview(sortButton)
         filterBar.addSubview(advancedFilterButton)
+        filterBar.addSubview(aiSparkleView)
+        filterBar.addSubview(aiSearchSwitch)
+        filterBar.addSubview(resultCountLabel)
         filterBar.addSubview(filterSeparator)
         view.addSubview(chipsScrollView)
         chipsScrollView.addSubview(chipsStack)
@@ -217,15 +266,28 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             filterBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             filterBar.heightAnchor.constraint(equalToConstant: 44),
 
-            categoryButton.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor, constant: 16),
-            categoryButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+            sortTitleLabel.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor, constant: 16),
+            sortTitleLabel.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
 
-            sortButton.leadingAnchor.constraint(equalTo: categoryButton.trailingAnchor, constant: 8),
+            sortButton.leadingAnchor.constraint(equalTo: sortTitleLabel.trailingAnchor, constant: 2),
             sortButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
 
-            advancedFilterButton.leadingAnchor.constraint(equalTo: sortButton.trailingAnchor, constant: 8),
+            categoryButton.leadingAnchor.constraint(equalTo: sortButton.trailingAnchor, constant: 8),
+            categoryButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+
+            advancedFilterButton.leadingAnchor.constraint(equalTo: categoryButton.trailingAnchor, constant: 4),
             advancedFilterButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
-            advancedFilterButton.trailingAnchor.constraint(lessThanOrEqualTo: filterBar.trailingAnchor, constant: -16),
+
+            resultCountLabel.trailingAnchor.constraint(equalTo: filterBar.trailingAnchor, constant: -16),
+            resultCountLabel.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+
+            aiSearchSwitch.trailingAnchor.constraint(equalTo: resultCountLabel.leadingAnchor, constant: -8),
+            aiSearchSwitch.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+
+            aiSparkleView.trailingAnchor.constraint(equalTo: aiSearchSwitch.leadingAnchor, constant: -4),
+            aiSparkleView.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+            aiSparkleView.widthAnchor.constraint(equalToConstant: 14),
+            aiSparkleView.heightAnchor.constraint(equalToConstant: 14),
 
             filterSeparator.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor),
             filterSeparator.trailingAnchor.constraint(equalTo: filterBar.trailingAnchor),
@@ -248,6 +310,12 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
     // MARK: - Filter Button Appearance
 
     private func updateFilterButtons() {
+        aiSearchSwitch.isOn = viewModel.aiSearchEnabled
+        aiSearchSwitch.isEnabled = viewModel.selectedSortOrder == .relevance
+        aiSparkleView.alpha = aiSearchSwitch.isEnabled ? 1 : 0.35
+        resultCountLabel.text = viewModel.hasSearched ? viewModel.resultCountText : nil
+        resultCountLabel.isHidden = !viewModel.hasSearched
+
         // Category button
         if let cat = viewModel.selectedCategory() {
             applyButtonConfig(
@@ -266,14 +334,20 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             )
         }
 
-        // Sort button
-        let isSortActive = viewModel.selectedSortOrder != .relevance
-        applyButtonConfig(
-            sortButton,
-            title: viewModel.selectedSortOrder.displayName,
-            systemImage: isSortActive ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle",
-            isActive: isSortActive
-        )
+        // Sort button — FluxDO "相关性 ▾" style next to "排序："
+        var sortConfig = UIButton.Configuration.plain()
+        sortConfig.title = viewModel.selectedSortOrder.displayName
+        sortConfig.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold))
+        sortConfig.imagePlacement = .trailing
+        sortConfig.imagePadding = 4
+        sortConfig.baseForegroundColor = .label
+        sortConfig.contentInsets = .zero
+        sortConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 14, weight: .medium)
+            return outgoing
+        }
+        sortButton.configuration = sortConfig
 
         // Advanced filter button (FluxDo tune icon + active count)
         let activeCount = viewModel.advancedFilter.activeCount
@@ -690,6 +764,15 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         triggerSearch()
+    }
+
+    @objc private func aiSearchToggled(_ sender: UISwitch) {
+        viewModel.aiSearchEnabled = sender.isOn
+        if viewModel.hasSearched {
+            triggerSearch()
+        } else {
+            updateUI()
+        }
     }
 
     private func triggerSearch() {

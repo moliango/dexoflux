@@ -20,11 +20,13 @@ enum SearchSortOrder: String, CaseIterable {
 
 final class SearchViewModel: DexoObservableObject {
     private static let sortOrderDefaultsKey = "search.sort_order"
+    private static let aiSearchEnabledKey = "search.ai_enabled"
 
     var searchResults: [DiscourseSearchResult.SearchPost] = []
     var userResults: [DiscourseSearchResult.SearchUser] = []
     /// AI 语义搜索命中的 topicId（用于结果行的 AI 徽标）。
     private(set) var aiTopicIds: Set<Int> = []
+    private(set) var topicsById: [Int: DiscourseSearchResult.SearchTopic] = [:]
     var isSearching = false
     var canLoadMore = false
     var hasSearched = false
@@ -43,6 +45,23 @@ final class SearchViewModel: DexoObservableObject {
         }
     }
 
+    /// FluxDO-style AI semantic merge toggle (only applies when sort is relevance).
+    var aiSearchEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(aiSearchEnabled, forKey: Self.aiSearchEnabledKey)
+            rebuildDisplayPosts()
+            notifyChanged()
+        }
+    }
+
+    var resultCountText: String {
+        let count = searchResults.count
+        if canLoadMore {
+            return "\(max(count, 1))+ " + String(localized: "search.results_count", defaultValue: "条结果")
+        }
+        return "\(count) " + String(localized: "search.results_count", defaultValue: "条结果")
+    }
+
     private let api: DiscourseAPI
     private var currentPage = 0
     private var currentTerm = ""
@@ -59,6 +78,15 @@ final class SearchViewModel: DexoObservableObject {
         self.api = api
         selectedSortOrder = UserDefaults.standard.string(forKey: Self.sortOrderDefaultsKey)
             .flatMap(SearchSortOrder.init(rawValue:)) ?? .relevance
+        if UserDefaults.standard.object(forKey: Self.aiSearchEnabledKey) == nil {
+            aiSearchEnabled = true
+        } else {
+            aiSearchEnabled = UserDefaults.standard.bool(forKey: Self.aiSearchEnabledKey)
+        }
+    }
+
+    func topic(for topicId: Int) -> DiscourseSearchResult.SearchTopic? {
+        topicsById[topicId]
     }
 
     func selectedCategory() -> DiscourseCategory? {
@@ -122,12 +150,14 @@ final class SearchViewModel: DexoObservableObject {
         searchGeneration += 1
         aiPosts = []
         aiTopicIds = []
+        topicsById = [:]
         notifyChanged()
 
         triggerAISearchIfNeeded(term: term, generation: searchGeneration)
 
         do {
             let result = try await api.search(term: query, page: 1, typeFilter: "topic")
+            indexTopics(result.topics ?? [])
             standardPosts = uniqueTopics(from: result.posts ?? [])
             userResults = result.users ?? []
             currentPage = 1
@@ -155,6 +185,7 @@ final class SearchViewModel: DexoObservableObject {
 
         do {
             let result = try await api.search(term: query, page: nextPage, typeFilter: "topic")
+            indexTopics(result.topics ?? [])
             let newPosts = uniqueTopics(from: result.posts ?? [])
             let existingTopicIds = Set(standardPosts.map(\.topicId))
             standardPosts.append(contentsOf: newPosts.filter { !existingTopicIds.contains($0.topicId) })
@@ -174,7 +205,7 @@ final class SearchViewModel: DexoObservableObject {
 
     private func triggerAISearchIfNeeded(term: String, generation: Int) {
         aiSearchTask?.cancel()
-        guard !aiSearchUnavailable, selectedSortOrder == .relevance else { return }
+        guard aiSearchEnabled, !aiSearchUnavailable, selectedSortOrder == .relevance else { return }
         aiSearchTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -197,11 +228,12 @@ final class SearchViewModel: DexoObservableObject {
 
     /// RRF（Reciprocal Rank Fusion，k=5，与 Discourse 前端一致）融合标准与 AI 结果。
     private func rebuildDisplayPosts() {
-        aiTopicIds = Set(aiPosts.map(\.topicId)).subtracting(standardPosts.map(\.topicId))
-        guard selectedSortOrder == .relevance, !aiPosts.isEmpty else {
+        guard aiSearchEnabled, selectedSortOrder == .relevance, !aiPosts.isEmpty else {
+            aiTopicIds = []
             searchResults = standardPosts
             return
         }
+        aiTopicIds = Set(aiPosts.map(\.topicId)).subtracting(standardPosts.map(\.topicId))
         guard !standardPosts.isEmpty else {
             searchResults = aiPosts
             return
@@ -249,6 +281,12 @@ final class SearchViewModel: DexoObservableObject {
         let indexed = DiscourseCategory.indexedById(from: categories)
         for (id, category) in indexed {
             categoriesById[id] = category
+        }
+    }
+
+    private func indexTopics(_ topics: [DiscourseSearchResult.SearchTopic]) {
+        for topic in topics where topic.id > 0 {
+            topicsById[topic.id] = topic
         }
     }
 
