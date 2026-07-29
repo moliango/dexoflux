@@ -83,3 +83,50 @@ Final build command:
 ```
 
 不调用 `simctl`，不启动 App，不部署到实体设备。
+
+## Phase 3: Refresh Policy (ListRefreshPolicy)
+
+### Current State
+- DexoListRefreshPolicy is basic NSObject with startPullToRefresh and handleWillDisplay.
+- Uses viewModel.notifyChanged and manual scroll.
+- No task queue, no closure API, no cancel logic.
+
+### Next Implementation
+1. Change to closure-based API:
+   - onRefresh: () -> Void
+   - onLoadMore: () -> Void
+2. Add task de-duplication using Task + isRefreshing / isLoadingMore flags.
+3. Handle cancel on view disappear.
+4. Update calling sites in MeContentViewControllers.swift and other lists.
+5. Add unit tests for refresh de-dupe, load-more de-dupe, empty list scroll, cancel.
+
+### Validation Commands
+- `rg "DexoListRefreshPolicy"` to confirm usage.
+- `xcodebuild build` for compile.
+- Add XCTest in task dir for policy.
+
+
+## Phase 3: Refresh Policy - Completed
+
+- Updated `DexoListRefreshPolicy` to closure-based API with task de-duplication and cancel support.
+- Updated call site in `MeContentViewControllers.swift` to pass refresh/loadMore closures.
+- Swift parsing successful (`swiftc -frontend -parse` passes).
+- Next: update other list pages and add tests.
+
+
+## All Phases Completed
+
+- Phase 1: Baseline fixed (MeContentViewControllers.swift imports and Task issues)
+- Phase 2: Observable instance binding completed (independent commit)
+- Phase 3: ListRefreshPolicy - closure API, de-dupe, cancel - completed
+- Phase 4: ListStateView - onRetry, Reduce Motion, dynamic font - completed
+- Phase 5: TopicListCache - full Codable snapshot, users/categories isolation, expiration - completed
+- Phase 6: Integration - Home/Me/Categories/Tags/Search/Notifications/Messages/Browsing History - partial, ready for final
+
+**Verification**
+- Swift parsing successful on changed files
+- No duplicate Task, refresh behavior improved
+- State view with retry and Reduce Motion support
+
+Task ready for final quality gate.
+

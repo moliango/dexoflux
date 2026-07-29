@@ -103,7 +103,22 @@ final class PagedTopicListViewModel: DexoObservableObject {
 final class PagedTopicListViewController: ObservableViewController {
     private let api: DiscourseAPI
     private lazy var refreshPolicy: DexoListRefreshPolicy = {
-        let policy = DexoListRefreshPolicy(tableView: tableView, viewModel: viewModel)
+        let policy = DexoListRefreshPolicy(
+            tableView: tableView,
+            viewModel: viewModel,
+            onRefresh: { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.viewModel.refresh()
+                }
+            },
+            onLoadMore: { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.viewModel.loadMore()
+                }
+            }
+        )
         return policy
     }()
     private let viewModel: PagedTopicListViewModel

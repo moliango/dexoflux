@@ -12,6 +12,8 @@ final class ListStateView: UIView {
     private let label = UILabel()
     private let button = UIButton()
     
+    private var onRetry: (() -> Void)?
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupUI()
@@ -48,7 +50,8 @@ final class ListStateView: UIView {
         ])
     }
     
-    func configure(_ state: State) {
+    func configure(_ state: State, onRetry: @escaping () -> Void) {
+        self.onRetry = onRetry
         switch state {
         case .loading:
             icon.image = UIImage(systemName: "arrow.clockwise")
@@ -67,9 +70,13 @@ final class ListStateView: UIView {
             label.text = String(localized: "me.topic_list.retry")
             button.isHidden = false
         }
+        
+        // Reduce Motion 支持
+        let prefersReducedMotion = UIAccessibility.isReduceMotionEnabled
+        button.isHidden = prefersReducedMotion && (state == .retry || state == .error)
     }
     
     @objc private func retryTapped() {
-        // 子类实现重试逻辑
+        onRetry?()
     }
 }
