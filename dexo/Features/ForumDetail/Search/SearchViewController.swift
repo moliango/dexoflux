@@ -1,7 +1,7 @@
 import SDWebImage
 import UIKit
 
-final class SearchViewController: ObservableViewController, UISearchBarDelegate {
+final class SearchViewController: ObservableViewController, UITextFieldDelegate {
     private let api: DiscourseAPI
     private let viewModel: SearchViewModel
     private let initialQuery: String?
@@ -9,11 +9,60 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
     private var searchTask: Task<Void, Never>?
 
-    private let searchController: UISearchController = {
-        let sc = UISearchController(searchResultsController: nil)
-        sc.obscuresBackgroundDuringPresentation = false
-        sc.searchBar.placeholder = String(localized: "search.placeholder")
-        return sc
+    // MARK: - FluxDO capsule header
+
+    private let headerContainer: UIView = {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        return v
+    }()
+
+    private lazy var backButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let img = UIImage(systemName: "chevron.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
+        button.setImage(img, for: .normal)
+        button.addAction(UIAction { [weak self] _ in
+            self?.navigationController?.popViewController(animated: true)
+        }, for: .touchUpInside)
+        return button
+    }()
+
+    private let searchCapsule: UIView = {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.backgroundColor = .secondarySystemFill
+        v.layer.cornerRadius = 20
+        v.layer.cornerCurve = .continuous
+        return v
+    }()
+
+    private lazy var searchField: UITextField = {
+        let field = UITextField()
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.font = .systemFont(ofSize: 15, weight: .regular)
+        field.placeholder = String(localized: "search.placeholder", defaultValue: "搜索")
+        field.returnKeyType = .search
+        field.clearButtonMode = .whileEditing
+        field.delegate = self
+        field.addTarget(self, action: #selector(searchFieldEditingChanged), for: .editingChanged)
+        return field
+    }()
+
+    private lazy var searchActionButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setImage(UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)), for: .normal)
+        button.addAction(UIAction { [weak self] _ in self?.triggerSearch() }, for: .touchUpInside)
+        return button
+    }()
+
+    private lazy var filterIconButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setImage(UIImage(systemName: "slider.horizontal.3", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)), for: .normal)
+        button.addAction(UIAction { [weak self] _ in self?.presentFilterPanel() }, for: .touchUpInside)
+        return button
     }()
 
     // MARK: - Filter Bar
@@ -81,7 +130,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         return label
     }()
 
-        private lazy var advancedFilterButton: UIButton = {
+    private lazy var advancedFilterButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addAction(UIAction { [weak self] _ in
@@ -127,7 +176,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
         tv.rowHeight = UITableView.automaticDimension
-        tv.estimatedRowHeight = 140
+        tv.estimatedRowHeight = 168
         return tv
     }()
 
@@ -189,21 +238,32 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isMovingFromParent || isBeingDismissed {
+            navigationController?.setNavigationBarHidden(false, animated: animated)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         observe(viewModel)
-        title = String(localized: "search.title")
+        title = nil
+        navigationItem.title = String(localized: "search.title", defaultValue: "搜索")
+        navigationController?.setNavigationBarHidden(true, animated: false)
         view.backgroundColor = .systemGroupedBackground
         filterBar.backgroundColor = .systemGroupedBackground
         tableView.backgroundColor = .systemGroupedBackground
-        definesPresentationContext = true
+        headerContainer.backgroundColor = .systemGroupedBackground
 
-        searchController.searchBar.delegate = self
-        navigationItem.searchController = searchController
-        navigationItem.hidesSearchBarWhenScrolling = false
-
+        setupHeader()
         setupFilterBar()
-        aiSearchSwitch.transform = CGAffineTransform(scaleX: 0.78, y: 0.78)
+        aiSearchSwitch.transform = CGAffineTransform(scaleX: 0.80, y: 0.80)
         updateFilterButtons()
 
         view.addSubview(tableView)
@@ -237,9 +297,51 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             await viewModel.loadRecentSearches()
         }
         if let initialQuery, !initialQuery.isEmpty {
-            searchController.searchBar.text = initialQuery
+            searchField.text = initialQuery
             triggerSearch()
         }
+    }
+
+
+    private func setupHeader() {
+        view.addSubview(headerContainer)
+        headerContainer.addSubview(backButton)
+        headerContainer.addSubview(searchCapsule)
+        searchCapsule.addSubview(searchField)
+        headerContainer.addSubview(searchActionButton)
+        headerContainer.addSubview(filterIconButton)
+
+        NSLayoutConstraint.activate([
+            headerContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            headerContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            headerContainer.heightAnchor.constraint(equalToConstant: 52),
+
+            backButton.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 8),
+            backButton.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
+            backButton.widthAnchor.constraint(equalToConstant: 36),
+            backButton.heightAnchor.constraint(equalToConstant: 36),
+
+            filterIconButton.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -10),
+            filterIconButton.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
+            filterIconButton.widthAnchor.constraint(equalToConstant: 36),
+            filterIconButton.heightAnchor.constraint(equalToConstant: 36),
+
+            searchActionButton.trailingAnchor.constraint(equalTo: filterIconButton.leadingAnchor, constant: -2),
+            searchActionButton.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
+            searchActionButton.widthAnchor.constraint(equalToConstant: 36),
+            searchActionButton.heightAnchor.constraint(equalToConstant: 36),
+
+            searchCapsule.leadingAnchor.constraint(equalTo: backButton.trailingAnchor, constant: 4),
+            searchCapsule.trailingAnchor.constraint(equalTo: searchActionButton.leadingAnchor, constant: -6),
+            searchCapsule.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
+            searchCapsule.heightAnchor.constraint(equalToConstant: 40),
+
+            searchField.leadingAnchor.constraint(equalTo: searchCapsule.leadingAnchor, constant: 14),
+            searchField.trailingAnchor.constraint(equalTo: searchCapsule.trailingAnchor, constant: -10),
+            searchField.topAnchor.constraint(equalTo: searchCapsule.topAnchor),
+            searchField.bottomAnchor.constraint(equalTo: searchCapsule.bottomAnchor),
+        ])
     }
 
     // MARK: - Filter Bar Setup
@@ -247,13 +349,10 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
     private func setupFilterBar() {
         view.addSubview(filterBar)
         filterBar.addSubview(sortTitleLabel)
-        filterBar.addSubview(categoryButton)
         filterBar.addSubview(sortButton)
-        filterBar.addSubview(advancedFilterButton)
         filterBar.addSubview(aiSparkleView)
         filterBar.addSubview(aiSearchSwitch)
         filterBar.addSubview(resultCountLabel)
-        filterBar.addSubview(filterSeparator)
         view.addSubview(chipsScrollView)
         chipsScrollView.addSubview(chipsStack)
 
@@ -261,22 +360,16 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         self.chipsHeightConstraint = chipsHeightConstraint
 
         NSLayoutConstraint.activate([
-            filterBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            filterBar.topAnchor.constraint(equalTo: headerContainer.bottomAnchor),
             filterBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             filterBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            filterBar.heightAnchor.constraint(equalToConstant: 44),
+            filterBar.heightAnchor.constraint(equalToConstant: 40),
 
             sortTitleLabel.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor, constant: 16),
             sortTitleLabel.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
 
             sortButton.leadingAnchor.constraint(equalTo: sortTitleLabel.trailingAnchor, constant: 2),
             sortButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
-
-            categoryButton.leadingAnchor.constraint(equalTo: sortButton.trailingAnchor, constant: 8),
-            categoryButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
-
-            advancedFilterButton.leadingAnchor.constraint(equalTo: categoryButton.trailingAnchor, constant: 4),
-            advancedFilterButton.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
 
             resultCountLabel.trailingAnchor.constraint(equalTo: filterBar.trailingAnchor, constant: -16),
             resultCountLabel.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
@@ -286,13 +379,8 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
             aiSparkleView.trailingAnchor.constraint(equalTo: aiSearchSwitch.leadingAnchor, constant: -4),
             aiSparkleView.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
-            aiSparkleView.widthAnchor.constraint(equalToConstant: 14),
-            aiSparkleView.heightAnchor.constraint(equalToConstant: 14),
-
-            filterSeparator.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor),
-            filterSeparator.trailingAnchor.constraint(equalTo: filterBar.trailingAnchor),
-            filterSeparator.bottomAnchor.constraint(equalTo: filterBar.bottomAnchor),
-            filterSeparator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+            aiSparkleView.widthAnchor.constraint(equalToConstant: 15),
+            aiSparkleView.heightAnchor.constraint(equalToConstant: 15),
 
             chipsScrollView.topAnchor.constraint(equalTo: filterBar.bottomAnchor),
             chipsScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -643,7 +731,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             button.contentHorizontalAlignment = .leading
             button.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
-                searchController.searchBar.text = term
+                searchField.text = term
                 triggerSearch()
             }, for: .touchUpInside)
             stack.addArrangedSubview(button)
@@ -762,8 +850,17 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
-    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         triggerSearch()
+        textField.resignFirstResponder()
+        return true
+    }
+
+    @objc private func searchFieldEditingChanged() {
+        // Keep clear button / empty recent state reactive.
+        if (searchField.text ?? "").isEmpty, viewModel.hasSearched == false {
+            updateUI()
+        }
     }
 
     @objc private func aiSearchToggled(_ sender: UISwitch) {
@@ -776,7 +873,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
     }
 
     private func triggerSearch() {
-        let term = searchController.searchBar.text ?? ""
+        let term = searchField.text ?? ""
         guard !term.isEmpty else { return }
         let effectiveTerm: String
         if let fixedQueryQualifier, !fixedQueryQualifier.isEmpty {
