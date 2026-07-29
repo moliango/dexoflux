@@ -120,8 +120,65 @@ final class SearchViewModel: DexoObservableObject {
     // MARK: - Recent searches (server-side, FluxDo parity)
 
     func loadRecentSearches() async {
-        recentSearches = (try? await api.fetchRecentSearches()) ?? []
+        let raw = (try? await api.fetchRecentSearches()) ?? []
+        recentSearches = Self.sanitizeRecentSearches(raw)
         notifyChanged()
+    }
+
+    /// Display/tap term without Discourse filter tokens (FluxDO strips `order:`).
+    func displayTerm(forRecent raw: String) -> String {
+        Self.stripFilterTokens(from: raw)
+    }
+
+    /// If recent history embeds `order:xxx`, restore it when re-running that item.
+    func sortOrder(embeddedIn raw: String) -> SearchSortOrder? {
+        Self.extractSortOrder(from: raw)
+    }
+
+    static func stripFilterTokens(from query: String) -> String {
+        var result = query
+        // order: may appear multiple times due to repeated searches with sort.
+        let patterns = [
+            #"\s*order:(relevance|latest|likes|views|latest_topic)\b"#,
+            #"\s*category:[^\s]+"#,
+            #"\s*tags:[^\s]+"#,
+            #"\s*status:(open|closed|archived|solved|unsolved)\b"#,
+            #"\s*after:\d{4}-\d{2}-\d{2}\b"#,
+            #"\s*before:\d{4}-\d{2}-\d{2}\b"#,
+        ]
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                let range = NSRange(result.startIndex..<result.endIndex, in: result)
+                result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: " ")
+            }
+        }
+        return result
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func extractSortOrder(from query: String) -> SearchSortOrder? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"order:(relevance|latest|likes|views|latest_topic)\b"#,
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let range = NSRange(query.startIndex..<query.endIndex, in: query)
+        guard let match = regex.firstMatch(in: query, options: [], range: range),
+              match.numberOfRanges > 1,
+              let swiftRange = Range(match.range(at: 1), in: query)
+        else { return nil }
+        return SearchSortOrder(rawValue: String(query[swiftRange]).lowercased())
+    }
+
+    static func sanitizeRecentSearches(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for item in raw {
+            let clean = stripFilterTokens(from: item)
+            guard !clean.isEmpty, seen.insert(clean).inserted else { continue }
+            result.append(item) // keep raw for order restore; display uses strip
+        }
+        return result
     }
 
     func clearRecentSearches() async {
@@ -264,8 +321,9 @@ final class SearchViewModel: DexoObservableObject {
 
     private func buildQuery(term: String) -> String {
         var parts: [String] = []
-        if !term.isEmpty {
-            parts.append(term)
+        let cleanTerm = Self.stripFilterTokens(from: term)
+        if !cleanTerm.isEmpty {
+            parts.append(cleanTerm)
         }
         if let catId = selectedCategoryId, let slug = categoriesById[catId]?.slug {
             parts.append("category:\(slug)")

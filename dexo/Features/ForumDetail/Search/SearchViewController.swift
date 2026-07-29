@@ -714,8 +714,10 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         stack.setCustomSpacing(8, after: headerRow)
 
         for term in viewModel.recentSearches.prefix(10) {
+            let display = viewModel.displayTerm(forRecent: term)
+            guard !display.isEmpty else { continue }
             var config = UIButton.Configuration.plain()
-            config.title = term
+            config.title = display
             config.image = UIImage(
                 systemName: "clock.arrow.circlepath",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .regular)
@@ -732,8 +734,12 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
             button.contentHorizontalAlignment = .leading
             button.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
-                searchField.text = term
-                triggerSearch()
+                if let order = self.viewModel.sortOrder(embeddedIn: term) {
+                    self.viewModel.selectedSortOrder = order
+                    self.updateFilterButtons()
+                }
+                self.searchField.text = display
+                self.triggerSearch()
             }, for: .touchUpInside)
             stack.addArrangedSubview(button)
         }
