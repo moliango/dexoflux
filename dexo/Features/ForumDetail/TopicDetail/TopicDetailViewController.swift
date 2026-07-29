@@ -379,10 +379,8 @@ final class TopicDetailViewController: ObservableViewController {
             await api.loadOrFetchEmojiMap()
             hasTitleHeader = false
             updateUI()
-            // Emoji map arrival should not thrash full-table geometry; refresh visible rows only.
-            if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
-                tableView.reloadRows(at: visible, with: .none)
-            }
+            // Diffable data source forbids direct reloadRows/reloadData.
+            reconfigureVisiblePostCells()
         }
     }
 
@@ -541,11 +539,7 @@ final class TopicDetailViewController: ObservableViewController {
             let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
             applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
             if shouldReloadVisibleContent {
-                if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
-                    tableView.reloadRows(at: visible, with: .none)
-                } else {
-                    tableView.reloadData()
-                }
+                reconfigureVisiblePostCells(reloadAllIfNoneVisible: true)
             }
             updateVisibleReadingPosts()
             updateBottomBarProgress()
@@ -994,6 +988,28 @@ final class TopicDetailViewController: ObservableViewController {
         var snapshot = dataSource.snapshot()
         guard snapshot.indexOfItem(postId) != nil else { return }
         snapshot.reloadItems([postId])
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+
+    /// Safe refresh for DiffableDataSource-backed table (never call reloadData/reloadRows directly).
+    private func reconfigureVisiblePostCells(reloadAllIfNoneVisible: Bool = false) {
+        var snapshot = dataSource.snapshot()
+        guard !snapshot.itemIdentifiers.isEmpty else { return }
+
+        let visibleIds = (tableView.indexPathsForVisibleRows ?? []).compactMap {
+            dataSource.itemIdentifier(for: $0)
+        }.filter { snapshot.indexOfItem($0) != nil }
+
+        let ids: [Int]
+        if !visibleIds.isEmpty {
+            ids = visibleIds
+        } else if reloadAllIfNoneVisible {
+            ids = snapshot.itemIdentifiers
+        } else {
+            return
+        }
+
+        snapshot.reloadItems(ids)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
