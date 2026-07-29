@@ -1,5 +1,4 @@
 import UIKit
-import dexoflux.Core
 
 @MainActor
 final class PagedTopicListViewModel: DexoObservableObject {
@@ -326,8 +325,6 @@ final class PagedTopicListViewController: ObservableViewController {
 
     @objc private func refreshPulled() {
         refreshPolicy.startPullToRefresh()
-        Task { await viewModel.refresh() }
-    }
         Task { await viewModel.refresh() }
     }
 
