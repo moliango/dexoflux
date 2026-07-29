@@ -136,7 +136,8 @@ final class SearchFilterPanelViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        let theme = AppSettings.shared.themeStyle
+        view.backgroundColor = theme.topicListBackgroundColor
         title = String(localized: "search.filter.advanced_title", defaultValue: "高级搜索")
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -148,9 +149,14 @@ final class SearchFilterPanelViewController: UIViewController {
         applyButton.translatesAutoresizingMaskIntoConstraints = false
         var applyConfig = UIButton.Configuration.filled()
         applyConfig.cornerStyle = .large
-        applyConfig.baseBackgroundColor = UIColor.secondaryLabel.withAlphaComponent(0.85)
+        applyConfig.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
         applyConfig.baseForegroundColor = .white
         applyConfig.title = String(localized: "search.filter.apply", defaultValue: "应用筛选")
+        applyConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 17, weight: .semibold)
+            return outgoing
+        }
         applyConfig.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
         applyButton.configuration = applyConfig
         applyButton.addAction(UIAction { [weak self] _ in
@@ -217,7 +223,8 @@ final class SearchFilterPanelViewController: UIViewController {
 
     private func makeSection(title: String, chips: [UIView]) -> UIView {
         let titleLabel = UILabel()
-        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textColor = .label
         titleLabel.text = title
 
         let wrap = WrappingChipView()
@@ -325,32 +332,47 @@ final class SearchFilterPanelViewController: UIViewController {
         leadingInset: CGFloat = 0,
         action: @escaping () -> Void
     ) -> UIButton {
+        let theme = AppSettings.shared.themeStyle
+        let accent = tint ?? theme.accentColor
         var config = UIButton.Configuration.filled()
-        config.cornerStyle = .capsule
+        config.cornerStyle = .medium
         config.title = title
-        config.imagePadding = 4
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12 + leadingInset, bottom: 8, trailing: 12)
+        config.imagePadding = 5
+        config.contentInsets = NSDirectionalEdgeInsets(top: 9, leading: 12 + leadingInset, bottom: 9, trailing: 12)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 14, weight: selected ? .semibold : .medium)
+            return outgoing
+        }
         if let systemImage {
-            config.image = UIImage(systemName: systemImage, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+            config.image = UIImage(systemName: systemImage, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
         }
         if selected {
-            config.baseBackgroundColor = (tint ?? .systemBlue).withAlphaComponent(0.16)
-            config.baseForegroundColor = tint ?? .systemBlue
-            config.image = (config.image ?? UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
+            config.baseBackgroundColor = accent.withAlphaComponent(0.14)
+            config.baseForegroundColor = accent
             if systemImage == nil {
                 config.image = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))
                 config.imagePlacement = .trailing
                 config.imagePadding = 6
             }
-        } else {
-            config.baseBackgroundColor = UIColor.secondarySystemFill
+        } else if let tint {
+            config.baseBackgroundColor = tint.withAlphaComponent(0.10)
             config.baseForegroundColor = .label
-        }
-        if let tint, !selected {
-            config.baseBackgroundColor = tint.withAlphaComponent(0.12)
+        } else {
+            config.baseBackgroundColor = theme.topicChipBackgroundColor
             config.baseForegroundColor = .label
         }
         let button = UIButton(configuration: config)
+        button.layer.cornerRadius = 12
+        button.layer.cornerCurve = .continuous
+        button.clipsToBounds = true
+        if selected {
+            button.layer.borderWidth = 1
+            button.layer.borderColor = accent.withAlphaComponent(0.28).cgColor
+        } else {
+            button.layer.borderWidth = 0
+            button.layer.borderColor = UIColor.clear.cgColor
+        }
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }
@@ -479,9 +501,15 @@ private final class WrappingChipView: UIView {
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
-        let maxWidth = bounds.width
+        let maxWidth = max(bounds.width, 1)
         for chip in chips {
-            let size = chip.sizeThatFits(CGSize(width: maxWidth, height: .greatestFiniteMagnitude))
+            chip.setNeedsLayout()
+            chip.layoutIfNeeded()
+            var size = chip.intrinsicContentSize
+            if size.width <= 0 || size.width > 10000 {
+                size = chip.sizeThatFits(CGSize(width: maxWidth, height: 44))
+            }
+            size.height = max(size.height, 36)
             if x > 0, x + size.width > maxWidth {
                 x = 0
                 y += rowHeight + lineSpacing
