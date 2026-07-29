@@ -1289,6 +1289,8 @@ func fetchPendingInvites(username: String) async throws -> [DiscourseInviteLink]
             )
             return
         }
+        // Stop main-domain image storms while clearance is recovered (API or image path).
+        CloudflareImageGate.pause(baseURL: baseURL)
         DohDebugLog.record(
             "challenge detected base=\(baseURL) response=\(responseURL?.absoluteString ?? "none")",
             subsystem: "CF"

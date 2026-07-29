@@ -1,9 +1,12 @@
 import UIKit
+import WebKit
 
-/// FluxDo-style status/music badge card for `prompt.iwooji.com/badge?...` links.
+/// FluxDo-style status/music badge for `prompt.iwooji.com/badge?...`.
 ///
-/// Discourse often leaves these as bare auto-links. FluxDo parses query params and
-/// draws a dual-tone card instead of showing the raw URL.
+/// The remote endpoint returns an **animated SVG** (SMIL snow/marquee effects).
+/// A pure native dual-tone card loses all motion, so we load the real SVG in a
+/// lightweight WKWebView (Safari-equivalent SMIL autoplay) and keep the native
+/// card only as a loading / failure placeholder.
 struct BadgeCardModel: Equatable {
     let sourceURL: URL
     let title: String
@@ -15,6 +18,9 @@ struct BadgeCardModel: Equatable {
     let leftFontSize: CGFloat
     let rightFontSize: CGFloat
     let showsPlayButton: Bool
+
+    /// Intrinsic badge canvas used by the SVG generator (width x height).
+    static let intrinsicSize = CGSize(width: 458, height: 90)
 
     static func parse(url: URL) -> BadgeCardModel? {
         let absolute = url.absoluteString
@@ -53,7 +59,7 @@ struct BadgeCardModel: Equatable {
         let subtitleColor = color(from: value("dfc"), fallback: .white)
         let leftFontSize = CGFloat(Int(value("lfs") ?? "") ?? 15)
         let rightFontSize = CGFloat(Int(value("rfs") ?? "") ?? 15)
-        // `k=none` means no special icon key; still show the FluxDo-style play affordance.
+        // `k=none` means no special icon key; still show the FluxDo-style play affordance on failure fallback.
         let showsPlayButton = true
 
         return BadgeCardModel(
@@ -91,15 +97,20 @@ struct BadgeCardModel: Equatable {
     }
 }
 
-final class BadgeCardView: UIView {
+final class BadgeCardView: UIView, WKNavigationDelegate {
     weak var delegate: PostCellDelegate?
     private let model: BadgeCardModel
+    private let placeholderView = UIView()
+    private var webView: WKWebView?
+    private var didLoadSVG = false
+    private var loadGeneration = 0
 
     init(model: BadgeCardModel, containerWidth: CGFloat) {
         self.model = model
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         setup(containerWidth: containerWidth)
+        loadAnimatedSVG()
     }
 
     @available(*, unavailable)
@@ -107,13 +118,48 @@ final class BadgeCardView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+    }
+
     private func setup(containerWidth: CGFloat) {
-        let height: CGFloat = 52
-        heightAnchor.constraint(equalToConstant: height).isActive = true
+        // Match remote SVG canvas (458x90), scale to content width, never upscale beyond intrinsic.
+        let displayWidth = min(max(containerWidth, 1), BadgeCardModel.intrinsicSize.width)
+        let displayHeight = displayWidth * BadgeCardModel.intrinsicSize.height / BadgeCardModel.intrinsicSize.width
+        heightAnchor.constraint(equalToConstant: ceil(displayHeight)).isActive = true
+        widthAnchor.constraint(lessThanOrEqualToConstant: displayWidth).isActive = true
 
         layer.cornerRadius = 12
         layer.cornerCurve = .continuous
         clipsToBounds = true
+        backgroundColor = .clear
+
+        placeholderView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(placeholderView)
+        NSLayoutConstraint.activate([
+            placeholderView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            placeholderView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            placeholderView.topAnchor.constraint(equalTo: topAnchor),
+            placeholderView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        installPlaceholderContents()
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        addGestureRecognizer(tap)
+        isUserInteractionEnabled = true
+        accessibilityTraits = .image
+        accessibilityLabel = [model.title, model.subtitle]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: "，")
+    }
+
+    private func installPlaceholderContents() {
+        placeholderView.subviews.forEach { $0.removeFromSuperview() }
+        placeholderView.layer.cornerRadius = 12
+        placeholderView.layer.cornerCurve = .continuous
+        placeholderView.clipsToBounds = true
 
         let left = UIView()
         left.translatesAutoresizingMaskIntoConstraints = false
@@ -129,42 +175,40 @@ final class BadgeCardView: UIView {
         titleLabel.textColor = model.titleColor
         titleLabel.font = .systemFont(ofSize: model.leftFontSize, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.numberOfLines = 1
 
         let subtitleLabel = UILabel()
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.text = model.subtitle
-        subtitleLabel.textColor = model.subtitleColor.withAlphaComponent(0.92)
-        subtitleLabel.font = .systemFont(ofSize: model.rightFontSize, weight: .regular)
+        subtitleLabel.textColor = model.subtitleColor
+        subtitleLabel.font = .systemFont(ofSize: model.rightFontSize, weight: .medium)
         subtitleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.numberOfLines = 1
-        subtitleLabel.isHidden = (model.subtitle ?? "").isEmpty
 
-        let playButton = UIImageView(image: UIImage(systemName: "play.circle.fill"))
+        let playButton = UIImageView(
+            image: UIImage(systemName: "play.circle.fill")?
+                .withConfiguration(UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
+        )
         playButton.translatesAutoresizingMaskIntoConstraints = false
-        playButton.tintColor = UIColor.white.withAlphaComponent(0.92)
-        playButton.contentMode = .scaleAspectFit
+        playButton.tintColor = model.subtitleColor.withAlphaComponent(0.9)
         playButton.isHidden = !model.showsPlayButton
+        playButton.setContentHuggingPriority(.required, for: .horizontal)
 
-        addSubview(left)
-        addSubview(right)
+        placeholderView.addSubview(left)
+        placeholderView.addSubview(right)
         left.addSubview(titleLabel)
         right.addSubview(subtitleLabel)
         right.addSubview(playButton)
 
-        // Left pane ~38%, matching FluxDo badge proportions.
-        let leftWidth = max(min(containerWidth * 0.38, 180), 120)
-
+        let leftWidth = UIScreen.main.bounds.width * 0.28
         NSLayoutConstraint.activate([
-            left.leadingAnchor.constraint(equalTo: leadingAnchor),
-            left.topAnchor.constraint(equalTo: topAnchor),
-            left.bottomAnchor.constraint(equalTo: bottomAnchor),
-            left.widthAnchor.constraint(equalToConstant: leftWidth),
+            left.leadingAnchor.constraint(equalTo: placeholderView.leadingAnchor),
+            left.topAnchor.constraint(equalTo: placeholderView.topAnchor),
+            left.bottomAnchor.constraint(equalTo: placeholderView.bottomAnchor),
+            left.widthAnchor.constraint(equalToConstant: max(min(leftWidth, 150), 110)),
 
             right.leadingAnchor.constraint(equalTo: left.trailingAnchor),
-            right.trailingAnchor.constraint(equalTo: trailingAnchor),
-            right.topAnchor.constraint(equalTo: topAnchor),
-            right.bottomAnchor.constraint(equalTo: bottomAnchor),
+            right.trailingAnchor.constraint(equalTo: placeholderView.trailingAnchor),
+            right.topAnchor.constraint(equalTo: placeholderView.topAnchor),
+            right.bottomAnchor.constraint(equalTo: placeholderView.bottomAnchor),
 
             titleLabel.leadingAnchor.constraint(equalTo: left.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: left.trailingAnchor, constant: -10),
@@ -179,12 +223,136 @@ final class BadgeCardView: UIView {
             subtitleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
             subtitleLabel.centerYAnchor.constraint(equalTo: right.centerYAnchor),
         ])
+    }
 
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
-        addGestureRecognizer(tap)
-        isUserInteractionEnabled = true
-        accessibilityTraits = .link
-        accessibilityLabel = [model.title, model.subtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，")
+    private func loadAnimatedSVG() {
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        let config = WKWebViewConfiguration()
+        config.suppressesIncrementalRendering = true
+        // Badge SVG may include <audio> on some themes; allow inline autoplay.
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsInlineMediaPlayback = true
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.navigationDelegate = self
+        webView.isUserInteractionEnabled = false
+        webView.alpha = 0
+
+        addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            webView.topAnchor.constraint(equalTo: topAnchor),
+            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        self.webView = webView
+
+        // Fetch SVG bytes then inline them. Direct document load keeps SMIL running
+        // (unlike <img> in some WebKit builds) and CSS can force width:100%.
+        var request = URLRequest(url: model.sourceURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.setValue("image/svg+xml,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self, self.loadGeneration == generation else { return }
+                guard error == nil,
+                      let data,
+                      let svg = String(data: data, encoding: .utf8),
+                      svg.localizedCaseInsensitiveContains("<svg")
+                else {
+                    return
+                }
+                let html = Self.makeAutoplayHTML(embedding: svg)
+                webView.loadHTMLString(html, baseURL: self.model.sourceURL)
+            }
+        }
+        task.resume()
+
+        // Safety timeout: if load never finishes, keep native placeholder.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.loadGeneration == generation, !self.didLoadSVG else { return }
+            self.webView?.stopLoading()
+        }
+    }
+
+    private static func makeAutoplayHTML(embedding svg: String) -> String {
+        // Strip XML declaration noise; keep the <svg> tree intact so SMIL animates.
+        var body = svg.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.hasPrefix("<?xml") {
+            if let end = body.range(of: "?>") {
+                body = String(body[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        // Forum content is untrusted: drop scripts / foreignObject handlers before WebKit executes.
+        body = BadgeSVGSanitizer.stripActiveContent(from: body)
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <style>
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+          }
+          svg {
+            display: block;
+            width: 100% !important;
+            height: auto !important;
+            max-width: 100%;
+          }
+        </style>
+        </head>
+        <body>
+        \(body)
+        </body>
+        </html>
+        """
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        didLoadSVG = true
+        UIView.animate(withDuration: 0.18) {
+            webView.alpha = 1
+            self.placeholderView.alpha = 0
+        } completion: { _ in
+            self.placeholderView.isHidden = true
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        placeholderView.isHidden = false
+        placeholderView.alpha = 1
+        webView.alpha = 0
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        placeholderView.isHidden = false
+        placeholderView.alpha = 1
+        webView.alpha = 0
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // Keep animations cheap: reload when re-entering hierarchy if prior load failed.
+        if window != nil, !didLoadSVG, webView == nil {
+            loadAnimatedSVG()
+        }
     }
 
     @objc private func tapped() {
@@ -192,7 +360,30 @@ final class BadgeCardView: UIView {
     }
 }
 
+private enum BadgeSVGSanitizer {
+    static func stripActiveContent(from svg: String) -> String {
+        var result = svg
+        // Remove <script>...</script> and self-closing script tags.
+        if let regex = try? NSRegularExpression(
+            pattern: #"<script\b[^>]*>[\s\S]*?</script\s*>|<script\b[^>]*/>"#,
+            options: [.caseInsensitive]
+        ) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
+        }
+        if let regex = try? NSRegularExpression(
+            pattern: #"<foreignObject\b[^>]*>[\s\S]*?</foreignObject\s*>|<foreignObject\b[^>]*/>"#,
+            options: [.caseInsensitive]
+        ) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
+        }
+        return result
+    }
+}
+
 private extension UIColor {
+
     convenience init?(dexoHex: String) {
         var hex = dexoHex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if hex.hasPrefix("#") { hex.removeFirst() }

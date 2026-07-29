@@ -104,7 +104,10 @@ enum InlineExtractor {
 
     /// Extract an image inline node from an `<img>` element.
     private static func extractImage(from element: Element, options: ParseOptions) -> [InlineNode] {
-        let src = resolveURL((try? element.attr("src")) ?? "", options: options)
+        let rawSrc = ((try? element.attr("src")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawSrc.isEmpty else { return [] }
+        let src = resolveURL(rawSrc, options: options)
+        guard !src.isEmpty else { return [] }
         let alt = try? element.attr("alt")
         let width = Int((try? element.attr("width")) ?? "")
         let height = Int((try? element.attr("height")) ?? "")

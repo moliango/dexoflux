@@ -185,6 +185,8 @@ final class PostNativeCell: UITableViewCell {
         view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 1.0 / UIScreen.main.scale
         view.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
+        // Keep oversized content from painting into neighboring rows when height is stale.
+        view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -374,6 +376,12 @@ final class PostNativeCell: UITableViewCell {
     private var contentStackTrailingConstraint: NSLayoutConstraint?
     private var contentStackBottomConstraint: NSLayoutConstraint?
     private var sharedIssueButtonMinWidthConstraint: NSLayoutConstraint?
+    private var sharedIssueButtonHeightConstraint: NSLayoutConstraint?
+    private var actionStackTopToContentConstraint: NSLayoutConstraint?
+    private var actionStackTopToSharedIssueConstraint: NSLayoutConstraint?
+    private var heightReconcileGeneration = 0
+    private var lastReconciledHeight: CGFloat = 0
+    private var needsHeightReconciliation = false
 
     // MARK: - Bottom Bar
 
@@ -427,6 +435,9 @@ final class PostNativeCell: UITableViewCell {
         sv.isUserInteractionEnabled = false
         sv.accessibilityIdentifier = "post.reactions.summary"
         sv.translatesAutoresizingMaskIntoConstraints = false
+        // Keep reaction icons from being crushed when footer is tight.
+        sv.setContentCompressionResistancePriority(.required, for: .horizontal)
+        sv.setContentHuggingPriority(.required, for: .horizontal)
         return sv
     }()
 
@@ -541,6 +552,9 @@ final class PostNativeCell: UITableViewCell {
         selectionStyle = .none
         backgroundColor = .clear
         contentView.backgroundColor = .clear
+        // Critical: without clipping, underestimated self-sizing rows bleed into the next floor.
+        contentView.clipsToBounds = true
+        clipsToBounds = true
         setupViews()
     }
 
@@ -570,7 +584,7 @@ final class PostNativeCell: UITableViewCell {
         cardView.addSubview(contentCardView)
         contentCardView.addSubview(contentStackView)
         sharedIssueButton.addSubview(sharedIssueCountLabel)
-        bottomLeftStack.addArrangedSubview(sharedIssueButton)
+        // FluxDo: shared-issue sits above the action row so reactions never get half-clipped.
         bottomLeftStack.addArrangedSubview(showRepliesButton)
         for iv in reactionImageViews {
             reactionStackView.addArrangedSubview(iv)
@@ -585,6 +599,7 @@ final class PostNativeCell: UITableViewCell {
         actionStackView.addArrangedSubview(bookmarkButton)
         actionStackView.addArrangedSubview(replyButton)
         actionStackView.addArrangedSubview(moreButton)
+        cardView.addSubview(sharedIssueButton)
         cardView.addSubview(bottomLeftStack)
         cardView.addSubview(actionStackView)
         cardView.addSubview(separatorLine)
@@ -686,22 +701,24 @@ final class PostNativeCell: UITableViewCell {
             contentTrailingConstraint,
             contentBottomConstraint,
 
-            bottomLeftStack.centerYAnchor.constraint(equalTo: actionStackView.centerYAnchor),
-            bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
-            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
-            bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+            sharedIssueButton.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
+            sharedIssueButton.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
+            sharedIssueButton.trailingAnchor.constraint(lessThanOrEqualTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             sharedIssueButtonMinWidthConstraint,
-            sharedIssueButton.heightAnchor.constraint(equalToConstant: Metrics.sharedIssueButtonHeight),
 
             sharedIssueCountLabel.centerYAnchor.constraint(equalTo: sharedIssueButton.centerYAnchor),
             sharedIssueCountLabel.trailingAnchor.constraint(equalTo: sharedIssueButton.trailingAnchor, constant: -7),
             sharedIssueCountLabel.heightAnchor.constraint(equalToConstant: 18),
             sharedIssueCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
-            actionStackView.topAnchor.constraint(equalTo: contentCardView.bottomAnchor, constant: Metrics.actionTop),
+            bottomLeftStack.centerYAnchor.constraint(equalTo: actionStackView.centerYAnchor),
+            bottomLeftStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Metrics.cardInner),
+            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: actionStackView.leadingAnchor, constant: -8),
+            bottomLeftStack.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+
             actionStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
             actionStackView.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
-            { let c = actionStackView.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -8); c.priority = .init(999); return c }(),
+            actionStackView.bottomAnchor.constraint(equalTo: separatorLine.topAnchor, constant: -8),
 
             reactButton.centerYAnchor.constraint(equalTo: reactionPillControl.centerYAnchor),
             reactButton.centerXAnchor.constraint(equalTo: reactionPillControl.centerXAnchor),
@@ -727,6 +744,22 @@ final class PostNativeCell: UITableViewCell {
         cardMinHeightConstraint = cardView.heightAnchor.constraint(greaterThanOrEqualToConstant: Metrics.minimumReplyCardHeight)
         cardMinHeightConstraint?.isActive = true
 
+        let sharedIssueHeight = sharedIssueButton.heightAnchor.constraint(equalToConstant: 0)
+        sharedIssueButtonHeightConstraint = sharedIssueHeight
+        sharedIssueHeight.isActive = true
+
+        let actionStackTopToContent = actionStackView.topAnchor.constraint(
+            equalTo: contentCardView.bottomAnchor,
+            constant: Metrics.actionTop
+        )
+        let actionStackTopToSharedIssue = actionStackView.topAnchor.constraint(
+            equalTo: sharedIssueButton.bottomAnchor,
+            constant: 8
+        )
+        actionStackTopToContentConstraint = actionStackTopToContent
+        actionStackTopToSharedIssueConstraint = actionStackTopToSharedIssue
+        actionStackTopToContent.isActive = true
+
         showRepliesButton.addTarget(self, action: #selector(repliesButtonTapped), for: .touchUpInside)
         sharedIssueButton.addTarget(self, action: #selector(sharedIssueButtonTapped), for: .touchUpInside)
         replyButton.addTarget(self, action: #selector(replyButtonTapped), for: .touchUpInside)
@@ -743,6 +776,66 @@ final class PostNativeCell: UITableViewCell {
         avatarImageView.isUserInteractionEnabled = true
         let avatarTap = UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
         avatarImageView.addGestureRecognizer(avatarTap)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard needsHeightReconciliation, window != nil, bounds.width > 1, bounds.height > 1 else { return }
+        // One deferred pass after configure/willDisplay — not every layout tick.
+        needsHeightReconciliation = false
+        scheduleHeightReconciliation()
+    }
+
+    /// Called from the table when the row is about to appear (and after configure).
+    func requestHeightReconciliation() {
+        needsHeightReconciliation = true
+        setNeedsLayout()
+    }
+
+    private func scheduleHeightReconciliation() {
+        heightReconcileGeneration += 1
+        let generation = heightReconcileGeneration
+        // Defer out of the current layout/update pass to avoid feedback loops.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.heightReconcileGeneration == generation, self.window != nil else { return }
+            self.reconcileTableRowHeightIfNeeded()
+        }
+    }
+
+    private func reconcileTableRowHeightIfNeeded() {
+        guard bounds.width > 1 else { return }
+        layoutIfNeeded()
+        let fitted = systemLayoutSizeFitting(
+            CGSize(width: bounds.width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+        // Ignore tiny float noise; require a real mismatch vs current row height.
+        guard abs(fitted - bounds.height) > 2 else {
+            lastReconciledHeight = bounds.height
+            return
+        }
+        // Avoid thrashing if we already asked for this height.
+        if abs(fitted - lastReconciledHeight) < 1 {
+            return
+        }
+        lastReconciledHeight = fitted
+        guard let tableView = enclosingTableView() else { return }
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+            tableView.endUpdates()
+        }
+    }
+
+    private func enclosingTableView() -> UITableView? {
+        var view: UIView? = superview
+        while let current = view {
+            if let tableView = current as? UITableView {
+                return tableView
+            }
+            view = current.superview
+        }
+        return nil
     }
 
     func configure(
@@ -854,6 +947,9 @@ final class PostNativeCell: UITableViewCell {
             baseURL: baseURL,
             size: currentAvatarTemplateSize
         )
+        // Self-sizing can lock in a short height on first pass (code blocks / wrapped text).
+        // Reconcile once after the cell lands in the hierarchy so floors stop overlapping.
+        requestHeightReconciliation()
     }
 
     private func adjustNativeContentSpacing() {
@@ -875,6 +971,7 @@ final class PostNativeCell: UITableViewCell {
 
     private static func needsBreathingRoomBefore(_ view: UIView) -> Bool {
         view is TappableImageContainer
+            || view is SignatureImageView
             || view is BadgeCardView
             || view is VideoCardView
             || view is OneboxCardView
@@ -1052,12 +1149,17 @@ final class PostNativeCell: UITableViewCell {
             stack.spacing = 6
             views.forEach { setupTextViews(in: $0) }
             content = stack
-        } else if Self.isValidSignatureImageURL(signature) {
-            content = ImageRenderer.render(
-                .image(src: signature, alt: nil, width: nil, height: nil, href: signature),
-                config: config,
-                delegate: delegate
+        } else if let url = Self.signatureImageURL(from: signature) {
+            // FluxDo: image-mode signatures must not reserve a gray 9:16 slot.
+            // Load silently; collapse on failure; only allow gallery after real decode.
+            let signatureView = SignatureImageView(
+                url: url,
+                containerWidth: config.contentWidth,
+                maxHeight: 150,
+                refererBaseURL: config.baseURL
             )
+            signatureView.delegate = delegate
+            content = signatureView
         } else {
             // Legacy dirty data (arbitrary plain text) — web and FluxDo hide it entirely.
             return
@@ -1075,13 +1177,15 @@ final class PostNativeCell: UITableViewCell {
         contentStackView.addArrangedSubview(wrapper)
     }
 
-    private static func isValidSignatureImageURL(_ value: String) -> Bool {
+    private static func signatureImageURL(from value: String) -> URL? {
+        // FluxDo parity: scheme+host is enough for "looks like a URL".
+        // Non-image URLs collapse after load failure instead of becoming gray content blocks.
         guard value.hasPrefix("http://") || value.hasPrefix("https://"),
               value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
               let url = URL(string: value) ?? URL(string: value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value),
               let host = url.host, !host.isEmpty
-        else { return false }
-        return true
+        else { return nil }
+        return url
     }
 
     private func configureHeaderBadges(for post: DiscourseTopicDetail.Post, baseURL: String) {
@@ -1134,6 +1238,32 @@ final class PostNativeCell: UITableViewCell {
         }
         for subview in view.subviews {
             cancelImageLoads(in: subview)
+        }
+    }
+
+    private func cancelContentMediaLoads(in view: UIView) {
+        if let container = view as? TappableImageContainer {
+            container.cancelImageLoad()
+        } else if let signature = view as? SignatureImageView {
+            signature.cancelImageLoad()
+        } else if let onebox = view as? OneboxCardView {
+            onebox.cancelImageLoad()
+        } else if let video = view as? VideoCardView {
+            video.cancelImageLoad()
+        } else if let fallback = view as? FallbackBlockView {
+            fallback.cancelRender()
+        } else if let badge = view as? BadgeCardView {
+            // BadgeCardView owns a WKWebView; deinit stops loading.
+            _ = badge
+        }
+
+        if let stack = view as? UIStackView {
+            for arranged in stack.arrangedSubviews {
+                cancelContentMediaLoads(in: arranged)
+            }
+        }
+        for subview in view.subviews {
+            cancelContentMediaLoads(in: subview)
         }
     }
 
@@ -1499,9 +1629,19 @@ final class PostNativeCell: UITableViewCell {
     }
 
     private func updateFooterLayout() {
-        // ponytail: single footer row — on very narrow widths (320pt) with shared issue +
-        // replies + wide reactions, the left buttons truncate instead of wrapping to a second row.
-        bottomLeftStack.isHidden = sharedIssueButton.isHidden && showRepliesButton.isHidden
+        // FluxDo: shared-issue on its own row above actions; replies stay left of action icons.
+        bottomLeftStack.isHidden = showRepliesButton.isHidden
+        let showsSharedIssue = !sharedIssueButton.isHidden
+        sharedIssueButtonHeightConstraint?.constant = showsSharedIssue
+            ? Metrics.sharedIssueButtonHeight
+            : 0
+        if showsSharedIssue {
+            actionStackTopToContentConstraint?.isActive = false
+            actionStackTopToSharedIssueConstraint?.isActive = true
+        } else {
+            actionStackTopToSharedIssueConstraint?.isActive = false
+            actionStackTopToContentConstraint?.isActive = true
+        }
     }
 
     private func configureReactionButton(for post: DiscourseTopicDetail.Post) {
@@ -1892,17 +2032,12 @@ final class PostNativeCell: UITableViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        heightReconcileGeneration += 1
+        lastReconciledHeight = 0
+        needsHeightReconciliation = false
         // Cancel block-level image loads and fallback renders
         for view in contentStackView.arrangedSubviews {
-            if let container = view as? TappableImageContainer {
-                container.cancelImageLoad()
-            } else if let onebox = view as? OneboxCardView {
-                onebox.cancelImageLoad()
-            } else if let video = view as? VideoCardView {
-                video.cancelImageLoad()
-            } else if let fallback = view as? FallbackBlockView {
-                fallback.cancelRender()
-            }
+            cancelContentMediaLoads(in: view)
         }
         contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         delegate = nil

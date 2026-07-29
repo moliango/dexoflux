@@ -246,7 +246,10 @@ enum BlockExtractor {
     }
 
     private static func extractBlockImage(from element: Element, options: ParseOptions, href: String? = nil) -> [ContentBlock] {
-        let src = URLResolver.resolve((try? element.attr("src")) ?? "", baseURL: options.baseURL)
+        let rawSrc = ((try? element.attr("src")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawSrc.isEmpty else { return [] }
+        let src = URLResolver.resolve(rawSrc, baseURL: options.baseURL)
+        guard !src.isEmpty else { return [] }
         let alt = try? element.attr("alt")
         let width = Int((try? element.attr("width")) ?? "")
         let height = Int((try? element.attr("height")) ?? "")

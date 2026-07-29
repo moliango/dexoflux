@@ -884,8 +884,56 @@ final class HomeViewController: ObservableViewController {
         guard normalizedBaseURL(baseURL) == normalizedBaseURL(api.baseURL) else { return }
         let shouldReloadTopics = shouldReloadTopicsAfterCloudflareVerification()
         logCloudflareState("verification completed base=\(baseURL) reloadTopics=\(shouldReloadTopics)")
+        restoreTabBarAfterCloudflareVerification()
+        // Image gate resumes via markVerificationGrace; re-allow prefetch + repaint visible avatars.
+        let retryURLs = viewModel.topics.prefix(60).compactMap { topic in
+            AvatarImageLoader.url(
+                from: viewModel.avatarTemplate(for: topic),
+                baseURL: api.baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+        }
+        AvatarImageLoader.credentialsDidChange(for: api.baseURL, retrying: Array(retryURLs))
+        prefetchAvatarImages(for: viewModel.topics)
+        if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
+            var snapshot = dataSource.snapshot()
+            let ids = visible.compactMap { dataSource.itemIdentifier(for: $0) }
+            if !ids.isEmpty {
+                snapshot.reconfigureItems(ids)
+                dataSource.apply(snapshot, animatingDifferences: false)
+            }
+        }
         reloadTopicsAfterCloudflareVerificationIfNeeded(shouldReloadTopics)
         retryIncomingTopicsAfterCloudflareIfNeeded()
+    }
+
+    /// Parent-presented CF sheet skips our appear callbacks; re-assert bottom bar.
+    func restoreTabBarAfterCloudflareVerification() {
+        guard isViewLoaded else { return }
+        // Clear freezes that may have been left mid-challenge so scroll hide works again.
+        isTabBarScrollFrozenForRefresh = false
+        isTabBarScrollFrozenForLoadMore = false
+        tabBarScrollFreezeID += 1
+        tabBarLoadMoreFreezeID += 1
+        applyCloudflareTabBarReveal()
+        // Sheet dismiss + topic list layout can hide/cover the bar one or two
+        // runloops later; keep re-asserting briefly so it cannot stay gone.
+        DispatchQueue.main.async { [weak self] in
+            self?.applyCloudflareTabBarReveal()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.view.window != nil else { return }
+            self.applyCloudflareTabBarReveal()
+        }
+    }
+
+    private func applyCloudflareTabBarReveal() {
+        guard isViewLoaded else { return }
+        isHomeTabBarHidden = true // force setHomeTabBarHidden to re-apply even if flag already false
+        setHomeTabBarHidden(false, animated: false)
+        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+        (tabBarController as? ForumTabBarController)?.forceRevealTabBarForRootContent()
+        updateBottomChrome(animated: false)
     }
 
     private func logCloudflareState(_ message: String) {
@@ -2121,7 +2169,9 @@ final class HomeViewController: ObservableViewController {
             return true
         }
         // 上滑接近底部时提前冻结：loadMore 真正开始前 footer/contentSize 已可能变化。
+        // 没更多页就别冻，否则触底附近会把「下滑显示」也堵死。
         if AppSettings.shared.bottomBarAutoHideEnabled,
+           viewModel.canLoadMore,
            isNearTopicListBottomForPagination,
            (tableView.isDragging || tableView.isDecelerating) {
             return true
@@ -2160,38 +2210,72 @@ final class HomeViewController: ObservableViewController {
             guard let self, self.tabBarScrollFreezeID == freezeID else { return }
             self.isTabBarScrollFrozenForRefresh = false
             self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+            self.resyncTabBarVisibilityAfterFreeze()
         }
     }
 
     private func beginTabBarScrollFreezeForLoadMore() {
         tabBarLoadMoreFreezeID += 1
+        let freezeID = tabBarLoadMoreFreezeID
         isTabBarScrollFrozenForLoadMore = true
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+        // Always arm an unfreeze timer. willDisplay used to freeze without a matching
+        // end call when loadMore no-ops, permanently locking tab-bar auto-hide.
+        scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 0)
     }
 
     private func endTabBarScrollFreezeForLoadMore() {
         tabBarLoadMoreFreezeID += 1
         let freezeID = tabBarLoadMoreFreezeID
-        // contentSize / footer 切换后多等一会儿；若仍在惯性滚动则继续延后解冻。
+        // contentSize / footer 切换后多等一会儿，再解冻并同步显隐。
         scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 0)
     }
 
     private func scheduleLoadMoreTabBarUnfreeze(freezeID: Int, attempt: Int) {
-        let delay: TimeInterval = attempt == 0 ? 0.2 : 0.15
+        let delay: TimeInterval = attempt == 0 ? 0.25 : 0.15
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.tabBarLoadMoreFreezeID == freezeID else { return }
             self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
-            // 还在滑 / 还在 loading / 仍贴底：继续冻，最多约 1s。
-            let stillBusy = self.viewModel.isLoadingMore
-                || self.tableView.isDragging
-                || self.tableView.isDecelerating
-                || self.isNearTopicListBottomForPagination
-            if stillBusy, attempt < 6 {
+            // Keep freezing only while load-more is actually running.
+            if self.viewModel.isLoadingMore, attempt < 12 {
                 self.scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: attempt + 1)
+                return
+            }
+            // One extra settle beat after loading ends (contentSize jump).
+            if attempt == 0 {
+                self.scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 1)
                 return
             }
             self.isTabBarScrollFrozenForLoadMore = false
             self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+            self.resyncTabBarVisibilityAfterFreeze()
+        }
+    }
+
+    /// After refresh/load-more freeze, re-apply show/hide from the current offset
+    /// so the bar is not stuck visible (or stuck hidden) until the next gesture.
+    private func resyncTabBarVisibilityAfterFreeze() {
+        guard AppSettings.shared.bottomBarAutoHideEnabled else {
+            setHomeTabBarHidden(false, animated: true)
+            return
+        }
+        let y = tableView.contentOffset.y + tableView.contentInset.top
+        if y <= 48 {
+            setHomeTabBarHidden(false, animated: true)
+            return
+        }
+        // Mid-list after paging: follow current user motion if any.
+        let userDriven = tableView.isDragging || tableView.isDecelerating
+        let velocityY = tableView.panGestureRecognizer.velocity(in: tableView).y
+        if userDriven, velocityY < -40 {
+            // Finger moving up → hide
+            setHomeTabBarHidden(true, animated: true)
+        } else if userDriven, velocityY > 40 {
+            setHomeTabBarHidden(false, animated: true)
+        }
+        // Idle mid-list: leave visibility alone, but heal a broken "flag says shown, bar gone" state.
+        else if !isHomeTabBarHidden {
+            setHomeTabBarHidden(false, animated: false)
         }
     }
 
@@ -2212,14 +2296,37 @@ final class HomeViewController: ObservableViewController {
     private func setHomeTabBarHidden(_ hidden: Bool, animated: Bool) {
         guard AppSettings.shared.bottomBarAutoHideEnabled || !hidden else { return }
         let tabBarController = tabBarController as? ForumTabBarController
-        let tabBarVisiblyBroken = !hidden && (tabBarController?.tabBar.isHidden == true)
+        let bar = tabBarController?.tabBar
+        // Broken "should be visible" states after CF / interrupted hide animations.
+        let tabBarVisiblyBroken = !hidden && (
+            bar?.isHidden == true
+            || bar?.transform != .identity
+            || (bar != nil && bar!.alpha < 0.99)
+        )
         guard isHomeTabBarHidden != hidden || tabBarVisiblyBroken else { return }
         isHomeTabBarHidden = hidden
+        // When recovering a broken bar, force a non-animated hard apply.
         tabBarController?.setTabBarHiddenByScroll(hidden, animated: animated && !tabBarVisiblyBroken)
         if !hidden {
-            tabBarController?.syncTabBarVisibilityForCurrentContent()
+            tabBarController?.forceRevealTabBarForRootContent()
         }
         updateBottomChrome(animated: animated)
+    }
+
+    /// Scroll-end safety net: if flag says visible but bar is gone/covered, unstick it.
+    private func healTabBarVisibilityAfterScrollSettles() {
+        guard !shouldFreezeTabBarScrollControl else { return }
+        let y = tableView.contentOffset.y + tableView.contentInset.top
+        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 {
+            setHomeTabBarHidden(false, animated: true)
+            return
+        }
+        guard !isHomeTabBarHidden else { return }
+        let bar = (tabBarController as? ForumTabBarController)?.tabBar
+        let broken = bar?.isHidden == true || bar?.transform != .identity || (bar?.alpha ?? 1) < 0.99
+        if broken {
+            setHomeTabBarHidden(false, animated: false)
+        }
     }
 
     private func handleSettingsChanged() {
@@ -3153,10 +3260,25 @@ extension HomeViewController: UITableViewDelegate {
             setFABMode(.create, animated: true)
         }
 
-        // 刷新/加载下一页窗口冻结显隐；非冻结时：上滑隐藏、下滑显示。
+        // Only hide/show from real user interaction, never from programmatic offset jumps
+        // (first load, banner insert, contentSize changes, inset adjustments).
+        let userDriven = scrollView.isDragging
+            || scrollView.isDecelerating
+            || scrollView.panGestureRecognizer.state == .began
+            || scrollView.panGestureRecognizer.state == .changed
+
+        // 刷新/加载下一页窗口：冻结「contentSize 抖动误触」，但仍允许明确的用户手势
+        // 上滑隐藏 / 下滑显示，否则出盾后翻页时 tab bar 会卡死。
         if shouldFreezeTabBarScrollControl {
-            // 冻结期间仍更新基准，避免解冻瞬间 deltaY 爆表再次抖动。
-            lastHomeScrollY = y
+            if !AppSettings.shared.bottomBarAutoHideEnabled {
+                setHomeTabBarHidden(false, animated: true)
+            } else if y <= 8 {
+                setHomeTabBarHidden(false, animated: true)
+            } else if userDriven, y > 40, deltaY > 3 {
+                setHomeTabBarHidden(true, animated: true)
+            } else if userDriven, deltaY < -3 {
+                setHomeTabBarHidden(false, animated: true)
+            }
             return
         }
         if !AppSettings.shared.bottomBarAutoHideEnabled {
@@ -3168,12 +3290,6 @@ extension HomeViewController: UITableViewDelegate {
             setHomeTabBarHidden(false, animated: true)
             return
         }
-        // Only hide from real user interaction, never from programmatic offset jumps
-        // (first load, banner insert, contentSize changes, inset adjustments).
-        let userDriven = scrollView.isDragging
-            || scrollView.isDecelerating
-            || scrollView.panGestureRecognizer.state == .began
-            || scrollView.panGestureRecognizer.state == .changed
         if userDriven, y > 40, deltaY > 3 {
             setHomeTabBarHidden(true, animated: true)
         }
@@ -3184,11 +3300,13 @@ extension HomeViewController: UITableViewDelegate {
         if triggerShortPullRefreshIfNeeded(scrollView) { return }
         guard !decelerate else { return }
         settleSearchRowCollapse(animated: true)
+        healTabBarVisibilityAfterScrollSettles()
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === tableView else { return }
         settleSearchRowCollapse(animated: true)
+        healTabBarVisibilityAfterScrollSettles()
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
@@ -3216,8 +3334,9 @@ extension HomeViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let totalRows = tableView.numberOfRows(inSection: 0)
-        if indexPath.row >= totalRows - 5 {
-            // 触发分页前先冻结，覆盖 footer 切换与请求发出前的空窗。
+        if indexPath.row >= totalRows - 5, viewModel.canLoadMore {
+            // 只有确实还能翻页时才冻结；否则 willDisplay 会把 freeze 永久卡死，
+            // 出盾后上滑/刷新时 tab bar 就藏不住或出不来。
             beginTabBarScrollFreezeForLoadMore()
             Task {
                 await viewModel.loadMoreTopics()

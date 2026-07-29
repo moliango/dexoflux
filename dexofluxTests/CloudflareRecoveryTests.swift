@@ -166,4 +166,48 @@ final class CloudflareRecoveryTests: XCTestCase {
         XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: "https://LINUX.DO/"))
     }
 
+    func testImageGatePausesMainDomainDownloadsAndResumes() throws {
+        CloudflareImageGate.resetForTests()
+        let base = "https://linux.do"
+        let avatar = try XCTUnwrap(URL(string: "https://linux.do/user_avatar/foo/bar_96.png"))
+        let external = try XCTUnwrap(URL(string: "https://cdn.example.com/badge.png"))
+
+        XCTAssertFalse(CloudflareImageGate.shouldBlockNetworkLoad(url: avatar, cloudflareBaseURL: base))
+        CloudflareImageGate.pause(baseURL: base, duration: 30)
+        XCTAssertTrue(CloudflareImageGate.isPaused(baseURL: base))
+        XCTAssertTrue(CloudflareImageGate.shouldBlockNetworkLoad(url: avatar, cloudflareBaseURL: base))
+        // External beds stay unblocked.
+        XCTAssertFalse(CloudflareImageGate.shouldBlockNetworkLoad(url: external, cloudflareBaseURL: base))
+
+        CloudflareImageGate.resume(baseURL: base)
+        XCTAssertFalse(CloudflareImageGate.isPaused(baseURL: base))
+        XCTAssertFalse(CloudflareImageGate.shouldBlockNetworkLoad(url: avatar, cloudflareBaseURL: base))
+    }
+
+    func testImageGateCoalescesRepeatedChallengePostsWithinCooldown() throws {
+        CloudflareImageGate.resetForTests()
+        let base = "https://linux.do"
+        let avatar = try XCTUnwrap(URL(string: "https://linux.do/user_avatar/foo/bar_96.png"))
+
+        // First report pauses; subsequent reports inside cooldown must not re-arm pause forever
+        // in a way that blocks resume — pause is fine, but isPaused should stay true once.
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar)
+        XCTAssertTrue(CloudflareImageGate.isPaused(baseURL: base))
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar)
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar)
+        XCTAssertTrue(CloudflareImageGate.isPaused(baseURL: base))
+
+        CloudflareImageGate.resume(baseURL: base)
+        XCTAssertFalse(CloudflareImageGate.isPaused(baseURL: base))
+    }
+
+    func testImageGateIgnoresChallengesDuringVerificationGrace() throws {
+        CloudflareImageGate.resetForTests()
+        let base = "https://linux.do"
+        CloudflareVerificationPolicy.markVerificationGrace(baseURL: base, duration: 10)
+        // grace arms resume; ensure report during grace does not re-pause.
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: nil)
+        XCTAssertFalse(CloudflareImageGate.isPaused(baseURL: base))
+    }
+
 }

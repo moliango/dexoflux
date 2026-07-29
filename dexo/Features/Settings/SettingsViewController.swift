@@ -4771,6 +4771,8 @@ enum CloudflareVerificationPolicy {
         graceLock.lock()
         verificationGraceUntilByBaseURL[key] = Date().addingTimeInterval(duration)
         graceLock.unlock()
+        // Allow avatar/upload fetches again once clearance is considered good.
+        CloudflareImageGate.resume(baseURL: baseURL)
         DohDebugLog.record("verification grace armed base=\(key) duration=\(Int(duration))s", subsystem: "CF")
     }
 

@@ -1,5 +1,4 @@
 import UIKit
-import Combine
 
 enum DexoMotion {
     static let quick: TimeInterval = 0.18
@@ -192,30 +191,6 @@ class DexoSkeletonPlaceholderView: UIView {
 }
 
 class DexoObservableObject {
-    @Published private(set) var topics: [DiscourseTopicList.Topic] = []
-    @Published private(set) var isLoading = false
-    @Published private(set) var isLoadingMore = false
-    @Published private(set) var errorMessage: String? = nil
-    @Published private(set) var loadMoreErrorMessage: String? = nil
-    
-    func notifyChanged() {
-        Task { @MainActor in
-            objectWillChange.send()
-        }
-    }
-}
-    @Published private(set) var topics: [DiscourseTopicList.Topic] = []
-    @Published private(set) var isLoading = false
-    @Published private(set) var isLoadingMore = false
-    @Published private(set) var errorMessage: String? = nil
-    @Published private(set) var loadMoreErrorMessage: String? = nil
-    
-    func notifyChanged() {
-        Task { @MainActor in
-            objectWillChange.send()
-        }
-    }
-}
     static let didChangeNotification = Notification.Name("DexoObservableObjectDidChange")
 
     func notifyChanged() {

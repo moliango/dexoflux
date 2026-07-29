@@ -163,7 +163,10 @@ final class HomeViewModel: DexoObservableObject {
         canLoadMore = cached.topicList.moreTopicsUrl != nil
         indexUsers(cached.users)
         indexCategories(cached.categories, source: .topicList)
-        incomingTopicIds = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
+        // Cache already is the background-latest list. Replaying pending IDs here
+        // shows a stale "查看 N 个新话题" chip on every cold launch.
+        backgroundTopicUpdateStore.replaceForegroundBaseline(topics, baseURL: api.baseURL)
+        incomingTopicIds = []
         notifyChanged()
     }
 
@@ -205,11 +208,14 @@ final class HomeViewModel: DexoObservableObject {
             try Task.checkCancellation()
             topics = result.topicList.topics
             if isGlobalLatestList {
-                backgroundTopicUpdateStore.establishForegroundBaselineIfNeeded(
+                // Full page-0 refresh is the source of truth — clear leftover
+                // background pending so cold start / foreground reload don't
+                // resurrect the "N new topics" banner.
+                backgroundTopicUpdateStore.replaceForegroundBaseline(
                     topics,
                     baseURL: api.baseURL
                 )
-                incomingTopicIds = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
+                incomingTopicIds = []
             } else {
                 incomingTopicIds = []
             }

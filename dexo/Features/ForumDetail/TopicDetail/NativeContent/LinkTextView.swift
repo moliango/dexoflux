@@ -54,6 +54,28 @@ final class LinkTextView: UITextView {
         return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height + 4))
     }
 
+    private func scheduleEnclosingTableHeightUpdate() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var view: UIView? = self.superview
+            while let current = view {
+                if let tableView = current as? UITableView {
+                    UIView.performWithoutAnimation {
+                        tableView.beginUpdates()
+                        tableView.endUpdates()
+                    }
+                    return
+                }
+                // PostNativeCell may already be reconciling; stop at cell boundary.
+                if current is UITableViewCell {
+                    current.setNeedsLayout()
+                    return
+                }
+                view = current.superview
+            }
+        }
+    }
+
     deinit {
         cleanUpAnimators()
     }
@@ -86,6 +108,9 @@ final class LinkTextView: UITextView {
         if abs(bounds.width - lastIntrinsicWidth) > 0.5 {
             lastIntrinsicWidth = bounds.width
             invalidateIntrinsicContentSize()
+            // Width settled after first layout can change wrapped text height; ask the table
+            // to re-measure so the next floor is not covered until the user scrolls.
+            scheduleEnclosingTableHeightUpdate()
         }
         if needsBlurLayout, bounds.width > 0 {
             needsBlurLayout = false

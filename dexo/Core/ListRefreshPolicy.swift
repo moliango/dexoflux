@@ -1,22 +1,10 @@
 import UIKit
 
-@MainActor
-protocol DexoListRefreshPolicy: AnyObject {
-    var isRefreshing: Bool { get }
-    var isLoadingMore: Bool { get }
-    
-    func startPullToRefresh()
-    func endPullToRefresh()
-    func beginLoadingMore()
-    func endLoadingMore()
-    func forceScrollToTop(animated: Bool)
-}
-
 final class DexoListRefreshPolicy: NSObject {
     private weak var tableView: UITableView?
-    private let viewModel: any DexoObservableObject
+    private let viewModel: DexoObservableObject
     
-    init(tableView: UITableView, viewModel: any DexoObservableObject) {
+    init(tableView: UITableView, viewModel: DexoObservableObject) {
         self.tableView = tableView
         self.viewModel = viewModel
     }
@@ -35,9 +23,7 @@ final class DexoListRefreshPolicy: NSObject {
         guard indexPath.row >= totalRows - 6 else { return }
         
         Task { @MainActor in
-            if !viewModel.isLoadingMore {
-                viewModel.notifyChanged()
-            }
+            viewModel.notifyChanged()
         }
     }
     

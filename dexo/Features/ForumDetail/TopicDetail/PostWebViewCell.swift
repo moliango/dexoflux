@@ -193,6 +193,8 @@ final class TopicImageGalleryViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard !didScrollToInitialIndex, !urls.isEmpty else { return }
+        guard collectionView.bounds.width > 1, collectionView.bounds.height > 1 else { return }
+        guard urls.indices.contains(currentIndex) else { return }
         didScrollToInitialIndex = true
         collectionView.scrollToItem(
             at: IndexPath(item: currentIndex, section: 0),
@@ -358,6 +360,7 @@ extension TopicImageGalleryViewController: UICollectionViewDataSource, UICollect
         ) as? TopicImageGalleryCell else {
             return UICollectionViewCell()
         }
+        guard urls.indices.contains(indexPath.item) else { return cell }
         cell.configure(url: urls[indexPath.item])
         return cell
     }
@@ -367,7 +370,9 @@ extension TopicImageGalleryViewController: UICollectionViewDataSource, UICollect
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        collectionView.bounds.size
+        // Avoid zero-size cells during the first layout pass (can crash scrollToItem).
+        let size = collectionView.bounds.size
+        return CGSize(width: max(size.width, 1), height: max(size.height, 1))
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {

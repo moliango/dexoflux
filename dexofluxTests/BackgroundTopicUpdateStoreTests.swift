@@ -100,6 +100,24 @@ final class BackgroundTopicUpdateStoreTests: XCTestCase {
         XCTAssertEqual(pending, [11])
     }
 
+    func testReplaceForegroundBaselineClearsBackgroundPendingTopics() throws {
+        let (store, defaults, suiteName) = try makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        store.replaceForegroundBaseline([fingerprint(id: 3)], baseURL: "https://linux.do")
+        _ = store.processBackgroundSnapshot(
+            [fingerprint(id: 4), fingerprint(id: 3)],
+            baseURL: "https://linux.do"
+        )
+        XCTAssertEqual(store.pendingTopicIDs(for: "https://linux.do"), [4])
+
+        // Cold launch / full list reload should adopt the fresh list and drop the chip.
+        store.replaceForegroundBaseline(
+            [fingerprint(id: 4), fingerprint(id: 3)],
+            baseURL: "https://linux.do"
+        )
+        XCTAssertEqual(store.pendingTopicIDs(for: "https://linux.do"), [])
+    }
+
     func testEstablishingForegroundBaselineDoesNotDiscardExistingPendingTopics() throws {
         let (store, defaults, suiteName) = try makeStore()
         defer { defaults.removePersistentDomain(forName: suiteName) }

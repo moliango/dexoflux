@@ -5,31 +5,35 @@ enum URLResolver {
     /// Resolve a potentially relative URL string against a base URL.
     /// Returns the original string if resolution is not possible.
     static func resolve(_ urlString: String, baseURL: String?) -> String {
-        guard let baseURL, !baseURL.isEmpty else { return urlString }
+        // Empty src must stay empty — never collapse to the forum origin as a fake image URL.
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        guard let baseURL, !baseURL.isEmpty else { return trimmed }
 
         // Already absolute
-        if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") || urlString.hasPrefix("data:") {
-            return urlString
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") || trimmed.hasPrefix("data:") {
+            return trimmed
         }
 
         // Protocol-relative
-        if urlString.hasPrefix("//") {
-            return "https:" + urlString
+        if trimmed.hasPrefix("//") {
+            return "https:" + trimmed
         }
 
-        guard let base = URL(string: baseURL) else { return urlString }
+        guard let base = URL(string: baseURL) else { return trimmed }
 
-        if urlString.hasPrefix("/") {
+        if trimmed.hasPrefix("/") {
             // Absolute path — resolve against scheme + host
             var components = URLComponents()
             components.scheme = base.scheme
             components.host = base.host
             components.port = base.port
-            components.path = urlString
-            return components.url?.absoluteString ?? urlString
+            components.path = trimmed
+            return components.url?.absoluteString ?? trimmed
         }
 
         // Relative path
-        return base.appendingPathComponent(urlString).absoluteString
+        return base.appendingPathComponent(trimmed).absoluteString
     }
 }

@@ -80,9 +80,18 @@ enum AvatarImageLoader {
         }
 
         let cacheKey = url as NSURL
-        if let cachedImage = inMemoryCache.object(forKey: cacheKey) {
+        if let cachedImage = cachedImage(for: url) {
             imageView.sd_cancelCurrentImageLoad()
             imageView.image = cachedImage
+            return
+        }
+
+        // CF recovery in flight: serve cache only; don't hammer main-domain images.
+        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
+            imageView.sd_cancelCurrentImageLoad()
+            if imageView.image == nil {
+                imageView.image = placeholder
+            }
             return
         }
 
@@ -100,7 +109,11 @@ enum AvatarImageLoader {
     }
 
     static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
-        let uniqueURLs = uniqueUnprefetchedURLs(urls)
+        // Skip main-domain network prefetch while CF gate is paused.
+        let networkURLs = urls.filter {
+            !CloudflareImageGate.shouldBlockNetworkLoad(url: $0, cloudflareBaseURL: cloudflareBaseURL)
+        }
+        let uniqueURLs = uniqueUnprefetchedURLs(networkURLs)
         guard !uniqueURLs.isEmpty else { return }
 
         let grouped = Dictionary(grouping: uniqueURLs) {
@@ -180,7 +193,8 @@ enum AvatarImageLoader {
                 ?? Self.originString(for: url)
             if let detectedBaseURL {
                 Task { @MainActor in
-                    DiscourseAPI.postCloudflareChallengeDetected(
+                    // Coalesce + pause: one shield per cooldown, not one per avatar.
+                    CloudflareImageGate.reportImageChallenge(
                         baseURL: detectedBaseURL,
                         responseURL: httpResponse.url
                     )
@@ -190,6 +204,24 @@ enum AvatarImageLoader {
         })
         context[SDWebImageContextOption.downloadResponseModifier] = responseModifier
         return context
+    }
+
+    /// Memory first, then SD disk — used for fast path and CF-gated cache-only loads.
+    static func cachedImageIfAvailable(for url: URL) -> UIImage? {
+        cachedImage(for: url)
+    }
+
+    private static func cachedImage(for url: URL) -> UIImage? {
+        let cacheKey = url as NSURL
+        if let memory = inMemoryCache.object(forKey: cacheKey) {
+            return memory
+        }
+        // SDWebImage default key is absoluteString for plain URL loads.
+        if let disk = SDImageCache.shared.imageFromCache(forKey: url.absoluteString) {
+            inMemoryCache.setObject(disk, forKey: cacheKey, cost: disk.avatarCacheCost)
+            return disk
+        }
+        return nil
     }
 
     nonisolated private static func originString(for url: URL) -> String? {
@@ -282,7 +314,15 @@ enum ForumImageLoader {
         cloudflareBaseURL: String? = nil,
         completed: @escaping (UIImage?) -> Void
     ) -> SDWebImageOperation? {
-        SDWebImageManager.shared.loadImage(
+        if let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
+            completed(cached)
+            return nil
+        }
+        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
+            completed(nil)
+            return nil
+        }
+        return SDWebImageManager.shared.loadImage(
             with: url,
             options: AvatarImageLoader.options,
             context: AvatarImageLoader.context(for: url, cloudflareBaseURL: cloudflareBaseURL),
@@ -302,6 +342,22 @@ enum ForumImageLoader {
         guard let url else {
             imageView.sd_cancelCurrentImageLoad()
             imageView.image = placeholder
+            return
+        }
+
+        if let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
+            imageView.sd_cancelCurrentImageLoad()
+            imageView.image = cached
+            completed?(cached, nil, .none, url)
+            return
+        }
+
+        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
+            imageView.sd_cancelCurrentImageLoad()
+            if imageView.image == nil {
+                imageView.image = placeholder
+            }
+            completed?(nil, nil, .none, url)
             return
         }
 
@@ -327,5 +383,162 @@ private extension UIImage {
     var avatarCacheCost: Int {
         guard let cgImage else { return 1 }
         return max(cgImage.bytesPerRow * cgImage.height, 1)
+    }
+}
+
+
+/// Coalesces image-pipeline Cloudflare challenges and pauses main-domain image
+/// network loads while clearance is being recovered.
+///
+/// Why: a single expired `cf_clearance` turns a home-feed avatar storm into N
+/// challenge notifications and keeps the shield flashing. Cache still serves
+/// hits; only uncached main-host downloads are gated.
+enum CloudflareImageGate {
+    private static let lock = NSLock()
+    private static var pausedUntilByBase: [String: Date] = [:]
+    private static var lastPostedAtByBase: [String: Date] = [:]
+
+    /// Don't re-post challenge from images more often than this.
+    private static let imagePostCooldown: TimeInterval = 12
+    /// Safety auto-resume if verification-completed never arrives.
+    private static let defaultPauseDuration: TimeInterval = 45
+
+    static func normalizedKey(_ baseURL: String) -> String {
+        CloudflareVerificationPolicy.normalizedBaseKey(baseURL)
+    }
+
+    /// Pause main-domain image downloads for this forum base.
+    static func pause(baseURL: String, duration: TimeInterval = defaultPauseDuration) {
+        let key = normalizedKey(baseURL)
+        let until = Date().addingTimeInterval(duration)
+        lock.lock()
+        if let existing = pausedUntilByBase[key] {
+            pausedUntilByBase[key] = max(existing, until)
+        } else {
+            pausedUntilByBase[key] = until
+        }
+        lock.unlock()
+        DohDebugLog.record("image gate pause base=\(key) duration=\(Int(duration))s", subsystem: "CF")
+    }
+
+    static func pause(baseURL: URL, duration: TimeInterval = defaultPauseDuration) {
+        pause(baseURL: baseURL.absoluteString, duration: duration)
+    }
+
+    /// Clear pause so uncached avatars/uploads can hit the network again.
+    static func resume(baseURL: String) {
+        let key = normalizedKey(baseURL)
+        lock.lock()
+        let hadPause = pausedUntilByBase[key] != nil
+        pausedUntilByBase[key] = nil
+        lock.unlock()
+        if hadPause {
+            DohDebugLog.record("image gate resume base=\(key)", subsystem: "CF")
+        }
+    }
+
+    static func resume(baseURL: URL) {
+        resume(baseURL: baseURL.absoluteString)
+    }
+
+    static func isPaused(baseURL: String, now: Date = Date()) -> Bool {
+        let key = normalizedKey(baseURL)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let until = pausedUntilByBase[key] else { return false }
+        if now < until {
+            return true
+        }
+        pausedUntilByBase[key] = nil
+        return false
+    }
+
+    static func isPaused(baseURL: URL, now: Date = Date()) -> Bool {
+        isPaused(baseURL: baseURL.absoluteString, now: now)
+    }
+
+    /// True when `url` is a main-forum host asset and downloads for that forum are paused.
+    static func shouldBlockNetworkLoad(url: URL, cloudflareBaseURL: String?, now: Date = Date()) -> Bool {
+        guard isMainDomain(url, cloudflareBaseURL: cloudflareBaseURL) else { return false }
+
+        if let cloudflareBaseURL, isPaused(baseURL: cloudflareBaseURL, now: now) {
+            return true
+        }
+        if let origin = originString(for: url), isPaused(baseURL: origin, now: now) {
+            return true
+        }
+        if let host = url.host?.lowercased(), !host.isEmpty {
+            if isPaused(baseURL: "https://\(host)", now: now) { return true }
+            if isPaused(baseURL: "http://\(host)", now: now) { return true }
+        }
+        return false
+    }
+
+    /// Image response hit a CF challenge: pause downloads and post at most once per cooldown.
+    static func reportImageChallenge(baseURL: String, responseURL: URL?) {
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL) {
+            DohDebugLog.record(
+                "image CF challenge ignored during grace base=\(baseURL)",
+                subsystem: "CF"
+            )
+            return
+        }
+
+        pause(baseURL: baseURL)
+
+        let key = normalizedKey(baseURL)
+        let now = Date()
+        lock.lock()
+        let shouldPost: Bool
+        if let last = lastPostedAtByBase[key], now.timeIntervalSince(last) < imagePostCooldown {
+            shouldPost = false
+        } else {
+            lastPostedAtByBase[key] = now
+            shouldPost = true
+        }
+        lock.unlock()
+
+        guard shouldPost else {
+            DohDebugLog.record(
+                "image CF challenge coalesced base=\(key) response=\(responseURL?.absoluteString ?? "none")",
+                subsystem: "CF"
+            )
+            return
+        }
+
+        DiscourseAPI.postCloudflareChallengeDetected(baseURL: baseURL, responseURL: responseURL)
+    }
+
+    // MARK: - Host helpers (same split as AvatarImageLoader / FluxDo)
+
+    static func isMainDomain(_ url: URL, cloudflareBaseURL: String?) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        if let cloudflareBaseURL,
+           let baseHost = URL(string: cloudflareBaseURL)?.host?.lowercased(),
+           !baseHost.isEmpty {
+            if host == baseHost || host.hasSuffix("." + baseHost) {
+                return true
+            }
+        }
+        if host == "linux.do" || host.hasSuffix(".linux.do") {
+            return true
+        }
+        return false
+    }
+
+    static func originString(for url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        if let port = url.port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
+    }
+
+    /// Test hook: wipe gate state between unit tests.
+    static func resetForTests() {
+        lock.lock()
+        pausedUntilByBase.removeAll()
+        lastPostedAtByBase.removeAll()
+        lock.unlock()
     }
 }

@@ -258,11 +258,43 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
 
         let supplementary = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.supplementary.footer"))
         let actions = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.action.footer"))
+        let reactions = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.reactions.summary"))
 
+        // Shared-issue sits on its own row (FluxDo). Replies stay left of action icons.
         XCTAssertFalse(supplementary.isHidden)
         XCTAssertEqual(supplementary.frame.midY, actions.frame.midY, accuracy: 1)
         XCTAssertLessThanOrEqual(supplementary.frame.maxX, actions.frame.minX + 0.5)
         XCTAssertLessThanOrEqual(actions.frame.maxX, actions.superview?.bounds.maxX ?? 0)
+
+        // Reaction icons must remain fully visible — not half-clipped by shared-issue.
+        XCTAssertFalse(reactions.isHidden)
+        XCTAssertGreaterThan(reactions.bounds.width, 1)
+        XCTAssertEqual(reactions.frame.minX, reactions.superview?.bounds.minX ?? -1, accuracy: 0.5)
+    }
+
+    func testSharedIssueSitsAboveActionRowSoReactionsAreNotClipped() throws {
+        let cell = PostNativeCell(style: .default, reuseIdentifier: PostNativeCell.reuseIdentifier)
+        cell.frame = CGRect(x: 0, y: 0, width: 320, height: 360)
+        configure(
+            cell,
+            post: try decodePost(includesActionMetadata: true, replyCount: 0),
+            sharedIssue: .init(topicId: 99, canCreate: true, count: 1, userCreated: false)
+        )
+        cell.layoutIfNeeded()
+
+        let actions = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.action.footer"))
+        let reactions = try XCTUnwrap(view(in: cell, accessibilityIdentifier: "post.reactions.summary"))
+
+        // Find the shared-issue button by accessibility label.
+        let sharedIssue = descendants(in: cell).first {
+            ($0 as? UIButton)?.accessibilityLabel == String(localized: "shared_issue.title")
+                || ($0 as? UIButton)?.accessibilityLabel == String(localized: "shared_issue.author_title")
+        }
+        let button = try XCTUnwrap(sharedIssue as? UIButton)
+        XCTAssertFalse(button.isHidden)
+        XCTAssertLessThan(button.frame.maxY, actions.frame.minY + 0.5)
+        XCTAssertFalse(reactions.isHidden)
+        XCTAssertGreaterThan(reactions.frame.width, 8)
     }
 
     func testPostSnapshotUpdatesAreQueuedWhileAnApplyIsInFlight() {

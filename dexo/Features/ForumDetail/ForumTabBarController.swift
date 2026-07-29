@@ -83,9 +83,15 @@ final class ForumTabBarController: UITabBarController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // If we became visible as root home, never stay stuck with a scroll-hidden bar.
-        if !shouldHideTabBarForCurrentContent, isTabBarHiddenByScroll == false, tabBar.isHidden {
-            applyVisibleTabBarLayout()
+        // Only unstick *broken* visible state. Do NOT undo intentional scroll-hide
+        // (isTabBarHiddenByScroll == true), otherwise after CF sheet / refresh the bar
+        // refuses to auto-hide on the next upward scroll.
+        guard !shouldHideTabBarForCurrentContent else { return }
+        let transformStuck = tabBar.transform != .identity
+        let brokenVisibleState = isTabBarHiddenByScroll == false
+            && (tabBar.isHidden || isAnimatingScrollTabBar || transformStuck)
+        if brokenVisibleState {
+            forceRevealTabBarForRootContent()
         }
     }
 
@@ -214,6 +220,52 @@ final class ForumTabBarController: UITabBarController {
         applyCurrentTabBarLayout()
     }
 
+    /// Force the root tab bar back on screen after parent-presented modals
+    /// (Cloudflare verification sheet, etc.) that never deliver viewWillAppear
+    /// to Home, and after interrupted scroll-hide animations leave the bar stuck.
+    func forceRevealTabBarForRootContent() {
+        guard !shouldHideTabBarForCurrentContent else {
+            scrollTabBarAnimationID += 1
+            isAnimatingScrollTabBar = false
+            applyCurrentTabBarLayout()
+            return
+        }
+        scrollTabBarAnimationID += 1
+        isAnimatingScrollTabBar = false
+        isTabBarHiddenByScroll = false
+        // Hard reset any in-flight hide animation / expanded content coverage.
+        tabBar.layer.removeAllAnimations()
+        tabBar.transform = .identity
+        tabBar.alpha = 1
+        tabBar.isHidden = false
+        tabBar.isUserInteractionEnabled = true
+        applyVisibleTabBarLayout()
+        view.bringSubviewToFront(tabBar)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        // CF sheet dismiss / system layout can thrash frames one beat later.
+        DispatchQueue.main.async { [weak self] in
+            self?.reassertVisibleTabBarIfNeeded()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.reassertVisibleTabBarIfNeeded()
+        }
+    }
+
+    private func reassertVisibleTabBarIfNeeded() {
+        guard !isTabBarHiddenByScroll, !shouldHideTabBarForCurrentContent else { return }
+        tabBar.layer.removeAllAnimations()
+        tabBar.isHidden = false
+        tabBar.alpha = 1
+        tabBar.transform = .identity
+        tabBar.isUserInteractionEnabled = true
+        // Keep page full-bleed under the bar; never shrink content above it.
+        fillSelectedContentUnderTabBar()
+        tabBar.frame = tabBarFrame(hidden: false)
+        configureTabBarSurface()
+        view.bringSubviewToFront(tabBar)
+    }
+
     var tabBarTotalHeight: CGFloat {
         return max(tabBar.bounds.height, tabBar.frame.height, 49 + view.safeAreaInsets.bottom)
     }
@@ -263,13 +315,58 @@ final class ForumTabBarController: UITabBarController {
     }
 
     private func applyVisibleTabBarLayout() {
-        restoreScrollExpandedContentLayout()
+        // Scroll-hide model: page content is always full-bleed under the tab bar.
+        // Home pads the list with contentInset.bottom = visibleTabBarHeight.
+        // Shrinking the selected container to sit *above* the bar while still
+        // applying that inset produced a permanent blank strip ("高出一块").
+        fillSelectedContentUnderTabBar()
         tabBar.isHidden = false
         tabBar.alpha = 1
         tabBar.transform = .identity
         tabBar.frame = tabBarFrame(hidden: false)
         tabBar.isUserInteractionEnabled = true
         view.bringSubviewToFront(tabBar)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isTabBarHiddenByScroll, !self.shouldHideTabBarForCurrentContent else { return }
+            self.fillSelectedContentUnderTabBar()
+            self.tabBar.isHidden = false
+            self.tabBar.alpha = 1
+            self.tabBar.transform = .identity
+            self.tabBar.frame = self.tabBarFrame(hidden: false)
+            self.view.bringSubviewToFront(self.tabBar)
+        }
+    }
+
+    /// Make the selected tab's container fill the tab bar controller bounds so
+    /// the bar overlays content. Clears scroll-hide snapshots that may point at
+    /// a short "above bar" frame from an older layout pass.
+    private func fillSelectedContentUnderTabBar() {
+        scrollExpandedLayoutSnapshots.removeAll()
+        guard let selectedViewController else { return }
+        let bounds = view.bounds
+        if let container = selectedViewController.view.superview, container !== view {
+            container.frame = bounds
+            container.clipsToBounds = true
+            selectedViewController.view.frame = container.bounds
+        } else {
+            selectedViewController.view.frame = bounds
+        }
+        selectedViewController.view.clipsToBounds = true
+        selectedViewController.view.setNeedsLayout()
+
+        if let navigationController = selectedViewController as? UINavigationController,
+           let visibleView = navigationController.visibleViewController?.view {
+            let navBounds = navigationController.view.bounds
+            if let wrapperView = visibleView.superview, wrapperView !== navigationController.view {
+                wrapperView.frame = navBounds
+                wrapperView.clipsToBounds = true
+                visibleView.frame = wrapperView.bounds
+            } else {
+                visibleView.frame = navBounds
+            }
+            visibleView.clipsToBounds = true
+            visibleView.setNeedsLayout()
+        }
     }
 
     private func tabBarFrame(hidden: Bool) -> CGRect {

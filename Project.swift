@@ -66,6 +66,7 @@ let project = Project(
                     "INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription": "用于保存话题分享图片到相册",
                     "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
                     "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
+                    "INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone": "YES",
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations": "UIInterfaceOrientationPortrait",
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad": "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown",
                     "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",

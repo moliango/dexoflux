@@ -36,6 +36,11 @@ enum ExternalImageFetcher {
             completion(cached)
             return
         }
+        // Main-domain uploads share CF with the API — don't retry while gated.
+        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: refererBaseURL) {
+            completion(nil)
+            return
+        }
 
         inflightLock.lock()
         if inflight[cacheKey] != nil {
@@ -68,6 +73,19 @@ enum ExternalImageFetcher {
         }
 
         let task = session.dataTask(with: request) { data, response, _ in
+            if let http = response as? HTTPURLResponse,
+               DiscourseAPI.isCloudflareChallengeResponse(http, data: data) {
+                let base = refererBaseURL
+                    ?? CloudflareImageGate.originString(for: url)
+                    ?? url.absoluteString
+                DispatchQueue.main.async {
+                    CloudflareImageGate.reportImageChallenge(
+                        baseURL: base,
+                        responseURL: http.url
+                    )
+                }
+            }
+
             let image: UIImage? = {
                 guard let data, !data.isEmpty else { return nil }
                 if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {

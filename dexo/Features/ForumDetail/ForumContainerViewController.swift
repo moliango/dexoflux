@@ -698,6 +698,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         suppressCloudflareShieldTemporarily()
         setCloudflareShieldButtonVisible(false, animated: true)
         api.resetSession()
+        // CF sheet is presented by this container, so Home never gets viewWillAppear
+        // and a scroll-hidden / animation-stuck tab bar can stay gone after 出盾.
+        restoreTabBarAfterCloudflareInteraction()
         refreshVisiblePageAfterCloudflareVerification()
     }
 
@@ -862,6 +865,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func handleCloudflareVerificationClosed() {
         isPresentingCloudflareVerification = false
+        // Always unstick the tab bar when the CF sheet goes away, success or cancel.
+        restoreTabBarAfterCloudflareInteraction()
         if let pending = pendingCloudflareBaseURL,
            CloudflareVerificationPolicy.isInVerificationGrace(baseURL: pending) {
             setCloudflareShieldButtonVisible(false, animated: true)
@@ -869,6 +874,22 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
         guard pendingCloudflareBaseURL != nil, !isCloudflareShieldSuppressed() else { return }
         setCloudflareShieldButtonVisible(true, animated: true)
+    }
+
+    private func restoreTabBarAfterCloudflareInteraction() {
+        guard let tabBar = tabBarViewController ?? (children.first as? ForumTabBarController) else { return }
+        tabBar.forceRevealTabBarForRootContent()
+        // Prefer the visible home root. topViewController may be a pushed detail
+        // (hidesBottomBarWhenPushed); still re-assert when home itself is showing.
+        guard let navigation = tabBar.selectedViewController as? UINavigationController else { return }
+        if let home = navigation.visibleViewController as? HomeViewController {
+            home.restoreTabBarAfterCloudflareVerification()
+            return
+        }
+        if navigation.viewControllers.count == 1,
+           let home = navigation.viewControllers.first as? HomeViewController {
+            home.restoreTabBarAfterCloudflareVerification()
+        }
     }
 
     private func topMostPresenter() -> UIViewController? {

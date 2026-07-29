@@ -2177,7 +2177,12 @@ extension TopicDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        200
+        // Tall first posts (code blocks) need a higher estimate so the table does not
+        // park the next floor under unfinished content during the first layout pass.
+        if indexPath.row == 0 {
+            return 520
+        }
+        return 220
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -2231,6 +2236,9 @@ extension TopicDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        // Nudge self-sizing once the cell is on screen; fixes intermittent floor overlap
+        // that disappears only after the user scrolls.
+        (cell as? PostNativeCell)?.requestHeightReconciliation()
         DispatchQueue.main.async { [weak self] in
             self?.updateVisibleReadingPosts()
         }
