@@ -7,22 +7,6 @@ private enum HomeFABMode {
     case refresh
 }
 
-enum HomePullToRefreshPolicy {
-    static let triggerDistance: CGFloat = 56
-
-    static func shouldTrigger(
-        pullDistance: CGFloat,
-        isRefreshing: Bool,
-        isLoading: Bool,
-        hasReloadTask: Bool
-    ) -> Bool {
-        pullDistance >= triggerDistance
-            && !isRefreshing
-            && !isLoading
-            && !hasReloadTask
-    }
-}
-
 final class HomeViewController: ObservableViewController {
     static let initialContentReadyNotification = Notification.Name("DexoHomeInitialContentReadyNotification")
 
@@ -3324,7 +3308,11 @@ extension HomeViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let totalRows = tableView.numberOfRows(inSection: 0)
-        if indexPath.row >= totalRows - 5, viewModel.canLoadMore {
+        // Gate before Task spawn so we do not enqueue N no-op tasks while scrolling.
+        if indexPath.row >= totalRows - 5,
+           viewModel.canLoadMore,
+           !viewModel.isLoadingMore,
+           !viewModel.isLoading {
             // 只有确实还能翻页时才冻结；否则 willDisplay 会把 freeze 永久卡死，
             // 出盾后上滑/刷新时 tab bar 就藏不住或出不来。
             beginTabBarScrollFreezeForLoadMore()

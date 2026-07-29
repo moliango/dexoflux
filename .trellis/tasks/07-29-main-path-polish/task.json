@@ -1,0 +1,32 @@
+{
+  "id": "main-path-polish",
+  "name": "main-path-polish",
+  "title": "主路径打磨：Home / 详情 / 会话图片 / 列表基建 / 神文件拆分",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "Naine",
+  "assignee": "Naine",
+  "createdAt": "2026-07-29",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-29-home-list-feel",
+    "07-29-topic-detail-perf",
+    "07-29-cf-session-images",
+    "07-29-list-infra-integration",
+    "07-29-god-file-split"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

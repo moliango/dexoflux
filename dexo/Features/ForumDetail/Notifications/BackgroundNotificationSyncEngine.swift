@@ -122,7 +122,7 @@ final class BackgroundNotificationSyncEngine {
                 do {
                     let topicsFetch = try await api.fetchLatestTopicsWithRawData(page: 0)
                     latestTopics = topicsFetch.list.topicList.topics
-                    BackgroundTopicListCache.save(topicsFetch.rawData, baseURL: forum.baseURL)
+                    TopicListCacheFacade.save(topicsFetch.rawData, baseURL: forum.baseURL)
                     try Task.checkCancellation()
                 } catch {
                     if Task.isCancelled || error is CancellationError || DiscourseAPI.isExplicitlyCancelledRequest(error) {

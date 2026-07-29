@@ -103,6 +103,9 @@ final class ShareImagePreviewViewController: UIViewController {
     }()
 
     private var themeButtons: [UIButton] = []
+    private var isBodyReady = false
+    private var bodyReadyTimeoutWork: DispatchWorkItem?
+    private let bodyReadyTimeout: TimeInterval = 2.5
 
     init(model: Model) {
         self.model = model
@@ -124,6 +127,10 @@ final class ShareImagePreviewViewController: UIViewController {
         view.backgroundColor = .systemBackground
         setupUI()
         rebuildThemeChips()
+        cardView.onBodyImagesReady = { [weak self] in
+            self?.markBodyReady()
+        }
+        setActionsEnabled(false)
         applyTheme()
     }
 
@@ -231,6 +238,9 @@ final class ShareImagePreviewViewController: UIViewController {
     }
 
     private func applyTheme() {
+        isBodyReady = false
+        setActionsEnabled(false)
+        scheduleBodyReadyTimeout()
         cardView.configure(
             theme: theme,
             brandName: model.brandName,
@@ -249,6 +259,32 @@ final class ShareImagePreviewViewController: UIViewController {
         view.layoutIfNeeded()
     }
 
+    private func scheduleBodyReadyTimeout() {
+        bodyReadyTimeoutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.markBodyReady()
+        }
+        bodyReadyTimeoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + bodyReadyTimeout, execute: work)
+    }
+
+    private func markBodyReady() {
+        guard !isBodyReady else { return }
+        isBodyReady = true
+        bodyReadyTimeoutWork?.cancel()
+        bodyReadyTimeoutWork = nil
+        setActionsEnabled(true)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+    }
+
+    private func setActionsEnabled(_ enabled: Bool) {
+        saveButton.isEnabled = enabled
+        shareButton.isEnabled = enabled
+        saveButton.alpha = enabled ? 1 : 0.45
+        shareButton.alpha = enabled ? 1 : 0.45
+    }
+
     @objc private func themeTapped(_ sender: UIButton) {
         guard let selected = ShareImageTheme(rawValue: sender.tag) else { return }
         theme = selected
@@ -261,7 +297,7 @@ final class ShareImagePreviewViewController: UIViewController {
     }
 
     @objc private func saveTapped() {
-        guard let image = renderCardImage() else { return }
+        guard isBodyReady, let image = renderCardImage() else { return }
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -289,7 +325,7 @@ final class ShareImagePreviewViewController: UIViewController {
     }
 
     @objc private func shareTapped() {
-        guard let image = renderCardImage() else { return }
+        guard isBodyReady, let image = renderCardImage() else { return }
         let activity = UIActivityViewController(activityItems: [image], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = shareButton
         present(activity, animated: true)

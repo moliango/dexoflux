@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 
+/// In-memory helper for ad-hoc topic snapshots.
+/// Prefer `TopicListCacheFacade` for Home/background disk cache.
 final class TopicListCache {
     private let cache = NSCache<NSString, NSArray>()
     private let userDefaults = UserDefaults.standard

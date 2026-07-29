@@ -158,7 +158,7 @@ final class HomeViewModel: DexoObservableObject {
     /// 冷启动/列表为空时，先用后台刷新缓存填满列表，避免只剩“查看 N 个新话题”横幅。
     func hydrateFromBackgroundCacheIfNeeded() {
         guard isGlobalLatestList, topics.isEmpty else { return }
-        guard let cached = BackgroundTopicListCache.load(baseURL: api.baseURL) else { return }
+        guard let cached = TopicListCacheFacade.load(baseURL: api.baseURL) else { return }
         topics = cached.topicList.topics
         canLoadMore = cached.topicList.moreTopicsUrl != nil
         indexUsers(cached.users)
@@ -171,6 +171,8 @@ final class HomeViewModel: DexoObservableObject {
     }
 
     func loadTopics(retryingExplicitCancellation: Bool = false) async {
+        // Single-flight refresh: concurrent pulls share one in-flight load.
+        guard !isLoading else { return }
 
         isLoading = true
         errorMessage = nil
@@ -241,7 +243,8 @@ final class HomeViewModel: DexoObservableObject {
     }
 
     func loadMoreTopics() async {
-        guard canLoadMore, !isLoadingMore else { return }
+        // Never page while a full refresh owns the list cursor.
+        guard canLoadMore, !isLoadingMore, !isLoading else { return }
         switch await validateTopicAccess() {
         case .allowed:
             break
@@ -527,7 +530,7 @@ final class HomeViewModel: DexoObservableObject {
         case .latest:
             if page == 0, selectedCategoryId == nil {
                 let fetch = try await api.fetchLatestTopicsWithRawData(page: page)
-                BackgroundTopicListCache.save(fetch.rawData, baseURL: api.baseURL)
+                TopicListCacheFacade.save(fetch.rawData, baseURL: api.baseURL)
                 return fetch.list
             }
             return try await api.fetchLatestTopics(page: page)

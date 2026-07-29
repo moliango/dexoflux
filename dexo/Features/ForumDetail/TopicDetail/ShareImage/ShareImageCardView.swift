@@ -10,14 +10,27 @@ final class ShareImageCardView: UIView {
     private let metaLabel = UILabel()
     private let dividerTop = UIView()
     private let bodyContainer = UIView()
-    private let bodyLabel = UILabel()
+    private let bodyStack: UIStackView = {
+        let stack = UIStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 10
+        return stack
+    }()
     private let dividerBottom = UIView()
     private let linkIcon = UIImageView()
     private let linkLabel = UILabel()
 
     private var theme: ShareImageTheme = .classic
     private let cardWidth: CGFloat = 375
-    private let maxBodyHeight: CGFloat = 520
+    private let maxBodyHeight: CGFloat = 720
+    private let maxImageHeight: CGFloat = 240
+    private var bodyHeightConstraint: NSLayoutConstraint?
+    private var loadGeneration = 0
+
+    /// Fires on main when body images finished loading (success/fail) or there are no images.
+    var onBodyImagesReady: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -59,10 +72,7 @@ final class ShareImageCardView: UIView {
         bodyContainer.translatesAutoresizingMaskIntoConstraints = false
         bodyContainer.layer.cornerRadius = 10
         bodyContainer.layer.cornerCurve = .continuous
-
-        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
-        bodyLabel.numberOfLines = 0
-        bodyLabel.font = .systemFont(ofSize: 15)
+        bodyContainer.clipsToBounds = true
 
         linkIcon.translatesAutoresizingMaskIntoConstraints = false
         linkIcon.image = UIImage(systemName: "link")
@@ -84,10 +94,13 @@ final class ShareImageCardView: UIView {
         addSubview(metaLabel)
         addSubview(dividerTop)
         addSubview(bodyContainer)
-        bodyContainer.addSubview(bodyLabel)
+        bodyContainer.addSubview(bodyStack)
         addSubview(dividerBottom)
         addSubview(linkIcon)
         addSubview(linkLabel)
+
+        let bodyHeight = bodyContainer.heightAnchor.constraint(lessThanOrEqualToConstant: maxBodyHeight)
+        bodyHeightConstraint = bodyHeight
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: cardWidth),
@@ -117,26 +130,27 @@ final class ShareImageCardView: UIView {
             metaLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             metaLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
             metaLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            metaLabel.bottomAnchor.constraint(lessThanOrEqualTo: avatarView.bottomAnchor),
 
             dividerTop.topAnchor.constraint(equalTo: avatarView.bottomAnchor, constant: 14),
             dividerTop.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             dividerTop.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            dividerTop.heightAnchor.constraint(equalToConstant: 1),
+            dividerTop.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
 
-            bodyContainer.topAnchor.constraint(equalTo: dividerTop.bottomAnchor, constant: 14),
-            bodyContainer.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            bodyContainer.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            bodyContainer.topAnchor.constraint(equalTo: dividerTop.bottomAnchor, constant: 12),
+            bodyContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            bodyContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            bodyHeight,
 
-            bodyLabel.topAnchor.constraint(equalTo: bodyContainer.topAnchor, constant: 12),
-            bodyLabel.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 12),
-            bodyLabel.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -12),
-            bodyLabel.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -12),
-            bodyLabel.heightAnchor.constraint(lessThanOrEqualToConstant: maxBodyHeight),
+            bodyStack.topAnchor.constraint(equalTo: bodyContainer.topAnchor, constant: 12),
+            bodyStack.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 12),
+            bodyStack.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -12),
+            bodyStack.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -12),
 
-            dividerBottom.topAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: 14),
+            dividerBottom.topAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: 12),
             dividerBottom.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             dividerBottom.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            dividerBottom.heightAnchor.constraint(equalToConstant: 1),
+            dividerBottom.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
 
             linkIcon.topAnchor.constraint(equalTo: dividerBottom.bottomAnchor, constant: 12),
             linkIcon.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
@@ -193,52 +207,157 @@ final class ShareImageCardView: UIView {
             avatarView.image = nil
         }
 
-        bodyLabel.attributedText = Self.htmlBody(cookedHTML, textColor: theme.primaryTextColor.withAlphaComponent(0.88), baseURL: baseURL)
         linkIcon.tintColor = theme.secondaryTextColor
         linkLabel.text = shareURL
         linkLabel.textColor = theme.secondaryTextColor
+
+        rebuildBody(cookedHTML: cookedHTML, baseURL: baseURL, textColor: theme.primaryTextColor.withAlphaComponent(0.88))
     }
 
-    private static func htmlBody(_ html: String, textColor: UIColor, baseURL: String) -> NSAttributedString {
-        let wrapped = """
-        <div style="font-family:-apple-system;font-size:15px;line-height:1.45;color:\(textColor.hexString);">
-        \(html)
-        </div>
-        """
-        guard let data = wrapped.data(using: .utf8),
-              let attr = try? NSMutableAttributedString(
-                data: data,
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue
-                ],
-                documentAttributes: nil
-              )
-        else {
-            return NSAttributedString(string: stripTags(html), attributes: [
-                .font: UIFont.systemFont(ofSize: 15),
-                .foregroundColor: textColor
-            ])
+    private func rebuildBody(cookedHTML: String, baseURL: String, textColor: UIColor) {
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        bodyStack.arrangedSubviews.forEach {
+            bodyStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
         }
 
-        // Convert remaining :shortcode: in plain runs if possible
-        let plain = attr.string
-        if TitleEmojiRenderer.containsShortcode(plain) {
-            return TitleEmojiRenderer.attributedTitle(plain, font: .systemFont(ofSize: 15), textColor: textColor, baseURL: baseURL)
+        let segments = ShareImageBodyComposer.segments(from: cookedHTML, baseURL: baseURL)
+        let imageURLs = ShareImageBodyComposer.imageURLs(in: segments)
+        let contentWidth = cardWidth - 16 * 2 - 12 * 2
+
+        if segments.isEmpty {
+            let label = makeTextLabel(
+                String(localized: "share.image.empty_body", defaultValue: "（无正文）"),
+                color: textColor.withAlphaComponent(0.6)
+            )
+            bodyStack.addArrangedSubview(label)
+            notifyBodyReady(generation: generation)
+            return
         }
-        return attr
+
+        final class PendingCounter {
+            var value: Int
+            init(_ value: Int) { self.value = value }
+        }
+        let pending = PendingCounter(imageURLs.count)
+
+        for segment in segments {
+            switch segment {
+            case .text(let text):
+                bodyStack.addArrangedSubview(makeTextLabel(text, color: textColor))
+
+            case .image(let url):
+                let imageView = makeImageView(contentWidth: contentWidth)
+                bodyStack.addArrangedSubview(imageView)
+                loadImage(url, into: imageView, baseURL: baseURL, contentWidth: contentWidth, generation: generation) { [weak self] in
+                    pending.value -= 1
+                    if pending.value <= 0 {
+                        self?.notifyBodyReady(generation: generation)
+                    }
+                }
+
+            case .moreImages(let count):
+                let footnote = makeTextLabel(
+                    String(format: String(localized: "share.image.more_images", defaultValue: "还有 %d 张图未展示"), count),
+                    color: textColor.withAlphaComponent(0.65)
+                )
+                footnote.font = .systemFont(ofSize: 13, weight: .medium)
+                bodyStack.addArrangedSubview(footnote)
+            }
+        }
+
+        if imageURLs.isEmpty {
+            notifyBodyReady(generation: generation)
+        }
     }
 
-    private static func stripTags(_ html: String) -> String {
-        html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private func makeTextLabel(_ text: String, color: UIColor) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.font = .systemFont(ofSize: 15)
+        label.textColor = color
+        if TitleEmojiRenderer.containsShortcode(text) {
+            label.attributedText = TitleEmojiRenderer.attributedTitle(
+                text,
+                font: .systemFont(ofSize: 15),
+                textColor: color,
+                baseURL: ""
+            )
+        } else {
+            label.text = text
+        }
+        return label
     }
-}
 
-private extension UIColor {
-    var hexString: String {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    private func makeImageView(contentWidth: CGFloat) -> UIImageView {
+        let imageView = UIImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 10
+        imageView.layer.cornerCurve = .continuous
+        imageView.backgroundColor = theme.borderColor.withAlphaComponent(0.35)
+        imageView.heightAnchor.constraint(equalToConstant: min(maxImageHeight, contentWidth * 0.56)).isActive = true
+        return imageView
+    }
+
+    private func loadImage(
+        _ url: URL,
+        into imageView: UIImageView,
+        baseURL: String,
+        contentWidth: CGFloat,
+        generation: Int,
+        completion: @escaping () -> Void
+    ) {
+        let finish: (UIImage?) -> Void = { [weak self, weak imageView] image in
+            DispatchQueue.main.async {
+                guard let self, let imageView, self.loadGeneration == generation else {
+                    completion()
+                    return
+                }
+                if let image {
+                    imageView.image = image
+                    imageView.contentMode = .scaleAspectFill
+                    self.updateImageHeight(imageView, image: image, contentWidth: contentWidth)
+                } else {
+                    imageView.image = UIImage(systemName: "photo")
+                    imageView.tintColor = self.theme.secondaryTextColor
+                    imageView.contentMode = .scaleAspectFit
+                }
+                completion()
+            }
+        }
+
+        if let cached = SDImageCache.shared.imageFromCache(forKey: url.absoluteString) {
+            finish(cached)
+            return
+        }
+
+        ExternalImageFetcher.fetch(url: url, refererBaseURL: baseURL) { image in
+            if let image {
+                SDImageCache.shared.store(image, forKey: url.absoluteString, completion: nil)
+            }
+            finish(image)
+        }
+    }
+
+    private func updateImageHeight(_ imageView: UIImageView, image: UIImage, contentWidth: CGFloat) {
+        let ratio = image.size.height / max(image.size.width, 1)
+        var height = contentWidth * ratio
+        height = min(max(height, 80), maxImageHeight)
+        imageView.constraints
+            .filter { $0.firstAttribute == .height && $0.secondItem == nil }
+            .forEach { $0.isActive = false }
+        imageView.heightAnchor.constraint(equalToConstant: height).isActive = true
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    private func notifyBodyReady(generation: Int) {
+        guard loadGeneration == generation else { return }
+        onBodyImagesReady?()
     }
 }

@@ -17942,6 +17942,28 @@
         }
       }
     },
+    "share.image.empty_body" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "（无正文）"
+          }
+        }
+      }
+    },
+    "share.image.more_images" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还有 %d 张图未展示"
+          }
+        }
+      }
+    },
     "share.image.no_content" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
