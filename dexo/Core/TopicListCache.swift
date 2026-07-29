@@ -30,15 +30,19 @@ final class TopicListCache {
         let cacheKey = "\(key)_data" as NSString
         let lastUpdate = userDefaults.double(forKey: "\(key)_timestamp")
         
-        if let cached = cache.object(forKey: cacheKey) as? [DiscourseTopicList.Topic, [DiscourseTopicList.User], [DiscourseCategory]],
-           Date().timeIntervalSince1970 - lastUpdate < maxCacheAge {
-            return cached
+        if let cached = cache.object(forKey: cacheKey) as? NSArray {
+            let array = cached as? [Any] ?? []
+            guard Date().timeIntervalSince1970 - lastUpdate < maxCacheAge else { return nil }
+            let topics = array[0] as? [DiscourseTopicList.Topic] ?? []
+            let users = array[1] as? [DiscourseTopicList.User] ?? []
+            let categories = array[2] as? [DiscourseCategory] ?? []
+            return (topics: topics, users: users, categories: categories)
         }
         return nil
     }
     
     func saveCachedData(_ data: (topics: [DiscourseTopicList.Topic], users: [DiscourseTopicList.User], categories: [DiscourseCategory]), for key: String) {
-        cache.setObject(data as NSArray, forKey: "\(key)_data" as NSString)
+        cache.setObject([data.topics, data.users, data.categories] as NSArray, forKey: "\(key)_data" as NSString)
         userDefaults.set(Date().timeIntervalSince1970, forKey: "\(key)_timestamp")
     }
     
