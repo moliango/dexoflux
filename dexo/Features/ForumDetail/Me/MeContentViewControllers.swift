@@ -1,4 +1,5 @@
 import UIKit
+import dexoflux.Core
 
 @MainActor
 final class PagedTopicListViewModel: DexoObservableObject {
@@ -102,6 +103,10 @@ final class PagedTopicListViewModel: DexoObservableObject {
 
 final class PagedTopicListViewController: ObservableViewController {
     private let api: DiscourseAPI
+    private lazy var refreshPolicy: DexoListRefreshPolicy = {
+        let policy = DexoListRefreshPolicy(tableView: tableView, viewModel: viewModel)
+        return policy
+    }()
     private let viewModel: PagedTopicListViewModel
     private let emptyMessage: String
     private let searchQuery: String?
@@ -117,6 +122,9 @@ final class PagedTopicListViewController: ObservableViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = TopicCell.estimatedHeight
         tableView.showsVerticalScrollIndicator = false
+        tableView.contentInsetAdjustmentBehavior = .never
+        
+        
         return tableView
     }()
 
@@ -317,6 +325,9 @@ final class PagedTopicListViewController: ObservableViewController {
     }
 
     @objc private func refreshPulled() {
+        refreshPolicy.startPullToRefresh()
+        Task { await viewModel.refresh() }
+    }
         Task { await viewModel.refresh() }
     }
 
