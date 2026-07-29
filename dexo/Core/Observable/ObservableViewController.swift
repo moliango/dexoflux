@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 
 enum DexoMotion {
@@ -190,45 +191,51 @@ class DexoSkeletonPlaceholderView: UIView {
     }
 }
 
-class DexoObservableObject {
-    static let didChangeNotification = Notification.Name("DexoObservableObjectDidChange")
+@MainActor
+class DexoObservableObject: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
 
     func notifyChanged() {
-        let post = {
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
-        }
-        if Thread.isMainThread {
-            post()
-        } else {
-            DispatchQueue.main.async(execute: post)
-        }
+        objectWillChange.send()
     }
 }
 
+@MainActor
 class ObservableViewController: UIViewController {
-    private var observationToken: NSObjectProtocol?
+    private var observedObjects: [ObjectIdentifier: DexoObservableObject] = [:]
+    private var observationCancellables = Set<AnyCancellable>()
+    private var isObserving = false
 
     func updateUI() {
         // Subclasses override this to bind observable state to UI.
     }
 
-    func startObserving() {
-        stopObserving()
-        updateUI()
-        observationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.updateUI()
-        }
+    func observe(_ object: DexoObservableObject) {
+        let identifier = ObjectIdentifier(object)
+        guard observedObjects[identifier] == nil else { return }
+        observedObjects[identifier] = object
+        guard isObserving else { return }
+        subscribe(to: object)
     }
 
-    private func stopObserving() {
-        if let observationToken {
-            NotificationCenter.default.removeObserver(observationToken)
-            self.observationToken = nil
-        }
+    func startObserving() {
+        stopObserving()
+        isObserving = true
+        observedObjects.values.forEach { subscribe(to: $0) }
+        updateUI()
+    }
+
+    func stopObserving() {
+        observationCancellables.removeAll()
+        isObserving = false
+    }
+
+    private func subscribe(to object: DexoObservableObject) {
+        object.objectWillChange
+            .sink { [weak self] in
+                self?.updateUI()
+            }
+            .store(in: &observationCancellables)
     }
 
     override func viewWillAppear(_ animated: Bool) {

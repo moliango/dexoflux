@@ -245,6 +245,8 @@ final class PagedTopicListViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         applyThemeStyle()
         tableView.refreshControl = refreshControl
         retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)

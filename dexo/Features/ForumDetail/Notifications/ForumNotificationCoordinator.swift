@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import UIKit
 import UserNotifications
@@ -378,7 +379,7 @@ final class ForumNotificationCoordinator: DexoObservableObject {
     private var refreshTimer: Timer?
     private var foregroundObservationToken: NSObjectProtocol?
     private var backgroundObservationToken: NSObjectProtocol?
-    private var authObservationToken: NSObjectProtocol?
+    private var authObservationToken: AnyCancellable?
     private var isRefreshing = false
     private var pendingForceListRefresh = false
     private var lastListRefreshAt: Date?
@@ -421,9 +422,7 @@ final class ForumNotificationCoordinator: DexoObservableObject {
         if let backgroundObservationToken {
             NotificationCenter.default.removeObserver(backgroundObservationToken)
         }
-        if let authObservationToken {
-            NotificationCenter.default.removeObserver(authObservationToken)
-        }
+        authObservationToken?.cancel()
     }
 
     func startMonitoring() {
@@ -448,11 +447,7 @@ final class ForumNotificationCoordinator: DexoObservableObject {
                 self?.stopRefreshTimer()
             }
         }
-        authObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: AuthManager.shared,
-            queue: .main
-        ) { [weak self] _ in
+        authObservationToken = AuthManager.shared.objectWillChange.sink { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if AuthManager.shared.isAuthenticated(for: self.api.baseURL) {

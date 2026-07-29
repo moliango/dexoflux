@@ -142,6 +142,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         title = String(localized: "search.title")
         view.backgroundColor = .systemBackground
         definesPresentationContext = true

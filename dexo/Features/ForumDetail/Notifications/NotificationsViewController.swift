@@ -92,6 +92,8 @@ final class NotificationsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         title = String(localized: "notifications.title")
         applyThemeStyle()
         navigationItem.rightBarButtonItem = UIBarButtonItem(

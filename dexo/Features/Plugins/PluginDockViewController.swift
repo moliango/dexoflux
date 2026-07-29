@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 
 private final class PluginDockPassthroughView: UIView {
@@ -30,7 +31,7 @@ final class PluginDockViewController: UIViewController {
     private let username: String?
     private let settings = AppSettings.shared
     private let registry = DexoPluginRuntime.shared.registry
-    private var settingsObservationToken: NSObjectProtocol?
+    private var settingsObservationToken: AnyCancellable?
     private var pluginStateObservationToken: NSObjectProtocol?
     private var handleCenterYConstraint: NSLayoutConstraint?
     private var handleLeadingConstraint: NSLayoutConstraint?
@@ -136,9 +137,7 @@ final class PluginDockViewController: UIViewController {
     }
 
     deinit {
-        if let settingsObservationToken {
-            NotificationCenter.default.removeObserver(settingsObservationToken)
-        }
+        settingsObservationToken?.cancel()
         if let pluginStateObservationToken {
             NotificationCenter.default.removeObserver(pluginStateObservationToken)
         }
@@ -149,11 +148,7 @@ final class PluginDockViewController: UIViewController {
     }
 
     private func observeSettings() {
-        settingsObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: settings,
-            queue: .main
-        ) { [weak self] _ in
+        settingsObservationToken = settings.objectWillChange.sink { [weak self] in
             Task { @MainActor [weak self] in
                 self?.applySettings(animated: true)
             }

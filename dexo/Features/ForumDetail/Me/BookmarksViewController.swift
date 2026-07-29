@@ -101,6 +101,8 @@ final class BookmarksViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         title = String(localized: "me.bookmarks")
         applyThemeStyle()
 

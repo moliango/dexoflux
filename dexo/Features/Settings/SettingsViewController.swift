@@ -68,6 +68,7 @@ final class SettingsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(AppSettings.shared)
         title = String(localized: "tab.settings")
         view.backgroundColor = .systemGroupedBackground
 
@@ -193,6 +194,7 @@ private final class AppearanceSettingsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(settings)
         title = String(localized: "settings.section.appearance")
         view.backgroundColor = .systemGroupedBackground
         setupUI()
@@ -1610,6 +1612,7 @@ final class ReadingSettingsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(settings)
         title = String(localized: "settings.reading_design")
         configureRootView()
         rebuildContent()
@@ -2347,6 +2350,7 @@ private final class SettingsCategoryViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(settings)
         title = category.title
         view.backgroundColor = .systemGroupedBackground
         view.addSubview(tableView)
@@ -2834,6 +2838,7 @@ private final class DataManagementSettingsViewController: ObservableViewControll
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(settings)
         title = String(localized: "settings.data_management")
         configureRootView()
         rebuildContent()
@@ -4111,6 +4116,7 @@ private final class BottomBarLayoutViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(settings)
         title = String(localized: "settings.bottom_bar")
         configureRootView()
         rebuildContent()

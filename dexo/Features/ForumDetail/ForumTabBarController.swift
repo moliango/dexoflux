@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 
 final class ForumTabBarController: UITabBarController {
@@ -10,10 +11,10 @@ final class ForumTabBarController: UITabBarController {
     private var isTabBarHiddenByScroll = false
     private var isAnimatingScrollTabBar = false
     private var scrollTabBarAnimationID = 0
-    private var settingsObservationToken: NSObjectProtocol?
-    private var authObservationToken: NSObjectProtocol?
+    private var settingsObservationToken: AnyCancellable?
+    private var authObservationToken: AnyCancellable?
     private var pluginObservationToken: NSObjectProtocol?
-    private var notificationObservationToken: NSObjectProtocol?
+    private var notificationObservationToken: AnyCancellable?
     private var meAvatarLoadTask: Task<Void, Never>?
     private var renderedMeAvatarKey: String?
     private var pendingMeAvatarKey: String?
@@ -60,18 +61,12 @@ final class ForumTabBarController: UITabBarController {
     }
 
     deinit {
-        if let settingsObservationToken {
-            NotificationCenter.default.removeObserver(settingsObservationToken)
-        }
-        if let authObservationToken {
-            NotificationCenter.default.removeObserver(authObservationToken)
-        }
+        settingsObservationToken?.cancel()
+        authObservationToken?.cancel()
         if let pluginObservationToken {
             NotificationCenter.default.removeObserver(pluginObservationToken)
         }
-        if let notificationObservationToken {
-            NotificationCenter.default.removeObserver(notificationObservationToken)
-        }
+        notificationObservationToken?.cancel()
         meAvatarLoadTask?.cancel()
     }
 
@@ -455,21 +450,13 @@ private extension ForumTabBarController {
     }
 
     func startObservingSettings() {
-        settingsObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: AppSettings.shared,
-            queue: .main
-        ) { [weak self] _ in
+        settingsObservationToken = AppSettings.shared.objectWillChange.sink { [weak self] in
             self?.handleSettingsChanged()
         }
     }
 
     func startObservingAuth() {
-        authObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: AuthManager.shared,
-            queue: .main
-        ) { [weak self] _ in
+        authObservationToken = AuthManager.shared.objectWillChange.sink { [weak self] in
             guard let self else { return }
             self.refreshMeTabAvatarIcon(forceRefresh: true)
             self.rebuildTabs(preservingIdentifier: self.selectedTabIdentifier())
@@ -492,11 +479,7 @@ private extension ForumTabBarController {
     }
 
     func startObservingNotifications() {
-        notificationObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: notificationCoordinator,
-            queue: .main
-        ) { [weak self] _ in
+        notificationObservationToken = notificationCoordinator.objectWillChange.sink { [weak self] in
             self?.applyNotificationBadge()
         }
     }
@@ -1280,6 +1263,8 @@ final class BrowsingHistoryViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         applyThemeStyle()
         tableView.tableFooterView = emptyFooterView
         tableView.refreshControl = refreshControl

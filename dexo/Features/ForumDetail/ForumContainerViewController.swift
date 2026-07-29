@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 import WebKit
 
@@ -16,13 +17,13 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var isHomeInitialContentReady = false
     private var launchOverlayObservationToken: NSObjectProtocol?
     private var launchOverlayFallbackTask: Task<Void, Never>?
-    private var authObservationToken: NSObjectProtocol?
+    private var authObservationToken: AnyCancellable?
     private var cloudflareChallengeObservationToken: NSObjectProtocol?
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
     private var cloudflareNeedsUserObservationToken: NSObjectProtocol?
     private var appUpdateObservationToken: NSObjectProtocol?
     private var appDidBecomeActiveObservationToken: NSObjectProtocol?
-    private var notificationRouteObservationToken: NSObjectProtocol?
+    private var notificationRouteObservationToken: AnyCancellable?
     private var pendingAppUpdateRetryTask: Task<Void, Never>?
     private var isPresentingCloudflareVerification = false
     private var shouldShowCloudflareShieldButton = false
@@ -158,11 +159,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     }
 
     private func startObservingAuth() {
-        authObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: authManager,
-            queue: .main
-        ) { [weak self] _ in
+        authObservationToken = authManager.objectWillChange.sink { [weak self] in
             self?.configureNavItems()
         }
     }
@@ -192,9 +189,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     }
 
     @MainActor deinit {
-        if let authObservationToken {
-            NotificationCenter.default.removeObserver(authObservationToken)
-        }
+        authObservationToken?.cancel()
         if let launchOverlayObservationToken {
             NotificationCenter.default.removeObserver(launchOverlayObservationToken)
         }
@@ -213,9 +208,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if let appDidBecomeActiveObservationToken {
             NotificationCenter.default.removeObserver(appDidBecomeActiveObservationToken)
         }
-        if let notificationRouteObservationToken {
-            NotificationCenter.default.removeObserver(notificationRouteObservationToken)
-        }
+        notificationRouteObservationToken?.cancel()
         launchOverlayFallbackTask?.cancel()
         pendingAppUpdateRetryTask?.cancel()
         NSLayoutConstraint.deactivate(cloudflareShieldButtonConstraints)
@@ -250,11 +243,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func startObservingForumNotifications() {
         notificationCoordinator.startMonitoring()
-        notificationRouteObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: ForumNotificationRouteStore.shared,
-            queue: .main
-        ) { [weak self] _ in
+        notificationRouteObservationToken = ForumNotificationRouteStore.shared.objectWillChange.sink { [weak self] in
             self?.presentPendingNotificationRouteIfPossible()
         }
     }

@@ -53,6 +53,7 @@ final class UserPostsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         view.backgroundColor = .systemBackground
 
         view.addSubview(tableView)
