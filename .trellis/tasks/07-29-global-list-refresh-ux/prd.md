@@ -66,6 +66,6 @@
 - 将整个 UIKit 页面迁移到 SwiftUI。
 - 删除或重写用户已有的其他未提交功能。
 
-## Open Questions
+## Scope Decision
 
-- “所有列表页”是否限定为本 PRD列出的八类论坛列表，还是连 Settings、Plugin、Invite、Drafts、Pending Posts 等独立列表也必须统一？推荐先限定八类论坛列表，避免把无关业务和本任务耦合；若全部 UIKit 列表都要覆盖，需拆成后续子任务。
+- 本任务限定为 Home、Me 话题列表、Categories、Tags、Search、Notifications、Messages 和 Browsing History 八类核心论坛列表。Settings、Plugin、Invite、Drafts、Pending Posts 等独立列表如需统一，拆为后续任务。

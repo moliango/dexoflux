@@ -249,6 +249,7 @@ final class CategoryTopicsViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         view.backgroundColor = .systemGroupedBackground
 
         tableView.tableFooterView = emptyFooterView

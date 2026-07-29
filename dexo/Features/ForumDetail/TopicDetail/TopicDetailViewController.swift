@@ -509,6 +509,8 @@ final class TopicDetailViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         emojiUpdateObserver = NotificationCenter.default.addObserver(
             forName: EmojiStore.didUpdateNotification,
             object: nil,

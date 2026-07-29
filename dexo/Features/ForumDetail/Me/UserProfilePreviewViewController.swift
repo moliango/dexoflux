@@ -102,6 +102,8 @@ final class UserProfilePreviewViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         setupUI()
         Task {
             await viewModel.load()

@@ -45,6 +45,7 @@ final class AddForumViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         title = String(localized: "add_forum.title")
         view.backgroundColor = .systemGroupedBackground
 

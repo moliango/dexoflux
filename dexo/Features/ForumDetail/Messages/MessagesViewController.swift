@@ -88,6 +88,7 @@ final class MessagesViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         title = String(localized: "messages.title")
         view.backgroundColor = .systemGroupedBackground
 

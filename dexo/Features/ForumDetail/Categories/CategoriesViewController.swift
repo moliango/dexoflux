@@ -73,6 +73,7 @@ final class CategoriesViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         view.backgroundColor = .systemGroupedBackground
 
         tableView.refreshControl = refreshControl

@@ -1,3 +1,4 @@
+import Combine
 import Network
 import UIKit
 
@@ -54,8 +55,8 @@ final class HomeViewController: ObservableViewController {
     private var lastHomeScrollY: CGFloat?
     private var incomingTopicsPollTimer: Timer?
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
-    private var authObservationToken: NSObjectProtocol?
-    private var settingsObservationToken: NSObjectProtocol?
+    private var authObservationToken: AnyCancellable?
+    private var settingsObservationToken: AnyCancellable?
     private var foregroundObservationToken: NSObjectProtocol?
     private var topicReadProgressObservationToken: NSObjectProtocol?
     private var topicReloadTask: Task<Void, Never>?
@@ -603,6 +604,7 @@ final class HomeViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
         view.backgroundColor = .systemGroupedBackground
 
         tableView.tableFooterView = emptyFooterView
@@ -758,12 +760,8 @@ final class HomeViewController: ObservableViewController {
         if let cloudflareCompletionObservationToken {
             NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
         }
-        if let authObservationToken {
-            NotificationCenter.default.removeObserver(authObservationToken)
-        }
-        if let settingsObservationToken {
-            NotificationCenter.default.removeObserver(settingsObservationToken)
-        }
+        authObservationToken?.cancel()
+        settingsObservationToken?.cancel()
         if let foregroundObservationToken {
             NotificationCenter.default.removeObserver(foregroundObservationToken)
         }
@@ -823,21 +821,13 @@ final class HomeViewController: ObservableViewController {
     }
 
     private func startObservingAuthChanges() {
-        authObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: AuthManager.shared,
-            queue: .main
-        ) { [weak self] _ in
+        authObservationToken = AuthManager.shared.objectWillChange.sink { [weak self] in
             self?.handleAuthChanged()
         }
     }
 
     private func startObservingSettingsChanges() {
-        settingsObservationToken = NotificationCenter.default.addObserver(
-            forName: DexoObservableObject.didChangeNotification,
-            object: AppSettings.shared,
-            queue: .main
-        ) { [weak self] _ in
+        settingsObservationToken = AppSettings.shared.objectWillChange.sink { [weak self] in
             self?.handleSettingsChanged()
         }
     }

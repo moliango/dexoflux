@@ -89,6 +89,9 @@ final class UserProfileViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(contentViewModel)
+        observe(AppSettings.shared)
         navigationItem.title = nil
         setupNavigationItems()
         setupUI()

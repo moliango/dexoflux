@@ -1,5 +1,4 @@
 import UIKit
-import dexoflux.Core
 
 @MainActor
 final class PagedTopicListViewModel: DexoObservableObject {
@@ -104,7 +103,22 @@ final class PagedTopicListViewModel: DexoObservableObject {
 final class PagedTopicListViewController: ObservableViewController {
     private let api: DiscourseAPI
     private lazy var refreshPolicy: DexoListRefreshPolicy = {
-        let policy = DexoListRefreshPolicy(tableView: tableView, viewModel: viewModel)
+        let policy = DexoListRefreshPolicy(
+            tableView: tableView,
+            viewModel: viewModel,
+            onRefresh: { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.viewModel.refresh()
+                }
+            },
+            onLoadMore: { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.viewModel.loadMore()
+                }
+            }
+        )
         return policy
     }()
     private let viewModel: PagedTopicListViewModel
@@ -246,6 +260,8 @@ final class PagedTopicListViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(AppSettings.shared)
         applyThemeStyle()
         tableView.refreshControl = refreshControl
         retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
@@ -326,8 +342,6 @@ final class PagedTopicListViewController: ObservableViewController {
 
     @objc private func refreshPulled() {
         refreshPolicy.startPullToRefresh()
-        Task { await viewModel.refresh() }
-    }
         Task { await viewModel.refresh() }
     }
 

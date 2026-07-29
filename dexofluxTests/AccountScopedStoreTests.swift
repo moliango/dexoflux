@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import dexoflux
 
@@ -24,14 +25,10 @@ final class AccountScopedStoreTests: XCTestCase {
         withPreservedUpdateDefaults {
             UserDefaults.standard.removeObject(forKey: "autoCheckForUpdates")
             var notificationCount = 0
-            let token = NotificationCenter.default.addObserver(
-                forName: DexoObservableObject.didChangeNotification,
-                object: AppSettings.shared,
-                queue: .main
-            ) { _ in
+            let token = AppSettings.shared.objectWillChange.sink {
                 notificationCount += 1
             }
-            defer { NotificationCenter.default.removeObserver(token) }
+            defer { token.cancel() }
 
             AppSettings.shared.autoCheckForUpdates = true
             XCTAssertEqual(notificationCount, 0)
@@ -99,14 +96,10 @@ final class AccountScopedStoreTests: XCTestCase {
             AppSettings.shared.pluginDockSide = .right
             AppSettings.shared.pluginDockVerticalPosition = 0.72
             var notificationCount = 0
-            let token = NotificationCenter.default.addObserver(
-                forName: DexoObservableObject.didChangeNotification,
-                object: AppSettings.shared,
-                queue: .main
-            ) { _ in
+            let token = AppSettings.shared.objectWillChange.sink {
                 notificationCount += 1
             }
-            defer { NotificationCenter.default.removeObserver(token) }
+            defer { token.cancel() }
 
             AppSettings.shared.pluginDockSide = .right
             AppSettings.shared.pluginDockVerticalPosition = 0.72001
@@ -389,5 +382,82 @@ final class AccountScopedStoreTests: XCTestCase {
             }
         }
         return try operation()
+    }
+}
+
+@MainActor
+final class ObservableInfrastructureTests: XCTestCase {
+    func testObservablePublisherIsScopedToTheChangedInstance() {
+        let first = DexoObservableObject()
+        let second = DexoObservableObject()
+        var firstUpdateCount = 0
+        var secondUpdateCount = 0
+        let firstToken = first.objectWillChange.sink { firstUpdateCount += 1 }
+        let secondToken = second.objectWillChange.sink { secondUpdateCount += 1 }
+        defer {
+            firstToken.cancel()
+            secondToken.cancel()
+        }
+
+        first.notifyChanged()
+
+        XCTAssertEqual(firstUpdateCount, 1)
+        XCTAssertEqual(secondUpdateCount, 0)
+    }
+
+    func testObservableViewControllerOnlyUpdatesForRegisteredObjects() {
+        let observed = DexoObservableObject()
+        let unrelated = DexoObservableObject()
+        let controller = TrackingObservableViewController()
+        controller.observe(observed)
+        controller.observe(observed)
+
+        controller.startObserving()
+        XCTAssertEqual(controller.updateCount, 1)
+
+        unrelated.notifyChanged()
+        XCTAssertEqual(controller.updateCount, 1)
+
+        observed.notifyChanged()
+        XCTAssertEqual(controller.updateCount, 2)
+    }
+
+    func testObservableViewControllerStopsUpdatingAfterDisappearing() {
+        let observed = DexoObservableObject()
+        let controller = TrackingObservableViewController()
+        controller.observe(observed)
+        controller.startObserving()
+
+        controller.viewWillDisappear(false)
+        observed.notifyChanged()
+
+        XCTAssertEqual(controller.updateCount, 1)
+    }
+
+    func testNotifyChangedPublishesOnMainThread() async {
+        let observable = DexoObservableObject()
+        let published = expectation(description: "objectWillChange published")
+        var publishedOnMainThread = false
+        let token = observable.objectWillChange.sink {
+            publishedOnMainThread = Thread.isMainThread
+            published.fulfill()
+        }
+        defer { token.cancel() }
+
+        await Task.detached {
+            await observable.notifyChanged()
+        }.value
+        await fulfillment(of: [published], timeout: 1)
+
+        XCTAssertTrue(publishedOnMainThread)
+    }
+}
+
+@MainActor
+private final class TrackingObservableViewController: ObservableViewController {
+    private(set) var updateCount = 0
+
+    override func updateUI() {
+        updateCount += 1
     }
 }

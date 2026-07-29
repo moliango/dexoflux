@@ -27,6 +27,8 @@ final class ForumListViewController: ObservableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(viewModel)
+        observe(settings)
         title = String(localized: "tab.forums")
         view.backgroundColor = .systemGroupedBackground
 
