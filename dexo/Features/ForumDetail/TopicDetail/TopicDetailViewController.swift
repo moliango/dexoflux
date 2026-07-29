@@ -378,9 +378,11 @@ final class TopicDetailViewController: ObservableViewController {
         Task {
             await api.loadOrFetchEmojiMap()
             hasTitleHeader = false
-            postRowHeightCache.removeAll()
             updateUI()
-            tableView.reloadData()
+            // Emoji map arrival should not thrash full-table geometry; refresh visible rows only.
+            if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
+                tableView.reloadRows(at: visible, with: .none)
+            }
         }
     }
 
@@ -539,7 +541,11 @@ final class TopicDetailViewController: ObservableViewController {
             let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
             applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
             if shouldReloadVisibleContent {
-                tableView.reloadData()
+                if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
+                    tableView.reloadRows(at: visible, with: .none)
+                } else {
+                    tableView.reloadData()
+                }
             }
             updateVisibleReadingPosts()
             updateBottomBarProgress()

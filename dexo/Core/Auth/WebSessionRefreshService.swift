@@ -129,6 +129,10 @@ final class WebSessionRefreshService: NSObject {
             "web session refresh completed reason=\(reason) ok=\(ok) elapsedMs=\(elapsedMs)",
             subsystem: "Auth"
         )
+        DohDebugLog.record(
+            "completed reason=\(reason) ok=\(ok) elapsedMs=\(elapsedMs)",
+            subsystem: "session.refresh"
+        )
         return ok
     }
 

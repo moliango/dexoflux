@@ -514,7 +514,13 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     func loadTopic(id: Int, containerWidth: CGFloat) async {
+        let firstPaintStartedAt = Date()
+        DohDebugLog.record("open topic=\(id)", subsystem: "topic.firstpaint")
         await loadTopic(id: id, containerWidth: containerWidth, retryingExplicitCancellation: false)
+        if isReady {
+            let ms = Int(Date().timeIntervalSince(firstPaintStartedAt) * 1000)
+            DohDebugLog.record("ready topic=\(id) elapsedMs=\(ms)", subsystem: "topic.firstpaint")
+        }
     }
 
     /// After Cloudflare verification: keep a recovery message, retry fetch with backoff,

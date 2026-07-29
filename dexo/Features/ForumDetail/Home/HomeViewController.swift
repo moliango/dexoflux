@@ -44,6 +44,7 @@ final class HomeViewController: ObservableViewController {
     private var foregroundObservationToken: NSObjectProtocol?
     private var topicReadProgressObservationToken: NSObjectProtocol?
     private var topicReloadTask: Task<Void, Never>?
+    private var topicLoadMoreTask: Task<Void, Never>?
     private var reloadTimeoutTask: Task<Void, Never>?
     private var incomingTopicsRetryTask: Task<Void, Never>?
     private var reloadSequence = 0
@@ -342,6 +343,37 @@ final class HomeViewController: ObservableViewController {
 
     private let emptyFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
     private let emptyTableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+
+    private lazy var loadMoreErrorFooter: UIView = {
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 68))
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.tag = 901
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .secondaryLabel
+        label.text = String(localized: "home.load_more_failed", defaultValue: "加载更多失败，点击重试")
+
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setTitle(String(localized: "action.retry", defaultValue: "重试"), for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.addTarget(self, action: #selector(loadMoreRetryTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [label, button])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+        footer.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: footer.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: footer.trailingAnchor, constant: -20),
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        return footer
+    }()
 
     private let errorLabel: UILabel = {
         let label = UILabel()
@@ -1166,6 +1198,13 @@ final class HomeViewController: ObservableViewController {
         if viewModel.isLoadingMore {
             tableView.tableFooterView = footerSpinner
             footerSpinner.startAnimating()
+        } else if viewModel.loadMoreErrorMessage != nil {
+            footerSpinner.stopAnimating()
+            if let label = loadMoreErrorFooter.viewWithTag(901) as? UILabel {
+                label.text = viewModel.loadMoreErrorMessage
+                    ?? String(localized: "home.load_more_failed", defaultValue: "加载更多失败，点击重试")
+            }
+            tableView.tableFooterView = loadMoreErrorFooter
         } else {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
@@ -1228,6 +1267,8 @@ final class HomeViewController: ObservableViewController {
 
     private func reloadTopics(resetCategoryMetadata: Bool = false, detectIncoming: Bool = true) {
         topicReloadTask?.cancel()
+        topicLoadMoreTask?.cancel()
+        topicLoadMoreTask = nil
         reloadTimeoutTask?.cancel()
         incomingTopicsRetryTask?.cancel()
         incomingTopicsRetryTask = nil
@@ -2234,18 +2275,15 @@ final class HomeViewController: ObservableViewController {
             return
         }
         let y = tableView.contentOffset.y + tableView.contentInset.top
-        if y <= 48 {
-            setHomeTabBarHidden(false, animated: true)
-            return
-        }
-        // Mid-list after paging: follow current user motion if any.
         let userDriven = tableView.isDragging || tableView.isDecelerating
         let velocityY = tableView.panGestureRecognizer.velocity(in: tableView).y
-        if userDriven, velocityY < -40 {
-            // Finger moving up → hide
-            setHomeTabBarHidden(true, animated: true)
-        } else if userDriven, velocityY > 40 {
-            setHomeTabBarHidden(false, animated: true)
+        if let hidden = HomeTabBarScrollPolicy.preferredHidden(
+            contentY: y,
+            userDriven: userDriven,
+            velocityY: velocityY
+        ) {
+            setHomeTabBarHidden(hidden, animated: true)
+            return
         }
         // Idle mid-list: leave visibility alone, but heal a broken "flag says shown, bar gone" state.
         else if !isHomeTabBarHidden {
@@ -3308,16 +3346,34 @@ extension HomeViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let totalRows = tableView.numberOfRows(inSection: 0)
-        // Gate before Task spawn so we do not enqueue N no-op tasks while scrolling.
         if indexPath.row >= totalRows - 5,
            viewModel.canLoadMore,
+           viewModel.loadMoreErrorMessage == nil,
            !viewModel.isLoadingMore,
-           !viewModel.isLoading {
-            // 只有确实还能翻页时才冻结；否则 willDisplay 会把 freeze 永久卡死，
-            // 出盾后上滑/刷新时 tab bar 就藏不住或出不来。
+           !viewModel.isLoading,
+           topicLoadMoreTask == nil {
             beginTabBarScrollFreezeForLoadMore()
-            Task {
-                await viewModel.loadMoreTopics()
+            topicLoadMoreTask = Task { [weak self] in
+                guard let self else { return }
+                await self.viewModel.loadMoreTopics()
+                await MainActor.run {
+                    self.topicLoadMoreTask = nil
+                    self.updateUI()
+                }
+            }
+        }
+    }
+
+    @objc private func loadMoreRetryTapped() {
+        guard topicLoadMoreTask == nil, !viewModel.isLoadingMore, !viewModel.isLoading else { return }
+        viewModel.loadMoreErrorMessage = nil
+        beginTabBarScrollFreezeForLoadMore()
+        topicLoadMoreTask = Task { [weak self] in
+            guard let self else { return }
+            await self.viewModel.loadMoreTopics()
+            await MainActor.run {
+                self.topicLoadMoreTask = nil
+                self.updateUI()
             }
         }
     }

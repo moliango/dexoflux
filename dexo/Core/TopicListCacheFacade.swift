@@ -10,4 +10,8 @@ enum TopicListCacheFacade {
     static func save(_ rawData: Data, baseURL: String) {
         BackgroundTopicListCache.save(rawData, baseURL: baseURL)
     }
+
+    static func clear(baseURL: String) {
+        BackgroundTopicListCache.clear(baseURL: baseURL)
+    }
 }

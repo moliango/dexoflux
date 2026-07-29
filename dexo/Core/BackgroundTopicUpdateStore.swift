@@ -32,7 +32,22 @@ enum BackgroundTopicListCache {
               Date().timeIntervalSince(modified) < maximumAge,
               let data = try? Data(contentsOf: url)
         else { return nil }
-        return try? JSONDecoder().decode(DiscourseTopicList.self, from: data)
+        do {
+            return try JSONDecoder().decode(DiscourseTopicList.self, from: data)
+        } catch {
+            // Corrupt / schema-drifted cache must not block network refresh.
+            try? FileManager.default.removeItem(at: url)
+            DohDebugLog.record(
+                "topic list cache decode failed base=\(baseURL) err=\(error.localizedDescription)",
+                subsystem: "home.refresh"
+            )
+            return nil
+        }
+    }
+
+    nonisolated static func clear(baseURL: String) {
+        let url = fileURL(for: baseURL)
+        try? FileManager.default.removeItem(at: url)
     }
 }
 

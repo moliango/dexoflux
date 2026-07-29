@@ -116,6 +116,13 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         return ai
     }()
 
+    private let listStateView: ListStateView = {
+        let v = ListStateView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.isHidden = true
+        return v
+    }()
+
     private let emptyLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "search.no_results")
@@ -157,6 +164,7 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
         view.addSubview(tableView)
         view.addSubview(activityIndicator)
         view.addSubview(emptyLabel)
+        view.addSubview(listStateView)
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: chipsScrollView.bottomAnchor),
@@ -171,6 +179,10 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             emptyLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
             emptyLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             emptyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            listStateView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            listStateView.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
+            listStateView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            listStateView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
         ])
 
         Task {
@@ -634,14 +646,24 @@ final class SearchViewController: ObservableViewController, UISearchBarDelegate 
             activityIndicator.stopAnimating()
         }
 
-        if let error = viewModel.errorMessage {
-            emptyLabel.text = error
-            emptyLabel.isHidden = false
+        emptyLabel.isHidden = true
+        if viewModel.isSearching, viewModel.searchResults.isEmpty {
+            listStateView.isHidden = false
+            listStateView.configure(.loading) { [weak self] in
+                self?.triggerSearch()
+            }
+        } else if let error = viewModel.errorMessage {
+            listStateView.isHidden = false
+            listStateView.configure(.error(error)) { [weak self] in
+                self?.triggerSearch()
+            }
         } else if viewModel.hasSearched, viewModel.searchResults.isEmpty, !viewModel.isSearching {
-            emptyLabel.text = String(localized: "search.no_results")
-            emptyLabel.isHidden = false
+            listStateView.isHidden = false
+            listStateView.configure(.empty) { [weak self] in
+                self?.triggerSearch()
+            }
         } else {
-            emptyLabel.isHidden = true
+            listStateView.isHidden = true
         }
 
         updateFilterButtons()

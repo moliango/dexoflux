@@ -59,6 +59,7 @@ final class HomeViewModel: DexoObservableObject {
     var isLoadingMore = false
     var canLoadMore = false
     var errorMessage: String?
+    var loadMoreErrorMessage: String?
     var requiresLogin = false
     var isBlockedByCloudflare = false
 
@@ -176,12 +177,18 @@ final class HomeViewModel: DexoObservableObject {
 
         isLoading = true
         errorMessage = nil
+        loadMoreErrorMessage = nil
         requiresLogin = false
         isBlockedByCloudflare = false
         currentPage = 0
+        DohDebugLog.record("refresh begin", subsystem: "home.refresh")
         notifyChanged()
         defer {
             isLoading = false
+            DohDebugLog.record(
+                "refresh end topics=\(topics.count) error=\(errorMessage != nil) cf=\(isBlockedByCloudflare)",
+                subsystem: "home.refresh"
+            )
             notifyChanged()
         }
 
@@ -244,7 +251,13 @@ final class HomeViewModel: DexoObservableObject {
 
     func loadMoreTopics() async {
         // Never page while a full refresh owns the list cursor.
-        guard canLoadMore, !isLoadingMore, !isLoading else { return }
+        guard canLoadMore, !isLoadingMore, !isLoading else {
+            DohDebugLog.record(
+                "loadmore skip can=\(canLoadMore) more=\(isLoadingMore) refresh=\(isLoading)",
+                subsystem: "home.loadmore"
+            )
+            return
+        }
         switch await validateTopicAccess() {
         case .allowed:
             break
@@ -255,9 +268,15 @@ final class HomeViewModel: DexoObservableObject {
             return
         }
         isLoadingMore = true
+        loadMoreErrorMessage = nil
+        DohDebugLog.record("loadmore begin page=\(currentPage + 1)", subsystem: "home.loadmore")
         notifyChanged()
         defer {
             isLoadingMore = false
+            DohDebugLog.record(
+                "loadmore end page=\(currentPage) can=\(canLoadMore) error=\(loadMoreErrorMessage != nil)",
+                subsystem: "home.loadmore"
+            )
             notifyChanged()
         }
 
@@ -270,6 +289,7 @@ final class HomeViewModel: DexoObservableObject {
             let newTopics = result.topicList.topics.filter { !existingIds.contains($0.id) }
             topics.append(contentsOf: newTopics)
             canLoadMore = result.topicList.moreTopicsUrl != nil
+            loadMoreErrorMessage = nil
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
             logTopicCategoryDiagnostics(context: "loadMore", topics: newTopics)
@@ -284,7 +304,8 @@ final class HomeViewModel: DexoObservableObject {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
-            // Silently fail on load-more; user can scroll again to retry
+            loadMoreErrorMessage = error.localizedDescription
+            DohDebugLog.record("loadmore failed \(error.localizedDescription)", subsystem: "home.loadmore")
         }
     }
 
@@ -480,6 +501,7 @@ final class HomeViewModel: DexoObservableObject {
         isLoadingMore = false
         isLoadingIncomingTopics = false
         canLoadMore = false
+        loadMoreErrorMessage = nil
         currentPage = 0
         usersById.removeAll()
         categories = []
