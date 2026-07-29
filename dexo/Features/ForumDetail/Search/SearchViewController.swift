@@ -636,19 +636,20 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     private func presentFilterPanel() {
         let panel = SearchFilterPanelViewController(
             api: api,
-            categoryId: viewModel.selectedCategoryId,
+            categories: viewModel.categories,
+            selectedCategoryId: viewModel.selectedCategoryId,
             filter: viewModel.advancedFilter
-        ) { [weak self] filter in
+        ) { [weak self] categoryId, filter in
             guard let self else { return }
+            viewModel.selectedCategoryId = categoryId
             viewModel.advancedFilter = filter
             filterDidChange()
         }
-        let nav = UINavigationController(rootViewController: panel)
-        if let sheet = nav.sheetPresentationController {
+        if let sheet = panel.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
             sheet.prefersGrabberVisible = true
         }
-        present(nav, animated: true)
+        present(panel, animated: true)
     }
 
     // MARK: - Filter Selection

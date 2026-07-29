@@ -1,46 +1,101 @@
 import SDWebImage
 import UIKit
 
-/// FluxDO-aligned search result card, taller to surface more blurb + meta,
-/// using Home TopicCard visual language (surface, title weight, chips).
+/// Search result card that mirrors Home `TopicCell` layout, plus one blurb line
+/// under the title (FluxDO search content density).
 final class SearchResultCell: UITableViewCell {
     static let reuseIdentifier = "SearchResultCell"
 
+    private var currentAvatarURL: URL?
+    private var renderedTitle: String?
+    private var emojiBaseURL: String?
+
+    private enum Metrics {
+        static let titleFontSize = AppSettings.topicTitleReferencePointSize
+        static let titleLineHeight: CGFloat = 20
+        static let titleMaxLines = 3
+        static let blurbMaxLines = 2
+        static let titleTopPadding: CGFloat = 9
+        static let titleToBlurbSpacing: CGFloat = 5
+        static let blurbToBadgeSpacing: CGFloat = 7
+        static let badgeBottomPadding: CGFloat = 8
+    }
+
     private let cardView: UIView = {
         let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.layer.cornerRadius = 14
+        view.backgroundColor = .secondarySystemGroupedBackground
+        view.layer.cornerRadius = 12
         view.layer.cornerCurve = .continuous
-        view.clipsToBounds = true
+        view.translatesAutoresizingMaskIntoConstraints = false
         return view
+    }()
+
+    private let avatarImageView: UIImageView = {
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        iv.layer.cornerRadius = 17
+        iv.backgroundColor = .secondarySystemFill
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        return iv
     }()
 
     private let titleLabel: UILabel = {
         let label = UILabel()
+        label.numberOfLines = Metrics.titleMaxLines
+        label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.numberOfLines = 3
-        label.font = .systemFont(ofSize: 17, weight: .semibold)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.required, for: .vertical)
         return label
     }()
 
-    private let lockIcon: UIImageView = {
-        let view = UIImageView(image: UIImage(systemName: "lock.fill"))
+    private let replyCountLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .secondaryLabel
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }()
+
+    private let replyIconView: UIImageView = {
+        let image = UIImage(systemName: "bubble.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+        let view = UIImageView(image: image)
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.contentMode = .scaleAspectFit
         view.tintColor = .secondaryLabel
-        view.isHidden = true
+        view.setContentHuggingPriority(.required, for: .horizontal)
         return view
+    }()
+
+    private lazy var replyStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [replyIconView, replyCountLabel])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 4
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 2, leading: 7, bottom: 2, trailing: 8)
+        stack.backgroundColor = UIColor.secondarySystemFill.withAlphaComponent(0.65)
+        stack.layer.cornerRadius = 11
+        stack.layer.cornerCurve = .continuous
+        stack.clipsToBounds = true
+        return stack
     }()
 
     private let floorBadge: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabel
         label.textAlignment = .center
-        label.layer.cornerRadius = 9
+        label.backgroundColor = UIColor.secondarySystemFill
+        label.layer.cornerRadius = 8
         label.layer.cornerCurve = .continuous
         label.clipsToBounds = true
         label.isHidden = true
+        label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
         return label
     }()
@@ -48,69 +103,45 @@ final class SearchResultCell: UITableViewCell {
     private let aiIcon: UIImageView = {
         let view = UIImageView(image: UIImage(systemName: "sparkles"))
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.contentMode = .scaleAspectFit
         view.tintColor = .systemPurple
+        view.contentMode = .scaleAspectFit
         view.isHidden = true
-        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        view.setContentHuggingPriority(.required, for: .horizontal)
         return view
     }()
 
     private let blurbLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.numberOfLines = 4
-        label.font = .systemFont(ofSize: 14, weight: .regular)
+        label.numberOfLines = Metrics.blurbMaxLines
+        label.font = .systemFont(ofSize: 13, weight: .regular)
         label.textColor = .secondaryLabel
+        label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
-    private let avatarView: UIImageView = {
-        let view = UIImageView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.contentMode = .scaleAspectFill
-        view.clipsToBounds = true
-        view.layer.cornerRadius = 16
-        view.backgroundColor = .tertiarySystemFill
-        return view
-    }()
-
-    private let usernameLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.textColor = .label
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }()
-
-    private let badgesStack: UIStackView = {
+    private let badgesStackView: UIStackView = {
         let stack = UIStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
-        stack.spacing = 6
         stack.alignment = .center
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return stack
     }()
 
     private let timeLabel: UILabel = {
         let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 12, weight: .regular)
-        label.textColor = .tertiaryLabel
+        label.textColor = .secondaryLabel
+        label.textAlignment = .right
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
         return label
     }()
 
-    private let replyLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 12, weight: .regular)
-        label.textColor = .tertiaryLabel
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return label
-    }()
-
-    private var currentAvatarURL: URL?
+    private var blurbHeightConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -118,66 +149,57 @@ final class SearchResultCell: UITableViewCell {
         backgroundColor = .clear
         contentView.backgroundColor = .clear
 
-        let titleTrailing = UIStackView(arrangedSubviews: [aiIcon, floorBadge])
+        let titleTrailing = UIStackView(arrangedSubviews: [aiIcon, floorBadge, replyStack])
+        titleTrailing.translatesAutoresizingMaskIntoConstraints = false
         titleTrailing.axis = .horizontal
-        titleTrailing.alignment = .top
+        titleTrailing.alignment = .center
         titleTrailing.spacing = 6
 
-        let titleRow = UIStackView(arrangedSubviews: [lockIcon, titleLabel, titleTrailing])
-        titleRow.translatesAutoresizingMaskIntoConstraints = false
-        titleRow.axis = .horizontal
-        titleRow.alignment = .top
-        titleRow.spacing = 6
-
-        let metaTrailing = UIStackView(arrangedSubviews: [timeLabel, replyLabel])
-        metaTrailing.axis = .vertical
-        metaTrailing.alignment = .trailing
-        metaTrailing.spacing = 4
-
-        let nameColumn = UIStackView(arrangedSubviews: [usernameLabel, badgesStack])
-        nameColumn.axis = .vertical
-        nameColumn.alignment = .leading
-        nameColumn.spacing = 4
-
-        let bottomRow = UIStackView(arrangedSubviews: [avatarView, nameColumn, UIView(), metaTrailing])
-        bottomRow.translatesAutoresizingMaskIntoConstraints = false
-        bottomRow.axis = .horizontal
-        bottomRow.alignment = .center
-        bottomRow.spacing = 10
-
         contentView.addSubview(cardView)
-        cardView.addSubview(titleRow)
+        cardView.addSubview(avatarImageView)
+        cardView.addSubview(titleLabel)
+        cardView.addSubview(titleTrailing)
         cardView.addSubview(blurbLabel)
-        cardView.addSubview(bottomRow)
+        cardView.addSubview(badgesStackView)
+        cardView.addSubview(timeLabel)
+
+        let blurbHeight = blurbLabel.heightAnchor.constraint(equalToConstant: 0)
+        blurbHeightConstraint = blurbHeight
 
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
 
-            titleRow.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 14),
-            titleRow.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
-            titleRow.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            avatarImageView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
+            avatarImageView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 13),
+            avatarImageView.widthAnchor.constraint(equalToConstant: 36),
+            avatarImageView.heightAnchor.constraint(equalToConstant: 36),
 
-            lockIcon.widthAnchor.constraint(equalToConstant: 13),
-            lockIcon.heightAnchor.constraint(equalToConstant: 15),
-            aiIcon.widthAnchor.constraint(equalToConstant: 15),
-            aiIcon.heightAnchor.constraint(equalToConstant: 15),
-            floorBadge.heightAnchor.constraint(equalToConstant: 22),
-            floorBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 32),
+            titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Metrics.titleTopPadding),
+            titleLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: titleTrailing.leadingAnchor, constant: -8),
 
-            blurbLabel.topAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: 8),
-            blurbLabel.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor),
-            blurbLabel.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor),
+            titleTrailing.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
+            titleTrailing.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
 
-            bottomRow.topAnchor.constraint(equalTo: blurbLabel.bottomAnchor, constant: 12),
-            bottomRow.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor),
-            bottomRow.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor),
-            bottomRow.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -14),
+            aiIcon.widthAnchor.constraint(equalToConstant: 14),
+            aiIcon.heightAnchor.constraint(equalToConstant: 14),
+            floorBadge.heightAnchor.constraint(equalToConstant: 20),
 
-            avatarView.widthAnchor.constraint(equalToConstant: 32),
-            avatarView.heightAnchor.constraint(equalToConstant: 32),
+            blurbLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: Metrics.titleToBlurbSpacing),
+            blurbLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            blurbLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+
+            badgesStackView.topAnchor.constraint(equalTo: blurbLabel.bottomAnchor, constant: Metrics.blurbToBadgeSpacing),
+            badgesStackView.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            badgesStackView.heightAnchor.constraint(equalToConstant: 18),
+            badgesStackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -Metrics.badgeBottomPadding),
+
+            timeLabel.centerYAnchor.constraint(equalTo: badgesStackView.centerYAnchor),
+            timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            timeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: badgesStackView.trailingAnchor, constant: 8),
         ])
     }
 
@@ -194,11 +216,8 @@ final class SearchResultCell: UITableViewCell {
         categoryColor: UIColor? = nil,
         isAIResult: Bool = false
     ) {
-        let theme = AppSettings.shared.themeStyle
-        cardView.backgroundColor = theme.topicCardBackgroundColor
-        titleLabel.textColor = .label
-        floorBadge.backgroundColor = UIColor.secondarySystemFill
-        floorBadge.textColor = .secondaryLabel
+        let themeStyle = AppSettings.shared.themeStyle
+        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
 
         let rawTitle = post.topicTitleHeadline?.trimmingCharacters(in: .whitespacesAndNewlines)
         let titleSource: String = {
@@ -207,15 +226,28 @@ final class SearchResultCell: UITableViewCell {
             if let title = topic?.title, !title.isEmpty { return title }
             return String(localized: "search.untitled", defaultValue: "无标题")
         }()
+        let plain = Self.stripHTML(titleSource)
+        renderedTitle = plain
+        emojiBaseURL = baseURL
+        let titleFont = UIFont.systemFont(ofSize: Metrics.titleFontSize, weight: .semibold)
+        titleLabel.font = titleFont
+        titleLabel.textColor = .label
         TitleEmojiRenderer.apply(
-            Self.stripHTML(titleSource),
+            plain,
             to: titleLabel,
-            font: .systemFont(ofSize: 17, weight: .semibold),
+            font: titleFont,
             textColor: .label,
             baseURL: baseURL
         )
 
-        lockIcon.isHidden = !(topic?.closed == true || topic?.archived == true)
+        let replies = max((topic?.postsCount ?? 1) - 1, 0)
+        if replies >= 1000 {
+            let k = Double(replies) / 1000.0
+            replyCountLabel.text = String(format: "%.1fk", k).replacingOccurrences(of: ".0k", with: "k")
+        } else {
+            replyCountLabel.text = "\(replies)"
+        }
+        replyStack.isHidden = false
 
         if post.postNumber > 1 {
             floorBadge.isHidden = false
@@ -229,66 +261,57 @@ final class SearchResultCell: UITableViewCell {
         blurbLabel.text = blurb
         blurbLabel.isHidden = blurb.isEmpty
 
-        usernameLabel.text = post.username.isEmpty ? "—" : post.username
-        let timeText = TopicCell.formatDate(post.createdAt ?? "")
-        timeLabel.text = timeText.isEmpty ? nil : timeText
-
-        let replies = max((topic?.postsCount ?? 1) - 1, 0)
-        let replyText: String
-        if replies >= 1000 {
-            let k = Double(replies) / 1000.0
-            replyText = String(format: "%.1fk", k).replacingOccurrences(of: ".0k", with: "k")
-        } else {
-            replyText = "\(replies)"
-        }
-        let replyIcon = NSTextAttachment()
-        if let img = UIImage(systemName: "bubble.right")?.withTintColor(.tertiaryLabel, renderingMode: .alwaysOriginal) {
-            replyIcon.image = img
-            replyIcon.bounds = CGRect(x: 0, y: -2, width: 12, height: 12)
-        }
-        let replyAttr = NSMutableAttributedString(attachment: replyIcon)
-        replyAttr.append(NSAttributedString(string: " \(replyText)", attributes: [
-            .font: UIFont.systemFont(ofSize: 12, weight: .regular),
-            .foregroundColor: UIColor.tertiaryLabel,
-        ]))
-        replyLabel.attributedText = replyAttr
-
-        badgesStack.arrangedSubviews.forEach {
-            badgesStack.removeArrangedSubview($0)
+        // badges
+        badgesStackView.arrangedSubviews.forEach {
+            badgesStackView.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
-        if let categoryName, !categoryName.isEmpty {
-            badgesStack.addArrangedSubview(makeCategoryChip(name: categoryName, color: categoryColor))
+        // username chip first (FluxDO search has username under avatar row; Topic puts avatar left.
+        // Keep Topic layout: avatar left of title; badges row under blurb with category/tags.
+        // Show username as first badge-like label for search attribution.
+        let userLabel = UILabel()
+        userLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        userLabel.textColor = .secondaryLabel
+        userLabel.text = post.username.isEmpty ? nil : post.username
+        if let text = userLabel.text, !text.isEmpty {
+            badgesStackView.addArrangedSubview(userLabel)
         }
-        for tag in (topic?.tags ?? []).prefix(4) {
-            badgesStack.addArrangedSubview(makeTagChip(tag))
+        if let categoryName, !categoryName.isEmpty, AppSettings.shared.showTopicCardCategory {
+            badgesStackView.addArrangedSubview(makeCategoryChip(name: categoryName, color: categoryColor))
         }
+        if AppSettings.shared.showTopicCardTags {
+            for tag in (topic?.tags ?? []).prefix(3) {
+                badgesStackView.addArrangedSubview(makeTagChip(tag))
+            }
+        }
+
+        timeLabel.text = TopicCell.formatDate(post.createdAt ?? "")
 
         let avatarURL = post.avatarTemplate.flatMap {
             AvatarImageLoader.url(from: $0, baseURL: baseURL, size: 72)
         }
-        if currentAvatarURL != avatarURL || avatarView.image == nil {
+        if currentAvatarURL != avatarURL || avatarImageView.image == nil {
             currentAvatarURL = avatarURL
-            AvatarImageLoader.setImage(on: avatarView, url: avatarURL)
+            AvatarImageLoader.setImage(on: avatarImageView, url: avatarURL)
         }
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        renderedTitle = nil
+        emojiBaseURL = nil
         titleLabel.text = nil
         titleLabel.attributedText = nil
         blurbLabel.text = nil
-        usernameLabel.text = nil
+        replyCountLabel.text = nil
         timeLabel.text = nil
-        replyLabel.attributedText = nil
         floorBadge.isHidden = true
         aiIcon.isHidden = true
-        lockIcon.isHidden = true
         currentAvatarURL = nil
-        avatarView.sd_cancelCurrentImageLoad()
-        avatarView.image = nil
-        badgesStack.arrangedSubviews.forEach {
-            badgesStack.removeArrangedSubview($0)
+        avatarImageView.sd_cancelCurrentImageLoad()
+        avatarImageView.image = nil
+        badgesStackView.arrangedSubviews.forEach {
+            badgesStackView.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
     }
@@ -296,11 +319,11 @@ final class SearchResultCell: UITableViewCell {
     private func makeCategoryChip(name: String, color: UIColor?) -> UIView {
         let dot = UIView()
         dot.translatesAutoresizingMaskIntoConstraints = false
-        dot.backgroundColor = color ?? .systemGreen
-        dot.layer.cornerRadius = 3.5
+        dot.backgroundColor = TopicTagVisualStyle.categoryColor(for: name, fallback: color)
+        dot.layer.cornerRadius = 3
         NSLayoutConstraint.activate([
-            dot.widthAnchor.constraint(equalToConstant: 7),
-            dot.heightAnchor.constraint(equalToConstant: 7),
+            dot.widthAnchor.constraint(equalToConstant: 6),
+            dot.heightAnchor.constraint(equalToConstant: 6),
         ])
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .medium)
@@ -316,7 +339,7 @@ final class SearchResultCell: UITableViewCell {
     private func makeTagChip(_ tag: String) -> UILabel {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .secondaryLabel
+        label.textColor = TopicTagVisualStyle.color(for: tag)
         label.text = tag.hasPrefix("#") ? tag : "#\(tag)"
         return label
     }
