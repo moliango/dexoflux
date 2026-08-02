@@ -189,8 +189,8 @@ final class CloudflareRecoveryTests: XCTestCase {
         let base = "https://linux.do"
         let avatar = try XCTUnwrap(URL(string: "https://linux.do/user_avatar/foo/bar_96.png"))
 
-        // First report pauses; subsequent reports inside cooldown must not re-arm pause forever
-        // in a way that blocks resume — pause is fine, but isPaused should stay true once.
+        // First report pauses and notifies; subsequent reports inside cooldown still pause
+        // but must not re-fire recovery notifications for every avatar tile.
         CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar)
         XCTAssertTrue(CloudflareImageGate.isPaused(baseURL: base))
         CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar)
@@ -199,6 +199,30 @@ final class CloudflareRecoveryTests: XCTestCase {
 
         CloudflareImageGate.resume(baseURL: base)
         XCTAssertFalse(CloudflareImageGate.isPaused(baseURL: base))
+    }
+
+    func testImageChallengePostsRecoveryNotificationOncePerCooldown() throws {
+        CloudflareImageGate.resetForTests()
+        let base = "https://linux.do"
+        let avatar = try XCTUnwrap(URL(string: "https://linux.do/user_avatar/foo/bar_96.png"))
+
+        var notificationCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: DiscourseAPI.cloudflareChallengeDetectedNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            notificationCount += 1
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar, source: "image.test")
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar, source: "image.test")
+        CloudflareImageGate.reportImageChallenge(baseURL: base, responseURL: avatar, source: "image.test")
+
+        XCTAssertEqual(notificationCount, 1, "Image CF challenges must notify recovery once per cooldown")
+        XCTAssertTrue(CloudflareImageGate.isPaused(baseURL: base))
+        CloudflareImageGate.resume(baseURL: base)
     }
 
     func testImageGateIgnoresChallengesDuringVerificationGrace() throws {

@@ -30,4 +30,42 @@ final class MeStatsPreferencesTests: XCTestCase {
         let reloaded = MeStatsPreferences(defaults: defaults)
         XCTAssertEqual(reloaded.configuration, configuration)
     }
+
+    func testAccountFunctionsDefaultToAllVisible() {
+        let suiteName = "MeAccountFunctionPreferencesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = MeAccountFunctionPreferences(defaults: defaults)
+
+        XCTAssertEqual(preferences.visibleFunctions, MeAccountFunction.allCases)
+        XCTAssertTrue(preferences.hiddenFunctions.isEmpty)
+    }
+
+    func testAccountFunctionsVisibilityAndOrderRoundTrip() {
+        let suiteName = "MeAccountFunctionPreferencesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = MeAccountFunctionPreferences(defaults: defaults)
+
+        preferences.setVisibleFunctions([.settings, .messages, .browser])
+
+        let reloaded = MeAccountFunctionPreferences(defaults: defaults)
+        XCTAssertEqual(reloaded.visibleFunctions, [.settings, .messages, .browser])
+        XCTAssertFalse(reloaded.hiddenFunctions.contains(.settings))
+        XCTAssertTrue(reloaded.hiddenFunctions.contains(.aiModelService))
+    }
+
+    func testAccountFunctionsResetRestoresDefault() {
+        let suiteName = "MeAccountFunctionPreferencesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = MeAccountFunctionPreferences(defaults: defaults)
+        preferences.setVisibleFunctions([.settings])
+
+        preferences.reset()
+
+        XCTAssertEqual(preferences.visibleFunctions, MeAccountFunction.allCases)
+        XCTAssertTrue(preferences.hiddenFunctions.isEmpty)
+    }
 }

@@ -13,9 +13,9 @@ final class DexoPluginRuntimeTests: XCTestCase {
             BuiltInPluginID.ldc,
             BuiltInPluginID.cdk,
             BuiltInPluginID.topicExport,
-            BuiltInPluginID.newAPICheckIn,
-            BuiltInPluginID.ldcStore,
         ])
+        XCTAssertFalse(registry.allPlugins.map(\.id).contains(BuiltInPluginID.newAPICheckIn))
+        XCTAssertFalse(registry.allPlugins.map(\.id).contains(BuiltInPluginID.ldcStore))
         XCTAssertTrue(registry.allPlugins.allSatisfy(\.defaultEnabled))
         XCTAssertEqual(registry.enabledPlugins(for: scope).map(\.id), registry.allPlugins.map(\.id))
         XCTAssertTrue(registry.allPlugins.allSatisfy { !$0.capabilities.isEmpty })
@@ -147,13 +147,39 @@ final class DexoPluginRuntimeTests: XCTestCase {
 
         XCTAssertEqual(registry.enabledPlugins(for: scope).map(\.id), [
             BuiltInPluginID.topicExport,
-            BuiltInPluginID.newAPICheckIn,
         ])
         XCTAssertTrue(registry.contributions(of: .metaverseService, for: scope).isEmpty)
         XCTAssertEqual(
             registry.contributions(of: .topicDetailAction, for: scope).map(\.plugin.id),
             [BuiltInPluginID.topicExport]
         )
+    }
+
+    func testNewAPIAndLDCStoreAreNotPluginsOrForumTabs() async throws {
+        let defaults = makeDefaults()
+        let registry = try PluginRegistry(
+            plugins: BuiltInPlugins.all,
+            stateStore: PluginStateStore(defaults: defaults)
+        )
+        let scope = PluginScope(baseURL: "https://linux.do", username: "sam")
+
+        XCTAssertNil(registry.manifest(id: BuiltInPluginID.newAPICheckIn))
+        XCTAssertNil(registry.manifest(id: BuiltInPluginID.ldcStore))
+
+        let forumTabs = registry.contributions(of: .forumTab, for: scope).map(\.plugin.id)
+        XCTAssertFalse(forumTabs.contains(BuiltInPluginID.newAPICheckIn))
+        XCTAssertFalse(forumTabs.contains(BuiltInPluginID.ldcStore))
+
+        let miniPrograms = registry.contributions(of: .miniProgram, for: scope).map(\.plugin.id)
+        XCTAssertTrue(miniPrograms.isEmpty)
+
+        let firstPartyIDs = MiniProgramStore(defaults: defaults).visiblePrograms().map(\.id)
+        XCTAssertEqual(firstPartyIDs, [
+            MiniProgramID.ldc,
+            MiniProgramID.cdk,
+            MiniProgramID.newAPICheckIn,
+            MiniProgramID.ldcStore,
+        ])
     }
 
     private func makeManifest(
