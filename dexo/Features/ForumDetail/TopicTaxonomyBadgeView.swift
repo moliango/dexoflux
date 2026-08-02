@@ -53,7 +53,7 @@ final class TopicTaxonomyBadgeView: UIControl {
     ) {
         super.init(frame: .zero)
         let fallbackColor = TopicTaxonomyColor.resolve(hex: presentation.colorHex) ?? .systemGray
-        let color = AppSettings.shared.themeStyle.topicCategoryColor(
+        let color = TopicTagVisualStyle.categoryColor(
             for: presentation.name,
             fallback: fallbackColor
         )
@@ -190,7 +190,8 @@ final class TopicTaxonomyBadgeView: UIControl {
             ForumImageLoader.setImage(
                 on: imageView,
                 url: Self.resolveURL(rawURL, baseURL: baseURL),
-                placeholder: placeholder
+                placeholder: placeholder,
+                cloudflareBaseURL: baseURL
             )
             NSLayoutConstraint.activate([
                 imageView.widthAnchor.constraint(equalToConstant: variant.iconSize + 2),

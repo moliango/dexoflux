@@ -96,10 +96,12 @@ enum ForumAttachmentLinkParser {
         "wav", "webm", "webp",
     ]
 
+    /// Extensions that almost always mean a downloadable file (not a browsable page).
+    /// Deliberately excludes web documents like `html` / `php` — those open in Safari.
     private static let fileExtensions: Set<String> = [
         "7z", "apk", "bz2", "c", "conf", "cpp", "csv", "dart", "db", "diff", "dmg", "doc", "docx", "gz",
-        "h", "hpp", "html", "ipa", "java", "js", "json", "key", "kt", "log", "md", "msi", "numbers", "otf",
-        "pages", "patch", "pdf", "php", "pkg", "ppt", "pptx", "py", "rar", "rb", "rs", "sh", "sql", "sqlite",
+        "h", "hpp", "ipa", "java", "js", "json", "key", "kt", "log", "md", "msi", "numbers", "otf",
+        "pages", "patch", "pdf", "pkg", "ppt", "pptx", "py", "rar", "rb", "rs", "sh", "sql", "sqlite",
         "swift", "tar", "toml", "ts", "ttf", "txt", "woff", "woff2", "xls", "xlsx", "xml", "xz", "yaml", "yml",
         "zip",
     ]
@@ -107,19 +109,36 @@ enum ForumAttachmentLinkParser {
     static func isAttachmentURL(_ url: URL) -> Bool {
         let path = url.path.removingPercentEncoding?.lowercased() ?? url.path.lowercased()
         let ext = url.pathExtension.lowercased()
+        let wantsDownload = hasDownloadQuery(url)
 
+        // Media opens in the image/video viewer unless the server explicitly asks to download.
         if mediaExtensions.contains(ext) {
+            return wantsDownload
+        }
+
+        if wantsDownload {
+            return true
+        }
+
+        let isUploadPath = path.contains("/uploads/") || path.contains("/secure-uploads/")
+        if isUploadPath {
+            // Real Discourse attachments: short-url / secure-uploads, or original path with a file ext.
+            // Bare `/uploads/` without a downloadable extension is not an attachment
+            // (avoids treating random upload-ish paths as downloads).
+            if fileExtensions.contains(ext) {
+                return true
+            }
+            if path.contains("/uploads/short-url/") || path.contains("/secure-uploads/") {
+                return !ext.isEmpty
+            }
             return false
         }
 
-        if fileExtensions.contains(ext) {
-            return true
-        }
+        // External links: only clear binary/document extensions. Never `.html` webpages.
+        return fileExtensions.contains(ext)
+    }
 
-        if path.contains("/uploads/") || path.contains("/secure-uploads/") {
-            return true
-        }
-
+    private static func hasDownloadQuery(_ url: URL) -> Bool {
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         return queryItems.contains { item in
             let name = item.name.lowercased()

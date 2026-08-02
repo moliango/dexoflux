@@ -2,266 +2,6 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
-enum BoostInputResult {
-    case boost(String)
-    case reply(String)
-}
-
-enum ReplyComposerSubmissionMode: Equatable {
-    case reply
-    case edit(postId: Int)
-}
-
-final class BoostInputViewController: UIViewController {
-    private static let maxVisibleLength = 16
-    private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":[\\w\\-+]+:")
-
-    private let api: DiscourseAPI
-    var onSubmit: ((BoostInputResult) -> Void)?
-
-    private var isEmojiPickerVisible = true
-    private var hasLoadedForumEmojis = false
-
-    private let grabberView: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .tertiaryLabel.withAlphaComponent(0.35)
-        view.layer.cornerRadius = 2
-        return view
-    }()
-
-    private let emojiToggleButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.tintColor = .secondaryLabel
-        button.setImage(UIImage(systemName: "keyboard"), for: .normal)
-        return button
-    }()
-
-    private let textContainer: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .secondarySystemGroupedBackground
-        view.layer.cornerRadius = 20
-        view.layer.cornerCurve = .continuous
-        return view
-    }()
-
-    private lazy var textField: UITextField = {
-        let field = UITextField()
-        field.translatesAutoresizingMaskIntoConstraints = false
-        field.placeholder = String(localized: "post.boost.placeholder")
-        field.font = .preferredFont(forTextStyle: .body)
-        field.adjustsFontForContentSizeCategory = true
-        field.returnKeyType = .send
-        field.delegate = self
-        field.addTarget(self, action: #selector(textChanged), for: .editingChanged)
-        return field
-    }()
-
-    private let countLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        label.textColor = .tertiaryLabel
-        label.textAlignment = .right
-        return label
-    }()
-
-    private let sendButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.tintColor = .systemBlue
-        button.isEnabled = false
-        return button
-    }()
-
-    private lazy var emojiPickerView: EmojiPickerView = {
-        let picker = EmojiPickerView()
-        picker.translatesAutoresizingMaskIntoConstraints = false
-        picker.onEmojiSelected = { [weak self] emoji in
-            self?.insertEmoji(emoji)
-        }
-        return picker
-    }()
-
-    private var emojiHeightConstraint: NSLayoutConstraint?
-
-    init(api: DiscourseAPI) {
-        self.api = api
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-
-        let inputRow = UIStackView(arrangedSubviews: [emojiToggleButton, textContainer, sendButton])
-        inputRow.translatesAutoresizingMaskIntoConstraints = false
-        inputRow.axis = .horizontal
-        inputRow.alignment = .center
-        inputRow.spacing = 8
-
-        textContainer.addSubview(textField)
-        textContainer.addSubview(countLabel)
-        view.addSubview(grabberView)
-        view.addSubview(inputRow)
-        view.addSubview(emojiPickerView)
-
-        let emojiHeight = emojiPickerView.heightAnchor.constraint(equalToConstant: 280)
-        emojiHeightConstraint = emojiHeight
-
-        NSLayoutConstraint.activate([
-            grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            grabberView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            grabberView.widthAnchor.constraint(equalToConstant: 36),
-            grabberView.heightAnchor.constraint(equalToConstant: 4),
-
-            inputRow.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 14),
-            inputRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            inputRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-
-            emojiToggleButton.widthAnchor.constraint(equalToConstant: 38),
-            emojiToggleButton.heightAnchor.constraint(equalToConstant: 38),
-            sendButton.widthAnchor.constraint(equalToConstant: 40),
-            sendButton.heightAnchor.constraint(equalToConstant: 40),
-            textContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
-
-            textField.leadingAnchor.constraint(equalTo: textContainer.leadingAnchor, constant: 14),
-            textField.topAnchor.constraint(equalTo: textContainer.topAnchor, constant: 7),
-            textField.bottomAnchor.constraint(equalTo: textContainer.bottomAnchor, constant: -7),
-            countLabel.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8),
-            countLabel.trailingAnchor.constraint(equalTo: textContainer.trailingAnchor, constant: -12),
-            countLabel.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
-            countLabel.widthAnchor.constraint(equalToConstant: 46),
-
-            emojiPickerView.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 8),
-            emojiPickerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            emojiPickerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            emojiPickerView.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor),
-            emojiHeight,
-        ])
-
-        emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
-        sendButton.addTarget(self, action: #selector(submitTapped), for: .touchUpInside)
-        textChanged()
-        loadForumEmojisIfNeeded()
-    }
-
-    private var rawText: String {
-        textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    private var visibleLength: Int {
-        let text = textField.text ?? ""
-        let nsText = text as NSString
-        let matches = Self.emojiShortcodeRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-        let shortcodeSavings = matches.reduce(0) { $0 + max($1.range.length - 1, 0) }
-        return max(nsText.length - shortcodeSavings, 0)
-    }
-
-    private var isReplyIntent: Bool {
-        visibleLength > Self.maxVisibleLength
-    }
-
-    @objc private func textChanged() {
-        countLabel.text = "\(visibleLength)/\(Self.maxVisibleLength)"
-        countLabel.textColor = isReplyIntent ? .systemRed : .tertiaryLabel
-        sendButton.isEnabled = !rawText.isEmpty
-        let symbolName = isReplyIntent ? "arrowshape.turn.up.left.fill" : "paperplane.fill"
-        sendButton.setImage(UIImage(systemName: symbolName), for: .normal)
-        sendButton.tintColor = rawText.isEmpty ? .tertiaryLabel : .systemBlue
-    }
-
-    @objc private func toggleEmojiPicker() {
-        isEmojiPickerVisible.toggle()
-        emojiHeightConstraint?.constant = isEmojiPickerVisible ? 280 : 0
-        emojiPickerView.isHidden = !isEmojiPickerVisible
-        emojiToggleButton.setImage(UIImage(systemName: isEmojiPickerVisible ? "keyboard" : "face.smiling"), for: .normal)
-        if isEmojiPickerVisible {
-            textField.resignFirstResponder()
-            loadForumEmojisIfNeeded()
-        } else {
-            textField.becomeFirstResponder()
-        }
-        UIView.animate(withDuration: 0.18) {
-            self.view.layoutIfNeeded()
-        }
-    }
-
-    @objc private func submitTapped() {
-        submit()
-    }
-
-    private func submit() {
-        let raw = rawText
-        guard !raw.isEmpty else { return }
-        let result: BoostInputResult = isReplyIntent ? .reply(raw) : .boost(raw)
-        dismiss(animated: true) { [onSubmit] in
-            onSubmit?(result)
-        }
-    }
-
-    private func insertEmoji(_ emoji: String) {
-        if let range = textField.selectedTextRange {
-            textField.replace(range, withText: emoji)
-        } else {
-            textField.text = (textField.text ?? "") + emoji
-        }
-        textChanged()
-    }
-
-    private func loadForumEmojisIfNeeded() {
-        guard !hasLoadedForumEmojis else { return }
-        hasLoadedForumEmojis = true
-        let cachedEntries = EmojiStore.cachedEntries(for: api.baseURL) ?? []
-        if cachedEntries.isEmpty {
-            emojiPickerView.showLoading()
-        } else {
-            EmojiStore.load(for: api.baseURL)
-            emojiPickerView.setEmojiGroups(
-                [DiscourseEmojiGroup(key: "custom", emojis: cachedEntries)],
-                baseURL: api.baseURL
-            )
-        }
-        Task {
-            do {
-                let groups = try await api.fetchEmojiGroups()
-                await MainActor.run {
-                    self.emojiPickerView.setEmojiGroups(groups, baseURL: self.api.baseURL)
-                }
-            } catch {
-                await MainActor.run {
-                    if cachedEntries.isEmpty {
-                        self.emojiPickerView.showError()
-                    }
-                }
-            }
-        }
-    }
-}
-
-extension BoostInputViewController: UITextFieldDelegate {
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        submit()
-        return true
-    }
-
-    func textFieldDidBeginEditing(_ textField: UITextField) {
-        guard isEmojiPickerVisible else { return }
-        isEmojiPickerVisible = false
-        emojiPickerView.isHidden = true
-        emojiHeightConstraint?.constant = 0
-        emojiToggleButton.setImage(UIImage(systemName: "face.smiling"), for: .normal)
-        view.layoutIfNeeded()
-    }
-}
-
 final class ReplyComposerViewController: UIViewController {
     private enum ComposerPanel {
         case none
@@ -269,7 +9,7 @@ final class ReplyComposerViewController: UIViewController {
         case tools
     }
 
-    private static let customPanelHeight: CGFloat = 300
+    private static let customPanelHeight: CGFloat = 420
     private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":([^\\s:]+(?::t\\d)?):")
 
     private let api: DiscourseAPI
@@ -921,6 +661,8 @@ final class ReplyComposerViewController: UIViewController {
             pickImages()
         case .attachment:
             pickAttachment()
+        case .media:
+            chooseMedia()
         case .heading:
             chooseHeading()
         case .bold:
@@ -937,12 +679,26 @@ final class ReplyComposerViewController: UIViewController {
             insertLink()
         case .quote:
             applyLinePrefix("> ")
-        case .note:
-            insertBlock("\n> [!note]\n> \(String(localized: "reply.tool.placeholder.note"))\n")
+        case .callout:
+            chooseCallout()
         case .template:
             insertTemplate()
         case .aiReview:
             runAIPostReview()
+        case .inlineCode:
+            wrapSelection(start: "`", end: "`", placeholder: String(localized: "reply.tool.placeholder.code"))
+        case .codeBlock:
+            insertCodeBlock()
+        case .spoiler:
+            wrapSelection(
+                start: "[spoiler]",
+                end: "[/spoiler]",
+                placeholder: String(localized: "reply.tool.placeholder.spoiler", defaultValue: "剧透内容")
+            )
+        case .imageGrid:
+            wrapImagesInGrid()
+        case .insertBlock:
+            chooseInsertBlock()
         }
 
         if tool.closesPanelAfterAction {
@@ -1001,13 +757,292 @@ final class ReplyComposerViewController: UIViewController {
             message: nil,
             preferredStyle: .actionSheet
         )
-        for level in 1 ... 3 {
+        for level in 1 ... 5 {
             alert.addAction(UIAlertAction(title: "H\(level)", style: .default) { [weak self] _ in
                 self?.applyLinePrefix(String(repeating: "#", count: level) + " ")
             })
         }
         alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
         present(alert, animated: true)
+    }
+
+    /// FluxDo callout 类型菜单：note / tip / info / warning …
+    private func chooseCallout() {
+        let types = [
+            "note", "tip", "info", "warning", "danger", "bug",
+            "example", "quote", "abstract", "todo", "success", "question", "failure",
+        ]
+        let alert = UIAlertController(
+            title: String(localized: "reply.tool.note"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        for type in types {
+            alert.addAction(UIAlertAction(title: type.capitalized, style: .default) { [weak self] _ in
+                self?.insertCallout(type)
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func insertCallout(_ type: String) {
+        let placeholder = String(localized: "reply.tool.placeholder.note")
+        let selection = textView.selectedRange
+        if selection.length > 0 {
+            let selected = rawText(inDisplayRange: selection)
+            let quoted = selected
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }
+                .joined(separator: "\n")
+            replaceDisplayRange(selection, withRawText: "> [!\(type)]\n\(quoted)")
+        } else {
+            insertBlock("> [!\(type)]\n> \(placeholder)\n")
+        }
+    }
+
+    private func insertCodeBlock() {
+        let selection = textView.selectedRange
+        let placeholder = String(localized: "reply.tool.placeholder.code")
+        if selection.length > 0 {
+            let selected = rawText(inDisplayRange: selection)
+            let block = "```\n\(selected)\n```"
+            replaceDisplayRange(selection, withRawText: block)
+        } else {
+            insertBlock("```\n\(placeholder)\n```\n")
+        }
+    }
+
+    /// 插入块：表格 / 公式 / 分隔线 / 折叠详情
+    private func chooseInsertBlock() {
+        let items: [(String, String)] = [
+            ("表格", "| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |\n"),
+            ("公式块", "$$\nE=mc^2\n$$\n"),
+            ("分隔线", "---\n"),
+            ("折叠详情", "[details=\"点开看\"]\n折叠内容\n[/details]\n"),
+        ]
+        let alert = UIAlertController(
+            title: "插入块",
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        for item in items {
+            alert.addAction(UIAlertAction(title: item.0, style: .default) { [weak self] _ in
+                self?.insertBlock(item.1)
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    /// 将连续图片 markdown 包进 `[grid]…[/grid]`（对齐 FluxDo）
+    private func wrapImagesInGrid() {
+        let raw = composerRawText
+        let imagePattern = try! NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]+\)"#)
+        let nsRaw = raw as NSString
+        let fullRange = NSRange(location: 0, length: nsRaw.length)
+        let matches = imagePattern.matches(in: raw, range: fullRange)
+        guard matches.count >= 2 else {
+            let alert = UIAlertController(
+                title: nil,
+                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        // 优先用选区；否则取光标附近连续图片块
+        let displaySelection = textView.selectedRange
+        let rawSelectionStart: Int
+        let rawSelectionEnd: Int
+        if displaySelection.length > 0 {
+            let selectedRaw = rawText(inDisplayRange: displaySelection)
+            let selectedMatches = imagePattern.matches(in: selectedRaw, range: NSRange(location: 0, length: (selectedRaw as NSString).length))
+            if selectedMatches.count >= 2 {
+                let wrapped = "[grid]\n\(selectedRaw)\n[/grid]"
+                replaceDisplayRange(displaySelection, withRawText: wrapped)
+                return
+            }
+            rawSelectionStart = 0
+            rawSelectionEnd = 0
+            _ = rawSelectionStart
+            _ = rawSelectionEnd
+        }
+
+        // 找最大连续图片组（之间仅空白）
+        var bestStart = matches[0].range.location
+        var bestEnd = NSMaxRange(matches[0].range)
+        var runStart = bestStart
+        var runEnd = bestEnd
+        var runCount = 1
+        var bestCount = 1
+
+        for i in 1 ..< matches.count {
+            let prevEnd = NSMaxRange(matches[i - 1].range)
+            let curStart = matches[i].range.location
+            let between = nsRaw.substring(with: NSRange(location: prevEnd, length: curStart - prevEnd))
+            if between.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                runEnd = NSMaxRange(matches[i].range)
+                runCount += 1
+            } else {
+                if runCount > bestCount {
+                    bestCount = runCount
+                    bestStart = runStart
+                    bestEnd = runEnd
+                }
+                runStart = matches[i].range.location
+                runEnd = NSMaxRange(matches[i].range)
+                runCount = 1
+            }
+        }
+        if runCount > bestCount {
+            bestCount = runCount
+            bestStart = runStart
+            bestEnd = runEnd
+        }
+        guard bestCount >= 2 else {
+            let alert = UIAlertController(
+                title: nil,
+                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        let chunk = nsRaw.substring(with: NSRange(location: bestStart, length: bestEnd - bestStart))
+        let wrapped = "[grid]\n\(chunk)\n[/grid]"
+        // 用 raw 全文替换后重刷（composer 以 raw 为源）
+        let newRaw = nsRaw.replacingCharacters(in: NSRange(location: bestStart, length: bestEnd - bestStart), with: wrapped)
+        applyFullRawText(newRaw)
+    }
+
+    private func applyFullRawText(_ raw: String) {
+        isApplyingAttributedText = true
+        textView.attributedText = makeComposerAttributedString(raw)
+        isApplyingAttributedText = false
+        updatePlaceholder()
+        updateSendButton()
+        if isPreviewingMarkdown {
+            previewView.update(markdown: raw)
+        }
+    }
+
+    private var pendingMediaKind: MediaPickKind?
+
+    private enum MediaPickKind {
+        case audio
+        case video
+        case voice
+    }
+
+    /// 音视频：上传音频 / 上传视频 / 语音消息
+    private func chooseMedia() {
+        let alert = UIAlertController(title: "音视频", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "上传音频", style: .default) { [weak self] _ in
+            self?.pickMedia(kind: .audio)
+        })
+        alert.addAction(UIAlertAction(title: "上传视频", style: .default) { [weak self] _ in
+            self?.pickMedia(kind: .video)
+        })
+        alert.addAction(UIAlertAction(title: "语音消息", style: .default) { [weak self] _ in
+            self?.pickMedia(kind: .voice)
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func pickMedia(kind: MediaPickKind) {
+        pendingMediaKind = kind
+        let types: [UTType]
+        switch kind {
+        case .audio, .voice:
+            types = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
+        case .video:
+            types = [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
+        }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    @MainActor
+    private func uploadMediaFile(url: URL, kind: MediaPickKind) async {
+        setUploading(true, text: String(localized: "reply.uploading"))
+        defer {
+            setUploading(false, text: nil)
+            pendingMediaKind = nil
+        }
+        do {
+            // FluxDo：改名为 .xz 绕站点扩展名白名单
+            let xzURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("xz")
+            if FileManager.default.fileExists(atPath: xzURL.path) {
+                try FileManager.default.removeItem(at: xzURL)
+            }
+            try FileManager.default.copyItem(at: url, to: xzURL)
+            let upload = try await api.uploadComposerFile(fileURL: xzURL, filename: xzURL.lastPathComponent)
+            try? FileManager.default.removeItem(at: xzURL)
+
+            let originalExt = url.pathExtension.lowercased()
+            let mime: String
+            let isAudio: Bool
+            switch kind {
+            case .audio, .voice:
+                isAudio = true
+                mime = UTType(filenameExtension: originalExt)?.preferredMIMEType ?? "audio/mpeg"
+            case .video:
+                isAudio = false
+                mime = UTType(filenameExtension: originalExt)?.preferredMIMEType ?? "video/mp4"
+            }
+            let src = Self.mediaPlaybackPath(from: upload.shortURL)
+            let tag: String
+            if isAudio {
+                let audio = "<audio controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</audio>"
+                tag = kind == .voice ? "[wrap=voice]\n\(audio)\n[/wrap]" : audio
+            } else {
+                tag = "<video width=\"640\" height=\"360\" controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</video>"
+            }
+            insertUploadMarkdown(tag)
+        } catch {
+            showUploadError(error)
+        }
+    }
+
+    /// `upload://token.ext` → `/uploads/short-url/token.xz`
+    private static func mediaPlaybackPath(from shortURL: String) -> String {
+        if shortURL.hasPrefix("upload://") {
+            var token = String(shortURL.dropFirst("upload://".count))
+            if let dot = token.lastIndex(of: ".") {
+                token = String(token[..<dot])
+            }
+            return "/uploads/short-url/\(token).xz"
+        }
+        if let dot = shortURL.lastIndex(of: ".") {
+            return String(shortURL[..<dot]) + ".xz"
+        }
+        return shortURL
     }
 
     private func insertLink() {
@@ -1100,6 +1135,7 @@ private func insertTemplate() {
     }
 
     private func pickAttachment() {
+        pendingMediaKind = nil
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
@@ -1335,334 +1371,15 @@ extension ReplyComposerViewController: UIDocumentPickerDelegate {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            await uploadPickedFiles([(url, url.lastPathComponent)])
-        }
-    }
-}
-
-enum ComposerMarkdownTool: CaseIterable {
-    case image
-    case attachment
-    case heading
-    case bold
-    case italic
-    case strikethrough
-    case bulletList
-    case numberedList
-    case link
-    case quote
-    case note
-    case template
-    case aiReview
-
-    var title: String {
-        switch self {
-        case .image: return String(localized: "reply.tool.image")
-        case .attachment: return String(localized: "reply.tool.attachment")
-        case .heading: return String(localized: "reply.tool.heading")
-        case .bold: return String(localized: "reply.tool.bold")
-        case .italic: return String(localized: "reply.tool.italic")
-        case .strikethrough: return String(localized: "reply.tool.strikethrough")
-        case .bulletList: return String(localized: "reply.tool.bullet_list")
-        case .numberedList: return String(localized: "reply.tool.numbered_list")
-        case .link: return String(localized: "reply.tool.link")
-        case .quote: return String(localized: "reply.tool.quote")
-        case .note: return String(localized: "reply.tool.note")
-        case .template: return String(localized: "reply.tool.template")
-        case .aiReview: return String(localized: "reply.tool.ai_review", defaultValue: "AI 预审")
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .image: return "photo"
-        case .attachment: return "paperclip"
-        case .heading: return "textformat.size"
-        case .bold: return "bold"
-        case .italic: return "italic"
-        case .strikethrough: return "strikethrough"
-        case .bulletList: return "list.bullet"
-        case .numberedList: return "list.number"
-        case .link: return "link"
-        case .quote: return "quote.closing"
-        case .note: return "note.text"
-        case .template: return "doc.on.clipboard"
-        case .aiReview: return "sparkles"
-        }
-    }
-
-    var closesPanelAfterAction: Bool {
-        switch self {
-        case .image, .attachment, .aiReview:
-            return false
-        default:
-            return true
-        }
-    }
-}
-
-final class ComposerToolPanelView: UIView {
-    var onToolSelected: ((ComposerMarkdownTool) -> Void)?
-
-    var isUploading = false {
-        didSet {
-            toolButtons.forEach { button in
-                guard let tool = toolByButton[button] else { return }
-                button.isEnabled = !isUploading || (tool != .image && tool != .attachment)
-                button.alpha = button.isEnabled ? 1 : 0.45
+            if let kind = pendingMediaKind {
+                await uploadMediaFile(url: url, kind: kind)
+            } else {
+                await uploadPickedFiles([(url, url.lastPathComponent)])
             }
         }
     }
 
-    private var isCustomizing = false
-    private var toolButtons: [UIButton] = []
-    private var toolByButton: [UIButton: ComposerMarkdownTool] = [:]
-
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 16, weight: .semibold)
-        label.textColor = .secondaryLabel
-        label.text = String(localized: "reply.more_tools")
-        return label
-    }()
-
-    private let customizeButton: UIButton = {
-        var config = UIButton.Configuration.plain()
-        config.title = String(localized: "reply.customize")
-        config.baseForegroundColor = UIColor(red: 0.18, green: 0.42, blue: 0.62, alpha: 1)
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    private let gridStackView: UIStackView = {
-        let stack = UIStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .vertical
-        stack.spacing = 10
-        return stack
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .systemBackground
-        addSubview(titleLabel)
-        addSubview(customizeButton)
-        addSubview(gridStackView)
-
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 40),
-
-            customizeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            customizeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -34),
-
-            gridStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 14),
-            gridStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
-            gridStackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -34),
-            gridStackView.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -12),
-        ])
-
-        customizeButton.addTarget(self, action: #selector(customizeTapped), for: .touchUpInside)
-        buildGrid()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func buildGrid() {
-        let tools = ComposerMarkdownTool.allCases
-        for rowIndex in 0 ..< 3 {
-            let row = UIStackView()
-            row.axis = .horizontal
-            row.alignment = .center
-            row.distribution = .fillEqually
-            row.spacing = 10
-            gridStackView.addArrangedSubview(row)
-
-            for column in 0 ..< 4 {
-                let index = rowIndex * 4 + column
-                guard tools.indices.contains(index) else { continue }
-                let button = makeToolButton(tools[index])
-                row.addArrangedSubview(button)
-            }
-        }
-    }
-
-    private func makeToolButton(_ tool: ComposerMarkdownTool) -> UIButton {
-        var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: tool.symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold))
-        config.imagePlacement = .top
-        config.imagePadding = 6
-        config.title = tool.title
-        config.baseForegroundColor = .label
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var updated = attrs
-            updated.font = .systemFont(ofSize: 12, weight: .regular)
-            return updated
-        }
-        config.background.backgroundColor = .clear
-
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: 58).isActive = true
-        button.addTarget(self, action: #selector(toolTapped(_:)), for: .touchUpInside)
-        toolButtons.append(button)
-        toolByButton[button] = tool
-        return button
-    }
-
-    @objc private func toolTapped(_ sender: UIButton) {
-        guard !isCustomizing, let tool = toolByButton[sender] else { return }
-        onToolSelected?(tool)
-    }
-
-    @objc private func customizeTapped() {
-        isCustomizing.toggle()
-        var config = customizeButton.configuration
-        config?.title = isCustomizing ? String(localized: "common.done") : String(localized: "reply.customize")
-        customizeButton.configuration = config
-        toolButtons.forEach { button in
-            button.transform = isCustomizing ? CGAffineTransform(scaleX: 0.96, y: 0.96) : .identity
-            button.alpha = isCustomizing ? 0.7 : 1
-        }
-    }
-}
-
-final class ComposerMarkdownPreviewView: UIView {
-    private let textView: UITextView = {
-        let tv = UITextView()
-        tv.translatesAutoresizingMaskIntoConstraints = false
-        tv.isEditable = false
-        tv.isScrollEnabled = true
-        tv.backgroundColor = .systemBackground
-        tv.textContainerInset = UIEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
-        tv.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: .regular))
-        tv.adjustsFontForContentSizeCategory = true
-        return tv
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        addSubview(textView)
-        NSLayoutConstraint.activate([
-            textView.topAnchor.constraint(equalTo: topAnchor),
-            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func update(markdown: String) {
-        textView.attributedText = Self.render(markdown)
-    }
-
-    private static func render(_ markdown: String) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 6
-        paragraph.paragraphSpacing = 12
-
-        let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: .regular))
-        let headingFont = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 30, weight: .bold))
-        let monoFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 20, weight: .regular))
-
-        var inCodeBlock = false
-        for rawLine in markdown.components(separatedBy: .newlines) {
-            var line = rawLine
-            var attributes: [NSAttributedString.Key: Any] = [
-                .font: bodyFont,
-                .foregroundColor: UIColor.label,
-                .paragraphStyle: paragraph,
-            ]
-
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                inCodeBlock.toggle()
-                continue
-            }
-
-            if inCodeBlock {
-                attributes[.font] = monoFont
-                attributes[.foregroundColor] = UIColor.secondaryLabel
-                attributes[.backgroundColor] = UIColor.secondarySystemGroupedBackground
-            } else if line.hasPrefix("### ") {
-                line.removeFirst(4)
-                attributes[.font] = headingFont.withSize(24)
-            } else if line.hasPrefix("## ") {
-                line.removeFirst(3)
-                attributes[.font] = headingFont.withSize(27)
-            } else if line.hasPrefix("# ") {
-                line.removeFirst(2)
-                attributes[.font] = headingFont
-            } else if line.hasPrefix("> ") {
-                line.removeFirst(2)
-                attributes[.foregroundColor] = UIColor.secondaryLabel
-            } else if line.hasPrefix("- ") {
-                line = "• " + String(line.dropFirst(2))
-            }
-
-            result.append(renderInline(line, attributes: attributes))
-            result.append(NSAttributedString(string: "\n", attributes: attributes))
-        }
-
-        if result.length == 0 {
-            return NSAttributedString(
-                string: String(localized: "reply.preview.empty"),
-                attributes: [
-                    .font: bodyFont,
-                    .foregroundColor: UIColor.placeholderText,
-                    .paragraphStyle: paragraph,
-                ]
-            )
-        }
-        return result
-    }
-
-    private static func renderInline(_ line: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        let attributed = NSMutableAttributedString(string: line, attributes: attributes)
-        applyInline(regex: "\\*\\*(.+?)\\*\\*", in: attributed, fontWeight: .bold, markerLength: 2)
-        applyInline(regex: "~~(.+?)~~", in: attributed, strikethrough: true, markerLength: 2)
-        applyInline(regex: "`(.+?)`", in: attributed, monospace: true, markerLength: 1)
-        return attributed
-    }
-
-    private static func applyInline(
-        regex pattern: String,
-        in attributed: NSMutableAttributedString,
-        fontWeight: UIFont.Weight? = nil,
-        strikethrough: Bool = false,
-        monospace: Bool = false,
-        markerLength: Int
-    ) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-        let matches = regex.matches(in: attributed.string, range: NSRange(location: 0, length: attributed.length)).reversed()
-        for match in matches {
-            guard match.numberOfRanges > 1 else { continue }
-            let contentRange = match.range(at: 1)
-            let fullRange = match.range(at: 0)
-            if let fontWeight {
-                let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: fontWeight))
-                attributed.addAttribute(.font, value: font, range: contentRange)
-            }
-            if strikethrough {
-                attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: contentRange)
-            }
-            if monospace {
-                let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 20, weight: .regular))
-                attributed.addAttribute(.font, value: font, range: contentRange)
-            }
-            attributed.deleteCharacters(in: NSRange(location: fullRange.location + fullRange.length - markerLength, length: markerLength))
-            attributed.deleteCharacters(in: NSRange(location: fullRange.location, length: markerLength))
-        }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        pendingMediaKind = nil
     }
 }

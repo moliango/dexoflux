@@ -1,54 +1,26 @@
 import UIKit
 
-enum TopicDetailRadialAction: CaseIterable {
-    case timeline
-    case scrollToTop
-    case reply
-    case bookmark
-    case share
-
-    var title: String {
-        switch self {
-        case .timeline:
-            return String(localized: "topic_detail.action.timeline")
-        case .scrollToTop:
-            return String(localized: "topic_detail.action.top")
-        case .reply:
-            return String(localized: "topic_detail.action.reply")
-        case .bookmark:
-            return String(localized: "topic_detail.action.bookmark")
-        case .share:
-            return String(localized: "topic_detail.action.share")
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .timeline:
-            return "list.bullet.rectangle"
-        case .scrollToTop:
-            return "arrow.up.to.line"
-        case .reply:
-            return "arrowshape.turn.up.left"
-        case .bookmark:
-            return "bookmark"
-        case .share:
-            return "link"
-        }
-    }
-}
-
 protocol TopicDetailBottomBarDelegate: AnyObject {
     func bottomBarDidTapTimeline()
-    func bottomBarDidSelectRadialAction(_ action: TopicDetailRadialAction)
+    func bottomBarDidSelectProgressAction(_ action: ProgressGestureAction)
 }
 
+/// Floating topic progress capsule with FluxDO-style gestures:
+/// - tap → timeline
+/// - swipe L/R/Up → configurable actions (settings)
+/// - long-press → radial menu of configurable actions
 final class TopicDetailBottomBar: UIControl {
     weak var delegate: TopicDetailBottomBarDelegate?
 
     private enum Metrics {
         static let height: CGFloat = 40
         static let width: CGFloat = 120
+        static let swipeTriggerDistance: CGFloat = 56
+        static let swipeDeadZone: CGFloat = 6
+    }
+
+    private enum SwipeDirection {
+        case left, right, up
     }
 
     private let surfaceView: UIView = {
@@ -115,12 +87,20 @@ final class TopicDetailBottomBar: UIControl {
     }()
 
     private var radialOverlay: TopicDetailRadialMenuOverlay?
-    private var highlightedAction: TopicDetailRadialAction?
+    private var highlightedAction: ProgressGestureAction?
     private var isPresentingRadialMenu = false
     private var progressFraction: CGFloat = 0
     private var progressFillWidthConstraint: NSLayoutConstraint?
     private let feedback = UIImpactFeedbackGenerator(style: .medium)
     private let selectionFeedback = UISelectionFeedbackGenerator()
+
+    // Swipe preview
+    private var swipeStart: CGPoint?
+    private var swipeDirection: SwipeDirection?
+    private var swipeAction: ProgressGestureAction?
+    private var swipeTriggerable = false
+    private var swipePill: UILabel?
+    private var didConsumePanAsSwipe = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -145,6 +125,12 @@ final class TopicDetailBottomBar: UIControl {
         longPress.minimumPressDuration = 0.2
         longPress.cancelsTouchesInView = true
         addGestureRecognizer(longPress)
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.cancelsTouchesInView = true
+        pan.delegate = self
+        // Movement starts pan; stillness lets long-press win at 200ms (FluxDO parity).
+        addGestureRecognizer(pan)
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Metrics.height),
@@ -203,14 +189,24 @@ final class TopicDetailBottomBar: UIControl {
         pressProgressLayer.strokeColor = accentColor.cgColor
     }
 
-    // MARK: - Actions
+    private var gesturesEnabled: Bool {
+        AppSettings.shared.progressGesturesEnabled
+    }
+
+    private var menuActions: [ProgressGestureAction] {
+        let actions = AppSettings.shared.progressGestureMenuActions.filter { $0 != .none }
+        return actions.isEmpty ? ProgressGestureAction.defaultMenuActions : actions
+    }
+
+    // MARK: - Tap / press ring
 
     @objc private func tapped() {
-        guard !isPresentingRadialMenu else { return }
+        guard !isPresentingRadialMenu, !didConsumePanAsSwipe else { return }
         delegate?.bottomBarDidTapTimeline()
     }
 
     @objc private func touchDown() {
+        guard gesturesEnabled else { return }
         animatePressProgress()
     }
 
@@ -218,9 +214,13 @@ final class TopicDetailBottomBar: UIControl {
         if !isPresentingRadialMenu {
             retractPressProgress()
         }
+        didConsumePanAsSwipe = false
     }
 
+    // MARK: - Long press radial menu
+
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesturesEnabled else { return }
         let location = window.map { gesture.location(in: $0) } ?? gesture.location(in: nil)
         switch gesture.state {
         case .began:
@@ -234,6 +234,126 @@ final class TopicDetailBottomBar: UIControl {
         default:
             break
         }
+    }
+
+    // MARK: - Swipe gestures
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard gesturesEnabled else { return }
+        let location = gesture.location(in: window ?? self)
+        switch gesture.state {
+        case .began:
+            swipeStart = location
+            swipeDirection = nil
+            swipeAction = nil
+            swipeTriggerable = false
+            didConsumePanAsSwipe = false
+            retractPressProgress()
+            ensureSwipePill()
+        case .changed:
+            guard let start = swipeStart else { return }
+            updateSwipe(from: start, to: location)
+        case .ended:
+            let shouldFire = swipeTriggerable
+            let action = swipeAction
+            clearSwipePreview()
+            if shouldFire, let action, action != .none {
+                didConsumePanAsSwipe = true
+                feedback.impactOccurred()
+                delegate?.bottomBarDidSelectProgressAction(action)
+            }
+        case .cancelled, .failed:
+            clearSwipePreview()
+        default:
+            break
+        }
+    }
+
+    private func updateSwipe(from start: CGPoint, to current: CGPoint) {
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+        let absDx = abs(dx)
+        let absDy = abs(dy)
+        let maxDelta = max(absDx, absDy)
+
+        var direction: SwipeDirection?
+        if maxDelta >= Metrics.swipeDeadZone {
+            if absDx > absDy {
+                direction = dx < 0 ? .left : .right
+            } else if dy < 0 {
+                direction = .up
+            }
+        }
+
+        let settings = AppSettings.shared
+        var action: ProgressGestureAction?
+        switch direction {
+        case .left: action = settings.progressGestureSwipeLeft
+        case .right: action = settings.progressGestureSwipeRight
+        case .up: action = settings.progressGestureSwipeUp
+        case .none: action = nil
+        }
+        if action == .none { action = nil }
+
+        let triggerable = action != nil && maxDelta >= Metrics.swipeTriggerDistance
+        if triggerable != swipeTriggerable, triggerable {
+            selectionFeedback.selectionChanged()
+        } else if direction != swipeDirection, direction != nil {
+            selectionFeedback.selectionChanged()
+        }
+
+        swipeDirection = direction
+        swipeAction = action
+        swipeTriggerable = triggerable
+        updateSwipePill(at: current)
+    }
+
+    private func ensureSwipePill() {
+        guard swipePill == nil, let window else { return }
+        let pill = UILabel()
+        pill.font = .systemFont(ofSize: 13, weight: .semibold)
+        pill.textColor = .white
+        pill.textAlignment = .center
+        pill.backgroundColor = AppSettings.shared.themeStyle.accentColor
+        pill.layer.cornerRadius = 14
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
+        pill.alpha = 0
+        window.addSubview(pill)
+        swipePill = pill
+    }
+
+    private func updateSwipePill(at point: CGPoint) {
+        guard let pill = swipePill else { return }
+        guard let action = swipeAction else {
+            pill.alpha = 0
+            return
+        }
+        let prefix: String
+        switch swipeDirection {
+        case .left: prefix = "← "
+        case .right: prefix = "→ "
+        case .up: prefix = "↑ "
+        case .none: prefix = ""
+        }
+        pill.text = "  \(prefix)\(action.title)  "
+        pill.sizeToFit()
+        let size = CGSize(width: max(pill.bounds.width + 8, 72), height: 28)
+        pill.bounds = CGRect(origin: .zero, size: size)
+        pill.center = CGPoint(x: point.x, y: point.y - 36)
+        pill.alpha = swipeTriggerable ? 1 : 0.55
+        pill.backgroundColor = swipeTriggerable
+            ? AppSettings.shared.themeStyle.accentColor
+            : UIColor.secondaryLabel
+    }
+
+    private func clearSwipePreview() {
+        swipeStart = nil
+        swipeDirection = nil
+        swipeAction = nil
+        swipeTriggerable = false
+        swipePill?.removeFromSuperview()
+        swipePill = nil
     }
 
     private func animatePressProgress() {
@@ -262,6 +382,8 @@ final class TopicDetailBottomBar: UIControl {
 
     private func presentRadialMenu(at location: CGPoint) {
         guard radialOverlay == nil, let window else { return }
+        let actions = menuActions
+        guard !actions.isEmpty else { return }
         isPresentingRadialMenu = true
         feedback.prepare()
         selectionFeedback.prepare()
@@ -272,7 +394,7 @@ final class TopicDetailBottomBar: UIControl {
             frame: window.bounds,
             center: center,
             pressRect: pressRect,
-            actions: TopicDetailRadialAction.allCases
+            actions: actions
         )
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         window.addSubview(overlay)
@@ -294,7 +416,7 @@ final class TopicDetailBottomBar: UIControl {
         let action = highlightedAction
         dismissRadialMenu(trigger: action != nil)
         if let action {
-            delegate?.bottomBarDidSelectRadialAction(action)
+            delegate?.bottomBarDidSelectProgressAction(action)
         }
     }
 
@@ -310,20 +432,38 @@ final class TopicDetailBottomBar: UIControl {
     }
 }
 
+extension TopicDetailBottomBar: UIGestureRecognizerDelegate {
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        false
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+        let velocity = pan.velocity(in: self)
+        // Prefer horizontal / upward pans so vertical list scroll isn't stolen loosely.
+        return abs(velocity.x) > abs(velocity.y) * 0.55 || velocity.y < -40
+    }
+}
+
 private final class TopicDetailRadialMenuOverlay: UIView {
     private struct Item {
-        let action: TopicDetailRadialAction
+        let action: ProgressGestureAction
         let view: TopicDetailRadialMenuItemView
         let center: CGPoint
     }
 
     private let centerPoint: CGPoint
     private let pressRect: CGRect
-    private let actions: [TopicDetailRadialAction]
+    private let actions: [ProgressGestureAction]
     private let deadZoneRadius: CGFloat = 26
     private let radius: CGFloat
     private var items: [Item] = []
-    private var highlightedAction: TopicDetailRadialAction?
+    private var highlightedAction: ProgressGestureAction?
 
     private let blurView: UIVisualEffectView = {
         let view = UIVisualEffectView(effect: nil)
@@ -344,7 +484,7 @@ private final class TopicDetailRadialMenuOverlay: UIView {
         frame: CGRect,
         center: CGPoint,
         pressRect: CGRect,
-        actions: [TopicDetailRadialAction]
+        actions: [ProgressGestureAction]
     ) {
         centerPoint = center
         self.pressRect = pressRect
@@ -361,11 +501,11 @@ private final class TopicDetailRadialMenuOverlay: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func updateHighlight(at point: CGPoint) -> TopicDetailRadialAction? {
+    func updateHighlight(at point: CGPoint) -> ProgressGestureAction? {
         let dx = point.x - centerPoint.x
         let dy = point.y - centerPoint.y
         let distance = sqrt(dx * dx + dy * dy)
-        let newAction: TopicDetailRadialAction?
+        let newAction: ProgressGestureAction?
         if distance < deadZoneRadius || dy >= 8 {
             newAction = nil
         } else {
@@ -496,7 +636,7 @@ private final class TopicDetailRadialMenuItemView: UIView {
         return label
     }()
 
-    init(action: TopicDetailRadialAction) {
+    init(action: ProgressGestureAction) {
         super.init(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
         isUserInteractionEnabled = false
         imageView.image = UIImage(

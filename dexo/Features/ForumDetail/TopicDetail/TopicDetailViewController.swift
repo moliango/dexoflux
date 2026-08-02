@@ -1620,159 +1620,6 @@ final class TopicDetailViewController: ObservableViewController {
     }
 }
 
-private final class TopicDetailSkeletonView: DexoSkeletonPlaceholderView {
-    private var cardSurfaces: [UIView] = []
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        skeletonContentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: skeletonContentView.topAnchor, constant: 12),
-            stack.leadingAnchor.constraint(equalTo: skeletonContentView.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: skeletonContentView.trailingAnchor, constant: -10),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: skeletonContentView.bottomAnchor),
-        ])
-
-        stack.addArrangedSubview(makeTitleCard())
-        for _ in 0 ..< 4 {
-            stack.addArrangedSubview(makePostCard())
-        }
-        applyThemeStyle()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func applyThemeStyle() {
-        let themeStyle = AppSettings.shared.themeStyle
-        applySkeletonTheme(
-            backgroundColor: themeStyle.topicListBackgroundColor,
-            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
-        )
-        cardSurfaces.forEach {
-            $0.backgroundColor = themeStyle.topicCardBackgroundColor
-            $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.20).cgColor
-        }
-    }
-
-    private func makeCard(height: CGFloat, cornerRadius: CGFloat = 16) -> UIView {
-        let card = UIView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.layer.cornerRadius = cornerRadius
-        card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = 0.5
-        cardSurfaces.append(card)
-        card.heightAnchor.constraint(equalToConstant: height).isActive = true
-        return card
-    }
-
-    private func makeTitleCard() -> UIView {
-        let card = makeCard(height: 118)
-        let title = makeSkeletonBlock(cornerRadius: 6)
-        let titleShort = makeSkeletonBlock(cornerRadius: 6)
-        let chipOne = makeSkeletonBlock(cornerRadius: 11)
-        let chipTwo = makeSkeletonBlock(cornerRadius: 11)
-        let meta = makeSkeletonBlock(cornerRadius: 5)
-
-        [title, titleShort, chipOne, chipTwo, meta].forEach { card.addSubview($0) }
-
-        NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
-            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            title.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -26),
-            title.heightAnchor.constraint(equalToConstant: 20),
-
-            titleShort.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 9),
-            titleShort.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            titleShort.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -94),
-            titleShort.heightAnchor.constraint(equalToConstant: 20),
-
-            chipOne.topAnchor.constraint(equalTo: titleShort.bottomAnchor, constant: 14),
-            chipOne.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            chipOne.widthAnchor.constraint(equalToConstant: 72),
-            chipOne.heightAnchor.constraint(equalToConstant: 22),
-
-            chipTwo.leadingAnchor.constraint(equalTo: chipOne.trailingAnchor, constant: 8),
-            chipTwo.centerYAnchor.constraint(equalTo: chipOne.centerYAnchor),
-            chipTwo.widthAnchor.constraint(equalToConstant: 56),
-            chipTwo.heightAnchor.constraint(equalTo: chipOne.heightAnchor),
-
-            meta.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            meta.topAnchor.constraint(equalTo: chipOne.bottomAnchor, constant: 12),
-            meta.widthAnchor.constraint(equalToConstant: 188),
-            meta.heightAnchor.constraint(equalToConstant: 12),
-        ])
-
-        return card
-    }
-
-    private func makePostCard() -> UIView {
-        let card = makeCard(height: 132)
-        let avatar = makeSkeletonBlock(cornerRadius: 16)
-        let name = makeSkeletonBlock(cornerRadius: 5)
-        let time = makeSkeletonBlock(cornerRadius: 4)
-        let lineOne = makeSkeletonBlock(cornerRadius: 5)
-        let lineTwo = makeSkeletonBlock(cornerRadius: 5)
-        let lineThree = makeSkeletonBlock(cornerRadius: 5)
-        let actionOne = makeSkeletonBlock(cornerRadius: 10)
-        let actionTwo = makeSkeletonBlock(cornerRadius: 10)
-
-        [avatar, name, time, lineOne, lineTwo, lineThree, actionOne, actionTwo].forEach { card.addSubview($0) }
-
-        NSLayoutConstraint.activate([
-            avatar.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
-            avatar.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            avatar.widthAnchor.constraint(equalToConstant: 32),
-            avatar.heightAnchor.constraint(equalToConstant: 32),
-
-            name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 10),
-            name.topAnchor.constraint(equalTo: avatar.topAnchor, constant: 2),
-            name.widthAnchor.constraint(equalToConstant: 126),
-            name.heightAnchor.constraint(equalToConstant: 14),
-
-            time.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            time.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 7),
-            time.widthAnchor.constraint(equalToConstant: 82),
-            time.heightAnchor.constraint(equalToConstant: 11),
-
-            lineOne.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            lineOne.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            lineOne.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 18),
-            lineOne.heightAnchor.constraint(equalToConstant: 13),
-
-            lineTwo.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
-            lineTwo.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -52),
-            lineTwo.topAnchor.constraint(equalTo: lineOne.bottomAnchor, constant: 9),
-            lineTwo.heightAnchor.constraint(equalToConstant: 13),
-
-            lineThree.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
-            lineThree.widthAnchor.constraint(equalToConstant: 190),
-            lineThree.topAnchor.constraint(equalTo: lineTwo.bottomAnchor, constant: 9),
-            lineThree.heightAnchor.constraint(equalToConstant: 13),
-
-            actionOne.leadingAnchor.constraint(equalTo: lineOne.leadingAnchor),
-            actionOne.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
-            actionOne.widthAnchor.constraint(equalToConstant: 52),
-            actionOne.heightAnchor.constraint(equalToConstant: 20),
-
-            actionTwo.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            actionTwo.centerYAnchor.constraint(equalTo: actionOne.centerYAnchor),
-            actionTwo.widthAnchor.constraint(equalToConstant: 84),
-            actionTwo.heightAnchor.constraint(equalTo: actionOne.heightAnchor),
-        ])
-
-        return card
-    }
-}
-
 // MARK: - TopicDetailBottomBarDelegate
 
 extension TopicDetailViewController: TopicDetailBottomBarDelegate {
@@ -1780,24 +1627,133 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
         showTimelineSheet()
     }
 
-    func bottomBarDidSelectRadialAction(_ action: TopicDetailRadialAction) {
+    func bottomBarDidSelectProgressAction(_ action: ProgressGestureAction) {
+        performProgressGestureAction(action)
+    }
+
+    private func performProgressGestureAction(_ action: ProgressGestureAction) {
         switch action {
-        case .timeline:
+        case .none:
+            break
+        case .openTimeline:
             showTimelineSheet()
         case .scrollToTop:
             scrollToTop()
+        case .jumpToUnread:
+            jumpToUnreadOrFirst()
+        case .nextPost:
+            jumpRelativeFloor(+1)
+        case .previousPost:
+            jumpRelativeFloor(-1)
         case .reply:
             replyButtonTapped()
-        case .bookmark:
-            bookmarkTopic()
         case .share:
             shareTopicLink(sourceView: bottomBar)
+        case .shareImage:
+            shareTopicImage()
+        case .exportArticle:
+            presentExportMenuFromProgressBar()
+        case .openInBrowser:
+            openTopicInBrowser()
+        case .bookmark:
+            bookmarkTopic()
+        case .readLater:
+            TopicReadLaterStore.shared.toggle(
+                topicId: topicId,
+                baseURL: api.baseURL,
+                username: AuthManager.shared.username(for: api.baseURL)
+            )
+            configureTopicActions()
+        case .notification:
+            presentNotificationLevelPicker()
+        case .filter:
+            viewModel.setFilteringByOP(!viewModel.isFilteringByOP)
+            configureTopicActions()
+        case .toggleNestedView:
+            AppSettings.shared.nestedReplyViewEnabled.toggle()
+            Task { await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width) }
+        case .aiAssistant:
+            aiAssistantTapped()
+        case .readingSettings:
+            navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
+        case .search:
+            showTimelineSheet()
+        case .refresh:
+            Task { await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width) }
+        case .goBack:
+            if canNavigateBack {
+                navigationController?.popViewController(animated: true)
+            } else {
+                dismiss(animated: true)
+            }
         }
     }
 
     private func scrollToTop() {
         guard tableView.numberOfRows(inSection: 0) > 0 else { return }
         tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: true)
+    }
+
+    private func jumpRelativeFloor(_ delta: Int) {
+        let total = viewModel.totalFloors
+        guard total > 0 else { return }
+        let target = min(max(currentVisibleFloor() + delta, 1), total)
+        jumpToFloor(target)
+    }
+
+    private func jumpToUnreadOrFirst() {
+        let current = currentVisibleFloor()
+        let total = viewModel.totalFloors
+        guard total > 0 else { return }
+        if current < total {
+            jumpToFloor(current + 1)
+        } else {
+            jumpToFloor(1)
+        }
+    }
+
+    private func openTopicInBrowser() {
+        guard let url = URL(string: "\(baseURL)/t/\(topicId)") else { return }
+        let browser = InAppBrowserViewController(
+            api: api,
+            username: AuthManager.shared.username(for: api.baseURL),
+            initialURL: url
+        )
+        navigationController?.pushViewController(browser, animated: true)
+    }
+
+    private func presentExportMenuFromProgressBar() {
+        let sheet = UIAlertController(
+            title: String(localized: "topic.export", defaultValue: "导出话题"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        for range in TopicExportRange.allCases {
+            sheet.addAction(UIAlertAction(title: range.title, style: .default) { [weak self] _ in
+                self?.exportTopic(format: .markdown, range: range)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        sheet.popoverPresentationController?.sourceView = bottomBar
+        sheet.popoverPresentationController?.sourceRect = bottomBar.bounds
+        present(sheet, animated: true)
+    }
+
+    private func presentNotificationLevelPicker() {
+        let sheet = UIAlertController(
+            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        for level in DiscourseTopicDetail.NotificationLevel.allCases.reversed() {
+            sheet.addAction(UIAlertAction(title: title(for: level), style: .default) { [weak self] _ in
+                self?.setNotificationLevel(level)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        sheet.popoverPresentationController?.sourceView = bottomBar
+        sheet.popoverPresentationController?.sourceRect = bottomBar.bounds
+        present(sheet, animated: true)
     }
 
     private func showTimelineSheet() {
@@ -2089,581 +2045,6 @@ extension TopicDetailViewController: UITableViewDelegate {
 }
 
 // MARK: - Topic Timeline Sheet
-
-private final class TopicTimelineSheetViewController: UIViewController {
-    var onJumpToPostId: ((Int) -> Void)?
-    var onDismiss: (() -> Void)?
-
-    private let initialIndex: Int
-    private let stream: [Int]
-    private let titleText: String?
-    private var selectedIndex: Int
-    private let feedback = UISelectionFeedbackGenerator()
-    private var totalCount: Int { stream.count }
-
-    private let grabberView: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .tertiaryLabel.withAlphaComponent(0.35)
-        view.layer.cornerRadius = 2
-        return view
-    }()
-
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 16, weight: .semibold)
-        label.textColor = .label
-        label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.textAlignment = .center
-        return label
-    }()
-
-    private let currentFloorCaptionLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = String(localized: "topic_detail.timeline.current_floor")
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .secondaryLabel
-        return label
-    }()
-
-    private lazy var floorTextField: UITextField = {
-        let field = UITextField()
-        field.translatesAutoresizingMaskIntoConstraints = false
-        field.keyboardType = .numberPad
-        field.textAlignment = .left
-        field.font = .monospacedDigitSystemFont(ofSize: 52, weight: .black)
-        field.textColor = .tintColor
-        field.tintColor = .tintColor
-        field.borderStyle = .none
-        field.delegate = self
-        field.addTarget(self, action: #selector(floorTextChanged), for: .editingChanged)
-        return field
-    }()
-
-    private let totalLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .monospacedDigitSystemFont(ofSize: 21, weight: .semibold)
-        label.textColor = .tertiaryLabel
-        return label
-    }()
-
-    private let editIconView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(systemName: "pencil"))
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = .tertiaryLabel
-        imageView.contentMode = .scaleAspectFit
-        return imageView
-    }()
-
-    private let statusLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .label
-        label.backgroundColor = UIColor.tintColor.withAlphaComponent(0.12)
-        label.layer.cornerRadius = 8
-        label.layer.cornerCurve = .continuous
-        label.clipsToBounds = true
-        label.textAlignment = .center
-        return label
-    }()
-
-    private lazy var trackView: TopicTimelineTrackView = {
-        let view = TopicTimelineTrackView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.totalCount = totalCount
-        view.selectedIndex = selectedIndex
-        view.addTarget(self, action: #selector(trackValueChanged(_:)), for: .valueChanged)
-        return view
-    }()
-
-    init(currentIndex: Int, stream: [Int], title: String?) {
-        self.stream = stream
-        let safeTotal = max(stream.count, 1)
-        self.initialIndex = min(max(currentIndex, 1), safeTotal)
-        self.selectedIndex = min(max(currentIndex, 1), safeTotal)
-        self.titleText = title
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-
-        let floorRow = UIStackView(arrangedSubviews: [floorTextField, totalLabel, editIconView])
-        floorRow.translatesAutoresizingMaskIntoConstraints = false
-        floorRow.axis = .horizontal
-        floorRow.alignment = .bottom
-        floorRow.spacing = 8
-
-        let infoStack = UIStackView(arrangedSubviews: [currentFloorCaptionLabel, floorRow, statusLabel])
-        infoStack.translatesAutoresizingMaskIntoConstraints = false
-        infoStack.axis = .vertical
-        infoStack.alignment = .leading
-        infoStack.spacing = 10
-
-        let contentRow = UIStackView(arrangedSubviews: [infoStack, trackView])
-        contentRow.translatesAutoresizingMaskIntoConstraints = false
-        contentRow.axis = .horizontal
-        contentRow.alignment = .center
-        contentRow.spacing = 20
-
-        let cancelButton = UIButton(type: .system)
-        cancelButton.translatesAutoresizingMaskIntoConstraints = false
-        cancelButton.setTitle(String(localized: "action.cancel"), for: .normal)
-        cancelButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
-        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
-
-        let jumpButton = UIButton(type: .system)
-        jumpButton.translatesAutoresizingMaskIntoConstraints = false
-        var jumpConfig = UIButton.Configuration.filled()
-        jumpConfig.title = String(localized: "topic_detail.jump.confirm")
-        jumpConfig.cornerStyle = .large
-        jumpConfig.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 24, bottom: 14, trailing: 24)
-        jumpButton.configuration = jumpConfig
-        jumpButton.addTarget(self, action: #selector(jumpTapped), for: .touchUpInside)
-
-        let buttonRow = UIStackView(arrangedSubviews: [cancelButton, jumpButton])
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
-        buttonRow.axis = .horizontal
-        buttonRow.distribution = .fillEqually
-        buttonRow.spacing = 16
-
-        titleLabel.text = titleText
-        totalLabel.text = "/ \(totalCount)"
-
-        view.addSubview(grabberView)
-        view.addSubview(titleLabel)
-        view.addSubview(contentRow)
-        view.addSubview(buttonRow)
-
-        NSLayoutConstraint.activate([
-            grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            grabberView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            grabberView.widthAnchor.constraint(equalToConstant: 36),
-            grabberView.heightAnchor.constraint(equalToConstant: 4),
-
-            titleLabel.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 18),
-            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-
-            contentRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: titleText == nil ? 8 : 24),
-            contentRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            contentRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            contentRow.bottomAnchor.constraint(lessThanOrEqualTo: buttonRow.topAnchor, constant: -20),
-
-            floorTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
-            floorTextField.heightAnchor.constraint(greaterThanOrEqualToConstant: 62),
-            editIconView.widthAnchor.constraint(equalToConstant: 16),
-            editIconView.heightAnchor.constraint(equalToConstant: 16),
-            statusLabel.heightAnchor.constraint(equalToConstant: 28),
-            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
-            trackView.widthAnchor.constraint(equalToConstant: 64),
-            trackView.heightAnchor.constraint(equalToConstant: 228),
-
-            buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            buttonRow.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            buttonRow.heightAnchor.constraint(equalToConstant: 52),
-        ])
-
-        if titleText == nil {
-            titleLabel.isHidden = true
-        }
-        feedback.prepare()
-        updateFloorDisplay()
-    }
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        onDismiss?()
-    }
-
-    @objc private func trackValueChanged(_ sender: TopicTimelineTrackView) {
-        setSelectedIndex(sender.selectedIndex, haptic: true)
-    }
-
-    @objc private func floorTextChanged() {
-        guard let text = floorTextField.text,
-              let value = Int(text)
-        else { return }
-        setSelectedIndex(min(max(value, 1), totalCount), haptic: true, updateText: false)
-    }
-
-    @objc private func cancelTapped() {
-        dismiss(animated: true)
-    }
-
-    @objc private func jumpTapped() {
-        view.endEditing(true)
-        normalizeInputFloor()
-        let selectedPostId = stream[selectedIndex - 1]
-        dismiss(animated: true) { [onJumpToPostId] in
-            onJumpToPostId?(selectedPostId)
-        }
-    }
-
-    private func setSelectedIndex(_ index: Int, haptic: Bool, updateText: Bool = true) {
-        let next = min(max(index, 1), totalCount)
-        guard next != selectedIndex else {
-            updateFloorDisplay(updateText: updateText)
-            return
-        }
-        selectedIndex = next
-        trackView.selectedIndex = next
-        if haptic {
-            feedback.selectionChanged()
-            feedback.prepare()
-        }
-        updateFloorDisplay(updateText: updateText)
-    }
-
-    private func updateFloorDisplay(updateText: Bool = true) {
-        if updateText {
-            floorTextField.text = "\(selectedIndex)"
-        }
-        statusLabel.text = selectedIndex == initialIndex
-            ? String(localized: "topic_detail.timeline.current")
-            : String(localized: "topic_detail.timeline.ready")
-    }
-
-    private func normalizeInputFloor() {
-        guard let text = floorTextField.text,
-              let value = Int(text)
-        else {
-            updateFloorDisplay()
-            return
-        }
-        setSelectedIndex(value, haptic: false)
-    }
-}
-
-extension TopicTimelineSheetViewController: UITextFieldDelegate {
-    func textFieldDidEndEditing(_ textField: UITextField) {
-        normalizeInputFloor()
-    }
-}
-
-private final class TopicTimelineTrackView: UIControl, UIGestureRecognizerDelegate {
-    var totalCount: Int {
-        get { totalCountValue }
-        set {
-            totalCountValue = max(newValue, 1)
-            selectedIndexValue = clampedIndex(selectedIndexValue)
-            setNeedsDisplay()
-        }
-    }
-
-    var selectedIndex: Int {
-        get { selectedIndexValue }
-        set {
-            let next = clampedIndex(newValue)
-            guard next != selectedIndexValue else { return }
-            selectedIndexValue = next
-            setNeedsDisplay()
-        }
-    }
-
-    private var totalCountValue = 1
-    private var selectedIndexValue = 1
-    private let trackInset: CGFloat = 24
-    private let handleSize: CGFloat = 36
-
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: 64, height: 228)
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setupUI()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func setupUI() {
-        backgroundColor = .clear
-        isOpaque = false
-        contentMode = .redraw
-        accessibilityTraits = [.adjustable]
-
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        pan.maximumNumberOfTouches = 1
-        pan.cancelsTouchesInView = true
-        pan.delegate = self
-        addGestureRecognizer(pan)
-    }
-
-    override func tintColorDidChange() {
-        super.tintColorDidChange()
-        setNeedsDisplay()
-    }
-
-    override func draw(_ rect: CGRect) {
-        let trackWidth: CGFloat = 5
-        let top = trackInset
-        let bottom = bounds.height - trackInset
-        let height = max(bottom - top, 1)
-        let x = bounds.midX - trackWidth / 2
-        let trackRect = CGRect(x: x, y: top, width: trackWidth, height: height)
-        let handleY = yPosition(for: selectedIndex)
-        let activeRect = CGRect(x: x, y: top, width: trackWidth, height: max(handleY - top, 0))
-
-        UIColor.tertiarySystemFill.setFill()
-        UIBezierPath(roundedRect: trackRect, cornerRadius: trackWidth / 2).fill()
-
-        tintColor.withAlphaComponent(0.45).setFill()
-        UIBezierPath(roundedRect: activeRect, cornerRadius: trackWidth / 2).fill()
-
-        drawEndpointMark(center: CGPoint(x: bounds.midX, y: top), filled: true)
-        drawEndpointMark(center: CGPoint(x: bounds.midX, y: bottom), filled: false)
-
-        let handleRect = CGRect(
-            x: bounds.midX - handleSize / 2,
-            y: handleY - handleSize / 2,
-            width: handleSize,
-            height: handleSize
-        )
-        UIColor.black.withAlphaComponent(0.10).setFill()
-        UIBezierPath(ovalIn: handleRect.offsetBy(dx: 0, dy: 3)).fill()
-        tintColor.setFill()
-        UIBezierPath(ovalIn: handleRect).fill()
-
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 15, weight: .bold)
-        let image = UIImage(systemName: "arrow.up.arrow.down", withConfiguration: symbolConfig)?
-            .withTintColor(.white, renderingMode: .alwaysOriginal)
-        let imageSize = CGSize(width: 18, height: 18)
-        image?.draw(in: CGRect(
-            x: handleRect.midX - imageSize.width / 2,
-            y: handleRect.midY - imageSize.height / 2,
-            width: imageSize.width,
-            height: imageSize.height
-        ))
-    }
-
-    override func accessibilityIncrement() {
-        selectedIndex = clampedIndex(selectedIndex + 1)
-        sendActions(for: .valueChanged)
-    }
-
-    override func accessibilityDecrement() {
-        selectedIndex = clampedIndex(selectedIndex - 1)
-        sendActions(for: .valueChanged)
-    }
-
-    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        updateSelection(for: touch)
-        return true
-    }
-
-    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        updateSelection(for: touch)
-        return true
-    }
-
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        switch gesture.state {
-        case .began, .changed:
-            updateSelection(at: gesture.location(in: self).y)
-        default:
-            break
-        }
-    }
-
-    private func updateSelection(for touch: UITouch) {
-        updateSelection(at: touch.location(in: self).y)
-    }
-
-    private func updateSelection(at y: CGFloat) {
-        let index = indexForY(y)
-        guard index != selectedIndex else { return }
-        selectedIndex = index
-        sendActions(for: .valueChanged)
-    }
-
-    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-        let velocity = pan.velocity(in: self)
-        return abs(velocity.y) >= abs(velocity.x)
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        guard otherGestureRecognizer is UIPanGestureRecognizer else { return false }
-        return otherGestureRecognizer.view !== self
-    }
-
-    private func clampedIndex(_ index: Int) -> Int {
-        min(max(index, 1), max(totalCount, 1))
-    }
-
-    private func yPosition(for index: Int) -> CGFloat {
-        let top = trackInset
-        let bottom = bounds.height - trackInset
-        guard totalCount > 1 else { return top }
-        let percent = CGFloat(index - 1) / CGFloat(totalCount - 1)
-        return top + (bottom - top) * percent
-    }
-
-    private func indexForY(_ y: CGFloat) -> Int {
-        let top = trackInset
-        let bottom = bounds.height - trackInset
-        guard totalCount > 1 else { return 1 }
-        let percent = min(max((y - top) / max(bottom - top, 1), 0), 1)
-        return Int(round(percent * CGFloat(totalCount - 1))) + 1
-    }
-
-    private func drawEndpointMark(center: CGPoint, filled: Bool) {
-        let rect = CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
-        if filled {
-            tintColor.setFill()
-            UIBezierPath(ovalIn: rect).fill()
-        } else {
-            UIColor.systemBackground.setFill()
-            UIBezierPath(ovalIn: rect).fill()
-        }
-        tintColor.setStroke()
-        let path = UIBezierPath(ovalIn: rect)
-        path.lineWidth = 2
-        path.stroke()
-    }
-}
-
-// MARK: - TopicReadingTracker
-
-@MainActor
-private final class TopicReadingTracker {
-    private let api: DiscourseAPI
-    private var topicId: Int?
-    private var visiblePostNumbers: Set<Int> = []
-    private var pendingTimings: [Int: Int] = [:]
-    private var pendingTopicTimeMilliseconds = 0
-    private var timer: Timer?
-    private var lastTickDate: Date?
-    private var lastFlushDate = Date()
-    private var isFlushInFlight = false
-
-    init(api: DiscourseAPI) {
-        self.api = api
-    }
-
-    func start(topicId: Int) {
-        if self.topicId != topicId {
-            pendingTimings.removeAll()
-            pendingTopicTimeMilliseconds = 0
-        }
-        self.topicId = topicId
-        lastTickDate = Date()
-        lastFlushDate = Date()
-        guard timer == nil else { return }
-
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.tick()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-    }
-
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        lastTickDate = nil
-        visiblePostNumbers.removeAll()
-        flush(force: true)
-    }
-
-    func setVisiblePostNumbers(_ postNumbers: Set<Int>) {
-        visiblePostNumbers = postNumbers.filter { $0 > 0 }
-    }
-
-    func scrolled() {
-        tick()
-    }
-
-    private func tick() {
-        let now = Date()
-        let elapsedMilliseconds: Int
-        if let lastTickDate {
-            elapsedMilliseconds = min(max(Int(now.timeIntervalSince(lastTickDate) * 1000), 0), 2_000)
-        } else {
-            elapsedMilliseconds = 0
-        }
-        lastTickDate = now
-
-        guard elapsedMilliseconds > 0, !visiblePostNumbers.isEmpty else { return }
-        pendingTopicTimeMilliseconds += elapsedMilliseconds
-        for postNumber in visiblePostNumbers {
-            pendingTimings[postNumber, default: 0] += elapsedMilliseconds
-        }
-
-        if now.timeIntervalSince(lastFlushDate) >= 60 {
-            flush(force: false)
-        }
-    }
-
-    private func flush(force: Bool) {
-        guard !isFlushInFlight,
-              let topicId,
-              pendingTopicTimeMilliseconds > 0,
-              !pendingTimings.isEmpty
-        else { return }
-
-        let topicTime = pendingTopicTimeMilliseconds
-        let timings = pendingTimings
-        pendingTopicTimeMilliseconds = 0
-        pendingTimings.removeAll()
-        lastFlushDate = Date()
-        isFlushInFlight = true
-
-        Task { [weak self, api, topicId, topicTime, timings] in
-            let statusCode = await api.sendTopicTimings(
-                topicId: topicId,
-                topicTime: topicTime,
-                timings: timings
-            )
-            await MainActor.run {
-                guard let self else { return }
-                self.isFlushInFlight = false
-                if let statusCode,
-                   (200 ..< 300).contains(statusCode),
-                   let highestSeen = timings.keys.max() {
-                    NotificationCenter.default.post(
-                        name: .topicReadProgressDidChange,
-                        object: nil,
-                        userInfo: [
-                            TopicReadProgressUserInfoKey.baseURL: api.baseURL,
-                            TopicReadProgressUserInfoKey.topicId: topicId,
-                            TopicReadProgressUserInfoKey.highestSeen: highestSeen,
-                        ]
-                    )
-                }
-                guard !force,
-                      let statusCode,
-                      !(200 ..< 300).contains(statusCode)
-                else { return }
-                self.pendingTopicTimeMilliseconds += topicTime
-                for (postNumber, milliseconds) in timings {
-                    self.pendingTimings[postNumber, default: 0] += milliseconds
-                }
-            }
-        }
-    }
-}
 
 // MARK: - PostCellDelegate
 
