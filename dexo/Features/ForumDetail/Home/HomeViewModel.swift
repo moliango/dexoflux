@@ -55,6 +55,8 @@ final class HomeViewModel: DexoObservableObject {
     var incomingTopicIds: [Int] = []
     var isLoadingIncomingTopics = false
     var shouldRetryIncomingTopicsAfterCloudflare = false
+    /// Set when pagination fails with a CF challenge so Home can resume load-more after 出盾.
+    var shouldRetryLoadMoreAfterCloudflare = false
     var isLoading = false
     var isLoadingMore = false
     var canLoadMore = false
@@ -90,6 +92,10 @@ final class HomeViewModel: DexoObservableObject {
     func avatarTemplate(for topic: DiscourseTopicList.Topic) -> String? {
         guard let firstPoster = topic.posters?.first else { return nil }
         return usersById[firstPoster.userId]?.avatarTemplate
+    }
+
+    func avatarUserId(for topic: DiscourseTopicList.Topic) -> Int? {
+        topic.posters?.first?.userId
     }
 
     func username(for topic: DiscourseTopicList.Topic) -> String? {
@@ -178,6 +184,7 @@ final class HomeViewModel: DexoObservableObject {
         isLoading = true
         errorMessage = nil
         loadMoreErrorMessage = nil
+        shouldRetryLoadMoreAfterCloudflare = false
         requiresLogin = false
         isBlockedByCloudflare = false
         currentPage = 0
@@ -269,12 +276,13 @@ final class HomeViewModel: DexoObservableObject {
         }
         isLoadingMore = true
         loadMoreErrorMessage = nil
+        shouldRetryLoadMoreAfterCloudflare = false
         DohDebugLog.record("loadmore begin page=\(currentPage + 1)", subsystem: "home.loadmore")
         notifyChanged()
         defer {
             isLoadingMore = false
             DohDebugLog.record(
-                "loadmore end page=\(currentPage) can=\(canLoadMore) error=\(loadMoreErrorMessage != nil)",
+                "loadmore end page=\(currentPage) can=\(canLoadMore) error=\(loadMoreErrorMessage != nil) cfRetry=\(shouldRetryLoadMoreAfterCloudflare)",
                 subsystem: "home.loadmore"
             )
             notifyChanged()
@@ -290,6 +298,7 @@ final class HomeViewModel: DexoObservableObject {
             topics.append(contentsOf: newTopics)
             canLoadMore = result.topicList.moreTopicsUrl != nil
             loadMoreErrorMessage = nil
+            shouldRetryLoadMoreAfterCloudflare = false
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
             logTopicCategoryDiagnostics(context: "loadMore", topics: newTopics)
@@ -304,6 +313,14 @@ final class HomeViewModel: DexoObservableObject {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
+            if isCloudflareChallenge(error) {
+                // Keep existing rows; after CF pass Home retries this page automatically.
+                shouldRetryLoadMoreAfterCloudflare = true
+                loadMoreErrorMessage = error.localizedDescription
+                DohDebugLog.record("loadmore CF challenge; will retry after verification", subsystem: "home.loadmore")
+                return
+            }
+            shouldRetryLoadMoreAfterCloudflare = false
             loadMoreErrorMessage = error.localizedDescription
             DohDebugLog.record("loadmore failed \(error.localizedDescription)", subsystem: "home.loadmore")
         }
@@ -464,6 +481,7 @@ final class HomeViewModel: DexoObservableObject {
         isLoadingMore = false
         isLoadingIncomingTopics = false
         shouldRetryIncomingTopicsAfterCloudflare = false
+        shouldRetryLoadMoreAfterCloudflare = false
         requiresLogin = false
         isBlockedByCloudflare = false
         if topics.isEmpty {
@@ -502,6 +520,7 @@ final class HomeViewModel: DexoObservableObject {
         isLoadingIncomingTopics = false
         canLoadMore = false
         loadMoreErrorMessage = nil
+        shouldRetryLoadMoreAfterCloudflare = false
         currentPage = 0
         usersById.removeAll()
         categories = []

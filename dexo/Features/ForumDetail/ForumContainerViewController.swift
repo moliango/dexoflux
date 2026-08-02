@@ -35,7 +35,6 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private let launchLoadingView = DexoLaunchLoadingView()
     private var tabBarViewController: ForumTabBarController?
-    private var pluginDockViewController: PluginDockViewController?
 
     private let authSyncOverlayView: UIView = {
         let view = UIView()
@@ -136,7 +135,6 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
         startObservingHomeInitialContent()
         setupTabBar()
-        setupPluginDock()
         setupAuthSyncOverlay()
         setupCloudflareShieldButton()
         setupLaunchLoadingOverlay()
@@ -334,21 +332,6 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             }))
             self.present(alert, animated: true)
         }
-    }
-
-    private func setupPluginDock() {
-        let dock = PluginDockViewController(api: api, username: forum.username)
-        pluginDockViewController = dock
-        addChild(dock)
-        view.addSubview(dock.view)
-        dock.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            dock.view.topAnchor.constraint(equalTo: view.topAnchor),
-            dock.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            dock.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            dock.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        dock.didMove(toParent: self)
     }
 
     private func setupCloudflareShieldButton() {
@@ -673,8 +656,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             logCloudflareState("needs-user ignored because foreground verification is already presented base=\(baseURLString)")
             return
         }
-        logCloudflareState("background verification needs user; showing global shield base=\(baseURLString)")
+        // Background CF pass failed (API or image path). Auto-present the verification
+        // sheet so the user is not stuck with blank images / only a tiny shield icon.
+        logCloudflareState("background verification needs user; presenting verification sheet base=\(baseURLString)")
         setCloudflareShieldButtonVisible(true, animated: true)
+        presentCloudflareVerification(baseURL: baseURL, responseURL: responseURL)
     }
 
     private func handleCloudflareVerificationCompleted(_ notification: Notification) {

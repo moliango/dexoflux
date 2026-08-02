@@ -1,8 +1,7 @@
 import Combine
-import Network
 import UIKit
 
-private enum HomeFABMode {
+enum HomeFABMode {
     case create
     case refresh
 }
@@ -10,94 +9,138 @@ private enum HomeFABMode {
 final class HomeViewController: ObservableViewController {
     static let initialContentReadyNotification = Notification.Name("DexoHomeInitialContentReadyNotification")
 
-    private static let reloadTimeoutNanoseconds: UInt64 = 25_000_000_000
-    private static let searchRowExpandedHeight: CGFloat = 40
-    private static let categoryRowHeight: CGFloat = 36
-    private static let filterRowHeight: CGFloat = 36
-    private static let incomingTopicsBannerHeight: CGFloat = 64
-    private static let headerVerticalSpacing: CGFloat = 8 + 6
-    private static let headerBottomPadding: CGFloat = 8
-    private static let baseTableTopSpacing: CGFloat = 16
-    private static let baseTableBottomSpacing: CGFloat = 12
-    private static let xiaohongshuTableTopSpacing: CGFloat = 32
-    private static let xiaohongshuTableBottomSpacing: CGFloat = 16
-    private static let topRefreshGeometryReleaseDelay: TimeInterval = 0.28
+    static let reloadTimeoutNanoseconds: UInt64 = 25_000_000_000
+    static let searchRowExpandedHeight: CGFloat = 40
+    static let categoryRowHeight: CGFloat = 36
+    static let filterRowHeight: CGFloat = 36
+    static let incomingTopicsBannerHeight: CGFloat = 64
+    /// Category chip row → filter row (matches `filterTopToCategoryConstraint` constant).
+    static let categoryToFilterSpacing: CGFloat = 6
+    /// Filter row → search row (matches `searchBelowFilterConstraint` constant).
+    static let filterToSearchSpacing: CGFloat = 8
+    /// Safe-area → filter when the chip row is collapsed for drawer mode.
+    static let filterTopInDrawerSpacing: CGFloat = 2
+    static let headerBottomPadding: CGFloat = 8
+    static let baseTableTopSpacing: CGFloat = 16
+    static let baseTableBottomSpacing: CGFloat = 12
+    static let xiaohongshuTableTopSpacing: CGFloat = 32
+    static let xiaohongshuTableBottomSpacing: CGFloat = 16
+    static let topRefreshGeometryReleaseDelay: TimeInterval = 0.28
 
-    private let api: DiscourseAPI
-    private let viewModel: HomeViewModel
-    private let notificationCoordinator: ForumNotificationCoordinator
-    private weak var authGate: AuthGating?
-    private var categoryTabButtons: [Int?: UIButton] = [:]
-    private var categoryTabOrder: [Int?] = []
-    private var headerHeightConstraint: NSLayoutConstraint?
-    private var searchRowHeightConstraint: NSLayoutConstraint?
-    private var floatingActionButtonBottomConstraint: NSLayoutConstraint?
-    private var isSearchRowCollapsed = false
-    private var fabMode: HomeFABMode = .create
-    private var isCreateMenuVisible = false
-    private var isHomeTabBarHidden = false
-    private var lastHomeScrollY: CGFloat?
-    private var incomingTopicsPollTimer: Timer?
-    private var cloudflareCompletionObservationToken: NSObjectProtocol?
-    private var authObservationToken: AnyCancellable?
-    private var settingsObservationToken: AnyCancellable?
-    private var foregroundObservationToken: NSObjectProtocol?
-    private var topicReadProgressObservationToken: NSObjectProtocol?
-    private var topicReloadTask: Task<Void, Never>?
-    private var topicLoadMoreTask: Task<Void, Never>?
-    private var reloadTimeoutTask: Task<Void, Never>?
-    private var incomingTopicsRetryTask: Task<Void, Never>?
-    private var reloadSequence = 0
-    private var lastAuthenticatedState: Bool?
-    private var isInitialTopicLoadPending = true
-    private var didPostInitialContentReady = false
-    private var isIncomingTopicsBannerVisible = false
-    private var isIncomingTopicsInlineBannerVisible = false
-    private var incomingTopicsUsesTopSpace = false
-    private var isTopRefreshGeometryLocked = false
-    private var topRefreshGeometryLockID = 0
+    let api: DiscourseAPI
+    let viewModel: HomeViewModel
+    let notificationCoordinator: ForumNotificationCoordinator
+    weak var authGate: AuthGating?
+    var categoryTabButtons: [Int?: UIButton] = [:]
+    var categoryTabOrder: [Int?] = []
+    var headerHeightConstraint: NSLayoutConstraint?
+    var searchRowHeightConstraint: NSLayoutConstraint?
+    var categoryManagerTrailingToChromeConstraint: NSLayoutConstraint?
+    var categoryManagerTrailingToHeaderConstraint: NSLayoutConstraint?
+    var categoryScrollHeightConstraint: NSLayoutConstraint?
+    /// Filter under category chips (normal mode).
+    var filterTopToCategoryConstraint: NSLayoutConstraint?
+    /// Filter under safe area when category chips are hidden (drawer mode).
+    var filterTopToSafeAreaConstraint: NSLayoutConstraint?
+    var trailingChromeCenterYToCategoryConstraint: NSLayoutConstraint?
+    var trailingChromeCenterYToFilterConstraint: NSLayoutConstraint?
+    var filterTrailingToChromeConstraint: NSLayoutConstraint?
+    var floatingActionButtonBottomConstraint: NSLayoutConstraint?
+    var isSearchRowCollapsed = false
+    /// Cancels in-flight morph so a stale expand completion cannot hide the
+    /// compact search icon while the row is still collapsed (fast flick bug).
+    var searchRowMorphGeneration = 0
+    var searchRowMorphAnimator: UIViewPropertyAnimator?
+    var fabMode: HomeFABMode = .create
+    var isCreateMenuVisible = false
+    var isHomeTabBarHidden = false
+    var lastHomeScrollY: CGFloat?
+    var incomingTopicsPollTimer: Timer?
+    var cloudflareCompletionObservationToken: NSObjectProtocol?
+    var authObservationToken: AnyCancellable?
+    var settingsObservationToken: AnyCancellable?
+    var foregroundObservationToken: NSObjectProtocol?
+    var topicReadProgressObservationToken: NSObjectProtocol?
+    var topicReloadTask: Task<Void, Never>?
+    var topicLoadMoreTask: Task<Void, Never>?
+    var reloadTimeoutTask: Task<Void, Never>?
+    var incomingTopicsRetryTask: Task<Void, Never>?
+    var reloadSequence = 0
+    var lastAuthenticatedState: Bool?
+    var isInitialTopicLoadPending = true
+    var didPostInitialContentReady = false
+    var isIncomingTopicsBannerVisible = false
+    var isIncomingTopicsInlineBannerVisible = false
+    var incomingTopicsUsesTopSpace = false
+    var isTopRefreshGeometryLocked = false
+    var topRefreshGeometryLockID = 0
     /// 刷新/回弹窗口：冻结滚动驱动的 tab bar 显隐，避免和 contentOffset 抖动打架。
-    private var isTabBarScrollFrozenForRefresh = false
-    private var tabBarScrollFreezeID = 0
+    var isTabBarScrollFrozenForRefresh = false
+    var tabBarScrollFreezeID = 0
     /// 加载下一页及 contentSize 稳定窗口。
-    private var isTabBarScrollFrozenForLoadMore = false
-    private var tabBarLoadMoreFreezeID = 0
-    private var wasLoadingMoreTopics = false
-    private var loadingSkeletonTopConstraint: NSLayoutConstraint?
-    private let categoryDrawer = HomeCategoryDrawerView()
-    private var categoryDrawerEdgePan: UIScreenEdgePanGestureRecognizer?
-    private var didLoadCategoryDrawerTags = false
-    private let pathMonitor = NWPathMonitor()
-    private let pathMonitorQueue = DispatchQueue(label: "dexo.home.network-monitor")
-    private var lastNetworkStatus: NWPath.Status?
+    var isTabBarScrollFrozenForLoadMore = false
+    var tabBarLoadMoreFreezeID = 0
+    var wasLoadingMoreTopics = false
+    /// Tracks list content height so load-more contentSize jumps are not
+    /// mistaken for "scroll up" (which would incorrectly reveal the tab bar).
+    var lastTopicListContentHeight: CGFloat = 0
+    /// After pagination contentSize jumps, suppress tab-bar *show* until this time
+    /// (CACurrentMediaTime). Hide is still allowed. Prevents bounce-reveal.
+    var tabBarShowSuppressedUntil: CFTimeInterval = 0
+    var loadingSkeletonTopConstraint: NSLayoutConstraint?
+    let categoryDrawer = HomeCategoryDrawerView()
+    var categoryDrawerEdgePan: UIScreenEdgePanGestureRecognizer?
+    var didLoadCategoryDrawerTags = false
+    /// Observation of app-wide `ConnectivityService` (FluxDo-aligned).
+    var connectivityObservationToken: NSObjectProtocol?
+    let offlineIndicatorView = OfflineIndicatorView()
 
-    private var expandedHeaderHeight: CGFloat {
+    var isCategoryDrawerMode: Bool {
+        AppSettings.shared.homeCategoryDrawerSwipeEnabled
+    }
+
+    /// Category chip row is hidden when the side drawer owns category navigation.
+    var effectiveCategoryRowHeight: CGFloat {
+        isCategoryDrawerMode ? 0 : Self.categoryRowHeight
+    }
+
+    /// Vertical gaps between category chips / filter (最新) / search.
+    /// Drawer mode drops the chip row, so only filter→search spacing remains.
+    var effectiveHeaderVerticalSpacing: CGFloat {
+        if isCategoryDrawerMode {
+            return Self.filterToSearchSpacing
+        }
+        // category → filter + filter → search
+        return Self.categoryToFilterSpacing + Self.filterToSearchSpacing
+    }
+
+    var expandedHeaderHeight: CGFloat {
         view.safeAreaInsets.top
             + 2
             + Self.searchRowExpandedHeight
-            + Self.headerVerticalSpacing
-            + Self.categoryRowHeight
+            + effectiveHeaderVerticalSpacing
+            + effectiveCategoryRowHeight
             + Self.filterRowHeight
             + Self.headerBottomPadding
     }
 
-    private var collapsedHeaderHeight: CGFloat {
+    var collapsedHeaderHeight: CGFloat {
         view.safeAreaInsets.top
             + 2
-            + Self.headerVerticalSpacing
-            + Self.categoryRowHeight
+            + effectiveHeaderVerticalSpacing
+            + effectiveCategoryRowHeight
             + Self.filterRowHeight
             + Self.headerBottomPadding
     }
 
-    private let headerContainer: UIView = {
+    let headerContainer: UIView = {
         let view = UIView()
         view.backgroundColor = .systemGroupedBackground
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
 
-    private let searchRowStackView: UIStackView = {
+    let searchRowStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .center
@@ -107,7 +150,7 @@ final class HomeViewController: ObservableViewController {
         return stack
     }()
 
-    private let searchButton: UIButton = {
+    let searchButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "home.search.placeholder")
         config.image = UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
@@ -128,7 +171,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let notificationButton: UIButton = {
+    let notificationButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "bell", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular))
         config.baseForegroundColor = .secondaryLabel
@@ -138,7 +181,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let notificationBadgeView: UIView = {
+    let notificationBadgeView: UIView = {
         let view = UIView()
         view.backgroundColor = .systemRed
         view.layer.cornerRadius = 4.5
@@ -149,7 +192,7 @@ final class HomeViewController: ObservableViewController {
         return view
     }()
 
-    private let categoryManagerButton: UIButton = {
+    let categoryManagerButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "line.3.horizontal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
         config.baseForegroundColor = .secondaryLabel
@@ -159,7 +202,48 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let categoryScrollView: UIScrollView = {
+    let miniProgramButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: "square.grid.2x2",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        )
+        config.baseForegroundColor = .secondaryLabel
+        let button = UIButton(configuration: config)
+        button.accessibilityLabel = String(localized: "mini_program.drawer.open", defaultValue: "打开小程序")
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    /// Icon-only search shown on the trailing chrome when the full search bar is collapsed.
+    let compactSearchButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: "magnifyingglass",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        )
+        config.baseForegroundColor = .secondaryLabel
+        let button = UIButton(configuration: config)
+        button.accessibilityLabel = String(localized: "home.search.placeholder")
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.alpha = 0
+        button.isHidden = true
+        return button
+    }()
+
+    /// Trailing action cluster on the filter/category row: [search icon] [mini-program] [bell].
+    let trailingChromeStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    var miniProgramDrawer: MiniProgramDrawerViewController?
+
+    let categoryScrollView: UIScrollView = {
         let scroll = UIScrollView()
         scroll.showsHorizontalScrollIndicator = false
         scroll.showsVerticalScrollIndicator = false
@@ -167,7 +251,7 @@ final class HomeViewController: ObservableViewController {
         return scroll
     }()
 
-    private let categoryStackView: UIStackView = {
+    let categoryStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .fill
@@ -176,7 +260,7 @@ final class HomeViewController: ObservableViewController {
         return stack
     }()
 
-    private let filterStackView: UIStackView = {
+    let filterStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .center
@@ -185,14 +269,14 @@ final class HomeViewController: ObservableViewController {
         return stack
     }()
 
-    private let filterButton: UIButton = {
+    let filterButton: UIButton = {
         let button = UIButton(configuration: .plain())
         button.showsMenuAsPrimaryAction = true
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
 
-    private let categoryButton: UIButton = {
+    let categoryButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "home.filter.categories")
         config.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
@@ -212,7 +296,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private lazy var tableView: UITableView = {
+    lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
@@ -227,7 +311,7 @@ final class HomeViewController: ObservableViewController {
         return tv
     }()
 
-    private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, topicId in
+    lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, topicId in
         guard let self else {
             return UITableViewCell()
         }
@@ -266,6 +350,7 @@ final class HomeViewController: ObservableViewController {
         cell.configure(
             with: topic,
             avatarURL: avatarURL,
+            avatarUserId: self.viewModel.avatarUserId(for: topic),
             categoryName: self.viewModel.categoryDisplayName(for: category),
             categoryColor: categoryColor,
             tags: topic.tags ?? [],
@@ -275,20 +360,20 @@ final class HomeViewController: ObservableViewController {
         return cell
     }
 
-    private var usesXiaohongshuCardLayout: Bool {
+    var usesXiaohongshuCardLayout: Bool {
         AppSettings.shared.themeStyle == .xiaohongshu
     }
 
-    private static func xiaohongshuRowIdentifier(for rowIndex: Int) -> Int {
+    static func xiaohongshuRowIdentifier(for rowIndex: Int) -> Int {
         -(rowIndex + 1)
     }
 
-    private static func xiaohongshuRowIndex(from identifier: Int) -> Int? {
+    static func xiaohongshuRowIndex(from identifier: Int) -> Int? {
         guard identifier < 0 else { return nil }
         return abs(identifier) - 1
     }
 
-    private func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
+    func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
         let leftIndex = rowIndex * 2
         guard viewModel.topics.indices.contains(leftIndex) else {
             return (nil, nil)
@@ -298,7 +383,7 @@ final class HomeViewController: ObservableViewController {
         return (viewModel.topics[leftIndex], rightTopic)
     }
 
-    private func xiaohongshuCardModel(for topic: DiscourseTopicList.Topic) -> XiaohongshuTopicCardModel {
+    func xiaohongshuCardModel(for topic: DiscourseTopicList.Topic) -> XiaohongshuTopicCardModel {
         let avatarURL = AvatarImageLoader.url(
             from: viewModel.avatarTemplate(for: topic),
             baseURL: api.baseURL,
@@ -311,6 +396,7 @@ final class HomeViewController: ObservableViewController {
             title: TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title),
             excerpt: topic.excerpt,
             avatarURL: avatarURL,
+            avatarUserId: viewModel.avatarUserId(for: topic),
             username: viewModel.username(for: topic),
             categoryName: viewModel.categoryDisplayName(for: category),
             categoryColor: categoryColor,
@@ -324,27 +410,27 @@ final class HomeViewController: ObservableViewController {
         )
     }
 
-    private let activityIndicator: UIActivityIndicatorView = {
+    let activityIndicator: UIActivityIndicatorView = {
         let ai = UIActivityIndicatorView(style: .medium)
         ai.hidesWhenStopped = true
         ai.translatesAutoresizingMaskIntoConstraints = false
         return ai
     }()
 
-    private let loadingSkeletonView = HomeTopicListSkeletonView()
-    private let emptyStateView = HomeEmptyStateView()
+    let loadingSkeletonView = HomeTopicListSkeletonView()
+    let emptyStateView = HomeEmptyStateView()
 
-    private let footerSpinner: UIActivityIndicatorView = {
+    let footerSpinner: UIActivityIndicatorView = {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.hidesWhenStopped = true
         spinner.frame = CGRect(x: 0, y: 0, width: 0, height: 44)
         return spinner
     }()
 
-    private let emptyFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
-    private let emptyTableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+    let emptyFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+    let emptyTableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
-    private lazy var loadMoreErrorFooter: UIView = {
+    lazy var loadMoreErrorFooter: UIView = {
         let footer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 68))
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -375,7 +461,7 @@ final class HomeViewController: ObservableViewController {
         return footer
     }()
 
-    private let errorLabel: UILabel = {
+    let errorLabel: UILabel = {
         let label = UILabel()
         label.textColor = .secondaryLabel
         label.textAlignment = .center
@@ -385,7 +471,7 @@ final class HomeViewController: ObservableViewController {
         return label
     }()
 
-    private let loginPromptCard: UIView = {
+    let loginPromptCard: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.layer.cornerRadius = 28
@@ -394,14 +480,14 @@ final class HomeViewController: ObservableViewController {
         return view
     }()
 
-    private let loginLogoView: UIImageView = {
+    let loginLogoView: UIImageView = {
         let view = UIImageView(image: UIImage(named: "LinuxDoLogo") ?? UIImage(named: "launchImg"))
         view.translatesAutoresizingMaskIntoConstraints = false
         view.contentMode = .scaleAspectFit
         return view
     }()
 
-    private let loginTitleLabel: UILabel = {
+    let loginTitleLabel: UILabel = {
         let label = UILabel()
         label.text = "欢迎使用 DexoFlux"
         label.font = .systemFont(ofSize: 24, weight: .bold)
@@ -410,7 +496,7 @@ final class HomeViewController: ObservableViewController {
         return label
     }()
 
-    private let loginFeatureLabel: UILabel = {
+    let loginFeatureLabel: UILabel = {
         let label = UILabel()
         label.text = "连接观点、记录阅读，也不错过每一次回应"
         label.font = .systemFont(ofSize: 13, weight: .regular)
@@ -420,7 +506,7 @@ final class HomeViewController: ObservableViewController {
         return label
     }()
 
-    private let loginBenefitsStack: UIStackView = {
+    let loginBenefitsStack: UIStackView = {
         let items = [
             ("text.bubble.fill", "探索话题"),
             ("bell.badge.fill", "及时回应"),
@@ -451,7 +537,7 @@ final class HomeViewController: ObservableViewController {
         return stack
     }()
 
-    private let loginButton: UIButton = {
+    let loginButton: UIButton = {
         var config = UIButton.Configuration.filled()
         config.title = String(localized: "home.login_prompt")
         config.cornerStyle = .large
@@ -465,7 +551,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let floatingActionButton: UIButton = {
+    let floatingActionButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.tintColor = .white
@@ -480,7 +566,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let createMenuBackdrop: UIView = {
+    let createMenuBackdrop: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.backgroundColor = UIColor.black.withAlphaComponent(0.10)
@@ -490,7 +576,7 @@ final class HomeViewController: ObservableViewController {
         return view
     }()
 
-    private let createMenuContainer: UIVisualEffectView = {
+    let createMenuContainer: UIVisualEffectView = {
         let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         view.translatesAutoresizingMaskIntoConstraints = false
         view.layer.cornerRadius = 22
@@ -507,7 +593,7 @@ final class HomeViewController: ObservableViewController {
         return view
     }()
 
-    private let createTopicMenuButton: UIButton = {
+    let createTopicMenuButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "new_topic.title")
         config.subtitle = String(localized: "new_topic.body.placeholder")
@@ -523,7 +609,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private let draftsMenuButton: UIButton = {
+    let draftsMenuButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "me.drafts", defaultValue: "我的草稿")
         config.subtitle = String(localized: "me.action.drafts.subtitle", defaultValue: "继续编辑保存的内容")
@@ -539,7 +625,7 @@ final class HomeViewController: ObservableViewController {
         return button
     }()
 
-    private lazy var createMenuStackView: UIStackView = {
+    lazy var createMenuStackView: UIStackView = {
         let stack = UIStackView(arrangedSubviews: [createTopicMenuButton, draftsMenuButton])
         stack.axis = .vertical
         stack.spacing = 4
@@ -547,7 +633,7 @@ final class HomeViewController: ObservableViewController {
         return stack
     }()
 
-    private lazy var createMenuDismissTapGesture: UITapGestureRecognizer = {
+    lazy var createMenuDismissTapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(createMenuBackdropTapped))
         gesture.cancelsTouchesInView = true
         gesture.delegate = self
@@ -555,7 +641,7 @@ final class HomeViewController: ObservableViewController {
         return gesture
     }()
 
-    private let incomingTopicsHeaderView: UIView = {
+    let incomingTopicsHeaderView: UIView = {
         let view = UIView()
         view.backgroundColor = .clear
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -565,25 +651,25 @@ final class HomeViewController: ObservableViewController {
         return view
     }()
 
-    private let incomingTopicsButton: IncomingTopicsBannerView = {
+    let incomingTopicsButton: IncomingTopicsBannerView = {
         let button = IncomingTopicsBannerView()
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
 
-    private let incomingTopicsInlineHeaderView: UIView = {
+    let incomingTopicsInlineHeaderView: UIView = {
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: HomeViewController.incomingTopicsBannerHeight))
         view.backgroundColor = .clear
         return view
     }()
 
-    private let incomingTopicsInlineButton: IncomingTopicsBannerView = {
+    let incomingTopicsInlineButton: IncomingTopicsBannerView = {
         let button = IncomingTopicsBannerView()
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
 
-    private lazy var refreshControl: UIRefreshControl = {
+    lazy var refreshControl: UIRefreshControl = {
         let rc = UIRefreshControl()
         rc.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
         return rc
@@ -635,6 +721,7 @@ final class HomeViewController: ObservableViewController {
         view.addSubview(loadingSkeletonView)
         view.addSubview(emptyStateView)
         view.addSubview(headerContainer)
+        view.addSubview(offlineIndicatorView)
         view.addSubview(incomingTopicsHeaderView)
 
         view.addSubview(activityIndicator)
@@ -659,6 +746,9 @@ final class HomeViewController: ObservableViewController {
         updateFloatingActionButton(animated: false)
         emptyStateView.onRefresh = { [weak self] in
             self?.refreshFromEmptyState()
+        }
+        offlineIndicatorView.onRetry = {
+            ConnectivityService.shared.check()
         }
 
         let fabBottomConstraint = floatingActionButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -currentBottomChromeHeight - 20)
@@ -686,7 +776,11 @@ final class HomeViewController: ObservableViewController {
             headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             headerContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            incomingTopicsHeaderView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: 6),
+            offlineIndicatorView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor),
+            offlineIndicatorView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            offlineIndicatorView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            incomingTopicsHeaderView.topAnchor.constraint(equalTo: offlineIndicatorView.bottomAnchor, constant: 6),
             incomingTopicsHeaderView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             incomingTopicsHeaderView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             incomingTopicsHeaderView.heightAnchor.constraint(equalToConstant: Self.incomingTopicsBannerHeight),
@@ -739,8 +833,11 @@ final class HomeViewController: ObservableViewController {
         headerHeightConstraint?.isActive = true
 
         searchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
+        compactSearchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
         notificationButton.addTarget(self, action: #selector(notificationsTapped), for: .touchUpInside)
         categoryManagerButton.addTarget(self, action: #selector(categoryManagerTapped), for: .touchUpInside)
+        miniProgramButton.addTarget(self, action: #selector(miniProgramButtonTapped), for: .touchUpInside)
+        updateMiniProgramButtonVisibility()
         let managerLongPress = UILongPressGestureRecognizer(target: self, action: #selector(categoryManagerLongPressed(_:)))
         categoryManagerButton.addGestureRecognizer(managerLongPress)
         setupCategoryDrawer()
@@ -787,7 +884,9 @@ final class HomeViewController: ObservableViewController {
         topicReloadTask?.cancel()
         reloadTimeoutTask?.cancel()
         incomingTopicsRetryTask?.cancel()
-        pathMonitor.cancel()
+        if let connectivityObservationToken {
+            NotificationCenter.default.removeObserver(connectivityObservationToken)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -813,7 +912,7 @@ final class HomeViewController: ObservableViewController {
         stopIncomingTopicsPolling()
     }
 
-    private var isNavigatingToControllerThatOwnsBottomBarVisibility: Bool {
+    var isNavigatingToControllerThatOwnsBottomBarVisibility: Bool {
         if let destination = transitionCoordinator?.viewController(forKey: .to),
            destination !== self {
             return destination.hidesBottomBarWhenPushed
@@ -824,312 +923,6 @@ final class HomeViewController: ObservableViewController {
             return false
         }
         return topViewController.hidesBottomBarWhenPushed
-    }
-
-    private func startObservingCloudflareVerification() {
-        cloudflareCompletionObservationToken = NotificationCenter.default.addObserver(
-            forName: DiscourseAPI.cloudflareVerificationCompletedNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handleCloudflareVerificationCompleted(notification)
-        }
-    }
-
-    private func startObservingAuthChanges() {
-        authObservationToken = AuthManager.shared.objectWillChange.sink { [weak self] in
-            self?.handleAuthChanged()
-        }
-    }
-
-    private func startObservingSettingsChanges() {
-        settingsObservationToken = AppSettings.shared.objectWillChange.sink { [weak self] in
-            self?.handleSettingsChanged()
-        }
-    }
-
-    private func startObservingForeground() {
-        foregroundObservationToken = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.viewModel.restoreBackgroundTopicUpdates()
-            self?.updateIncomingTopicsHeader()
-            self?.reloadAfterBecomingVisibleIfNeeded()
-        }
-    }
-
-    private func startObservingTopicReadProgress() {
-        topicReadProgressObservationToken = NotificationCenter.default.addObserver(
-            forName: .topicReadProgressDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self,
-                  let baseURL = notification.userInfo?[TopicReadProgressUserInfoKey.baseURL] as? String,
-                  baseURL == self.api.baseURL,
-                  let topicId = notification.userInfo?[TopicReadProgressUserInfoKey.topicId] as? Int,
-                  let highestSeen = notification.userInfo?[TopicReadProgressUserInfoKey.highestSeen] as? Int
-            else { return }
-            self.viewModel.updateTopicReadProgress(topicId: topicId, highestSeen: highestSeen)
-        }
-    }
-
-    private func startMonitoringNetwork() {
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            DispatchQueue.main.async {
-                self?.handleNetworkStatus(path.status)
-            }
-        }
-        pathMonitor.start(queue: pathMonitorQueue)
-    }
-
-    private func handleCloudflareVerificationCompleted(_ notification: Notification) {
-        guard let baseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String else { return }
-        guard normalizedBaseURL(baseURL) == normalizedBaseURL(api.baseURL) else { return }
-        let shouldReloadTopics = shouldReloadTopicsAfterCloudflareVerification()
-        logCloudflareState("verification completed base=\(baseURL) reloadTopics=\(shouldReloadTopics)")
-        restoreTabBarAfterCloudflareVerification()
-        // Image gate resumes via markVerificationGrace; re-allow prefetch + repaint visible avatars.
-        let retryURLs = viewModel.topics.prefix(60).compactMap { topic in
-            AvatarImageLoader.url(
-                from: viewModel.avatarTemplate(for: topic),
-                baseURL: api.baseURL,
-                size: AvatarImageLoader.primaryAvatarPixelSize
-            )
-        }
-        AvatarImageLoader.credentialsDidChange(for: api.baseURL, retrying: Array(retryURLs))
-        prefetchAvatarImages(for: viewModel.topics)
-        if let visible = tableView.indexPathsForVisibleRows, !visible.isEmpty {
-            var snapshot = dataSource.snapshot()
-            let ids = visible.compactMap { dataSource.itemIdentifier(for: $0) }
-            if !ids.isEmpty {
-                snapshot.reconfigureItems(ids)
-                dataSource.apply(snapshot, animatingDifferences: false)
-            }
-        }
-        reloadTopicsAfterCloudflareVerificationIfNeeded(shouldReloadTopics)
-        retryIncomingTopicsAfterCloudflareIfNeeded()
-    }
-
-    /// Parent-presented CF sheet skips our appear callbacks; re-assert bottom bar.
-    func restoreTabBarAfterCloudflareVerification() {
-        guard isViewLoaded else { return }
-        // Clear freezes that may have been left mid-challenge so scroll hide works again.
-        isTabBarScrollFrozenForRefresh = false
-        isTabBarScrollFrozenForLoadMore = false
-        tabBarScrollFreezeID += 1
-        tabBarLoadMoreFreezeID += 1
-        applyCloudflareTabBarReveal()
-        // Sheet dismiss + topic list layout can hide/cover the bar one or two
-        // runloops later; keep re-asserting briefly so it cannot stay gone.
-        DispatchQueue.main.async { [weak self] in
-            self?.applyCloudflareTabBarReveal()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self, self.view.window != nil else { return }
-            self.applyCloudflareTabBarReveal()
-        }
-    }
-
-    private func applyCloudflareTabBarReveal() {
-        guard isViewLoaded else { return }
-        isHomeTabBarHidden = true // force setHomeTabBarHidden to re-apply even if flag already false
-        setHomeTabBarHidden(false, animated: false)
-        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-        (tabBarController as? ForumTabBarController)?.forceRevealTabBarForRootContent()
-        updateBottomChrome(animated: false)
-    }
-
-    private func logCloudflareState(_ message: String) {
-        DohDebugLog.record("home \(message) sequence=\(reloadSequence)", subsystem: "CF")
-    }
-
-    private func handleAuthChanged() {
-        let isAuthenticated = AuthManager.shared.isAuthenticated(for: api.baseURL)
-        guard let previous = lastAuthenticatedState else {
-            lastAuthenticatedState = isAuthenticated
-            return
-        }
-        guard previous != isAuthenticated else { return }
-        lastAuthenticatedState = isAuthenticated
-        reloadTopics(resetCategoryMetadata: true)
-    }
-
-    private func handleNetworkStatus(_ status: NWPath.Status) {
-        let previous = lastNetworkStatus
-        lastNetworkStatus = status
-        guard let previous, previous != .satisfied, status == .satisfied else { return }
-        recoverTransportAndReload()
-    }
-
-    private func reloadAfterBecomingVisibleIfNeeded() {
-        guard isViewLoaded, view.window != nil, !viewModel.isLoading else { return }
-        guard viewModel.topics.isEmpty || viewModel.errorMessage != nil else { return }
-        recoverTransportAndReload()
-    }
-
-    private func recoverTransportAndReload(resetCategoryMetadata: Bool = false) {
-        api.resetSession()
-        LightweightDohProxyService.shared.clearCache()
-        reloadTopics(resetCategoryMetadata: resetCategoryMetadata)
-    }
-
-    private func normalizedBaseURL(_ value: String) -> String {
-        value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    }
-
-    private func setupHeader() {
-        searchRowStackView.addArrangedSubview(searchButton)
-        searchRowStackView.addArrangedSubview(notificationButton)
-        notificationButton.addSubview(notificationBadgeView)
-
-        categoryScrollView.addSubview(categoryStackView)
-        headerContainer.addSubview(searchRowStackView)
-        headerContainer.addSubview(categoryScrollView)
-        headerContainer.addSubview(categoryManagerButton)
-        headerContainer.addSubview(filterStackView)
-
-        NSLayoutConstraint.activate([
-            searchRowStackView.topAnchor.constraint(equalTo: headerContainer.safeAreaLayoutGuide.topAnchor, constant: 2),
-            searchRowStackView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 16),
-            searchRowStackView.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -16),
-
-            searchButton.heightAnchor.constraint(equalToConstant: 40),
-            notificationButton.widthAnchor.constraint(equalToConstant: 40),
-            notificationButton.heightAnchor.constraint(equalToConstant: 40),
-            notificationBadgeView.topAnchor.constraint(equalTo: notificationButton.topAnchor, constant: 5),
-            notificationBadgeView.trailingAnchor.constraint(equalTo: notificationButton.trailingAnchor, constant: -5),
-            notificationBadgeView.widthAnchor.constraint(equalToConstant: 9),
-            notificationBadgeView.heightAnchor.constraint(equalToConstant: 9),
-
-            categoryScrollView.topAnchor.constraint(equalTo: searchRowStackView.bottomAnchor, constant: 8),
-            categoryScrollView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
-            categoryScrollView.trailingAnchor.constraint(equalTo: categoryManagerButton.leadingAnchor, constant: -4),
-            categoryScrollView.heightAnchor.constraint(equalToConstant: 36),
-
-            categoryManagerButton.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -10),
-            categoryManagerButton.centerYAnchor.constraint(equalTo: categoryScrollView.centerYAnchor),
-            categoryManagerButton.widthAnchor.constraint(equalToConstant: 36),
-            categoryManagerButton.heightAnchor.constraint(equalToConstant: 36),
-
-            categoryStackView.topAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.topAnchor),
-            categoryStackView.leadingAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
-            categoryStackView.trailingAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.trailingAnchor, constant: -16),
-            categoryStackView.bottomAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.bottomAnchor),
-            categoryStackView.heightAnchor.constraint(equalTo: categoryScrollView.frameLayoutGuide.heightAnchor),
-
-            filterStackView.topAnchor.constraint(equalTo: categoryScrollView.bottomAnchor, constant: 6),
-            filterStackView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 12),
-            filterStackView.trailingAnchor.constraint(lessThanOrEqualTo: headerContainer.trailingAnchor, constant: -12),
-            filterStackView.heightAnchor.constraint(equalToConstant: 36),
-        ])
-        searchRowHeightConstraint = searchRowStackView.heightAnchor.constraint(equalToConstant: Self.searchRowExpandedHeight)
-        searchRowHeightConstraint?.isActive = true
-
-        setupFilterBar()
-        rebuildCategoryTabs()
-        hideHomeScrollIndicators()
-    }
-
-    private func hideHomeScrollIndicators() {
-        tableView.showsVerticalScrollIndicator = false
-        tableView.showsHorizontalScrollIndicator = false
-        categoryScrollView.showsVerticalScrollIndicator = false
-        categoryScrollView.showsHorizontalScrollIndicator = false
-    }
-
-    private func applyThemeStyle() {
-        let themeStyle = AppSettings.shared.themeStyle
-        let pageBackground = themeStyle.topicListBackgroundColor
-        view.backgroundColor = pageBackground
-        tableView.backgroundColor = pageBackground
-        if usesXiaohongshuCardLayout {
-            tableView.estimatedRowHeight = AppSettings.shared.xiaohongshuCardsStaggered
-                ? XiaohongshuTopicGridCell.staggeredEstimatedHeight
-                : XiaohongshuTopicGridCell.estimatedHeight
-        } else {
-            tableView.estimatedRowHeight = TopicCell.estimatedHeight
-        }
-        headerContainer.backgroundColor = pageBackground
-        searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
-        floatingActionButton.backgroundColor = themeStyle.accentColor
-        floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
-        createMenuContainer.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
-        configureCreateMenuButton(createTopicMenuButton, accentColor: themeStyle.accentColor)
-        configureCreateMenuButton(draftsMenuButton, accentColor: themeStyle.accentColor)
-        incomingTopicsButton.applyThemeStyle()
-        incomingTopicsInlineButton.applyThemeStyle()
-        loadingSkeletonView.applyThemeStyle()
-        loadingSkeletonTopConstraint?.constant = tableTopSpacing
-        emptyStateView.applyThemeStyle()
-        loginPromptCard.backgroundColor = themeStyle.topicCardBackgroundColor.withAlphaComponent(0.94)
-        loginPromptCard.layer.borderWidth = 1
-        loginPromptCard.layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
-        loginPromptCard.layer.shadowColor = themeStyle.accentColor.cgColor
-        loginPromptCard.layer.shadowOpacity = 0.09
-        loginPromptCard.layer.shadowRadius = 26
-        loginPromptCard.layer.shadowOffset = CGSize(width: 0, height: 12)
-        loginTitleLabel.textColor = .label
-        loginBenefitsStack.arrangedSubviews.compactMap { $0 as? UIButton }.forEach { item in
-            var configuration = item.configuration ?? .tinted()
-            configuration.baseForegroundColor = themeStyle.accentColor
-            configuration.baseBackgroundColor = themeStyle.accentColor.withAlphaComponent(0.12)
-            item.configuration = configuration
-        }
-        var loginConfiguration = loginButton.configuration ?? .filled()
-        loginConfiguration.baseBackgroundColor = themeStyle.accentColor
-        loginConfiguration.baseForegroundColor = .white
-        loginButton.configuration = loginConfiguration
-    }
-
-    private func setupFilterBar() {
-        filterStackView.arrangedSubviews.forEach { view in
-            filterStackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
-        filterStackView.addArrangedSubview(filterButton)
-        filterStackView.addArrangedSubview(categoryButton)
-        filterButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        categoryButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        updateFilterButton()
-    }
-
-    private func applyDropdownStyle(to button: UIButton, title: String, selected: Bool = false) {
-        let themeStyle = AppSettings.shared.themeStyle
-        var config = UIButton.Configuration.plain()
-        config.title = title
-        config.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
-        config.imagePlacement = .trailing
-        config.imagePadding = 3
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 8)
-        config.background.backgroundColor = selected ? themeStyle.accentColor.withAlphaComponent(0.14) : themeStyle.topicChipBackgroundColor
-        config.background.cornerRadius = 8
-        config.baseForegroundColor = selected ? themeStyle.accentColor : .label
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var a = attrs
-            a.font = UIFont.systemFont(ofSize: 13, weight: .medium)
-            return a
-        }
-        button.configuration = config
-    }
-
-    private func makeCategoryTabButton(title: String, categoryId: Int?) -> UIButton {
-        var config = UIButton.Configuration.plain()
-        config.title = title
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 2, bottom: 6, trailing: 2)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var a = attrs
-            a.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
-            return a
-        }
-        let button = UIButton(configuration: config)
-        button.addAction(UIAction { [weak self] _ in
-            self?.selectCategory(categoryId)
-        }, for: .touchUpInside)
-        return button
     }
 
     override func updateUI() {
@@ -1210,2171 +1003,5 @@ final class HomeViewController: ObservableViewController {
             tableView.tableFooterView = emptyFooterView
         }
         syncTabBarFreezeWithLoadMoreState()
-    }
-
-    private func applyTopicSnapshot(animatingDifferences: Bool? = nil) {
-        let itemIdentifiers = topicSnapshotItemIdentifiers()
-        var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
-        snapshot.appendSections([0])
-        snapshot.appendItems(itemIdentifiers, toSection: 0)
-
-        prefetchAvatarImages(for: viewModel.topics)
-        let currentSnapshot = dataSource.snapshot()
-        let currentIds = currentSnapshot.itemIdentifiers
-        let needsInitialSnapshot = currentSnapshot.sectionIdentifiers.isEmpty
-        let visibleExistingIds = Set(
-            tableView.indexPathsForVisibleRows?.compactMap { dataSource.itemIdentifier(for: $0) } ?? []
-        )
-        let idsNeedingReconfigure = itemIdentifiers.filter { visibleExistingIds.contains($0) }
-        // load more / contentSize 突变窗口禁止 diffable 动画，否则 offset 会抖并带动 tab bar。
-        let shouldAnimateSnapshot: Bool
-        if let animatingDifferences {
-            shouldAnimateSnapshot = animatingDifferences
-        } else if shouldFreezeTabBarScrollControl || viewModel.isLoadingMore {
-            shouldAnimateSnapshot = false
-        } else {
-            shouldAnimateSnapshot = view.window != nil
-                && !tableView.isDragging
-                && !tableView.isDecelerating
-        }
-
-        if !needsInitialSnapshot, currentIds == itemIdentifiers {
-            if !idsNeedingReconfigure.isEmpty {
-                var updatedSnapshot = currentSnapshot
-                updatedSnapshot.reconfigureItems(idsNeedingReconfigure)
-                dataSource.apply(updatedSnapshot, animatingDifferences: false)
-            }
-        } else {
-            if !idsNeedingReconfigure.isEmpty {
-                snapshot.reconfigureItems(idsNeedingReconfigure)
-            }
-            dataSource.apply(snapshot, animatingDifferences: shouldAnimateSnapshot)
-        }
-    }
-
-    private func topicSnapshotItemIdentifiers() -> [Int] {
-        if usesXiaohongshuCardLayout {
-            let rowCount = Int(ceil(Double(viewModel.topics.count) / 2.0))
-            return (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
-        }
-
-        var seen = Set<Int>()
-        return viewModel.topics.compactMap { topic -> Int? in
-            guard seen.insert(topic.id).inserted else { return nil }
-            return topic.id
-        }
-    }
-
-    private func reloadTopics(resetCategoryMetadata: Bool = false, detectIncoming: Bool = true) {
-        topicReloadTask?.cancel()
-        topicLoadMoreTask?.cancel()
-        topicLoadMoreTask = nil
-        reloadTimeoutTask?.cancel()
-        incomingTopicsRetryTask?.cancel()
-        incomingTopicsRetryTask = nil
-        reloadSequence += 1
-        let sequence = reloadSequence
-        if viewModel.topics.isEmpty {
-            isInitialTopicLoadPending = true
-            updateUI()
-        }
-
-        if resetCategoryMetadata {
-            viewModel.resetCategoryMetadata(clearSelection: true)
-        }
-
-        reloadTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.reloadTimeoutNanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.handleReloadTimeout(sequence: sequence)
-            }
-        }
-
-        topicReloadTask = Task { [weak self] in
-            guard let self else { return }
-            await self.viewModel.loadTopics()
-            guard !Task.isCancelled else { return }
-            if detectIncoming {
-                await self.viewModel.detectIncomingTopics()
-            }
-            await MainActor.run {
-                self.finishReload(sequence: sequence)
-            }
-        }
-    }
-
-    private func handleReloadTimeout(sequence: Int) {
-        guard sequence == reloadSequence else { return }
-        topicReloadTask?.cancel()
-        topicReloadTask = nil
-        reloadTimeoutTask = nil
-        isInitialTopicLoadPending = false
-        postInitialContentReadyIfNeeded()
-        viewModel.finishLoadingAfterTimeout(message: String(localized: "error.network_timeout"))
-        if refreshControl.isRefreshing {
-            refreshControl.endRefreshing()
-        }
-        // 只收 geometry lock；tab bar 等 lock 释放后再 restore，避开 endRefreshing 回弹窗口。
-        finishTopRefreshGeometryLockIfNeeded()
-    }
-
-    private func finishReload(sequence: Int) {
-        guard sequence == reloadSequence else { return }
-        reloadTimeoutTask?.cancel()
-        reloadTimeoutTask = nil
-        topicReloadTask = nil
-        isInitialTopicLoadPending = false
-        postInitialContentReadyIfNeeded()
-        if refreshControl.isRefreshing {
-            refreshControl.endRefreshing()
-        }
-        // 先 updateUI 再收 lock；restore 只在 lock 真正 release 时做一次。
-        updateUI()
-        finishTopRefreshGeometryLockIfNeeded()
-    }
-
-    private func postInitialContentReadyIfNeeded() {
-        guard !didPostInitialContentReady else { return }
-        didPostInitialContentReady = true
-        // First paint/bind can thrash contentOffset; re-assert tab bar after first content.
-        setHomeTabBarHidden(false, animated: false)
-        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
-        NotificationCenter.default.post(
-            name: Self.initialContentReadyNotification,
-            object: self,
-            userInfo: [DiscourseAPI.cloudflareBaseURLUserInfoKey: api.baseURL]
-        )
-    }
-
-    private func selectListMode(_ mode: HomeListMode) {
-        guard viewModel.listMode != mode else { return }
-        viewModel.listMode = mode
-        updateFilterButton()
-        reloadTopics()
-    }
-
-    @objc private func searchTapped() {
-        let searchVC = SearchViewController(api: api)
-        navigationController?.pushViewController(searchVC, animated: true)
-    }
-
-    @objc private func notificationsTapped() {
-        let notificationsVC = NotificationsViewController(
-            api: api,
-            authGate: authGate,
-            notificationCoordinator: notificationCoordinator
-        )
-        notificationsVC.onTopicSelected = { [weak self] topicId in
-            guard let self else { return }
-            let detailVC = TopicDetailViewController(api: self.api, topicId: topicId)
-            self.navigationController?.pushViewController(detailVC, animated: true)
-        }
-        let nav = UINavigationController(rootViewController: notificationsVC)
-        nav.modalPresentationStyle = .pageSheet
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 20
-        }
-        present(nav, animated: true)
-    }
-
-    private func updateNotificationBadge() {
-        let unreadCount = notificationCoordinator.unreadCount
-        notificationBadgeView.isHidden = unreadCount == 0
-        notificationBadgeView.layer.borderColor = headerContainer.backgroundColor?.cgColor
-        notificationButton.accessibilityValue = unreadCount > 0 ? String(unreadCount) : nil
-    }
-
-    @objc private func categoryManagerTapped() {
-        if AppSettings.shared.homeCategoryDrawerSwipeEnabled {
-            refreshCategoryDrawerContent()
-            view.bringSubviewToFront(categoryDrawer)
-            categoryDrawer.open(animated: true)
-            return
-        }
-        presentCategoryPinManager()
-    }
-
-    @objc private func categoryManagerLongPressed(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        presentCategoryPinManager()
-    }
-
-    private func presentCategoryPinManager() {
-        let manager = CategoryTabManagerViewController(
-            categories: viewModel.allSelectableCategories(),
-            pinnedCategoryIds: AppSettings.shared.homePinnedCategoryIds,
-            displayNameProvider: { [weak self] category in
-                self?.viewModel.categoryDisplayName(for: category) ?? category.name
-            },
-            parentNameProvider: { [weak self] category in
-                guard let parentId = category.parentCategoryId,
-                      let parent = self?.viewModel.category(id: parentId)
-                else { return nil }
-                return self?.viewModel.categoryDisplayName(for: parent) ?? parent.name
-            },
-            colorProvider: { [weak self] category in
-                self?.viewModel.category(id: category.id).flatMap { Self.color(fromHex: $0.color) }
-                    ?? Self.color(fromHex: category.color)
-            }
-        )
-        manager.onPinnedCategoryIdsChanged = { [weak self] ids in
-            AppSettings.shared.homePinnedCategoryIds = ids
-            self?.rebuildCategoryTabs()
-        }
-        let nav = UINavigationController(rootViewController: manager)
-        nav.modalPresentationStyle = .pageSheet
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 20
-        }
-        present(nav, animated: true)
-    }
-
-    @objc private func pullToRefresh() {
-        guard topicReloadTask == nil, !viewModel.isLoading else {
-            if refreshControl.isRefreshing, !isTopRefreshGeometryLocked {
-                refreshControl.endRefreshing()
-            }
-            return
-        }
-        beginTopRefreshGeometryLock(animated: false)
-        reloadTopics()
-    }
-
-    @discardableResult
-    private func triggerShortPullRefreshIfNeeded(_ scrollView: UIScrollView) -> Bool {
-        let pullDistance = max(
-            0,
-            -(scrollView.contentOffset.y + scrollView.contentInset.top)
-        )
-        guard HomePullToRefreshPolicy.shouldTrigger(
-            pullDistance: pullDistance,
-            isRefreshing: refreshControl.isRefreshing,
-            isLoading: viewModel.isLoading,
-            hasReloadTask: topicReloadTask != nil
-        ) else {
-            return false
-        }
-
-        refreshControl.beginRefreshing()
-        pullToRefresh()
-        return true
-    }
-
-    @objc private func incomingTopicsTapped() {
-        beginTopRefreshGeometryLock(animated: true)
-        incomingTopicsRetryTask?.cancel()
-        incomingTopicsRetryTask = nil
-        Task {
-            await viewModel.loadIncomingTopics()
-            finishTopRefreshGeometryLockIfNeeded()
-        }
-    }
-
-    private func retryIncomingTopicsAfterCloudflareIfNeeded() {
-        guard viewModel.shouldRetryIncomingTopicsAfterCloudflare,
-              !viewModel.incomingTopicIds.isEmpty
-        else { return }
-        logCloudflareState("scheduling incoming topics retry after verification ids=\(viewModel.incomingTopicIds)")
-        incomingTopicsRetryTask?.cancel()
-        incomingTopicsRetryTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled, let self else { return }
-            await self.viewModel.loadIncomingTopics()
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self.incomingTopicsRetryTask = nil
-                self.updateIncomingTopicsHeader()
-                self.logCloudflareState("incoming topics retry completed remainingIds=\(self.viewModel.incomingTopicIds)")
-                if self.viewModel.incomingTopicIds.isEmpty {
-                    let topOffset = CGPoint(x: 0, y: -self.tableView.contentInset.top)
-                    self.tableView.setContentOffset(topOffset, animated: true)
-                }
-            }
-        }
-    }
-
-    private func shouldReloadTopicsAfterCloudflareVerification() -> Bool {
-        false
-    }
-
-    private func reloadTopicsAfterCloudflareVerificationIfNeeded(_ shouldReload: Bool) {
-        guard shouldReload else { return }
-        logCloudflareState("scheduling topics reload after verification")
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 650_000_000)
-            guard !Task.isCancelled, let self else { return }
-            await MainActor.run {
-                guard self.isViewLoaded, self.view.window != nil else { return }
-                self.logCloudflareState("reloading topics after verification")
-                self.recoverTransportAndReload()
-            }
-        }
-    }
-
-    @objc private func pollIncomingTopics() {
-        Task {
-            await viewModel.detectIncomingTopics()
-        }
-    }
-
-    @objc private func fabTapped() {
-        switch fabMode {
-        case .create:
-            setCreateMenuVisible(!isCreateMenuVisible, animated: true)
-        case .refresh:
-            setCreateMenuVisible(false, animated: false)
-            refreshFromFloatingActionButton()
-        }
-    }
-
-    @objc private func createMenuBackdropTapped() {
-        setCreateMenuVisible(false, animated: true)
-    }
-
-    @objc private func createTopicMenuTapped() {
-        setCreateMenuVisible(false, animated: true)
-        openNewTopicComposer()
-    }
-
-    @objc private func draftsMenuTapped() {
-        setCreateMenuVisible(false, animated: true)
-        openDrafts()
-    }
-
-    private func openNewTopicComposer() {
-        let presentComposer = { [weak self] in
-            guard let self else { return }
-            let composer = NewTopicComposerViewController(
-                api: self.api,
-                categories: self.viewModel.categories,
-                initialCategoryId: self.viewModel.selectedCategoryId
-            )
-            composer.onTopicCreated = { [weak self] topicId in
-                guard let self else { return }
-                self.reloadTopics()
-                let detailVC = TopicDetailViewController(api: self.api, topicId: topicId)
-                self.navigationController?.pushViewController(detailVC, animated: true)
-            }
-            let nav = UINavigationController(rootViewController: composer)
-            self.present(nav, animated: true)
-        }
-        if let authGate {
-            authGate.requireAuth(then: presentComposer)
-        } else {
-            presentComposer()
-        }
-    }
-
-    private func openDrafts() {
-        let presentDrafts = { [weak self] in
-            guard let self else { return }
-            self.navigationController?.pushViewController(DraftsViewController(api: self.api), animated: true)
-        }
-        if let authGate {
-            authGate.requireAuth(then: presentDrafts)
-        } else {
-            presentDrafts()
-        }
-    }
-
-    private func refreshFromFloatingActionButton() {
-        setFABMode(.create, animated: true)
-        beginTopRefreshGeometryLock(animated: true)
-        reloadTopics()
-    }
-
-    private func refreshFromEmptyState() {
-        beginTopRefreshGeometryLock(animated: false)
-        reloadTopics()
-    }
-
-    @objc private func loginTapped() {
-        authGate?.requireAuth { [weak self] in
-            guard let self else { return }
-            self.reloadTopics(resetCategoryMetadata: true)
-        }
-    }
-
-    private func updateCategoryButton() {
-        let selected = viewModel.selectedCategory()
-        let title = viewModel.categoryDisplayName(for: selected) ?? String(localized: "home.filter.categories")
-        applyDropdownStyle(to: categoryButton, title: title, selected: selected != nil)
-        categoryButton.sizeToFit()
-    }
-
-    private func updateFilterButton() {
-        filterButton.menu = UIMenu(title: "", children: buildFilterMenuElements())
-        applyDropdownStyle(to: filterButton, title: title(for: viewModel.listMode), selected: true)
-    }
-
-    private func prefetchAvatarImages(for topics: [DiscourseTopicList.Topic]) {
-        let urls = topics
-            .prefix(60)
-            .compactMap { topic in
-                AvatarImageLoader.url(
-                    from: viewModel.avatarTemplate(for: topic),
-                    baseURL: api.baseURL,
-                    size: AvatarImageLoader.primaryAvatarPixelSize
-                )
-            }
-        AvatarImageLoader.prefetch(urls: urls)
-    }
-
-    private func updateIncomingTopicsHeader() {
-        let count = viewModel.incomingTopicIds.count
-        guard viewModel.listMode == .latest,
-              viewModel.selectedCategoryId == nil,
-              count > 0
-        else {
-            setIncomingTopicsBannerVisible(false, animated: view.window != nil)
-            setIncomingTopicsInlineBannerVisible(false)
-            updateIncomingTopicsPlacement(animated: false)
-            return
-        }
-
-        let title = String.localizedStringWithFormat(String(localized: "home.incoming_topics %lld"), Int64(count))
-        incomingTopicsButton.configure(title: title, isLoading: viewModel.isLoadingIncomingTopics)
-        incomingTopicsInlineButton.configure(title: title, isLoading: viewModel.isLoadingIncomingTopics)
-        incomingTopicsButton.isEnabled = !viewModel.isLoadingIncomingTopics
-        incomingTopicsInlineButton.isEnabled = !viewModel.isLoadingIncomingTopics
-        let usesFloatingBanner = AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled
-        setIncomingTopicsBannerVisible(usesFloatingBanner, animated: view.window != nil)
-        setIncomingTopicsInlineBannerVisible(!usesFloatingBanner)
-        updateIncomingTopicsPlacement(animated: view.window != nil)
-    }
-
-    private func setIncomingTopicsBannerVisible(_ visible: Bool, animated: Bool) {
-        if !visible {
-            setIncomingTopicsUsesTopSpace(false)
-        }
-        guard isIncomingTopicsBannerVisible != visible else {
-            if visible {
-                incomingTopicsHeaderView.isHidden = false
-                incomingTopicsHeaderView.accessibilityElementsHidden = false
-                incomingTopicsHeaderView.alpha = 1
-                incomingTopicsHeaderView.transform = .identity
-            }
-            return
-        }
-
-        isIncomingTopicsBannerVisible = visible
-        incomingTopicsHeaderView.accessibilityElementsHidden = !visible
-
-        let hiddenTransform = CGAffineTransform(translationX: 0, y: -6)
-        let updates = {
-            self.incomingTopicsHeaderView.alpha = visible ? 1 : 0
-            self.incomingTopicsHeaderView.transform = visible ? .identity : hiddenTransform
-        }
-        let completion: (Bool) -> Void = { _ in
-            self.incomingTopicsHeaderView.isHidden = !self.isIncomingTopicsBannerVisible
-            if !self.isIncomingTopicsBannerVisible {
-                self.incomingTopicsHeaderView.transform = hiddenTransform
-            }
-        }
-
-        if visible {
-            incomingTopicsHeaderView.isHidden = false
-            incomingTopicsHeaderView.transform = hiddenTransform
-        }
-
-        guard animated else {
-            updates()
-            completion(true)
-            return
-        }
-
-        DexoMotion.animate(
-            duration: DexoMotion.quick,
-            animations: updates
-        ) { _ in
-            completion(true)
-        }
-    }
-
-    private func updateIncomingTopicsPlacement(animated: Bool) {
-        let shouldUseTopSpace = isIncomingTopicsBannerVisible && AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled
-        setIncomingTopicsUsesTopSpace(shouldUseTopSpace)
-        incomingTopicsButton.setFloating(AppSettings.shared.homeIncomingTopicsBannerFloatingEnabled)
-        incomingTopicsInlineButton.setFloating(false)
-
-        guard animated else { return }
-        DexoMotion.animate(duration: DexoMotion.quick) {
-            self.view.layoutIfNeeded()
-        }
-    }
-
-    private func setIncomingTopicsInlineBannerVisible(_ visible: Bool) {
-        guard isIncomingTopicsInlineBannerVisible != visible else {
-            updateIncomingTopicsInlineHeaderFrame()
-            return
-        }
-        isIncomingTopicsInlineBannerVisible = visible
-        updateIncomingTopicsInlineHeaderFrame()
-    }
-
-    private func updateIncomingTopicsInlineHeaderFrame() {
-        let headerView = isIncomingTopicsInlineBannerVisible ? incomingTopicsInlineHeaderView : emptyTableHeaderView
-        let height = isIncomingTopicsInlineBannerVisible ? Self.incomingTopicsBannerHeight : CGFloat.leastNormalMagnitude
-        let nextFrame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: height)
-        let needsFrameUpdate = headerView.frame.size != nextFrame.size
-        if needsFrameUpdate {
-            headerView.frame = nextFrame
-        }
-        if tableView.tableHeaderView !== headerView || needsFrameUpdate {
-            tableView.tableHeaderView = headerView
-        }
-    }
-
-    private func setIncomingTopicsUsesTopSpace(_ usesTopSpace: Bool) {
-        guard incomingTopicsUsesTopSpace != usesTopSpace else { return }
-        incomingTopicsUsesTopSpace = usesTopSpace
-        updateTableInsets()
-    }
-
-    private func updateTableInsets() {
-        let incomingTopicsTopSpace = isIncomingTopicsBannerVisible && incomingTopicsUsesTopSpace
-            ? Self.incomingTopicsBannerHeight
-            : 0
-        let topInset = headerContainer.frame.maxY + tableTopSpacing + incomingTopicsTopSpace
-        let bottomInset = currentBottomChromeHeight + tableBottomSpacing
-
-        var insets = tableView.contentInset
-        let oldTopInset = insets.top
-        let oldBottomInset = insets.bottom
-        guard abs(oldTopInset - topInset) > 0.5 || abs(oldBottomInset - bottomInset) > 0.5 else { return }
-
-        insets.top = topInset
-        insets.bottom = bottomInset
-        tableView.contentInset = insets
-        tableView.verticalScrollIndicatorInsets = insets
-
-        let shouldPreserveVisibleTopContent = !isTopRefreshGeometryLocked
-
-        // Keep the visible content stable for normal header/banner changes. During
-        // an intentional top refresh, the final offset is owned by the geometry lock.
-        if shouldPreserveVisibleTopContent, oldTopInset > 0, abs(oldTopInset - topInset) > 0.5 {
-            tableView.contentOffset.y += oldTopInset - topInset
-        }
-        if bottomInset < oldBottomInset {
-            let minimumOffsetY = -insets.top
-            let maximumOffsetY = max(
-                minimumOffsetY,
-                tableView.contentSize.height + insets.bottom - tableView.bounds.height
-            )
-            if tableView.contentOffset.y > maximumOffsetY {
-                tableView.contentOffset.y = maximumOffsetY
-            }
-        }
-    }
-
-    private var currentBottomChromeHeight: CGFloat {
-        if let forumTabBarController = tabBarController as? ForumTabBarController {
-            return forumTabBarController.visibleTabBarHeight
-        }
-        guard let tabBar = tabBarController?.tabBar, !tabBar.isHidden else { return 0 }
-        return tabBar.frame.height
-    }
-
-    private var tableTopSpacing: CGFloat {
-        usesXiaohongshuCardLayout ? Self.xiaohongshuTableTopSpacing : Self.baseTableTopSpacing
-    }
-
-    private var tableBottomSpacing: CGFloat {
-        usesXiaohongshuCardLayout ? Self.xiaohongshuTableBottomSpacing : Self.baseTableBottomSpacing
-    }
-
-    private func beginTopRefreshGeometryLock(animated: Bool) {
-        topRefreshGeometryLockID += 1
-        isTopRefreshGeometryLocked = true
-        beginTabBarScrollFreezeForRefresh()
-        normalizeTopRefreshGeometry(animated: animated)
-    }
-
-    private func finishTopRefreshGeometryLockIfNeeded() {
-        guard isTopRefreshGeometryLocked else { return }
-        let lockID = topRefreshGeometryLockID
-        normalizeTopRefreshGeometry(animated: false)
-
-        DispatchQueue.main.async { [weak self] in
-            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: false)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.topRefreshGeometryReleaseDelay) { [weak self] in
-            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: true)
-        }
-    }
-
-    private func normalizeTopRefreshGeometryIfStillLocked(lockID: Int, release: Bool) {
-        guard isTopRefreshGeometryLocked, topRefreshGeometryLockID == lockID else { return }
-        normalizeTopRefreshGeometry(animated: false)
-        if release {
-            isTopRefreshGeometryLocked = false
-            endTabBarScrollFreezeForRefresh()
-        }
-    }
-
-    private func normalizeTopRefreshGeometry(animated: Bool) {
-        setSearchRowCollapsed(false, animated: false)
-        view.layoutIfNeeded()
-        updateTableInsets()
-        let topOffset = CGPoint(x: 0, y: -tableView.contentInset.top)
-        if abs(tableView.contentOffset.y - topOffset.y) > 0.5 {
-            tableView.setContentOffset(topOffset, animated: animated)
-        }
-        lastHomeScrollY = 0
-    }
-
-    private func updateBottomChrome(animated: Bool) {
-        let updates = {
-            self.floatingActionButtonBottomConstraint?.constant = -self.currentBottomChromeHeight - 20
-            self.updateTableInsets()
-            self.view.layoutIfNeeded()
-        }
-
-        if animated {
-            DexoMotion.animate(duration: DexoMotion.quick, animations: updates)
-        } else {
-            updates()
-        }
-    }
-
-    private func startIncomingTopicsPolling() {
-        stopIncomingTopicsPolling()
-        pollIncomingTopics()
-        let timer = Timer(timeInterval: 30, target: self, selector: #selector(pollIncomingTopics), userInfo: nil, repeats: true)
-        RunLoop.main.add(timer, forMode: .common)
-        incomingTopicsPollTimer = timer
-    }
-
-    private func stopIncomingTopicsPolling() {
-        incomingTopicsPollTimer?.invalidate()
-        incomingTopicsPollTimer = nil
-    }
-
-    private func buildFilterMenuElements() -> [UIMenuElement] {
-        HomeListMode.allCases.map { mode in
-            UIAction(
-                title: title(for: mode),
-                image: UIImage(systemName: imageName(for: mode)),
-                state: viewModel.listMode == mode ? .on : .off
-            ) { [weak self] _ in
-                self?.selectListMode(mode)
-            }
-        }
-    }
-
-    private func title(for mode: HomeListMode) -> String {
-        switch mode {
-        case .latest:
-            return String(localized: "home.latest")
-        case .newTopics:
-            return String(localized: "home.new_topics")
-        case .unread:
-            return String(localized: "home.updated_topics")
-        case .hot:
-            return String(localized: "home.hot")
-        case .top:
-            return String(localized: "home.top")
-        }
-    }
-
-    private func imageName(for mode: HomeListMode) -> String {
-        switch mode {
-        case .latest:
-            return "clock"
-        case .newTopics:
-            return "sparkles"
-        case .unread:
-            return "text.bubble"
-        case .hot:
-            return "flame"
-        case .top:
-            return "chart.bar"
-        }
-    }
-
-    private func rebuildCategoryTabs() {
-        let pinnedCategories = viewModel.pinnedCategories(for: AppSettings.shared.homePinnedCategoryIds)
-        let nextOrder: [Int?] = [nil] + pinnedCategories.map { Optional($0.id) }
-        guard categoryTabOrder != nextOrder else {
-            updateCategoryTabs()
-            return
-        }
-
-        categoryTabOrder = nextOrder
-        categoryTabButtons.removeAll()
-        categoryStackView.arrangedSubviews.forEach { view in
-            categoryStackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
-        let allButton = makeCategoryTabButton(title: String(localized: "home.filter.all_categories"), categoryId: nil)
-        categoryTabButtons[nil] = allButton
-        categoryStackView.addArrangedSubview(allButton)
-
-        for category in pinnedCategories {
-            let button = makeCategoryTabButton(title: viewModel.categoryDisplayName(for: category) ?? category.name, categoryId: category.id)
-            categoryTabButtons[category.id] = button
-            categoryStackView.addArrangedSubview(button)
-        }
-
-        updateCategoryTabs()
-    }
-
-    private func updateCategoryTabs() {
-        let themeStyle = AppSettings.shared.themeStyle
-        for (categoryId, button) in categoryTabButtons {
-            let selected = categoryId == viewModel.selectedCategoryId
-            var config = button.configuration ?? UIButton.Configuration.plain()
-            if let categoryId, let category = viewModel.category(id: categoryId) {
-                config.title = viewModel.categoryDisplayName(for: category) ?? category.name
-            } else {
-                config.title = String(localized: "home.filter.all_categories")
-            }
-            config.baseForegroundColor = selected ? themeStyle.accentColor : .secondaryLabel
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-                var a = attrs
-                a.font = UIFont.systemFont(ofSize: 15, weight: selected ? .semibold : .regular)
-                return a
-            }
-            button.configuration = config
-            button.layer.sublayers?
-                .filter { $0.name == "selectionIndicator" }
-                .forEach { $0.removeFromSuperlayer() }
-            if selected {
-                let indicator = CALayer()
-                indicator.name = "selectionIndicator"
-                indicator.backgroundColor = themeStyle.accentColor.cgColor
-                indicator.cornerRadius = 1
-                button.layer.addSublayer(indicator)
-                button.setNeedsLayout()
-            }
-        }
-        layoutCategorySelectionIndicators()
-    }
-
-    private func layoutCategorySelectionIndicators() {
-        for button in categoryTabButtons.values {
-            guard let indicator = button.layer.sublayers?.first(where: { $0.name == "selectionIndicator" }) else { continue }
-            indicator.frame = CGRect(x: 0, y: button.bounds.height - 3, width: button.bounds.width, height: 2)
-        }
-    }
-
-    private func buildCategoryMenuElements() -> [UIMenuElement] {
-        var elements: [UIMenuElement] = []
-
-        let allAction = UIAction(
-            title: String(localized: "home.filter.all_categories"),
-            state: viewModel.selectedCategoryId == nil ? .on : .off
-        ) { [weak self] _ in
-            self?.selectCategory(nil)
-        }
-        elements.append(allAction)
-
-        for cat in viewModel.categories {
-            let state: UIMenuElement.State = viewModel.selectedCategoryId == cat.id ? .on : .off
-            let catColor = Self.color(fromHex: cat.color)
-            let catImage = Self.colorDotImage(color: catColor)
-            let catTitle = viewModel.categoryDisplayName(for: cat) ?? cat.name
-            let catAction = UIAction(title: catTitle, image: catImage, state: state) { [weak self] _ in
-                self?.selectCategory(cat.id)
-            }
-            if let subs = cat.subcategoryList, !subs.isEmpty {
-                var groupChildren: [UIMenuElement] = [catAction]
-                for sub in subs {
-                    let subState: UIMenuElement.State = viewModel.selectedCategoryId == sub.id ? .on : .off
-                    let subColor = Self.color(fromHex: sub.color)
-                    let subImage = Self.colorDotImage(color: subColor)
-                    let subTitle = viewModel.categoryDisplayName(for: sub) ?? sub.name
-                    let subAction = UIAction(title: subTitle, image: subImage, state: subState) { [weak self] _ in
-                        self?.selectCategory(sub.id)
-                    }
-                    groupChildren.append(subAction)
-                }
-                elements.append(UIMenu(title: catTitle, image: catImage, children: groupChildren))
-            } else {
-                elements.append(catAction)
-            }
-        }
-        return elements
-    }
-
-    private func selectCategory(_ categoryId: Int?) {
-        viewModel.selectedCategoryId = categoryId
-        updateCategoryButton()
-        reloadTopics()
-    }
-
-    private static func color(fromHex hex: String) -> UIColor? {
-        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard cleaned.count == 6, let rgb = UInt64(cleaned, radix: 16) else { return nil }
-        return UIColor(
-            red: CGFloat((rgb >> 16) & 0xFF) / 255,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255,
-            blue: CGFloat(rgb & 0xFF) / 255,
-            alpha: 1
-        )
-    }
-
-    private static func colorDotImage(color: UIColor?) -> UIImage? {
-        guard let color else { return nil }
-        let size = CGSize(width: 12, height: 12)
-        return UIGraphicsImageRenderer(size: size).image { ctx in
-            color.setFill()
-            ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
-        }.withRenderingMode(.alwaysOriginal)
-    }
-
-    private func setSearchRowCollapsed(_ collapsed: Bool, animated: Bool) {
-        guard isSearchRowCollapsed != collapsed else { return }
-        isSearchRowCollapsed = collapsed
-        updateHeaderHeight(animated: animated)
-    }
-
-    private func updateHeaderHeight(animated: Bool) {
-        let targetSearchHeight = isSearchRowCollapsed ? 0 : Self.searchRowExpandedHeight
-        let targetHeaderHeight = isSearchRowCollapsed ? collapsedHeaderHeight : expandedHeaderHeight
-        let needsLayout = searchRowHeightConstraint?.constant != targetSearchHeight
-            || headerHeightConstraint?.constant != targetHeaderHeight
-            || searchRowStackView.alpha != (isSearchRowCollapsed ? 0 : 1)
-        guard needsLayout else { return }
-        let updates = {
-            self.searchRowHeightConstraint?.constant = targetSearchHeight
-            self.searchRowStackView.alpha = self.isSearchRowCollapsed ? 0 : 1
-            self.headerHeightConstraint?.constant = targetHeaderHeight
-            self.view.layoutIfNeeded()
-            self.updateTableInsets()
-        }
-        if animated {
-            DexoMotion.animate(duration: DexoMotion.short, animations: updates)
-        } else {
-            updates()
-        }
-    }
-
-    private func setFABMode(_ mode: HomeFABMode, animated: Bool) {
-        if mode != .create {
-            setCreateMenuVisible(false, animated: animated)
-        }
-        guard fabMode != mode else { return }
-        fabMode = mode
-        updateFloatingActionButton(animated: animated)
-    }
-
-    private func setCreateMenuVisible(_ visible: Bool, animated: Bool) {
-        let shouldShow = visible && fabMode == .create && !floatingActionButton.isHidden
-        guard isCreateMenuVisible != shouldShow else { return }
-        isCreateMenuVisible = shouldShow
-        createMenuDismissTapGesture.isEnabled = shouldShow
-
-        if shouldShow {
-            createMenuBackdrop.isHidden = false
-            createMenuContainer.isHidden = false
-            createMenuBackdrop.alpha = 0
-            createMenuContainer.alpha = 0
-            createMenuContainer.transform = CGAffineTransform(translationX: 0, y: 12)
-                .scaledBy(x: 0.94, y: 0.94)
-            view.bringSubviewToFront(createMenuBackdrop)
-            view.bringSubviewToFront(createMenuContainer)
-            view.bringSubviewToFront(floatingActionButton)
-        }
-
-        updateFloatingActionButton(animated: animated)
-        let updates = {
-            self.createMenuBackdrop.alpha = shouldShow ? 1 : 0
-            self.createMenuContainer.alpha = shouldShow ? 1 : 0
-            self.createMenuContainer.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: 8)
-                .scaledBy(x: 0.96, y: 0.96)
-        }
-        let completion = {
-            guard !self.isCreateMenuVisible else { return }
-            self.createMenuBackdrop.isHidden = true
-            self.createMenuContainer.isHidden = true
-        }
-
-        if animated && !UIAccessibility.isReduceMotionEnabled {
-            DexoMotion.animate(
-                duration: DexoMotion.quick,
-                timingParameters: shouldShow ? DexoMotion.easeOutCubic : DexoMotion.easeInCubic,
-                animations: updates
-            ) { _ in completion() }
-        } else {
-            updates()
-            completion()
-        }
-    }
-
-    private func configureCreateMenuButton(_ button: UIButton, accentColor: UIColor) {
-        guard var configuration = button.configuration else { return }
-        configuration.baseForegroundColor = accentColor
-        configuration.baseBackgroundColor = accentColor.withAlphaComponent(0.10)
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var attributes = attributes
-            attributes.font = .systemFont(ofSize: 15, weight: .semibold)
-            attributes.foregroundColor = .label
-            return attributes
-        }
-        configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var attributes = attributes
-            attributes.font = .systemFont(ofSize: 11.5, weight: .regular)
-            attributes.foregroundColor = .secondaryLabel
-            return attributes
-        }
-        button.configuration = configuration
-    }
-
-    private func updateFloatingActionButton(animated: Bool) {
-        let symbolName: String
-        let accessibilityLabel: String
-        switch (fabMode, isCreateMenuVisible) {
-        case (.create, true):
-            symbolName = "xmark"
-            accessibilityLabel = String(localized: "common.close", defaultValue: "关闭")
-        case (.create, false):
-            symbolName = "plus"
-            accessibilityLabel = String(localized: "new_topic.title")
-        case (.refresh, _):
-            symbolName = "arrow.clockwise"
-            accessibilityLabel = String(localized: "action.refresh")
-        }
-        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
-        let image = UIImage(systemName: symbolName, withConfiguration: config)
-        let updates = {
-            self.floatingActionButton.setImage(image, for: .normal)
-            self.floatingActionButton.accessibilityLabel = accessibilityLabel
-            self.floatingActionButton.transform = self.fabMode == .refresh && !self.isCreateMenuVisible
-                ? CGAffineTransform(rotationAngle: .pi / 8)
-                : .identity
-        }
-        if animated {
-            UIView.transition(
-                with: floatingActionButton,
-                duration: DexoMotion.quick,
-                options: [.transitionCrossDissolve, .beginFromCurrentState],
-                animations: updates
-            )
-        } else {
-            updates()
-        }
-    }
-
-    /// 是否接近列表底部（即将/正在分页）。这个区间 contentSize 最容易跳。
-    private var isNearTopicListBottomForPagination: Bool {
-        let contentHeight = tableView.contentSize.height
-        guard contentHeight > tableView.bounds.height else { return false }
-        let visibleBottom = tableView.contentOffset.y
-            + tableView.bounds.height
-            - tableView.adjustedContentInset.bottom
-        // 大约最后几屏高度，覆盖 willDisplay 提前 5 行触发的窗口。
-        return (contentHeight - visibleBottom) < max(tableView.bounds.height * 1.2, 480)
-    }
-
-    /// 刷新 / 加载下一页 / 触底滚动 / settle 窗口：不要用 deltaY 改 tab bar。
-    private var shouldFreezeTabBarScrollControl: Bool {
-        if isTopRefreshGeometryLocked
-            || refreshControl.isRefreshing
-            || isTabBarScrollFrozenForRefresh
-            || viewModel.isLoadingMore
-            || isTabBarScrollFrozenForLoadMore {
-            return true
-        }
-        // 上滑接近底部时提前冻结：loadMore 真正开始前 footer/contentSize 已可能变化。
-        // 没更多页就别冻，否则触底附近会把「下滑显示」也堵死。
-        if AppSettings.shared.bottomBarAutoHideEnabled,
-           viewModel.canLoadMore,
-           isNearTopicListBottomForPagination,
-           (tableView.isDragging || tableView.isDecelerating) {
-            return true
-        }
-        return false
-    }
-
-    private func updateTabBarVisibilityForCurrentScroll(animated: Bool) {
-        // Passive layout / appear / inset changes must NEVER hide the tab bar.
-        // Only user-driven scroll (see scrollViewDidScroll) may collapse it.
-        // Hiding here caused intermittent "tab bar missing on first launch" when
-        // contentOffset/insets jumped above 40pt after first data bind.
-        guard !shouldFreezeTabBarScrollControl else { return }
-        let y = tableView.contentOffset.y + tableView.contentInset.top
-        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 || isHomeTabBarHidden {
-            // Always restore when near top or when already stuck hidden without user scroll.
-            if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 {
-                setHomeTabBarHidden(false, animated: animated)
-            }
-        }
-    }
-
-    /// 进入顶部刷新：只冻结滚动显隐，不主动 pin 显隐 tab bar（主动改会和 geometry/inset 抖动）。
-    private func beginTabBarScrollFreezeForRefresh() {
-        tabBarScrollFreezeID += 1
-        isTabBarScrollFrozenForRefresh = true
-        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-    }
-
-    /// 顶部刷新 settle 后解冻，恢复上滑隐藏/下滑显示。
-    private func endTabBarScrollFreezeForRefresh() {
-        tabBarScrollFreezeID += 1
-        let freezeID = tabBarScrollFreezeID
-        // 稍晚解冻，吃掉 endRefreshing 回弹。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self, self.tabBarScrollFreezeID == freezeID else { return }
-            self.isTabBarScrollFrozenForRefresh = false
-            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
-            self.resyncTabBarVisibilityAfterFreeze()
-        }
-    }
-
-    private func beginTabBarScrollFreezeForLoadMore() {
-        tabBarLoadMoreFreezeID += 1
-        let freezeID = tabBarLoadMoreFreezeID
-        isTabBarScrollFrozenForLoadMore = true
-        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-        // Always arm an unfreeze timer. willDisplay used to freeze without a matching
-        // end call when loadMore no-ops, permanently locking tab-bar auto-hide.
-        scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 0)
-    }
-
-    private func endTabBarScrollFreezeForLoadMore() {
-        tabBarLoadMoreFreezeID += 1
-        let freezeID = tabBarLoadMoreFreezeID
-        // contentSize / footer 切换后多等一会儿，再解冻并同步显隐。
-        scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 0)
-    }
-
-    private func scheduleLoadMoreTabBarUnfreeze(freezeID: Int, attempt: Int) {
-        let delay: TimeInterval = attempt == 0 ? 0.25 : 0.15
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.tabBarLoadMoreFreezeID == freezeID else { return }
-            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
-            // Keep freezing only while load-more is actually running.
-            if self.viewModel.isLoadingMore, attempt < 12 {
-                self.scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: attempt + 1)
-                return
-            }
-            // One extra settle beat after loading ends (contentSize jump).
-            if attempt == 0 {
-                self.scheduleLoadMoreTabBarUnfreeze(freezeID: freezeID, attempt: 1)
-                return
-            }
-            self.isTabBarScrollFrozenForLoadMore = false
-            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
-            self.resyncTabBarVisibilityAfterFreeze()
-        }
-    }
-
-    /// After refresh/load-more freeze, re-apply show/hide from the current offset
-    /// so the bar is not stuck visible (or stuck hidden) until the next gesture.
-    private func resyncTabBarVisibilityAfterFreeze() {
-        guard AppSettings.shared.bottomBarAutoHideEnabled else {
-            setHomeTabBarHidden(false, animated: true)
-            return
-        }
-        let y = tableView.contentOffset.y + tableView.contentInset.top
-        let userDriven = tableView.isDragging || tableView.isDecelerating
-        let velocityY = tableView.panGestureRecognizer.velocity(in: tableView).y
-        if let hidden = HomeTabBarScrollPolicy.preferredHidden(
-            contentY: y,
-            userDriven: userDriven,
-            velocityY: velocityY
-        ) {
-            setHomeTabBarHidden(hidden, animated: true)
-            return
-        }
-        // Idle mid-list: leave visibility alone, but heal a broken "flag says shown, bar gone" state.
-        else if !isHomeTabBarHidden {
-            setHomeTabBarHidden(false, animated: false)
-        }
-    }
-
-    /// 跟踪 loadMore 状态，在加载中与刚结束时冻结 tab bar 滚动显隐。
-    private func syncTabBarFreezeWithLoadMoreState() {
-        let loadingMore = viewModel.isLoadingMore
-        if loadingMore {
-            if !wasLoadingMoreTopics {
-                beginTabBarScrollFreezeForLoadMore()
-            }
-            lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-        } else if wasLoadingMoreTopics {
-            endTabBarScrollFreezeForLoadMore()
-        }
-        wasLoadingMoreTopics = loadingMore
-    }
-
-    private func setHomeTabBarHidden(_ hidden: Bool, animated: Bool) {
-        guard AppSettings.shared.bottomBarAutoHideEnabled || !hidden else { return }
-        let tabBarController = tabBarController as? ForumTabBarController
-        let bar = tabBarController?.tabBar
-        // Broken "should be visible" states after CF / interrupted hide animations.
-        let tabBarVisiblyBroken = !hidden && (
-            bar?.isHidden == true
-            || bar?.transform != .identity
-            || (bar != nil && bar!.alpha < 0.99)
-        )
-        guard isHomeTabBarHidden != hidden || tabBarVisiblyBroken else { return }
-        isHomeTabBarHidden = hidden
-        // When recovering a broken bar, force a non-animated hard apply.
-        tabBarController?.setTabBarHiddenByScroll(hidden, animated: animated && !tabBarVisiblyBroken)
-        if !hidden {
-            tabBarController?.forceRevealTabBarForRootContent()
-        }
-        updateBottomChrome(animated: animated)
-    }
-
-    /// Scroll-end safety net: if flag says visible but bar is gone/covered, unstick it.
-    private func healTabBarVisibilityAfterScrollSettles() {
-        guard !shouldFreezeTabBarScrollControl else { return }
-        let y = tableView.contentOffset.y + tableView.contentInset.top
-        if !AppSettings.shared.bottomBarAutoHideEnabled || y <= 48 {
-            setHomeTabBarHidden(false, animated: true)
-            return
-        }
-        guard !isHomeTabBarHidden else { return }
-        let bar = (tabBarController as? ForumTabBarController)?.tabBar
-        let broken = bar?.isHidden == true || bar?.transform != .identity || (bar?.alpha ?? 1) < 0.99
-        if broken {
-            setHomeTabBarHidden(false, animated: false)
-        }
-    }
-
-    private func handleSettingsChanged() {
-        setHomeTabBarHidden(false, animated: false)
-        updateCategoryDrawerModeUI()
-        applyThemeStyle()
-        updateFilterButton()
-        updateCategoryButton()
-        updateCategoryTabs()
-        updateFloatingActionButton(animated: false)
-        incomingTopicsButton.applyThemeStyle()
-        incomingTopicsInlineButton.applyThemeStyle()
-        updateIncomingTopicsHeader()
-        updateTableInsets()
-        applyTopicSnapshot(animatingDifferences: false)
-        if usesXiaohongshuCardLayout {
-            tableView.beginUpdates()
-            tableView.endUpdates()
-        }
-    }
-
-
-    private func setupCategoryDrawer() {
-        categoryDrawer.translatesAutoresizingMaskIntoConstraints = false
-        categoryDrawer.isHidden = true
-        view.addSubview(categoryDrawer)
-        NSLayoutConstraint.activate([
-            categoryDrawer.topAnchor.constraint(equalTo: view.topAnchor),
-            categoryDrawer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            categoryDrawer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            categoryDrawer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        categoryDrawer.onSelectCategory = { [weak self] categoryId in
-            self?.selectCategory(categoryId)
-        }
-        categoryDrawer.onSelectTag = { [weak self] (tagName: String) in
-            guard let self else { return }
-            let tagVC = TagTopicsViewController(api: self.api, tagName: tagName)
-            self.navigationController?.pushViewController(tagVC, animated: true)
-        }
-        categoryDrawer.onEditPinned = { [weak self] in
-            self?.categoryDrawer.close(animated: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                self?.presentCategoryPinManager()
-            }
-        }
-        categoryDrawer.onOpenChanged = { [weak self] isOpen in
-            self?.tableView.isScrollEnabled = !isOpen
-        }
-
-        let edgePan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(categoryDrawerEdgePanned(_:)))
-        edgePan.edges = .left
-        edgePan.delegate = self
-        view.addGestureRecognizer(edgePan)
-        categoryDrawerEdgePan = edgePan
-        updateCategoryDrawerModeUI()
-    }
-
-    private func updateCategoryDrawerModeUI() {
-        let enabled = AppSettings.shared.homeCategoryDrawerSwipeEnabled
-        categoryDrawerEdgePan?.isEnabled = enabled
-        var config = categoryManagerButton.configuration ?? .plain()
-        if enabled {
-            config.image = UIImage(systemName: "sidebar.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
-            categoryManagerButton.accessibilityLabel = String(localized: "home.drawer.open", defaultValue: "打开分类侧栏")
-            categoryManagerButton.accessibilityHint = String(localized: "home.drawer.open_hint", defaultValue: "点按打开；长按管理置顶分类")
-        } else {
-            config.image = UIImage(systemName: "line.3.horizontal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
-            categoryManagerButton.accessibilityLabel = String(localized: "home.category_manager.title")
-            categoryManagerButton.accessibilityHint = nil
-        }
-        categoryManagerButton.configuration = config
-        if !enabled {
-            categoryDrawer.close(animated: false)
-        }
-    }
-
-    private func refreshCategoryDrawerContent() {
-        categoryDrawer.configure(
-            categories: viewModel.categories,
-            selectedCategoryId: viewModel.selectedCategoryId,
-            baseURL: api.baseURL,
-            displayNameProvider: { [weak self] category in
-                self?.viewModel.categoryDisplayName(for: category) ?? category.name
-            }
-        )
-        loadCategoryDrawerTagsIfNeeded()
-    }
-
-    private func loadCategoryDrawerTagsIfNeeded() {
-        guard AppSettings.shared.homeCategoryDrawerSwipeEnabled else { return }
-        if didLoadCategoryDrawerTags {
-            return
-        }
-        categoryDrawer.setTagGroups([], isLoading: true)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let groups = try await self.api.fetchSiteTagGroups()
-                await MainActor.run {
-                    self.didLoadCategoryDrawerTags = true
-                    self.categoryDrawer.setTagGroups(groups, isLoading: false)
-                }
-            } catch {
-                await MainActor.run {
-                    self.categoryDrawer.setTagGroups([], isLoading: false)
-                }
-            }
-        }
-    }
-
-
-    @objc private func categoryDrawerEdgePanned(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard AppSettings.shared.homeCategoryDrawerSwipeEnabled else { return }
-        let tx = gesture.translation(in: view).x
-        let velocity = gesture.velocity(in: view).x
-        switch gesture.state {
-        case .began:
-            refreshCategoryDrawerContent()
-            view.bringSubviewToFront(categoryDrawer)
-            categoryDrawer.prepareForInteractiveOpen()
-        case .changed:
-            categoryDrawer.setInteractiveProgress(max(0, min(1, tx / 304)))
-        case .ended, .cancelled:
-            categoryDrawer.settle(velocityDx: velocity)
-        default:
-            break
-        }
-    }
-
-    private func openTopic(_ topicId: Int) {
-        let detailVC = TopicDetailViewController(api: api, topicId: topicId)
-        navigationController?.pushViewController(detailVC, animated: true)
-    }
-}
-
-private final class HomeEmptyStateView: UIView {
-    var onRefresh: (() -> Void)?
-
-    private let cardView: UIView = {
-        let view = UIView()
-        view.layer.cornerRadius = 24
-        view.layer.cornerCurve = .continuous
-        view.layer.borderWidth = 1
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let iconContainerView: UIView = {
-        let view = UIView()
-        view.layer.cornerRadius = 22
-        view.layer.cornerCurve = .continuous
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let iconView: UIImageView = {
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        let imageView = UIImageView(image: UIImage(systemName: "bubble.left.and.bubble.right.fill", withConfiguration: config))
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        return imageView
-    }()
-
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "home.empty.title")
-        label.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 16,
-            weight: .semibold,
-            fallback: .systemFont(ofSize: 16, weight: .semibold)
-        )
-        label.textColor = .label
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        return label
-    }()
-
-    private let subtitleLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "home.empty.subtitle")
-        label.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 13,
-            weight: .regular,
-            fallback: .systemFont(ofSize: 13, weight: .regular)
-        )
-        label.textColor = .secondaryLabel
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        return label
-    }()
-
-    private let refreshButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.title = String(localized: "action.refresh")
-        config.image = UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
-        config.imagePadding = 6
-        config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var a = attrs
-            a.font = AppSettings.shared.appInterfaceFont(
-                ofSize: 13,
-                weight: .semibold,
-                fallback: .systemFont(ofSize: 13, weight: .semibold)
-            )
-            return a
-        }
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isHidden = true
-        alpha = 0
-        translatesAutoresizingMaskIntoConstraints = false
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.alignment = .fill
-        textStack.spacing = 7
-        textStack.translatesAutoresizingMaskIntoConstraints = false
-
-        cardView.addSubview(iconContainerView)
-        iconContainerView.addSubview(iconView)
-        cardView.addSubview(textStack)
-        cardView.addSubview(refreshButton)
-        addSubview(cardView)
-
-        NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: topAnchor),
-            cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            cardView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            iconContainerView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 24),
-            iconContainerView.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-            iconContainerView.widthAnchor.constraint(equalToConstant: 44),
-            iconContainerView.heightAnchor.constraint(equalToConstant: 44),
-
-            iconView.centerXAnchor.constraint(equalTo: iconContainerView.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainerView.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 24),
-            iconView.heightAnchor.constraint(equalToConstant: 24),
-
-            textStack.topAnchor.constraint(equalTo: iconContainerView.bottomAnchor, constant: 14),
-            textStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
-            textStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
-
-            refreshButton.topAnchor.constraint(equalTo: textStack.bottomAnchor, constant: 18),
-            refreshButton.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-            refreshButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -24),
-        ])
-
-        refreshButton.addTarget(self, action: #selector(refreshTapped), for: .touchUpInside)
-        applyThemeStyle()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func applyThemeStyle() {
-        let themeStyle = AppSettings.shared.themeStyle
-        titleLabel.text = String(localized: "home.empty.title")
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 16,
-            weight: .semibold,
-            fallback: .systemFont(ofSize: 16, weight: .semibold)
-        )
-        subtitleLabel.text = String(localized: "home.empty.subtitle")
-        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 13,
-            weight: .regular,
-            fallback: .systemFont(ofSize: 13, weight: .regular)
-        )
-        cardView.backgroundColor = themeStyle.topicCardBackgroundColor
-        cardView.layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
-        cardView.layer.shadowColor = themeStyle.accentColor.cgColor
-        cardView.layer.shadowOpacity = 0.06
-        cardView.layer.shadowRadius = 18
-        cardView.layer.shadowOffset = CGSize(width: 0, height: 8)
-
-        iconContainerView.backgroundColor = themeStyle.accentColor.withAlphaComponent(0.14)
-        iconView.tintColor = themeStyle.accentColor
-
-        var config = refreshButton.configuration ?? UIButton.Configuration.filled()
-        config.title = String(localized: "action.refresh")
-        config.baseBackgroundColor = themeStyle.accentColor
-        config.baseForegroundColor = .white
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var a = attrs
-            a.font = AppSettings.shared.appInterfaceFont(
-                ofSize: 13,
-                weight: .semibold,
-                fallback: .systemFont(ofSize: 13, weight: .semibold)
-            )
-            return a
-        }
-        refreshButton.configuration = config
-    }
-
-    func setVisible(_ visible: Bool, animated: Bool) {
-        guard isHidden == visible else { return }
-        if visible {
-            isHidden = false
-            transform = CGAffineTransform(translationX: 0, y: 8)
-        }
-        let changes = {
-            self.alpha = visible ? 1 : 0
-            self.transform = visible ? .identity : CGAffineTransform(translationX: 0, y: 8)
-        }
-        let finish: (UIViewAnimatingPosition) -> Void = { _ in
-            if !visible {
-                self.isHidden = true
-            }
-        }
-        if animated {
-            DexoMotion.animate(duration: DexoMotion.short, animations: changes, completion: finish)
-        } else {
-            changes()
-            finish(.end)
-        }
-    }
-
-    @objc private func refreshTapped() {
-        onRefresh?()
-    }
-}
-
-private final class HomeTopicListSkeletonView: DexoSkeletonPlaceholderView {
-    private var cardSurfaces: [UIView] = []
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        skeletonContentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: skeletonContentView.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: skeletonContentView.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: skeletonContentView.trailingAnchor, constant: -10),
-        ])
-
-        for _ in 0 ..< 7 {
-            stack.addArrangedSubview(makeTopicRow())
-        }
-        applyThemeStyle()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func applyThemeStyle() {
-        let themeStyle = AppSettings.shared.themeStyle
-        applySkeletonTheme(
-            backgroundColor: themeStyle.topicListBackgroundColor,
-            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
-        )
-        cardSurfaces.forEach {
-            $0.backgroundColor = themeStyle.topicCardBackgroundColor
-            $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.18).cgColor
-        }
-    }
-
-    private func makeTopicRow() -> UIView {
-        let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let card = UIView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.layer.cornerRadius = 16
-        card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = 0.5
-        cardSurfaces.append(card)
-
-        let title = makeSkeletonBlock(cornerRadius: 5)
-        let titleShort = makeSkeletonBlock(cornerRadius: 5)
-        let avatar = makeSkeletonBlock(cornerRadius: 16)
-        let meta = makeSkeletonBlock(cornerRadius: 4)
-        let count = makeSkeletonBlock(cornerRadius: 8)
-
-        container.addSubview(card)
-        [title, titleShort, avatar, meta, count].forEach { card.addSubview($0) }
-
-        NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 104),
-
-            card.topAnchor.constraint(equalTo: container.topAnchor),
-            card.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            card.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            card.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-
-            title.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
-            title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            title.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -70),
-            title.heightAnchor.constraint(equalToConstant: 16),
-
-            titleShort.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            titleShort.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            titleShort.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -118),
-            titleShort.heightAnchor.constraint(equalToConstant: 16),
-
-            avatar.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            avatar.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
-            avatar.widthAnchor.constraint(equalToConstant: 32),
-            avatar.heightAnchor.constraint(equalToConstant: 32),
-
-            meta.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 10),
-            meta.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
-            meta.widthAnchor.constraint(equalToConstant: 148),
-            meta.heightAnchor.constraint(equalToConstant: 12),
-
-            count.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            count.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
-            count.widthAnchor.constraint(equalToConstant: 46),
-            count.heightAnchor.constraint(equalToConstant: 20),
-        ])
-
-        return container
-    }
-}
-
-private final class IncomingTopicsBannerView: UIControl {
-    private let iconContainer: UIView = {
-        let view = UIView()
-        view.backgroundColor = AppSettings.shared.themeStyle.accentColor.withAlphaComponent(0.14)
-        view.layer.cornerRadius = 17
-        view.layer.cornerCurve = .continuous
-        view.isUserInteractionEnabled = false
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let iconView: UIImageView = {
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
-        let view = UIImageView(image: UIImage(systemName: "arrow.up", withConfiguration: config))
-        view.tintColor = AppSettings.shared.themeStyle.accentColor
-        view.contentMode = .scaleAspectFit
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .label
-        label.numberOfLines = 1
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.86
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }()
-
-    private let subtitleLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "action.refresh")
-        label.font = .systemFont(ofSize: 11, weight: .medium)
-        label.textColor = .secondaryLabel
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }()
-
-    private let chevronView: UIImageView = {
-        let config = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        let view = UIImageView(image: UIImage(systemName: "chevron.up", withConfiguration: config))
-        view.tintColor = .tertiaryLabel
-        view.contentMode = .scaleAspectFit
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let activityIndicator: UIActivityIndicatorView = {
-        let indicator = UIActivityIndicatorView(style: .medium)
-        indicator.hidesWhenStopped = true
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        return indicator
-    }()
-
-    override var isHighlighted: Bool {
-        didSet {
-            DexoMotion.animate(duration: DexoMotion.quick) {
-                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
-                self.alpha = self.isHighlighted ? 0.82 : 1
-            }
-        }
-    }
-
-    override var isEnabled: Bool {
-        didSet {
-            alpha = isEnabled ? 1 : 0.72
-        }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setupUI()
-        applyThemeStyle()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func configure(title: String, isLoading: Bool) {
-        titleLabel.text = title
-        applyThemeStyle()
-        if isLoading {
-            activityIndicator.startAnimating()
-        } else {
-            activityIndicator.stopAnimating()
-        }
-        chevronView.isHidden = isLoading
-        iconView.isHidden = isLoading
-        activityIndicator.isHidden = !isLoading
-        accessibilityLabel = title
-        accessibilityTraits = [.button]
-    }
-
-    func setFloating(_ isFloating: Bool) {
-        layer.shadowOpacity = isFloating ? 0.08 : 0.02
-        layer.shadowRadius = isFloating ? 14 : 8
-        layer.shadowOffset = isFloating ? CGSize(width: 0, height: 6) : CGSize(width: 0, height: 2)
-    }
-
-    func applyThemeStyle() {
-        let themeStyle = AppSettings.shared.themeStyle
-        backgroundColor = themeStyle.topicCardBackgroundColor
-        layer.borderColor = themeStyle.accentColor.withAlphaComponent(0.12).cgColor
-        iconContainer.backgroundColor = themeStyle.accentColor.withAlphaComponent(0.14)
-        iconView.tintColor = themeStyle.accentColor
-        activityIndicator.color = themeStyle.accentColor
-    }
-
-    private func setupUI() {
-        layer.cornerRadius = 16
-        layer.cornerCurve = .continuous
-        layer.borderWidth = 1
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.06
-        layer.shadowRadius = 12
-        layer.shadowOffset = CGSize(width: 0, height: 5)
-
-        iconContainer.addSubview(iconView)
-        iconContainer.addSubview(activityIndicator)
-        addSubview(iconContainer)
-        addSubview(titleLabel)
-        addSubview(subtitleLabel)
-        addSubview(chevronView)
-
-        NSLayoutConstraint.activate([
-            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 34),
-            iconContainer.heightAnchor.constraint(equalToConstant: 34),
-
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 17),
-            iconView.heightAnchor.constraint(equalToConstant: 17),
-
-            activityIndicator.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-
-            titleLabel.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: chevronView.leadingAnchor, constant: -10),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 9),
-
-            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: chevronView.leadingAnchor, constant: -10),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
-
-            chevronView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            chevronView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            chevronView.widthAnchor.constraint(equalToConstant: 14),
-            chevronView.heightAnchor.constraint(equalToConstant: 14),
-        ])
-    }
-}
-
-private final class CategoryTabManagerViewController: UITableViewController {
-    var onPinnedCategoryIdsChanged: (([Int]) -> Void)?
-
-    private enum Section: Int, CaseIterable {
-        case pinned
-        case available
-    }
-
-    private let allCategories: [DiscourseCategory]
-    private var pinnedCategoryIds: [Int]
-    private let displayNameProvider: (DiscourseCategory) -> String
-    private let parentNameProvider: (DiscourseCategory) -> String?
-    private let colorProvider: (DiscourseCategory) -> UIColor?
-
-    private var categoriesById: [Int: DiscourseCategory] {
-        Dictionary(uniqueKeysWithValues: allCategories.map { ($0.id, $0) })
-    }
-
-    private var pinnedCategories: [DiscourseCategory] {
-        let lookup = categoriesById
-        return pinnedCategoryIds.compactMap { lookup[$0] }
-    }
-
-    private var availableCategories: [DiscourseCategory] {
-        let pinned = Set(pinnedCategoryIds)
-        return allCategories.filter { !pinned.contains($0.id) }
-    }
-
-    init(
-        categories: [DiscourseCategory],
-        pinnedCategoryIds: [Int],
-        displayNameProvider: @escaping (DiscourseCategory) -> String,
-        parentNameProvider: @escaping (DiscourseCategory) -> String?,
-        colorProvider: @escaping (DiscourseCategory) -> UIColor?
-    ) {
-        self.allCategories = categories
-        self.pinnedCategoryIds = Self.validPinnedIds(pinnedCategoryIds, categories: categories)
-        self.displayNameProvider = displayNameProvider
-        self.parentNameProvider = parentNameProvider
-        self.colorProvider = colorProvider
-        super.init(style: .insetGrouped)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = String(localized: "home.category_manager.title")
-        view.backgroundColor = .systemGroupedBackground
-        tableView.register(CategoryManagerCell.self, forCellReuseIdentifier: CategoryManagerCell.reuseIdentifier)
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "EmptyCell")
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: String(localized: "home.category_manager.done"),
-            style: .done,
-            target: self,
-            action: #selector(doneTapped)
-        )
-    }
-
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        Section.allCases.count
-    }
-
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch Section(rawValue: section) {
-        case .pinned:
-            return max(pinnedCategories.count, 1)
-        case .available:
-            return max(availableCategories.count, 1)
-        case .none:
-            return 0
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        switch Section(rawValue: section) {
-        case .pinned:
-            return String(localized: "home.category_manager.my_categories")
-        case .available:
-            return String(localized: "home.category_manager.all_categories")
-        case .none:
-            return nil
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        switch Section(rawValue: section) {
-        case .pinned:
-            return String(localized: "home.category_manager.remove_hint")
-        case .available:
-            return String(localized: "home.category_manager.add_hint")
-        case .none:
-            return nil
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        switch Section(rawValue: indexPath.section) {
-        case .pinned:
-            let categories = pinnedCategories
-            guard !categories.isEmpty else {
-                return emptyCell(text: String(localized: "home.category_manager.empty_pinned"), indexPath: indexPath)
-            }
-            return categoryCell(category: categories[indexPath.row], mode: .remove, indexPath: indexPath)
-        case .available:
-            let categories = availableCategories
-            guard !categories.isEmpty else {
-                return emptyCell(text: String(localized: "home.category_manager.empty_available"), indexPath: indexPath)
-            }
-            return categoryCell(category: categories[indexPath.row], mode: .add, indexPath: indexPath)
-        case .none:
-            return UITableViewCell()
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        switch Section(rawValue: indexPath.section) {
-        case .pinned:
-            let categories = pinnedCategories
-            guard categories.indices.contains(indexPath.row) else { return }
-            pinnedCategoryIds.removeAll { $0 == categories[indexPath.row].id }
-            commitPinnedCategoryChange()
-        case .available:
-            let categories = availableCategories
-            guard categories.indices.contains(indexPath.row) else { return }
-            pinnedCategoryIds.append(categories[indexPath.row].id)
-            commitPinnedCategoryChange()
-        case .none:
-            break
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        Section(rawValue: indexPath.section) == .pinned && pinnedCategories.count > 1
-    }
-
-    override func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
-        guard Section(rawValue: sourceIndexPath.section) == .pinned,
-              Section(rawValue: destinationIndexPath.section) == .pinned,
-              pinnedCategoryIds.indices.contains(sourceIndexPath.row)
-        else {
-            tableView.reloadData()
-            return
-        }
-        let id = pinnedCategoryIds.remove(at: sourceIndexPath.row)
-        let destination = min(destinationIndexPath.row, pinnedCategoryIds.count)
-        pinnedCategoryIds.insert(id, at: destination)
-        commitPinnedCategoryChange(reload: false)
-    }
-
-    override func tableView(
-        _ tableView: UITableView,
-        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
-        toProposedIndexPath proposedDestinationIndexPath: IndexPath
-    ) -> IndexPath {
-        if proposedDestinationIndexPath.section == Section.pinned.rawValue {
-            return proposedDestinationIndexPath
-        }
-        return sourceIndexPath
-    }
-
-    private func categoryCell(category: DiscourseCategory, mode: CategoryManagerCell.Mode, indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(
-            withIdentifier: CategoryManagerCell.reuseIdentifier,
-            for: indexPath
-        ) as? CategoryManagerCell else {
-            return UITableViewCell()
-        }
-        cell.configure(
-            title: displayNameProvider(category),
-            subtitle: parentNameProvider(category),
-            color: colorProvider(category),
-            mode: mode
-        )
-        return cell
-    }
-
-    private func emptyCell(text: String, indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "EmptyCell", for: indexPath)
-        var config = UIListContentConfiguration.cell()
-        config.text = text
-        config.textProperties.color = .secondaryLabel
-        config.textProperties.font = .systemFont(ofSize: 14, weight: .regular)
-        cell.contentConfiguration = config
-        cell.selectionStyle = .none
-        cell.accessoryType = .none
-        return cell
-    }
-
-    private func commitPinnedCategoryChange(reload: Bool = true) {
-        pinnedCategoryIds = Self.validPinnedIds(pinnedCategoryIds, categories: allCategories)
-        onPinnedCategoryIdsChanged?(pinnedCategoryIds)
-        if reload {
-            tableView.reloadData()
-        }
-    }
-
-    @objc private func doneTapped() {
-        dismiss(animated: true)
-    }
-
-    private static func validPinnedIds(_ ids: [Int], categories: [DiscourseCategory]) -> [Int] {
-        let validIds = Set(categories.map(\.id))
-        var seen = Set<Int>()
-        return ids.filter { validIds.contains($0) && seen.insert($0).inserted }
-    }
-}
-
-private final class CategoryManagerCell: UITableViewCell {
-    enum Mode {
-        case add
-        case remove
-    }
-
-    static let reuseIdentifier = "CategoryManagerCell"
-
-    private let colorDotView: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.layer.cornerRadius = 6
-        view.layer.cornerCurve = .continuous
-        return view
-    }()
-
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 16, weight: .medium))
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .label
-        return label
-    }()
-
-    private let subtitleLabel: UILabel = {
-        let label = UILabel()
-        label.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .systemFont(ofSize: 12, weight: .regular))
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .secondaryLabel
-        return label
-    }()
-
-    private let modeImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleAspectFit
-        return imageView
-    }()
-
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        selectionStyle = .default
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.translatesAutoresizingMaskIntoConstraints = false
-        textStack.axis = .vertical
-        textStack.spacing = 2
-
-        contentView.addSubview(colorDotView)
-        contentView.addSubview(textStack)
-        contentView.addSubview(modeImageView)
-
-        NSLayoutConstraint.activate([
-            colorDotView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            colorDotView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            colorDotView.widthAnchor.constraint(equalToConstant: 12),
-            colorDotView.heightAnchor.constraint(equalToConstant: 12),
-
-            textStack.leadingAnchor.constraint(equalTo: colorDotView.trailingAnchor, constant: 12),
-            textStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            textStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
-            textStack.trailingAnchor.constraint(equalTo: modeImageView.leadingAnchor, constant: -12),
-
-            modeImageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            modeImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            modeImageView.widthAnchor.constraint(equalToConstant: 22),
-            modeImageView.heightAnchor.constraint(equalToConstant: 22),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        titleLabel.text = nil
-        subtitleLabel.text = nil
-        modeImageView.image = nil
-    }
-
-    func configure(title: String, subtitle: String?, color: UIColor?, mode: Mode) {
-        titleLabel.text = title
-        subtitleLabel.text = subtitle
-        subtitleLabel.isHidden = subtitle?.isEmpty ?? true
-        colorDotView.backgroundColor = TopicTagVisualStyle.categoryColor(for: title, fallback: color ?? .tertiaryLabel)
-
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        switch mode {
-        case .add:
-            modeImageView.image = UIImage(systemName: "plus.circle.fill", withConfiguration: symbolConfig)
-            modeImageView.tintColor = AppSettings.shared.themeStyle.accentColor
-            accessibilityHint = String(localized: "home.category_manager.add_hint")
-        case .remove:
-            modeImageView.image = UIImage(systemName: "minus.circle.fill", withConfiguration: symbolConfig)
-            modeImageView.tintColor = .systemRed
-            accessibilityHint = String(localized: "home.category_manager.remove_hint")
-        }
-    }
-}
-
-extension HomeViewController: UIGestureRecognizerDelegate {
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard gestureRecognizer === createMenuDismissTapGesture, isCreateMenuVisible else { return true }
-        let location = touch.location(in: view)
-        return !createMenuContainer.frame.contains(location)
-            && !floatingActionButton.frame.contains(location)
-    }
-}
-
-extension HomeViewController: UITableViewDelegate {
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView else { return }
-        if isCreateMenuVisible, scrollView.isDragging || scrollView.isDecelerating {
-            setCreateMenuVisible(false, animated: true)
-        }
-        hideHomeScrollIndicators()
-        updateIncomingTopicsPlacement(animated: false)
-        let y = scrollView.contentOffset.y + scrollView.contentInset.top
-        let previousY = lastHomeScrollY ?? y
-        let deltaY = y - previousY
-        lastHomeScrollY = y
-
-        let velocityY = scrollView.panGestureRecognizer.velocity(in: scrollView).y
-        if velocityY > 80, y > 24 {
-            setFABMode(.refresh, animated: true)
-        } else if velocityY < -80 || y <= 2 {
-            setFABMode(.create, animated: true)
-        }
-
-        // Only hide/show from real user interaction, never from programmatic offset jumps
-        // (first load, banner insert, contentSize changes, inset adjustments).
-        let userDriven = scrollView.isDragging
-            || scrollView.isDecelerating
-            || scrollView.panGestureRecognizer.state == .began
-            || scrollView.panGestureRecognizer.state == .changed
-
-        // 刷新/加载下一页窗口：冻结「contentSize 抖动误触」，但仍允许明确的用户手势
-        // 上滑隐藏 / 下滑显示，否则出盾后翻页时 tab bar 会卡死。
-        if shouldFreezeTabBarScrollControl {
-            if !AppSettings.shared.bottomBarAutoHideEnabled {
-                setHomeTabBarHidden(false, animated: true)
-            } else if y <= 8 {
-                setHomeTabBarHidden(false, animated: true)
-            } else if userDriven, y > 40, deltaY > 3 {
-                setHomeTabBarHidden(true, animated: true)
-            } else if userDriven, deltaY < -3 {
-                setHomeTabBarHidden(false, animated: true)
-            }
-            return
-        }
-        if !AppSettings.shared.bottomBarAutoHideEnabled {
-            setHomeTabBarHidden(false, animated: true)
-            return
-        }
-        // Near top always show.
-        if y <= 8 || deltaY < -3 {
-            setHomeTabBarHidden(false, animated: true)
-            return
-        }
-        if userDriven, y > 40, deltaY > 3 {
-            setHomeTabBarHidden(true, animated: true)
-        }
-    }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard scrollView === tableView else { return }
-        if triggerShortPullRefreshIfNeeded(scrollView) { return }
-        guard !decelerate else { return }
-        settleSearchRowCollapse(animated: true)
-        healTabBarVisibilityAfterScrollSettles()
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        guard scrollView === tableView else { return }
-        settleSearchRowCollapse(animated: true)
-        healTabBarVisibilityAfterScrollSettles()
-    }
-
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        guard scrollView === tableView else { return }
-        settleSearchRowCollapse(animated: true)
-    }
-
-    private func settleSearchRowCollapse(animated: Bool) {
-        guard !isTopRefreshGeometryLocked else {
-            normalizeTopRefreshGeometry(animated: false)
-            return
-        }
-        let y = tableView.contentOffset.y + tableView.contentInset.top
-        setSearchRowCollapsed(y > 18, animated: animated)
-        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-    }
-
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        guard let topicId = dataSource.itemIdentifier(for: indexPath),
-              Self.xiaohongshuRowIndex(from: topicId) == nil
-        else { return }
-        openTopic(topicId)
-    }
-
-    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        let totalRows = tableView.numberOfRows(inSection: 0)
-        if indexPath.row >= totalRows - 5,
-           viewModel.canLoadMore,
-           viewModel.loadMoreErrorMessage == nil,
-           !viewModel.isLoadingMore,
-           !viewModel.isLoading,
-           topicLoadMoreTask == nil {
-            beginTabBarScrollFreezeForLoadMore()
-            topicLoadMoreTask = Task { [weak self] in
-                guard let self else { return }
-                await self.viewModel.loadMoreTopics()
-                await MainActor.run {
-                    self.topicLoadMoreTask = nil
-                    self.updateUI()
-                }
-            }
-        }
-    }
-
-    @objc private func loadMoreRetryTapped() {
-        guard topicLoadMoreTask == nil, !viewModel.isLoadingMore, !viewModel.isLoading else { return }
-        viewModel.loadMoreErrorMessage = nil
-        beginTabBarScrollFreezeForLoadMore()
-        topicLoadMoreTask = Task { [weak self] in
-            guard let self else { return }
-            await self.viewModel.loadMoreTopics()
-            await MainActor.run {
-                self.topicLoadMoreTask = nil
-                self.updateUI()
-            }
-        }
     }
 }

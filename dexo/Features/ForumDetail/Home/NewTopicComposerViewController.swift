@@ -31,7 +31,7 @@ final class NewTopicComposerViewController: UIViewController {
         case tools
     }
 
-    private static let customPanelHeight: CGFloat = 300
+    private static let customPanelHeight: CGFloat = 420
 
     private let api: DiscourseAPI
     private let categories: [DiscourseCategory]
@@ -663,6 +663,7 @@ final class NewTopicComposerViewController: UIViewController {
         switch tool {
         case .image: pickImages()
         case .attachment: pickAttachment()
+        case .media: chooseMedia()
         case .heading: chooseHeading()
         case .bold: wrapSelection(start: "**", end: "**", placeholder: String(localized: "reply.tool.placeholder.bold"))
         case .italic: wrapSelection(start: "*", end: "*", placeholder: String(localized: "reply.tool.placeholder.italic"))
@@ -671,11 +672,243 @@ final class NewTopicComposerViewController: UIViewController {
         case .numberedList: applyLinePrefix("1. ")
         case .link: insertLink()
         case .quote: applyLinePrefix("> ")
-        case .note: replaceSelection(with: "\n> [!note]\n> \(String(localized: "reply.tool.placeholder.note"))\n")
+        case .callout: chooseCallout()
         case .template: insertTemplate()
         case .aiReview: runAIPostReview()
+        case .inlineCode:
+            wrapSelection(start: "`", end: "`", placeholder: String(localized: "reply.tool.placeholder.code"))
+        case .codeBlock: insertCodeBlock()
+        case .spoiler:
+            wrapSelection(
+                start: "[spoiler]",
+                end: "[/spoiler]",
+                placeholder: String(localized: "reply.tool.placeholder.spoiler", defaultValue: "剧透内容")
+            )
+        case .imageGrid: wrapImagesInGrid()
+        case .insertBlock: chooseInsertBlock()
         }
         if tool.closesPanelAfterAction { closePanel(returnToKeyboard: true) }
+    }
+
+    private var pendingMediaKind: MediaPickKind?
+
+    private enum MediaPickKind {
+        case audio, video, voice
+    }
+
+    private func chooseMedia() {
+        let alert = UIAlertController(title: "音视频", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "上传音频", style: .default) { [weak self] _ in self?.pickMedia(kind: .audio) })
+        alert.addAction(UIAlertAction(title: "上传视频", style: .default) { [weak self] _ in self?.pickMedia(kind: .video) })
+        alert.addAction(UIAlertAction(title: "语音消息", style: .default) { [weak self] _ in self?.pickMedia(kind: .voice) })
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func pickMedia(kind: MediaPickKind) {
+        pendingMediaKind = kind
+        let types: [UTType] = (kind == .video)
+            ? [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
+            : [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    @MainActor
+    private func uploadMediaFile(url: URL, kind: MediaPickKind) async {
+        setUploading(true, text: String(localized: "reply.uploading"))
+        defer {
+            setUploading(false, text: nil)
+            pendingMediaKind = nil
+        }
+        do {
+            let xzURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("xz")
+            if FileManager.default.fileExists(atPath: xzURL.path) {
+                try FileManager.default.removeItem(at: xzURL)
+            }
+            try FileManager.default.copyItem(at: url, to: xzURL)
+            let upload = try await api.uploadComposerFile(fileURL: xzURL, filename: xzURL.lastPathComponent)
+            try? FileManager.default.removeItem(at: xzURL)
+            let originalExt = url.pathExtension.lowercased()
+            let isAudio = kind != .video
+            let mime = UTType(filenameExtension: originalExt)?.preferredMIMEType
+                ?? (isAudio ? "audio/mpeg" : "video/mp4")
+            let src = Self.mediaPlaybackPath(from: upload.shortURL)
+            let tag: String
+            if isAudio {
+                let audio = "<audio controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</audio>"
+                tag = kind == .voice ? "[wrap=voice]\n\(audio)\n[/wrap]" : audio
+            } else {
+                tag = "<video width=\"640\" height=\"360\" controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</video>"
+            }
+            let prefix = textView.text.isEmpty || textView.text.hasSuffix("\n") ? "" : "\n"
+            replaceSelection(with: "\(prefix)\(tag)\n")
+        } catch {
+            showUploadError(error)
+        }
+    }
+
+    private static func mediaPlaybackPath(from shortURL: String) -> String {
+        if shortURL.hasPrefix("upload://") {
+            var token = String(shortURL.dropFirst("upload://".count))
+            if let dot = token.lastIndex(of: ".") {
+                token = String(token[..<dot])
+            }
+            return "/uploads/short-url/\(token).xz"
+        }
+        if let dot = shortURL.lastIndex(of: ".") {
+            return String(shortURL[..<dot]) + ".xz"
+        }
+        return shortURL
+    }
+
+    private func chooseCallout() {
+        let types = [
+            "note", "tip", "info", "warning", "danger", "bug",
+            "example", "quote", "abstract", "todo", "success", "question", "failure",
+        ]
+        let alert = UIAlertController(title: String(localized: "reply.tool.note"), message: nil, preferredStyle: .actionSheet)
+        for type in types {
+            alert.addAction(UIAlertAction(title: type.capitalized, style: .default) { [weak self] _ in
+                self?.insertCallout(type)
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func insertCallout(_ type: String) {
+        let placeholder = String(localized: "reply.tool.placeholder.note")
+        if textView.selectedRange.length > 0,
+           let range = Range(textView.selectedRange, in: textView.text) {
+            let selected = String(textView.text[range])
+            let quoted = selected
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }
+                .joined(separator: "\n")
+            replaceSelection(with: "> [!\(type)]\n\(quoted)")
+        } else {
+            replaceSelection(with: "\n> [!\(type)]\n> \(placeholder)\n")
+        }
+    }
+
+    private func insertCodeBlock() {
+        let placeholder = String(localized: "reply.tool.placeholder.code")
+        if textView.selectedRange.length > 0,
+           let range = Range(textView.selectedRange, in: textView.text) {
+            replaceSelection(with: "```\n\(textView.text[range])\n```")
+        } else {
+            replaceSelection(with: "```\n\(placeholder)\n```\n")
+        }
+    }
+
+    private func chooseInsertBlock() {
+        let items: [(String, String)] = [
+            ("表格", "| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |\n"),
+            ("公式块", "$$\nE=mc^2\n$$\n"),
+            ("分隔线", "---\n"),
+            ("折叠详情", "[details=\"点开看\"]\n折叠内容\n[/details]\n"),
+        ]
+        let alert = UIAlertController(title: "插入块", message: nil, preferredStyle: .actionSheet)
+        for item in items {
+            alert.addAction(UIAlertAction(title: item.0, style: .default) { [weak self] _ in
+                self?.replaceSelection(with: item.1)
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func wrapImagesInGrid() {
+        let text = textView.text ?? ""
+        let imagePattern = try! NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]+\)"#)
+        let nsText = text as NSString
+        let matches = imagePattern.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard matches.count >= 2 else {
+            let alert = UIAlertController(
+                title: nil,
+                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        if textView.selectedRange.length > 0,
+           let range = Range(textView.selectedRange, in: text) {
+            let selected = String(text[range])
+            let selectedMatches = imagePattern.matches(
+                in: selected,
+                range: NSRange(location: 0, length: (selected as NSString).length)
+            )
+            if selectedMatches.count >= 2 {
+                replaceSelection(with: "[grid]\n\(selected)\n[/grid]")
+                return
+            }
+        }
+
+        var bestStart = matches[0].range.location
+        var bestEnd = NSMaxRange(matches[0].range)
+        var runStart = bestStart
+        var runEnd = bestEnd
+        var runCount = 1
+        var bestCount = 1
+        for i in 1 ..< matches.count {
+            let prevEnd = NSMaxRange(matches[i - 1].range)
+            let curStart = matches[i].range.location
+            let between = nsText.substring(with: NSRange(location: prevEnd, length: curStart - prevEnd))
+            if between.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                runEnd = NSMaxRange(matches[i].range)
+                runCount += 1
+            } else {
+                if runCount > bestCount {
+                    bestCount = runCount
+                    bestStart = runStart
+                    bestEnd = runEnd
+                }
+                runStart = matches[i].range.location
+                runEnd = NSMaxRange(matches[i].range)
+                runCount = 1
+            }
+        }
+        if runCount > bestCount {
+            bestCount = runCount
+            bestStart = runStart
+            bestEnd = runEnd
+        }
+        guard bestCount >= 2 else {
+            let alert = UIAlertController(
+                title: nil,
+                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+            present(alert, animated: true)
+            return
+        }
+        let chunk = nsText.substring(with: NSRange(location: bestStart, length: bestEnd - bestStart))
+        textView.text = nsText.replacingCharacters(
+            in: NSRange(location: bestStart, length: bestEnd - bestStart),
+            with: "[grid]\n\(chunk)\n[/grid]"
+        )
+        updateEditorState()
     }
 
     private func runAIPostReview() {
@@ -732,12 +965,16 @@ final class NewTopicComposerViewController: UIViewController {
 
     private func chooseHeading() {
         let alert = UIAlertController(title: String(localized: "reply.tool.heading"), message: nil, preferredStyle: .actionSheet)
-        for level in 1 ... 3 {
+        for level in 1 ... 5 {
             alert.addAction(UIAlertAction(title: "H\(level)", style: .default) { [weak self] _ in
                 self?.applyLinePrefix(String(repeating: "#", count: level) + " ")
             })
         }
         alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = toolsToggleButton
+            pop.sourceRect = toolsToggleButton.bounds
+        }
         present(alert, animated: true)
     }
 
@@ -783,6 +1020,7 @@ final class NewTopicComposerViewController: UIViewController {
     }
 
     private func pickAttachment() {
+        pendingMediaKind = nil
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
@@ -986,7 +1224,15 @@ extension NewTopicComposerViewController: UIDocumentPickerDelegate {
         Task {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            await uploadPickedFiles([(url, url.lastPathComponent)])
+            if let kind = pendingMediaKind {
+                await uploadMediaFile(url: url, kind: kind)
+            } else {
+                await uploadPickedFiles([(url, url.lastPathComponent)])
+            }
         }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        pendingMediaKind = nil
     }
 }

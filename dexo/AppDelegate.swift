@@ -6,7 +6,6 @@
 //
 
 import SDWebImage
-import SDWebImageSVGCoder
 import UIKit
 import UserNotifications
 
@@ -18,13 +17,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         BackgroundNotificationRefreshService.shared.register()
         BackgroundNotificationRefreshService.shared.scheduleIfNeeded()
         UNUserNotificationCenter.current().delegate = self
-        SDImageCodersManager.shared.addCoder(SDImageSVGCoder.shared)
         AvatarImageLoader.configureGlobalImageLoading()
+        // Only wipe caches when the user explicitly enabled "clear on launch".
+        // Otherwise process + disk avatar caches persist across launches.
         if AppSettings.shared.clearImageCacheOnLaunch {
-            SDImageCache.shared.clearMemory()
-            SDImageCache.shared.clearDisk {}
+            AvatarImageLoader.clearAllCaches()
         }
         LightweightDohProxyService.shared.configureFromSettings()
+        // FluxDo-style connectivity: path monitor + offline retry/backoff.
+        ConnectivityService.shared.start()
         return true
     }
 

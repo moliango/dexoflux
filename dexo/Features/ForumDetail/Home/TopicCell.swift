@@ -3,11 +3,23 @@ import UIKit
 
 enum TopicTagVisualStyle {
     static func color(for tag: String) -> UIColor {
-        AppSettings.shared.themeStyle.topicTagColor(for: tag)
+        let settings = AppSettings.shared
+        if settings.themeTaxonomyColorsEnabled {
+            return settings.themeStyle.topicTagColor(for: tag)
+        }
+        if let hex = TopicTagIconCatalog.presentation(for: tag)?.colorHex,
+           let color = TopicTaxonomyColor.resolve(hex: hex) {
+            return color
+        }
+        return .secondaryLabel
     }
 
     static func categoryColor(for name: String?, fallback: UIColor?) -> UIColor {
-        AppSettings.shared.themeStyle.topicCategoryColor(for: name, fallback: fallback)
+        let settings = AppSettings.shared
+        if settings.themeTaxonomyColorsEnabled {
+            return settings.themeStyle.topicCategoryColor(for: name, fallback: fallback)
+        }
+        return fallback ?? .systemGray
     }
 }
 
@@ -45,6 +57,7 @@ struct XiaohongshuTopicCardModel {
     let title: String
     let excerpt: String?
     let avatarURL: URL?
+    let avatarUserId: Int?
     let username: String?
     let categoryName: String?
     let categoryColor: UIColor?
@@ -186,7 +199,10 @@ final class TopicCell: UITableViewCell {
             titleLabel.trailingAnchor.constraint(equalTo: replyCountBadge.leadingAnchor, constant: -10),
             titleLabel.heightAnchor.constraint(lessThanOrEqualToConstant: Metrics.titleLineHeight * CGFloat(Metrics.titleMaxLines)),
 
-            replyCountBadge.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
+            replyCountBadge.centerYAnchor.constraint(
+                equalTo: titleLabel.topAnchor,
+                constant: Metrics.titleLineHeight / 2
+            ),
             replyCountBadge.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
             replyCountBadge.heightAnchor.constraint(equalToConstant: 22),
 
@@ -204,6 +220,7 @@ final class TopicCell: UITableViewCell {
     func configure(
         with topic: DiscourseTopicList.Topic,
         avatarURL: URL?,
+        avatarUserId: Int? = nil,
         categoryName: String?,
         categoryColor: UIColor?,
         tags: [String] = [],
@@ -232,11 +249,15 @@ final class TopicCell: UITableViewCell {
         // Time
         timeLabel.text = Self.formatDate(topic.lastPostedAt ?? topic.createdAt)
 
-        // Avatar
-        if currentAvatarURL != avatarURL || avatarImageView.image == nil {
-            currentAvatarURL = avatarURL
-            AvatarImageLoader.setImage(on: avatarImageView, url: avatarURL)
-        }
+        // Let AvatarImageLoader decide cache/gate/retry; placeholder is not a loaded state.
+        currentAvatarURL = avatarURL
+        AvatarImageLoader.setImage(
+            on: avatarImageView,
+            url: avatarURL,
+            cloudflareBaseURL: categoryBaseURL,
+            avatarBaseURL: categoryBaseURL,
+            userId: avatarUserId
+        )
     }
 
     private func applyTypography() {
@@ -730,10 +751,15 @@ private final class XiaohongshuTopicCardView: UIControl {
         viewsIconView.tintColor = accentColor.withAlphaComponent(0.72)
 
         configureBadges(model: model)
-        if currentAvatarURL != model.avatarURL || avatarImageView.image == nil {
-            currentAvatarURL = model.avatarURL
-            AvatarImageLoader.setImage(on: avatarImageView, url: model.avatarURL)
-        }
+        // Let AvatarImageLoader decide cache/gate/retry; placeholder is not a loaded state.
+        currentAvatarURL = model.avatarURL
+        AvatarImageLoader.setImage(
+            on: avatarImageView,
+            url: model.avatarURL,
+            cloudflareBaseURL: model.categoryBaseURL,
+            avatarBaseURL: model.categoryBaseURL,
+            userId: model.avatarUserId
+        )
     }
 
     func prepareForReuse() {

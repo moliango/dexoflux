@@ -14,6 +14,7 @@ final class ForumTabBarController: UITabBarController {
     private var settingsObservationToken: AnyCancellable?
     private var authObservationToken: AnyCancellable?
     private var pluginObservationToken: NSObjectProtocol?
+    private var appLifecycleObservationToken: NSObjectProtocol?
     private var notificationObservationToken: AnyCancellable?
     private var meAvatarLoadTask: Task<Void, Never>?
     private var renderedMeAvatarKey: String?
@@ -54,6 +55,7 @@ final class ForumTabBarController: UITabBarController {
         startObservingSettings()
         startObservingAuth()
         startObservingPlugins()
+        startObservingApplicationLifecycle()
         startObservingNotifications()
         configureTabBarSurface()
         refreshMeTabAvatarIcon()
@@ -65,6 +67,9 @@ final class ForumTabBarController: UITabBarController {
         authObservationToken?.cancel()
         if let pluginObservationToken {
             NotificationCenter.default.removeObserver(pluginObservationToken)
+        }
+        if let appLifecycleObservationToken {
+            NotificationCenter.default.removeObserver(appLifecycleObservationToken)
         }
         notificationObservationToken?.cancel()
         meAvatarLoadTask?.cancel()
@@ -213,6 +218,25 @@ final class ForumTabBarController: UITabBarController {
         scrollTabBarAnimationID += 1
         isAnimatingScrollTabBar = false
         applyCurrentTabBarLayout()
+    }
+
+    func reassertTabBarLayoutAfterApplicationActivation() {
+        guard isViewLoaded else { return }
+        scrollTabBarAnimationID += 1
+        isAnimatingScrollTabBar = false
+        tabBar.layer.removeAllAnimations()
+        configureTabBarSurface()
+        applyCurrentTabBarLayout()
+
+        // UIKit may perform a delayed UITabBarController layout pass after app
+        // activation. Re-apply our scroll-hidden state so it does not leave a
+        // stale bottom safe-area slab while the tab bar is still hidden.
+        DispatchQueue.main.async { [weak self] in
+            self?.reassertCurrentTabBarLayoutIfLoaded()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.reassertCurrentTabBarLayoutIfLoaded()
+        }
     }
 
     /// Force the root tab bar back on screen after parent-presented modals
@@ -476,6 +500,21 @@ private extension ForumTabBarController {
             }
             self.rebuildTabs(preservingIdentifier: self.selectedTabIdentifier())
         }
+    }
+
+    func startObservingApplicationLifecycle() {
+        appLifecycleObservationToken = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reassertTabBarLayoutAfterApplicationActivation()
+        }
+    }
+
+    func reassertCurrentTabBarLayoutIfLoaded() {
+        guard isViewLoaded, view.window != nil else { return }
+        applyCurrentTabBarLayout()
     }
 
     func startObservingNotifications() {
@@ -762,6 +801,7 @@ private extension ForumTabBarController {
                     contributionID: registration.contribution.id
                 ), registration)
             })
+        pruneStalePluginTabItemIDs(validPluginTabs: pluginTabs)
         let configuredSpecs = AppSettings.shared.forumVisibleConfiguredTabItemIDs.compactMap { itemID -> TabSpec? in
             if let systemItem = AppSettings.ForumDynamicTabItem.storedValue(itemID) {
                 return dynamicTabSpec(for: systemItem)
@@ -784,36 +824,34 @@ private extension ForumTabBarController {
         return specs
     }
 
+    func pruneStalePluginTabItemIDs(validPluginTabs: [String: PluginContributionRegistration]) {
+        let retiredFirstPartyIDs = [
+            BuiltInPluginID.newAPICheckIn,
+            BuiltInPluginID.ldcStore,
+        ]
+        let current = AppSettings.shared.forumConfiguredTabItemIDs
+        let pruned = current.filter { itemID in
+            if AppSettings.ForumDynamicTabItem.storedValue(itemID) != nil {
+                return true
+            }
+            // NewAPI / LD 士多 are first-party Me mini-programs — never resurrect as tabs.
+            if retiredFirstPartyIDs.contains(where: { itemID.contains($0) }) {
+                return false
+            }
+            return validPluginTabs[itemID] != nil
+        }
+        if pruned != current {
+            AppSettings.shared.forumConfiguredTabItemIDs = pruned
+        }
+    }
+
     func pluginTabSpec(for registration: PluginContributionRegistration) -> TabSpec? {
+        // NewAPI / LD 士多 no longer contribute forum.tab; they launch as mini-programs from Me.
+        // Keep this hook for any future real forum.tab plugins.
         let identifier = "plugin.\(registration.plugin.id).\(registration.contribution.id)"
         let title = registration.contribution.titleFallback ?? registration.plugin.displayName
-
-        switch registration.plugin.id {
-        case BuiltInPluginID.newAPICheckIn:
-            return TabSpec(
-                identifier: identifier,
-                title: title,
-                symbolName: registration.contribution.systemImageName
-            ) {
-                NewAPICheckInViewController()
-            }
-        case BuiltInPluginID.ldcStore:
-            return TabSpec(
-                identifier: identifier,
-                title: title,
-                symbolName: registration.contribution.systemImageName
-            ) { [api, authGate] in
-                InAppBrowserViewController(
-                    api: api,
-                    username: authGate?.currentUsername() ?? AuthManager.shared.username(for: api.baseURL),
-                    initialURL: URL(string: "https://ldcstore.com/"),
-                    hidesHostTabBarAtRoot: true,
-                    hidesBrowserControlBar: true
-                )
-            }
-        default:
-            return nil
-        }
+        _ = (identifier, title, registration)
+        return nil
     }
 
     func dynamicTabSpec(for item: AppSettings.ForumDynamicTabItem) -> TabSpec {
@@ -1012,6 +1050,10 @@ private final class BrowsingHistoryViewModel: DexoObservableObject {
         return usersById[firstPoster.userId]?.avatarTemplate
     }
 
+    func avatarUserId(for topic: DiscourseTopicList.Topic) -> Int? {
+        topic.posters?.first?.userId
+    }
+
     func category(for topic: DiscourseTopicList.Topic) -> DiscourseCategory? {
         guard let categoryId = topic.categoryId else { return nil }
         return categoryIndex[categoryId]
@@ -1163,19 +1205,22 @@ final class BrowsingHistoryViewController: ObservableViewController {
                 return UITableViewCell()
             }
 
+            let baseURL = self.api.baseURL
             let avatarURL = AvatarImageLoader.url(
                 from: self.viewModel.avatarTemplate(for: topic),
-                baseURL: self.api.baseURL,
-                size: 96
+                baseURL: baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
             )
             let category = self.viewModel.category(for: topic)
             let categoryColor = category.flatMap { Self.color(fromHex: $0.color) }
             cell.configure(
                 with: topic,
                 avatarURL: avatarURL,
+                avatarUserId: self.viewModel.avatarUserId(for: topic),
                 categoryName: self.viewModel.categoryDisplayName(for: category),
                 categoryColor: categoryColor,
-                tags: topic.tags ?? []
+                tags: topic.tags ?? [],
+                categoryBaseURL: baseURL
             )
             return cell
         }
@@ -1317,6 +1362,7 @@ final class BrowsingHistoryViewController: ObservableViewController {
             snapshot.reconfigureItems(reconfigurableIds)
         }
         dataSource.apply(snapshot, animatingDifferences: view.window != nil)
+        prefetchAvatars(for: viewModel.topics)
 
         let hasTopics = !viewModel.topics.isEmpty
         if viewModel.isLoading && !hasTopics {
@@ -1358,6 +1404,18 @@ final class BrowsingHistoryViewController: ObservableViewController {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
         }
+    }
+
+    private func prefetchAvatars(for topics: [DiscourseTopicList.Topic]) {
+        let limit = AppSettings.shared.avatarLoadingProfile.homeAvatarPrefetchLimit
+        let urls = topics.prefix(limit).compactMap { topic -> URL? in
+            AvatarImageLoader.url(
+                from: viewModel.avatarTemplate(for: topic),
+                baseURL: api.baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+        }
+        AvatarImageLoader.prefetch(urls: urls, cloudflareBaseURL: api.baseURL)
     }
 
     private func applyThemeStyle() {
