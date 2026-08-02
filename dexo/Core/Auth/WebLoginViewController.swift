@@ -10,7 +10,10 @@ final class WebLoginViewController: UIViewController {
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
+        // Same persistent store + process pool as in-app browser / mini-programs,
+        // so a successful login is immediately visible to those WebViews.
         config.websiteDataStore = .default()
+        config.processPool = InAppBrowserWebKitRuntime.processPool
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let wv = WKWebView(frame: .zero, configuration: config)

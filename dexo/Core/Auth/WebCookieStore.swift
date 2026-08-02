@@ -199,11 +199,58 @@ final class WebCookieStore {
     @MainActor
     func syncToWebView(_ dataStore: WKWebsiteDataStore, for url: URL) async {
         guard let host = url.host?.lowercased() else { return }
+        await injectCookies(
+            siteCookies(forHost: host),
+            into: dataStore,
+            replacingAuthOnHost: host
+        )
+    }
+
+    /// Inject every cookie that belongs to the site family (e.g. `linux.do` + `*.linux.do`).
+    /// Used so mini-programs / in-app browser reuse the app's Discourse login without a second sign-in.
+    @MainActor
+    func syncSiteSession(to dataStore: WKWebsiteDataStore, siteURL: URL) async {
+        guard let host = siteURL.host?.lowercased() else { return }
+        let cookies = siteCookies(forHost: host)
+        await injectCookies(cookies, into: dataStore, replacingAuthOnHost: host)
+        if !cookies.isEmpty {
+            DohDebugLog.record(
+                "primed site session host=\(host) root=\(Self.siteRootDomain(host)) count=\(cookies.count) names=\(Self.cookieSummary(cookies))",
+                subsystem: "Auth"
+            )
+        }
+    }
+
+    /// All non-expired cookies applicable to `host` or its registrable root (e.g. linux.do).
+    func siteCookies(forHost host: String) -> [HTTPCookie] {
+        let normalizedHost = host.lowercased()
+        let root = Self.siteRootDomain(normalizedHost)
+        lock.lock()
+        let expiredKeys = expiredCookieKeys()
+        for key in expiredKeys {
+            jar.removeValue(forKey: key)
+        }
+        let matched = Array(jar.values.filter { cookie in
+            Self.cookieBelongsToSite(cookie, host: normalizedHost, root: root)
+        })
+        lock.unlock()
+        if !expiredKeys.isEmpty {
+            save()
+        }
+        // Prefer the best variant per name for this host (same selection as request cookies).
+        return Self.selectCookiesForRequest(matched, host: normalizedHost)
+    }
+
+    @MainActor
+    private func injectCookies(
+        _ cookies: [HTTPCookie],
+        into dataStore: WKWebsiteDataStore,
+        replacingAuthOnHost host: String
+    ) async {
         let cookieStore = dataStore.httpCookieStore
-        let cookies = cookies(for: url)
-        let authCookieNames = cookies
-            .filter { Self.isAuthCookieName($0.name) }
-            .map(\.name)
+        let authCookieNames = Set(
+            cookies.filter { Self.isAuthCookieName($0.name) }.map(\.name)
+        )
 
         if !authCookieNames.isEmpty {
             let existingCookies = await withCheckedContinuation { continuation in
@@ -211,7 +258,11 @@ final class WebCookieStore {
             }
             for cookie in existingCookies {
                 guard authCookieNames.contains(cookie.name),
-                      Self.normalizedDomain(cookie.domain) == host
+                      Self.cookieBelongsToSite(
+                        cookie,
+                        host: host,
+                        root: Self.siteRootDomain(host)
+                      )
                 else { continue }
                 await withCheckedContinuation { continuation in
                     cookieStore.delete(cookie) {
@@ -311,6 +362,23 @@ final class WebCookieStore {
 
     private static func normalizedDomain(_ domain: String) -> String {
         domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    }
+
+    /// Best-effort registrable root (`www.linux.do` → `linux.do`). Good enough for Discourse hosts.
+    static func siteRootDomain(_ host: String) -> String {
+        let parts = host.lowercased().split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return host.lowercased() }
+        return parts.suffix(2).joined(separator: ".")
+    }
+
+    static func cookieBelongsToSite(_ cookie: HTTPCookie, host: String, root: String) -> Bool {
+        let domain = normalizedDomain(cookie.domain)
+        if domain.isEmpty { return false }
+        if domainMatches(host: host, cookieDomain: cookie.domain) { return true }
+        if domainMatches(host: root, cookieDomain: cookie.domain) { return true }
+        if domain == root || domain.hasSuffix(".\(root)") { return true }
+        if root.hasSuffix(".\(domain)") { return true }
+        return false
     }
 
     private static func fileSize(at url: URL) -> Int64 {
@@ -436,6 +504,11 @@ private extension WebCookieStore {
             ]
             if let expiresAt {
                 props[.expires] = Date(timeIntervalSince1970: expiresAt)
+            } else {
+                // Session cookies have no Expires. Re-injecting them without one
+                // makes WK treat them as ephemeral again, so mini-program / custom
+                // URL logins “掉登” after process death. Pin ~180 days on restore.
+                props[.expires] = Date().addingTimeInterval(60 * 60 * 24 * 180)
             }
             if secure {
                 props[.secure] = "TRUE"

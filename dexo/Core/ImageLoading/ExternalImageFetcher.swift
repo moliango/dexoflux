@@ -74,14 +74,16 @@ enum ExternalImageFetcher {
 
         let task = session.dataTask(with: request) { data, response, _ in
             if let http = response as? HTTPURLResponse,
-               DiscourseAPI.isCloudflareChallengeResponse(http, data: data) {
+               let detection = DiscourseAPI.cloudflareChallengeDetection(http, data: data) {
                 let base = refererBaseURL
                     ?? CloudflareImageGate.originString(for: url)
                     ?? url.absoluteString
                 DispatchQueue.main.async {
                     CloudflareImageGate.reportImageChallenge(
                         baseURL: base,
-                        responseURL: http.url
+                        responseURL: http.url,
+                        source: "image.external",
+                        detection: detection
                     )
                 }
             }

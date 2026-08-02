@@ -214,6 +214,8 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         return v
     }()
 
+    private let loadingSkeletonView = TopicDetailSkeletonView()
+
     private let emptyLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "search.no_results")
@@ -231,6 +233,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         self.initialQuery = initialQuery
         self.fixedQueryQualifier = fixedQueryQualifier
         super.init(nibName: nil, bundle: nil)
+        hidesBottomBarWhenPushed = true
     }
 
     @available(*, unavailable)
@@ -241,6 +244,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
+        syncOwningTabBarVisibility()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -248,6 +252,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         if isMovingFromParent || isBeingDismissed {
             navigationController?.setNavigationBarHidden(false, animated: animated)
         }
+        syncOwningTabBarVisibility()
     }
 
     override func viewDidLoad() {
@@ -260,6 +265,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         filterBar.backgroundColor = .systemGroupedBackground
         tableView.backgroundColor = .systemGroupedBackground
         headerContainer.backgroundColor = .systemGroupedBackground
+        loadingSkeletonView.applyThemeStyle()
 
         setupHeader()
         setupFilterBar()
@@ -267,6 +273,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         updateFilterButtons()
 
         view.addSubview(tableView)
+        view.addSubview(loadingSkeletonView)
         view.addSubview(activityIndicator)
         view.addSubview(emptyLabel)
         view.addSubview(listStateView)
@@ -276,6 +283,11 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            loadingSkeletonView.topAnchor.constraint(equalTo: tableView.topAnchor),
+            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingSkeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
@@ -300,6 +312,10 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
             searchField.text = initialQuery
             triggerSearch()
         }
+    }
+
+    private func syncOwningTabBarVisibility() {
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
     }
 
 
@@ -809,19 +825,15 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     // MARK: - Search
 
     override func updateUI() {
-        if viewModel.isSearching {
-            activityIndicator.startAnimating()
-        } else {
-            activityIndicator.stopAnimating()
-        }
+        activityIndicator.stopAnimating()
+        loadingSkeletonView.applyThemeStyle()
+        let showsInitialLoading = viewModel.isSearching
+            && viewModel.searchResults.isEmpty
+            && viewModel.errorMessage == nil
+        loadingSkeletonView.setSkeletonActive(showsInitialLoading, animated: view.window != nil)
 
         emptyLabel.isHidden = true
-        if viewModel.isSearching, viewModel.searchResults.isEmpty {
-            listStateView.isHidden = false
-            listStateView.configure(.loading) { [weak self] in
-                self?.triggerSearch()
-            }
-        } else if let error = viewModel.errorMessage {
+        if let error = viewModel.errorMessage {
             listStateView.isHidden = false
             listStateView.configure(.error(error)) { [weak self] in
                 self?.triggerSearch()

@@ -504,7 +504,7 @@ private final class NotificationCell: UITableViewCell {
     }
 
     private static func color(for type: Int, themeStyle: AppSettings.ThemeStyle) -> UIColor {
-        if themeStyle != .systemDefault {
+        if themeStyle != .systemDefault, AppSettings.shared.themeTaxonomyColorsEnabled {
             return themeStyle.topicTagColor(for: "notification-\(type)")
         }
         switch type {

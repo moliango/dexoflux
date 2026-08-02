@@ -86,7 +86,7 @@ final class SearchResultCell: UITableViewCell {
     }()
 
     private lazy var titleTrailingStack: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [aiIcon, floorBadge, replyBadge])
+        let stack = UIStackView(arrangedSubviews: [aiIcon, floorBadge])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .center
@@ -107,6 +107,7 @@ final class SearchResultCell: UITableViewCell {
         cardView.addSubview(avatarImageView)
         cardView.addSubview(titleLabel)
         cardView.addSubview(titleTrailingStack)
+        cardView.addSubview(replyBadge)
         cardView.addSubview(blurbLabel)
         cardView.addSubview(badgesStackView)
         cardView.addSubview(timeLabel)
@@ -126,9 +127,12 @@ final class SearchResultCell: UITableViewCell {
             titleLabel.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 10),
             titleLabel.trailingAnchor.constraint(equalTo: titleTrailingStack.leadingAnchor, constant: -10),
 
-            titleTrailingStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 11),
-            titleTrailingStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            titleTrailingStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 7),
+            titleTrailingStack.trailingAnchor.constraint(equalTo: replyBadge.leadingAnchor, constant: -6),
             titleTrailingStack.heightAnchor.constraint(equalToConstant: 22),
+
+            replyBadge.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 7),
+            replyBadge.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
 
             aiIcon.widthAnchor.constraint(equalToConstant: 14),
             aiIcon.heightAnchor.constraint(equalToConstant: 14),
@@ -308,7 +312,7 @@ private final class SearchCountBadgeView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.cornerRadius = 11
+        layer.cornerRadius = 8
         layer.cornerCurve = .continuous
         clipsToBounds = true
 
@@ -370,7 +374,7 @@ private final class SearchPillBadgeView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.cornerRadius = 11
+        layer.cornerRadius = 8
         layer.cornerCurve = .continuous
         clipsToBounds = true
         addSubview(label)
