@@ -62,20 +62,34 @@ target.
 
 ---
 
-## Convention: Verification is a simulator build, nothing heavier
+## Convention: Verification is compile-only (no simulator launch)
 
-**What**: After changes, verify with
+**What**: After changes, verify with a **build only** — do not boot or launch
+the Simulator, do not install/run the app, do not run the test suite unless
+explicitly asked.
 
 ```bash
 # only when files were added/removed (or Project.swift changed)
 make generate
+
+# Compile only. Prefer generic destination so xcodebuild does not boot a
+# specific simulator runtime.
 xcodebuild build -workspace dexoflux.xcworkspace -scheme dexoflux \
-  -destination 'platform=iOS Simulator,id=<simulator-udid>'
+  -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO
 ```
 
-**Why**: The owner iterates on-device manually; full `xcodebuild test` takes
-minutes and is opt-in only. `swiftc -parse` alone is NOT sufficient — it misses
-scope/type errors and the new-file-not-in-project failure above.
+**Why**: The owner iterates on-device / in Xcode manually. Booting Simulator or
+running `xcodebuild test` is slow, flaky (device UUID / connection errors), and
+unnecessary for catching compile/scope errors.
 
-**Don't**: deploy to a physical device, launch the app, or run the test suite
-unless explicitly asked.
+**Don't** (unless the user explicitly asks):
+
+- `xcodebuild test` / boot Simulator / `open -a Simulator`
+- `-destination 'platform=iOS Simulator,name=…'` or `id=…` when a generic
+  destination works (named destinations may force a runtime boot)
+- deploy to a physical device or launch the app
+- run the full test suite
+
+`swiftc -parse` alone is still NOT sufficient — it misses scope/type errors and
+the new-file-not-in-project failure above. Use `xcodebuild build`.

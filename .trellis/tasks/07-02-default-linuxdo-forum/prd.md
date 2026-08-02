@@ -339,9 +339,9 @@ This project is a fork of another project and is being customized as a second-de
 - [x] The bottom tab bar no longer includes a search tab/button.
 - [x] Home no longer shows a vertical scroll indicator while scrolling.
 - [x] Home topic tag badges include a tag icon and stable color treatment.
-- [ ] Home topic category badges in the badge/tag row show the FluxDo/Linux.do category display name including official level text when available, for example `开发调优LV1`.
-- [ ] Category level text is not guessed from badge order, tab order, or local hierarchy depth.
-- [ ] Ordinary topic tags remain rendered as topic tags and are not mislabeled as categories.
+- [x] Home topic category badges in the badge/tag row show the FluxDo/Linux.do category display name including official level text when available, for example `开发调优LV1`.
+- [x] Category level text is not guessed from badge order, tab order, or local hierarchy depth.
+- [x] Ordinary topic tags remain rendered as topic tags and are not mislabeled as categories.
 - [x] HTTP 429 responses show a friendly "too many requests / try again later" message rather than "Response could not be decoded."
 - [x] Home hides the bottom tab bar with a vertical push-out animation on upward finger swipes.
 - [x] Home shows the bottom tab bar with a vertical push-in animation on downward finger swipes.
@@ -422,14 +422,19 @@ This project is a fork of another project and is being customized as a second-de
 - [x] Other-user profile search, private-message, follow, overflow, biography, and follower/following actions are functional.
 - [x] Other-user profile summary, activity, topics, replies, likes received, and reactions sections load real data with refresh, pagination, empty, error, and retry behavior.
 - [x] Me/Profile exposes functional my-topics, drafts, browsing-history, export-history, in-app-browser, and profile-stat configuration flows.
-- [ ] Existing badges, invite links, private messages, bookmarks, trust requirements, settings, topic detail, and authentication flows still work after the profile expansion.
+- [x] Existing badges, invite links, private messages, bookmarks, trust requirements, settings, topic detail, and authentication flows still work after the profile expansion.
 - [x] No user-profile or Me/Profile row is a fake action that only shows an unavailable/coming-soon message.
-- [ ] Enabling DoH starts a lightweight local proxy for native API requests.
-- [ ] Network settings expose both the DoH switch and the currently effective DoH server URL.
-- [ ] Editing the DoH server URL switches the provider to custom and restarts/reconfigures the lightweight DoH service.
-- [ ] Native API requests keep `https://linux.do/...` URLs and rely on CONNECT tunneling rather than IP URL replacement.
-- [ ] The DoH resolver can resolve `linux.do` through configured JSON DoH providers and cache results with a bounded TTL.
-- [ ] If the local proxy cannot start, native API requests fall back to the normal Alamofire session instead of bricking the app.
+- [x] Enabling DoH starts a lightweight local proxy for native API requests.
+- [x] Network settings expose both the DoH switch and the currently effective DoH server URL.
+- [x] Editing the DoH server URL switches the provider to custom and restarts/reconfigures the lightweight DoH service.
+- [x] Native API requests keep `https://linux.do/...` URLs and rely on CONNECT tunneling rather than IP URL replacement.
+- [x] The DoH resolver can resolve `linux.do` through configured JSON DoH providers and cache results with a bounded TTL.
+- [x] If the local proxy cannot start, native API requests fall back to the normal Alamofire session instead of bricking the app.
+- [x] Image Cloudflare challenges from avatars or external content images pause image loading and write `[CF]` diagnostics, but do not automatically open the verification sheet.
+- [x] `/topics/timings` Cloudflare challenges are treated as background read-state sync failures: log and pause noisy image loads, but do not interrupt the reader with verification UI.
+- [x] Primary user-facing requests, including Home topic loads, topic detail, search, notifications, and explicit actions, still open the Cloudflare verification flow when they receive a challenge response.
+- [x] Avatar downloads and Home avatar prefetching use lower concurrency/volume so normal browsing does not hammer Linux.do with low-value image traffic.
+- [x] After Cloudflare verification succeeds, visible avatars can recover, but Home must not immediately retry a large 60-avatar prefetch burst.
 
 
 - Rebranding every upstream asset or package identifier unless it blocks the Linux.do-only experience.
@@ -443,6 +448,7 @@ This project is a fork of another project and is being customized as a second-de
 - Phase 4.1 does not implement FluxDo's settings search, shortcut settings, Notion settings, or desktop-only setting surfaces.
 - Phase 4.4 does not implement a headless `cf_clearance` renewal service or a full WebView-backed HTTP adapter.
 - Phase 6 does not implement FluxDo's Rust DoH proxy, ECH, h2 MITM, WebView proxy override, system-wide DNS, or NetworkExtension support.
+- Phase 5.4 does not implement a general `CloudflareRequestGate`, headless challenge solving, automatic unattended shield bypass, or WebView-backed HTTP adapter. This slice only reduces avoidable challenge triggers and suppresses verification UI for low-value/background requests.
 
 ## Open Questions
 

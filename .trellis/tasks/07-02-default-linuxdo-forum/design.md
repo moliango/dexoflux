@@ -347,6 +347,17 @@ Phase 1.4 makes iOS 15.0 the real minimum runtime target. Current local facts sh
 - System-level DNS via NetworkExtension or `NEDNSSettingsManager`.
 - Global proxying for arbitrary user-entered forums or non-Linux.do domains.
 
+## Phase 5.4 Cloudflare Request Noise Reduction
+
+- Field evidence: Cloudflare challenge diagnostics show `image.avatar`, `api.topicTimings`, and `api.foreground` can all receive `cf-mitigated: challenge`. A `429` status alone is not proof of a shield, but `cf-mitigated: challenge` is a strong Cloudflare challenge signal and must be handled as such.
+- Product boundary: only user-facing requests should open the automatic verification sheet. Background/low-value traffic should log, pause, and retry later without interrupting the current reading flow.
+- Image mapping: `CloudflareImageGate.reportImageChallenge` remains the central image challenge boundary. It should pause main-domain image downloads and keep coalescing repeated image challenges, but forward the event through `DiscourseAPI.handleCloudflareChallengeDetected(... shouldNotify: false)` so avatar/content-image failures do not present the verification sheet by themselves.
+- Timing mapping: `/topics/timings` is read-progress telemetry. It should keep Cloudflare detection and diagnostics, but pass `shouldNotify: false` even when interactive web recovery is available. A failed timing post must not block reading or pop UI.
+- Main-request mapping: `DiscourseAPI.request(...)` and other explicit user actions keep their existing `shouldNotify` behavior. Home `latest.json`, topic detail, search, notifications, uploads, reactions, bookmarks, and similar user-visible work can still open verification when challenged.
+- Traffic shaping: reduce global SDWebImage avatar concurrency and prefetch concurrency. Home should prefetch only a small leading set of avatar URLs instead of 60 rows, and Cloudflare verification recovery should retry a small visible/near-visible avatar set rather than immediately creating another burst.
+- Recovery mapping: after verification completes, `AvatarImageLoader.credentialsDidChange(...)` clears paused/failed state for selected retry URLs, Home reconfigures visible cells, and normal cell reuse can reload avatars. This keeps image recovery incremental instead of restarting every cached/prefetched image request at once.
+- Deferred: a centralized `CloudflareRequestGate` with request priority queues, cooldown budgets, replay scheduling, or headless clearance refresh remains a later phase. This pass deliberately avoids broad networking architecture churn.
+
 ## Phase 7 User Profile And Me Completion
 
 - Source design: `docs/superpowers/specs/2026-07-10-user-profile-and-me-completion-design.md` owns the approved detailed contract.
