@@ -1,16 +1,26 @@
 import UIKit
 import WebKit
 
+/// Shared WebKit process pool so successive browser / mini-program opens
+/// reuse the same cookie jar process instead of starting isolated.
+enum InAppBrowserWebKitRuntime {
+    static let processPool = WKProcessPool()
+}
+
 final class InAppBrowserViewController: UIViewController {
     private let baseURL: URL
     private let store: BrowserHistoryStore
     private let initialURL: URL?
     let hidesHostTabBarAtRoot: Bool
     private let hidesBrowserControlBar: Bool
+    private var isCookieObserverRegistered = false
 
     private lazy var webView: WKWebView = {
         let configuration = WKWebViewConfiguration()
+        // Persistent store + shared process pool: custom mini-program sites keep
+        // login cookies / localStorage across close → reopen.
         configuration.websiteDataStore = .default()
+        configuration.processPool = InAppBrowserWebKitRuntime.processPool
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -127,7 +137,17 @@ final class InAppBrowserViewController: UIViewController {
         }
 
         errorView.onRetry = { [weak self] in self?.reloadTapped() }
+        registerCookieObserverIfNeeded()
         Task { await load(initialURL ?? baseURL) }
+    }
+
+    deinit {
+        if isCookieObserverRegistered {
+            webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+        }
+        progressObservation?.invalidate()
+        titleObservation?.invalidate()
+        urlObservation?.invalidate()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -144,8 +164,34 @@ final class InAppBrowserViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        // Flush cookies before the web view is torn down (mini-program close, pop, dismiss).
+        persistCookiesForCurrentPage()
         if isMovingFromParent || isBeingDismissed {
             navigationController?.setNavigationBarHidden(false, animated: animated)
+        }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isMovingFromParent || isBeingDismissed {
+            persistCookiesForCurrentPage()
+        }
+    }
+
+    private func registerCookieObserverIfNeeded() {
+        guard !isCookieObserverRegistered else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.add(self)
+        isCookieObserverRegistered = true
+    }
+
+    /// Pull cookies for the current page (or initial URL) into the durable jar.
+    private func persistCookiesForCurrentPage() {
+        let url = webView.url ?? initialURL
+        Task { @MainActor in
+            await WebCookieStore.shared.syncFromWebView(
+                webView.configuration.websiteDataStore,
+                for: url
+            )
         }
     }
 
@@ -245,9 +291,31 @@ final class InAppBrowserViewController: UIViewController {
         }
         // 先写入历史，保证从任意入口打开内部浏览器都能记一笔。
         try? store.recordVisit(url: normalizedURL, title: webView.title ?? normalizedURL.host)
-        await WebCookieStore.shared.syncToWebView(webView.configuration.websiteDataStore, for: normalizedURL)
+
+        let dataStore = webView.configuration.websiteDataStore
+        // 1) 注入当前论坛登录态（linux.do 的 _t / _forum_session / cf_clearance 等），
+        //    让小程序 / 内置浏览器打开 linux.do 相关页时不必二次登录。
+        await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: baseURL)
+        // 2) 若目标站与论坛不同域，再注入该站自己的 Cookie。
+        let forumHost = baseURL.host?.lowercased()
+        let pageHost = normalizedURL.host?.lowercased()
+        if let pageHost, pageHost != forumHost {
+            await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: normalizedURL)
+        }
+
         errorView.isHidden = true
-        webView.load(URLRequest(url: normalizedURL))
+        var request = URLRequest(url: normalizedURL)
+        // Also attach Cookie header as a belt-and-suspenders for the first navigation
+        // (some WebKit builds apply httpCookieStore slightly after the first load).
+        let cookieHeader = WebCookieStore.shared.cookieHeader(for: normalizedURL)
+        if !cookieHeader.isEmpty {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
+        if let userAgent = WebCookieStore.shared.userAgent {
+            webView.customUserAgent = userAgent
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        }
+        webView.load(request)
         updateTitleCapsule()
         updateControlState()
     }
@@ -487,6 +555,20 @@ extension InAppBrowserViewController: WKNavigationDelegate {
             UIApplication.shared.open(url)
         })
         present(alert, animated: true)
+    }
+}
+
+extension InAppBrowserViewController: WKHTTPCookieStoreObserver {
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        // SPA logins often set cookies without a full document navigation.
+        // Keep the durable jar in sync so the next mini-program open stays logged in.
+        let url = webView.url ?? initialURL
+        Task { @MainActor in
+            await WebCookieStore.shared.syncFromWebView(
+                webView.configuration.websiteDataStore,
+                for: url
+            )
+        }
     }
 }
 

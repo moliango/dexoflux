@@ -142,7 +142,7 @@ final class LinuxDoExtensionHTTPClient {
         if !responseCookies.isEmpty {
             WebCookieStore.shared.setCookies(responseCookies)
         }
-        if DiscourseAPI.isCloudflareChallengeResponse(http, data: data) {
+        if let detection = DiscourseAPI.cloudflareChallengeDetection(http, data: data) {
             // connect.linux.do 的 OAuth 同意页也会带 cloudflare 脚本标记；
             // 若已能解析 approve 链接，说明不是挑战页，继续静默授权。
             let bodyText = String(data: data, encoding: .utf8) ?? ""
@@ -160,6 +160,15 @@ final class LinuxDoExtensionHTTPClient {
                 guard let challengedBaseURL = components.url else {
                     throw LinuxDoExtensionError.invalidResponse
                 }
+                DiscourseAPI.handleCloudflareChallengeDetected(
+                    baseURL: challengedBaseURL.absoluteString,
+                    responseURL: http.url,
+                    source: "metaverse.oauth",
+                    routePath: url.path,
+                    method: "GET",
+                    detection: detection,
+                    shouldNotify: false
+                )
                 throw LinuxDoExtensionError.cloudflare(challengedBaseURL, http.url)
             }
         }
@@ -425,19 +434,14 @@ final class MetaverseServicesViewController: UITableViewController {
     private let credentialStore: LDCMerchantCredentialsStore
     private var processing = Set<LinuxDoExtensionService>()
 
-    private var pluginScope: PluginScope {
-        PluginScope(baseURL: api.baseURL, username: username)
-    }
-
     private var visibleServices: [LinuxDoExtensionService] {
-        let registry = DexoPluginRuntime.shared.registry
         return LinuxDoExtensionService.allCases.filter { service in
-            registry.isPluginEnabled(pluginID(for: service), for: pluginScope)
+            MiniProgramStore.shared.program(id: miniProgramID(for: service))?.isVisible == true
         }
     }
 
     private var isLDCPluginEnabled: Bool {
-        DexoPluginRuntime.shared.registry.isPluginEnabled(BuiltInPluginID.ldc, for: pluginScope)
+        MiniProgramStore.shared.program(id: MiniProgramID.ldc)?.isVisible == true
     }
 
     init(api: DiscourseAPI, username: String) {
@@ -458,8 +462,8 @@ final class MetaverseServicesViewController: UITableViewController {
         refreshControl?.addTarget(self, action: #selector(refreshServices), for: .valueChanged)
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(pluginStateDidChange),
-            name: PluginStateStore.stateDidChangeNotification,
+            selector: #selector(miniProgramStateDidChange),
+            name: MiniProgramStore.catalogDidChangeNotification,
             object: nil
         )
         Task { await refreshEnabledServices() }
@@ -523,7 +527,7 @@ final class MetaverseServicesViewController: UITableViewController {
         tableView.reloadData()
     }
 
-    @objc private func pluginStateDidChange() {
+    @objc private func miniProgramStateDidChange() {
         guard !visibleServices.isEmpty else {
             navigationController?.popViewController(animated: true)
             return
@@ -531,10 +535,10 @@ final class MetaverseServicesViewController: UITableViewController {
         tableView.reloadData()
     }
 
-    private func pluginID(for service: LinuxDoExtensionService) -> String {
+    private func miniProgramID(for service: LinuxDoExtensionService) -> String {
         switch service {
-        case .ldc: return BuiltInPluginID.ldc
-        case .cdk: return BuiltInPluginID.cdk
+        case .ldc: return MiniProgramID.ldc
+        case .cdk: return MiniProgramID.cdk
         }
     }
 

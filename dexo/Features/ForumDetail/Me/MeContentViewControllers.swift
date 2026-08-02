@@ -75,7 +75,15 @@ final class PagedTopicListViewModel: DexoObservableObject {
               let template = usersById[poster.userId]?.avatarTemplate else {
             return nil
         }
-        return AvatarImageLoader.url(from: template, baseURL: baseURL, size: 96)
+        return AvatarImageLoader.url(
+            from: template,
+            baseURL: baseURL,
+            size: AvatarImageLoader.primaryAvatarPixelSize
+        )
+    }
+
+    func avatarUserId(for topic: DiscourseTopicList.Topic) -> Int? {
+        topic.posters?.first?.userId
     }
 
     func category(for topic: DiscourseTopicList.Topic) -> DiscourseCategory? {
@@ -396,12 +404,15 @@ extension PagedTopicListViewController: UITableViewDataSource {
 
         let topic = viewModel.topics[indexPath.row]
         let category = viewModel.category(for: topic)
+        let baseURL = api.baseURL
         cell.configure(
             with: topic,
-            avatarURL: viewModel.avatarURL(for: topic, baseURL: api.baseURL),
+            avatarURL: viewModel.avatarURL(for: topic, baseURL: baseURL),
+            avatarUserId: viewModel.avatarUserId(for: topic),
             categoryName: viewModel.categoryDisplayName(for: category),
             categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
-            tags: topic.tags ?? []
+            tags: topic.tags ?? [],
+            categoryBaseURL: baseURL
         )
         return cell
     }

@@ -134,11 +134,12 @@ final class BookmarkCell: UITableViewCell {
             timeLabel.text = nil
         }
 
+        // Same size + baseURL as home/history so URL and user caches are shared.
         AvatarImageLoader.setImage(
             on: avatarImageView,
             template: bookmark.avatarTemplate,
             baseURL: baseURL,
-            size: 96
+            size: AvatarImageLoader.primaryAvatarPixelSize
         )
     }
 

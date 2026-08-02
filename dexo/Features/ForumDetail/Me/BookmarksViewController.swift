@@ -176,6 +176,19 @@ final class BookmarksViewController: ObservableViewController {
         }
 
         tableView.reloadData()
+        prefetchAvatars()
+    }
+
+    private func prefetchAvatars() {
+        let limit = AppSettings.shared.avatarLoadingProfile.homeAvatarPrefetchLimit
+        let urls = viewModel.bookmarks.prefix(limit).compactMap { bookmark -> URL? in
+            AvatarImageLoader.url(
+                from: bookmark.avatarTemplate,
+                baseURL: api.baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+        }
+        AvatarImageLoader.prefetch(urls: urls, cloudflareBaseURL: api.baseURL)
     }
 
     private func applyThemeStyle() {
