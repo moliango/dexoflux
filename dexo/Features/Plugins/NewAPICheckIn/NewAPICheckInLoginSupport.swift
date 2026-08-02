@@ -96,9 +96,16 @@ enum NewAPICheckInLoginSupport {
     }
 
     nonisolated private static func cookieMatchesHost(_ cookie: HTTPCookie, host: String) -> Bool {
-        let domain = cookie.domain
+        cookieDomain(cookie.domain, matchesHost: host)
+    }
+
+    /// Same rules as NewAPSign `CookieExtractor.matchesDomain`.
+    nonisolated static func cookieDomain(_ cookieDomain: String, matchesHost targetHost: String) -> Bool {
+        let domain = cookieDomain
             .lowercased()
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let host = targetHost.lowercased()
+        guard !domain.isEmpty, !host.isEmpty else { return false }
         return host == domain || host.hasSuffix(".\(domain)")
     }
 }

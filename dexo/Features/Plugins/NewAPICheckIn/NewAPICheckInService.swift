@@ -214,8 +214,30 @@ actor NewAPICheckInService {
             accessToken: accessToken,
             quotaValue: quota?.0,
             quotaUnit: quota?.1,
+            usedQuota: extractInt64(values, keys: ["used_quota", "usedQuota"]),
+            requestCount: extractInt(values, keys: ["request_count", "requestCount", "count"]),
             message: extractMessage(json)
         )
+    }
+
+    nonisolated private static func extractInt64(_ dict: [String: Any], keys: [String]) -> Int64? {
+        for key in keys {
+            if let v = dict[key] as? Int64 { return v }
+            if let v = dict[key] as? Int { return Int64(v) }
+            if let v = dict[key] as? Double { return Int64(v) }
+            if let s = dict[key] as? String, let v = Int64(s) { return v }
+        }
+        return nil
+    }
+
+    nonisolated private static func extractInt(_ dict: [String: Any], keys: [String]) -> Int? {
+        for key in keys {
+            if let v = dict[key] as? Int { return v }
+            if let v = dict[key] as? Int64 { return Int(v) }
+            if let v = dict[key] as? Double { return Int(v) }
+            if let s = dict[key] as? String, let v = Int(s) { return v }
+        }
+        return nil
     }
 
     nonisolated static func buildRequest(

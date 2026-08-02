@@ -12,6 +12,9 @@ final class NewAPICheckInViewController: UITableViewController {
     private var platforms: [NewAPICheckInPlatform] = []
     private var runningPlatformIDs = Set<UUID>()
     private var isRunningBatch = false
+    /// Fresh `/api/user/self` aggregates from pull-to-refresh (总消耗 / 总请求).
+    private var dashboardUsedQuota: Int64?
+    private var dashboardRequestCount: Int?
 
     // Auto-relogin queue: platforms whose sign-in came back authenticationExpired.
     private var reloginQueue: [UUID] = []
@@ -37,20 +40,40 @@ final class NewAPICheckInViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "plugins.newapi.check_in", defaultValue: "签到")
+        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationItem.largeTitleDisplayMode = .always
         tableView.register(NewAPIPlatformCell.self, forCellReuseIdentifier: NewAPIPlatformCell.reuseIdentifier)
         tableView.backgroundColor = .systemGroupedBackground
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 76
+        tableView.estimatedRowHeight = 88
         tableView.separatorInset = UIEdgeInsets(top: 0, left: 76, bottom: 0, right: 16)
-        tableView.sectionHeaderTopPadding = 12
+        tableView.sectionHeaderTopPadding = 8
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refreshTriggered), for: .valueChanged)
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+
+        // Match original NewAPSign toolbar: batch sign-in + add.
+        let signAll = UIBarButtonItem(
+            image: UIImage(systemName: "checkmark.circle.fill"),
+            style: .plain,
+            target: self,
+            action: #selector(toolbarSignAllTapped)
+        )
+        signAll.accessibilityLabel = String(localized: "plugins.newapi.sign_in_all", defaultValue: "全部签到")
+        let add = UIBarButtonItem(
             barButtonSystemItem: .add,
             target: self,
             action: #selector(addPlatformTapped)
         )
-        Task { await reload() }
+        navigationItem.rightBarButtonItems = [add, signAll]
+        Task {
+            await reload()
+            // First open: fetch dashboard stats in background (original PlatformListView).
+            await reload(refreshDashboard: true)
+        }
+    }
+
+    @objc private func toolbarSignAllTapped() {
+        signInAllTapped()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -77,34 +100,7 @@ final class NewAPICheckInViewController: UITableViewController {
     // MARK: - Static cells
 
     private lazy var summaryCell: NewAPISummaryCell = {
-        let cell = NewAPISummaryCell()
-        cell.onSignInAll = { [weak self] in self?.signInAllTapped() }
-        return cell
-    }()
-
-    private lazy var autoReloginCell: UITableViewCell = {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.text = String(localized: "plugins.newapi.auto_relogin", defaultValue: "自动重新登录")
-        content.secondaryText = String(
-            localized: "plugins.newapi.auto_relogin.help",
-            defaultValue: "登录失效时自动打开登录页刷新 Cookie"
-        )
-        content.textProperties.font = .systemFont(ofSize: 15, weight: .medium)
-        content.secondaryTextProperties.font = .systemFont(ofSize: 12)
-        content.secondaryTextProperties.color = .secondaryLabel
-        content.textToSecondaryTextVerticalPadding = 3
-        content.image = UIImage(systemName: "arrow.triangle.2.circlepath")
-        content.imageProperties.tintColor = AppSettings.shared.themeStyle.accentColor
-        content.imageProperties.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        cell.contentConfiguration = content
-        cell.selectionStyle = .none
-        let toggle = UISwitch()
-        toggle.isOn = NewAPICheckInRuntime.autoReloginEnabled
-        toggle.onTintColor = AppSettings.shared.themeStyle.accentColor
-        toggle.addTarget(self, action: #selector(autoReloginToggled(_:)), for: .valueChanged)
-        cell.accessoryView = toggle
-        return cell
+        NewAPISummaryCell()
     }()
 
     private lazy var emptyCell: UITableViewCell = {
@@ -127,10 +123,6 @@ final class NewAPICheckInViewController: UITableViewController {
         return cell
     }()
 
-    @objc private func autoReloginToggled(_ sender: UISwitch) {
-        NewAPICheckInRuntime.autoReloginEnabled = sender.isOn
-    }
-
     // MARK: - Table data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -139,7 +131,7 @@ final class NewAPICheckInViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section) {
-        case .overview: return 2
+        case .overview: return 1 // auto-relogin moved to 设置 tab
         case .platforms: return max(platforms.count, 1)
         case nil: return 0
         }
@@ -161,7 +153,7 @@ final class NewAPICheckInViewController: UITableViewController {
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section) {
         case .overview:
-            return indexPath.row == 0 ? summaryCell : autoReloginCell
+            return summaryCell
         case .platforms, nil:
             guard !platforms.isEmpty else { return emptyCell }
             guard let cell = tableView.dequeueReusableCell(
@@ -174,11 +166,13 @@ final class NewAPICheckInViewController: UITableViewController {
             let platform = platforms[indexPath.row]
             cell.configure(
                 name: platform.name,
+                typeTag: typeTag(for: platform),
+                isCustomType: (platform.platformType ?? .newAPI) == .custom,
+                sourceTag: sourceTag(for: platform),
+                isCurlSource: (platform.source ?? .webView) == .curl,
                 metaText: metaText(for: platform),
                 balance: balanceText(for: platform),
-                statusText: statusTitle(platform.lastStatus),
                 statusColor: tintColor(for: platform.lastStatus),
-                monogramSeed: URL(string: platform.baseURL)?.host ?? platform.name,
                 isRunning: runningPlatformIDs.contains(platform.id)
             )
             return cell
@@ -236,7 +230,7 @@ final class NewAPICheckInViewController: UITableViewController {
     // MARK: - Actions
 
     @objc private func refreshTriggered() {
-        Task { await reload() }
+        Task { await reload(refreshDashboard: true) }
     }
 
     @objc private func addPlatformTapped() {
@@ -263,15 +257,8 @@ final class NewAPICheckInViewController: UITableViewController {
         ) { [weak self] _ in
             self?.presentCurlImport()
         })
-        sheet.addAction(UIAlertAction(
-            title: String(localized: "plugins.newapi.history.title", defaultValue: "签到历史"),
-            style: .default
-        ) { [weak self] _ in
-            guard let self else { return }
-            navigationController?.pushViewController(NewAPICheckInHistoryViewController(store: store), animated: true)
-        })
         sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
-        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.first
         present(sheet, animated: true)
     }
 
@@ -539,62 +526,132 @@ final class NewAPICheckInViewController: UITableViewController {
 
     // MARK: - State
 
-    private func reload() async {
+    private func reload(refreshDashboard: Bool = false) async {
         platforms = await store.platforms()
+        if refreshDashboard {
+            await refreshDashboardStats()
+        }
         refreshControl?.endRefreshing()
         tableView.reloadData()
         refreshSummary()
     }
 
+    /// Pull-to-refresh: probe each NewAPI platform for quota / used / requests.
+    private func refreshDashboardStats() async {
+        guard !platforms.isEmpty else {
+            dashboardUsedQuota = nil
+            dashboardRequestCount = nil
+            return
+        }
+        var totalQuota: Int64 = 0
+        var hasQuota = false
+        var totalUsed: Int64 = 0
+        var hasUsed = false
+        var totalReq = 0
+        var hasReq = false
+
+        await withTaskGroup(of: NewAPICheckInLoginProbeResult?.self) { group in
+            for platform in platforms where (platform.platformType ?? .newAPI) == .newAPI {
+                group.addTask { [service] in
+                    await service.refreshAccount(platform)
+                }
+            }
+            for await result in group {
+                guard let result, result.isLoggedIn else { continue }
+                if let q = result.quotaValue {
+                    totalQuota += q
+                    hasQuota = true
+                }
+                if let u = result.usedQuota {
+                    totalUsed += u
+                    hasUsed = true
+                }
+                if let r = result.requestCount {
+                    totalReq += r
+                    hasReq = true
+                }
+            }
+        }
+
+        // Persist updated quotas back onto platform rows.
+        platforms = await store.platforms()
+        dashboardUsedQuota = hasUsed ? totalUsed : nil
+        dashboardRequestCount = hasReq ? totalReq : nil
+        _ = (hasQuota, totalQuota)
+    }
+
     private func refreshSummary() {
-        let signed = platforms.filter { $0.lastStatus == .success || $0.lastStatus == .alreadySigned }.count
-        let expired = platforms.filter { $0.lastStatus == .authenticationExpired }.count
+        let totalBalance = platforms.compactMap(\.lastQuotaValue).reduce(Int64(0), +)
+        let hasBalance = platforms.contains(where: { $0.lastQuotaValue != nil })
         summaryCell.update(
             platformCount: platforms.count,
-            signedCount: signed,
-            expiredCount: expired,
-            isRunning: isRunningBatch,
-            canRun: !platforms.isEmpty
+            totalBalanceText: hasBalance ? Self.formatQuotaDollars(totalBalance) : "—",
+            totalUsedText: dashboardUsedQuota.map(Self.formatQuotaDollars) ?? "—",
+            totalRequestsText: dashboardRequestCount.map(Self.formatInt) ?? "—"
         )
+    }
+
+    private static func formatQuotaDollars(_ tokens: Int64) -> String {
+        String(format: "$%.2f", Double(tokens) / 500_000)
+    }
+
+    private static func formatInt(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     // MARK: - Presentation helpers
 
     private func statusTitle(_ status: NewAPICheckInStatus?) -> String {
+        // Labels match original NewAPSign SignInResult.Status.label
         switch status {
         case .success:
             return String(localized: "plugins.newapi.status.success", defaultValue: "成功")
         case .alreadySigned:
             return String(localized: "plugins.newapi.status.already", defaultValue: "已签到")
         case .authenticationExpired:
-            return String(localized: "plugins.newapi.status.expired", defaultValue: "登录失效")
+            return String(localized: "plugins.newapi.status.expired", defaultValue: "登录过期")
         case .serverError:
-            return String(localized: "plugins.newapi.status.server_error", defaultValue: "服务错误")
+            return String(localized: "plugins.newapi.status.server_error", defaultValue: "服务器错误")
         case .unknown:
-            return String(localized: "plugins.newapi.status.unknown", defaultValue: "未知结果")
+            return String(localized: "plugins.newapi.status.unknown", defaultValue: "未知")
         case nil:
             return String(localized: "plugins.newapi.detail.not_run", defaultValue: "尚未签到")
         }
     }
 
     private func tintColor(for status: NewAPICheckInStatus?) -> UIColor {
+        // Colors match original NewAPSign SignInResult.Status.tint
         switch status {
-        case .success, .alreadySigned: return .systemGreen
-        case .authenticationExpired: return .systemOrange
-        case .serverError, .unknown: return .systemRed
+        case .success: return .systemGreen
+        case .alreadySigned: return .systemOrange
+        case .authenticationExpired: return .systemRed
+        case .serverError: return .systemRed
+        case .unknown: return .systemGray
         case nil: return .systemGray
         }
     }
 
     private func metaText(for platform: NewAPICheckInPlatform) -> String {
-        var parts: [String] = []
-        if let host = URL(string: platform.baseURL)?.host {
-            parts.append(host)
-        }
+        var parts: [String] = [statusTitle(platform.lastStatus)]
         if let attemptedAt = platform.lastAttemptAt {
             parts.append(Self.relativeFormatter.localizedString(for: attemptedAt, relativeTo: Date()))
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func sourceTag(for platform: NewAPICheckInPlatform) -> String {
+        // Original NewAPSign labels.
+        switch platform.source ?? .webView {
+        case .webView: return "WebView"
+        case .curl: return "CURL"
+        case .manual: return "Manual"
+        }
+    }
+
+    private func typeTag(for platform: NewAPICheckInPlatform) -> String {
+        (platform.platformType ?? .newAPI) == .custom ? "CUSTOM" : "NEWAPI"
     }
 
     private func balanceText(for platform: NewAPICheckInPlatform) -> String? {
@@ -647,50 +704,92 @@ final class NewAPICheckInViewController: UITableViewController {
     }
 }
 
-// MARK: - Summary cell
+// MARK: - Summary cell (= CompactAggregateBanner from NewAPSign)
 
 private final class NewAPISummaryCell: UITableViewCell {
-    var onSignInAll: (() -> Void)?
+    private let titleIcon: UIImageView = {
+        let view = UIImageView(image: UIImage(systemName: "chart.pie.fill"))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.tintColor = AppSettings.shared.themeStyle.accentColor
+        view.contentMode = .scaleAspectFit
+        return view
+    }()
 
-    private let statsLabel: UILabel = {
+    private let titleLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.textColor = .secondaryLabel
-        label.numberOfLines = 0
+        label.text = "总览"
+        label.font = .systemFont(ofSize: 17, weight: .semibold)
+        label.textColor = .label
         return label
     }()
 
-    private let signAllButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.title = String(localized: "plugins.newapi.sign_in_all", defaultValue: "全部签到")
-        config.image = UIImage(systemName: "checkmark.seal.fill")
-        config.imagePadding = 6
-        config.cornerStyle = .large
-        config.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
-        config.baseForegroundColor = .white
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: 46).isActive = true
-        return button
+    private let platformCountLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .right
+        return label
     }()
+
+    // Original labels: 总余额 / 总消耗 / 总请求
+    private let balanceChip = NewAPIMetricChip(
+        icon: "dollarsign.circle.fill",
+        title: "总余额",
+        color: .systemGreen
+    )
+    private let usedChip = NewAPIMetricChip(
+        icon: "arrow.down.circle.fill",
+        title: "总消耗",
+        color: .systemOrange
+    )
+    private let requestChip = NewAPIMetricChip(
+        icon: "number.circle.fill",
+        title: "总请求",
+        color: .systemBlue
+    )
 
     init() {
         super.init(style: .default, reuseIdentifier: nil)
         selectionStyle = .none
         backgroundColor = .secondarySystemGroupedBackground
 
-        let stack = UIStackView(arrangedSubviews: [statsLabel, signAllButton])
+        let accent = AppSettings.shared.themeStyle.accentColor
+        let iconBox = UIView()
+        iconBox.translatesAutoresizingMaskIntoConstraints = false
+        iconBox.backgroundColor = accent.withAlphaComponent(0.12)
+        iconBox.layer.cornerRadius = 8
+        iconBox.layer.cornerCurve = .continuous
+        iconBox.addSubview(titleIcon)
+        NSLayoutConstraint.activate([
+            iconBox.widthAnchor.constraint(equalToConstant: 32),
+            iconBox.heightAnchor.constraint(equalToConstant: 32),
+            titleIcon.centerXAnchor.constraint(equalTo: iconBox.centerXAnchor),
+            titleIcon.centerYAnchor.constraint(equalTo: iconBox.centerYAnchor),
+            titleIcon.widthAnchor.constraint(equalToConstant: 16),
+            titleIcon.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        let header = UIStackView(arrangedSubviews: [iconBox, titleLabel, UIView(), platformCountLabel])
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = 10
+
+        let metrics = UIStackView(arrangedSubviews: [balanceChip, usedChip, requestChip])
+        metrics.axis = .horizontal
+        metrics.spacing = 10
+        metrics.distribution = .fillEqually
+
+        let stack = UIStackView(arrangedSubviews: [header, metrics])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
             stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
         ])
-        signAllButton.addAction(UIAction { [weak self] _ in self?.onSignInAll?() }, for: .touchUpInside)
     }
 
     @available(*, unavailable)
@@ -698,114 +797,185 @@ private final class NewAPISummaryCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(platformCount: Int, signedCount: Int, expiredCount: Int, isRunning: Bool, canRun: Bool) {
-        var parts = [String(
-            format: String(localized: "plugins.newapi.summary.platforms", defaultValue: "%d 个平台"),
-            platformCount
-        )]
-        if signedCount > 0 {
-            parts.append(String(
-                format: String(localized: "plugins.newapi.summary.signed", defaultValue: "%d 已签到"),
-                signedCount
-            ))
-        }
-        if expiredCount > 0 {
-            parts.append(String(
-                format: String(localized: "plugins.newapi.summary.expired", defaultValue: "%d 待重新登录"),
-                expiredCount
-            ))
-        }
-        statsLabel.text = platformCount == 0
-            ? String(localized: "plugins.newapi.summary.empty", defaultValue: "添加平台后可一键完成每日签到")
-            : parts.joined(separator: " · ")
-
-        signAllButton.isEnabled = canRun && !isRunning
-        signAllButton.configuration?.showsActivityIndicator = isRunning
-        signAllButton.configuration?.title = isRunning
-            ? String(localized: "plugins.newapi.signing", defaultValue: "签到中…")
-            : String(localized: "plugins.newapi.sign_in_all", defaultValue: "全部签到")
+    func update(
+        platformCount: Int,
+        totalBalanceText: String,
+        totalUsedText: String,
+        totalRequestsText: String
+    ) {
+        platformCountLabel.text = "\(platformCount) 平台"
+        balanceChip.setValue(totalBalanceText)
+        usedChip.setValue(totalUsedText)
+        requestChip.setValue(totalRequestsText)
     }
 }
 
-// MARK: - Platform cell
+/// BannerStatBox from NewAPSign — leading-aligned label + monospaced value.
+private final class NewAPIMetricChip: UIView {
+    private let valueLabel = UILabel()
+
+    init(icon: String, title: String, color: UIColor) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = color.withAlphaComponent(0.08)
+        layer.cornerRadius = 10
+        layer.cornerCurve = .continuous
+
+        let iconView = UIImageView(
+            image: UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
+        )
+        iconView.tintColor = color
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        titleLabel.textColor = .secondaryLabel
+
+        let titleRow = UIStackView(arrangedSubviews: [iconView, titleLabel])
+        titleRow.axis = .horizontal
+        titleRow.spacing = 4
+        titleRow.alignment = .center
+
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        valueLabel.textColor = color
+        valueLabel.text = "—"
+        valueLabel.adjustsFontSizeToFitWidth = true
+        valueLabel.minimumScaleFactor = 0.6
+        valueLabel.lineBreakMode = .byTruncatingTail
+
+        let stack = UIStackView(arrangedSubviews: [titleRow, valueLabel])
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 58),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setValue(_ text: String) {
+        valueLabel.text = text
+    }
+}
+
+// MARK: - Platform cell (= PlatformRow from NewAPSign)
 
 private final class NewAPIPlatformCell: UITableViewCell {
     static let reuseIdentifier = "NewAPIPlatformCell"
 
-    private let monogramView = NewAPIMonogramView()
+    /// Original uses NewAPILogo in a 44×44 rounded rect — not monogram letters.
+    private let logoContainer: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .secondarySystemBackground
+        view.layer.cornerRadius = 10
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
+        return view
+    }()
+
+    private let logoView: UIImageView = {
+        let imageView = UIImageView(image: UIImage(named: "NewAPILogo"))
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFit
+        return imageView
+    }()
 
     private let nameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 16, weight: .semibold)
+        label.font = .systemFont(ofSize: 17, weight: .semibold) // .headline
         label.textColor = .label
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
+    private let typeTag = NewAPITagLabel()
+    private let sourceTag = NewAPITagLabel()
+    private let balanceChip = NewAPITagLabel()
+
     private let metaLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 12)
+        label.font = .systemFont(ofSize: 12) // .caption
         label.textColor = .secondaryLabel
         label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingMiddle
+        label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
-    private let balanceLabel: UILabel = {
-        let label = UILabel()
-        label.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .systemGreen
-        label.textAlignment = .right
-        label.setContentHuggingPriority(.required, for: .horizontal)
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return label
+    private let statusDot: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 3
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(equalToConstant: 6),
+            view.heightAnchor.constraint(equalToConstant: 6),
+        ])
+        return view
     }()
 
-    private let statusPill = NewAPIStatusPill()
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .secondarySystemGroupedBackground
+        accessoryType = .disclosureIndicator
         let selected = UIView()
         selected.backgroundColor = .tertiarySystemGroupedBackground
         selectedBackgroundView = selected
 
-        let textStack = UIStackView(arrangedSubviews: [nameLabel, metaLabel])
+        logoContainer.addSubview(logoView)
+
+        let tagsRow = UIStackView(arrangedSubviews: [typeTag, sourceTag, balanceChip, UIView()])
+        tagsRow.axis = .horizontal
+        tagsRow.spacing = 6
+        tagsRow.alignment = .center
+
+        let statusRow = UIStackView(arrangedSubviews: [statusDot, metaLabel])
+        statusRow.axis = .horizontal
+        statusRow.spacing = 5
+        statusRow.alignment = .center
+
+        let textStack = UIStackView(arrangedSubviews: [nameLabel, tagsRow, statusRow])
         textStack.axis = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 4
+        textStack.spacing = 6
 
-        let trailingStack = UIStackView(arrangedSubviews: [balanceLabel, statusPill])
-        trailingStack.axis = .vertical
-        trailingStack.alignment = .trailing
-        trailingStack.spacing = 5
-
-        [monogramView, textStack, trailingStack, activityIndicator].forEach {
+        [logoContainer, textStack, activityIndicator].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview($0)
         }
 
         NSLayoutConstraint.activate([
-            monogramView.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
-            monogramView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            monogramView.widthAnchor.constraint(equalToConstant: 44),
-            monogramView.heightAnchor.constraint(equalToConstant: 44),
+            logoContainer.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            logoContainer.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            logoContainer.widthAnchor.constraint(equalToConstant: 44),
+            logoContainer.heightAnchor.constraint(equalToConstant: 44),
 
-            textStack.leadingAnchor.constraint(equalTo: monogramView.trailingAnchor, constant: 12),
-            textStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            textStack.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: 14),
-            textStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -14),
+            logoView.centerXAnchor.constraint(equalTo: logoContainer.centerXAnchor),
+            logoView.centerYAnchor.constraint(equalTo: logoContainer.centerYAnchor),
+            logoView.widthAnchor.constraint(equalToConstant: 32),
+            logoView.heightAnchor.constraint(equalToConstant: 32),
 
-            trailingStack.leadingAnchor.constraint(greaterThanOrEqualTo: textStack.trailingAnchor, constant: 10),
-            trailingStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
-            trailingStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            textStack.leadingAnchor.constraint(equalTo: logoContainer.trailingAnchor, constant: 14),
+            textStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            textStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            textStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
 
-            activityIndicator.centerXAnchor.constraint(equalTo: monogramView.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: monogramView.centerYAnchor),
+            activityIndicator.centerXAnchor.constraint(equalTo: logoContainer.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: logoContainer.centerYAnchor),
 
-            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
+            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 84),
         ])
     }
 
@@ -816,36 +986,90 @@ private final class NewAPIPlatformCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         activityIndicator.stopAnimating()
-        monogramView.alpha = 1
-        balanceLabel.isHidden = true
+        logoContainer.alpha = 1
+        balanceChip.isHidden = true
     }
 
     func configure(
         name: String,
+        typeTag typeText: String,
+        isCustomType: Bool,
+        sourceTag sourceText: String,
+        isCurlSource: Bool,
         metaText: String,
         balance: String?,
-        statusText: String,
         statusColor: UIColor,
-        monogramSeed: String,
         isRunning: Bool
     ) {
         nameLabel.text = name
+        // Original: NEWAPI green / CUSTOM purple
+        typeTag.configure(
+            text: typeText,
+            color: isCustomType ? .systemPurple : .systemGreen
+        )
+        // Original: WebView blue / CURL yellow
+        sourceTag.configure(
+            text: sourceText,
+            color: isCurlSource ? .systemYellow : .systemBlue
+        )
+        if let balance {
+            balanceChip.isHidden = false
+            balanceChip.configure(text: balance, color: .systemGreen, emphasized: true)
+        } else {
+            balanceChip.isHidden = true
+        }
         metaLabel.text = metaText
         metaLabel.isHidden = metaText.isEmpty
-        balanceLabel.text = balance
-        balanceLabel.isHidden = balance == nil
-        statusPill.configure(text: statusText, color: statusColor)
-        monogramView.configure(seed: monogramSeed, letter: String(name.prefix(1)).uppercased())
+        statusDot.backgroundColor = statusColor
+        statusDot.isHidden = metaText.isEmpty
 
-        monogramView.alpha = isRunning ? 0.25 : 1
+        logoContainer.alpha = isRunning ? 0.25 : 1
         if isRunning {
             activityIndicator.startAnimating()
         } else {
             activityIndicator.stopAnimating()
         }
 
-        accessibilityLabel = [name, metaText, balance, statusText].compactMap { $0 }.joined(separator: ", ")
+        accessibilityLabel = [name, typeText, sourceText, metaText, balance]
+            .compactMap { $0 }
+            .joined(separator: ", ")
         accessibilityTraits = .button
+    }
+}
+
+private final class NewAPITagLabel: UIView {
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        // Original cornerRadius 6
+        layer.cornerRadius = 6
+        layer.cornerCurve = .continuous
+        label.translatesAutoresizingMaskIntoConstraints = false
+        // Original .caption2 + .medium
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            // Original padding horizontal 8, vertical 3
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(text: String, color: UIColor, emphasized: Bool = false) {
+        label.text = text
+        label.textColor = color
+        // Original: color.opacity(0.12) type, 0.15 source; quota slightly stronger
+        backgroundColor = color.withAlphaComponent(emphasized ? 0.15 : 0.12)
+        isHidden = text.isEmpty
     }
 }
 

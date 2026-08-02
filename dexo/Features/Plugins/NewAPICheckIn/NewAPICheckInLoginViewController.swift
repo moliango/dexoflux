@@ -307,11 +307,46 @@ final class NewAPICheckInLoginViewController: UIViewController, WKNavigationDele
     }
 
     private func configureNavigation() {
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .refresh,
+        // Match original ManualSignInView toolbar: refresh + clear-cookie menu.
+        let refresh = UIBarButtonItem(
+            image: UIImage(systemName: "arrow.clockwise"),
+            style: .plain,
             target: self,
             action: #selector(refreshTapped)
         )
+        refresh.accessibilityLabel = String(localized: "common.refresh", defaultValue: "刷新")
+
+        let clearSite = UIAction(
+            title: String(
+                localized: "plugins.newapi.login.clear_site_cookies",
+                defaultValue: "清除本站 Cookie"
+            ),
+            image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.clearCookiesAndReload(includingShared: false)
+            }
+        }
+        let clearAll = UIAction(
+            title: String(
+                localized: "plugins.newapi.login.clear_all_cookies",
+                defaultValue: "清除全部 Cookie（含 OAuth）"
+            ),
+            image: UIImage(systemName: "trash.fill"),
+            attributes: .destructive
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.clearCookiesAndReload(includingShared: true)
+            }
+        }
+        let more = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            menu: UIMenu(children: [clearSite, clearAll])
+        )
+        more.accessibilityLabel = String(localized: "common.more", defaultValue: "更多")
+
+        navigationItem.rightBarButtonItems = [more, refresh]
     }
 
     @objc private func refreshTapped() {
@@ -320,6 +355,55 @@ final class NewAPICheckInLoginViewController: UIViewController, WKNavigationDele
         } else {
             webView.reload()
         }
+    }
+
+    /// Clear cookies then reload baseURL.
+    /// - `includingShared == false`: only this platform's domain (preserve LinuxDO/GitHub OAuth cookies).
+    /// - `includingShared == true`: wipe entire WKWebsiteDataStore (all sites + OAuth).
+    private func clearCookiesAndReload(includingShared: Bool) async {
+        guard let targetHost = baseURL.host?.lowercased() else { return }
+        let dataStore = webView.configuration.websiteDataStore
+
+        if includingShared {
+            let types = WKWebsiteDataStore.allWebsiteDataTypes()
+            await dataStore.removeData(ofTypes: types, modifiedSince: .distantPast)
+        } else {
+            let allCookies = await dataStore.httpCookieStore.allCookies()
+            let platformCookies = allCookies.filter {
+                NewAPICheckInLoginSupport.cookieDomain($0.domain, matchesHost: targetHost)
+            }
+            for cookie in platformCookies {
+                await dataStore.httpCookieStore.delete(cookie)
+            }
+        }
+
+        // Also drop saved platform credential cookies so the next probe is clean.
+        if let existingPlatform {
+            if let previous = try? await store.credential(for: existingPlatform.id) {
+                let cleaned = NewAPICheckInCredential(
+                    accessToken: previous.accessToken,
+                    userID: previous.userID,
+                    cookieHeader: nil,
+                    additionalHeaders: previous.additionalHeaders
+                )
+                try? await store.save(existingPlatform, credential: cleaned)
+            }
+        }
+
+        // Reset auto-login detection after a wipe.
+        didSave = false
+        isProbing = false
+        if mode == .newAPI {
+            completeButton.isHidden = true
+            updateWaitingStatus(currentURL: nil)
+            startPolling()
+            startFallbackTimer()
+        } else {
+            showManualCompletionButton()
+        }
+
+        webView.load(URLRequest(url: baseURL))
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     @objc private func completeTapped() {

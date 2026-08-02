@@ -49,7 +49,31 @@ struct NewAPICheckInLoginProbeResult: Equatable, Sendable {
     let accessToken: String?
     let quotaValue: Int64?
     let quotaUnit: String?
+    /// Lifetime consumed tokens from `/api/user/self` (`used_quota`).
+    let usedQuota: Int64?
+    /// Lifetime request count from `/api/user/self` (`request_count`).
+    let requestCount: Int?
     let message: String?
+
+    init(
+        isLoggedIn: Bool,
+        userID: String?,
+        accessToken: String?,
+        quotaValue: Int64?,
+        quotaUnit: String?,
+        usedQuota: Int64? = nil,
+        requestCount: Int? = nil,
+        message: String?
+    ) {
+        self.isLoggedIn = isLoggedIn
+        self.userID = userID
+        self.accessToken = accessToken
+        self.quotaValue = quotaValue
+        self.quotaUnit = quotaUnit
+        self.usedQuota = usedQuota
+        self.requestCount = requestCount
+        self.message = message
+    }
 }
 
 struct NewAPICheckInPlatform: Codable, Equatable, Identifiable, Sendable {

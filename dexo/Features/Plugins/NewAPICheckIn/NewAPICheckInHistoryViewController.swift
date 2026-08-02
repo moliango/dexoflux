@@ -24,7 +24,9 @@ final class NewAPICheckInHistoryViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = String(localized: "plugins.newapi.history.title", defaultValue: "签到历史")
+        title = String(localized: "plugins.newapi.tab.history", defaultValue: "历史")
+        navigationItem.largeTitleDisplayMode = .always
+        navigationController?.navigationBar.prefersLargeTitles = true
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "history")
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refreshTriggered), for: .valueChanged)

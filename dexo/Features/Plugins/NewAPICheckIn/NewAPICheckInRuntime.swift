@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class NewAPICheckInRuntime {
@@ -37,7 +38,8 @@ final class NewAPICheckInRuntime {
         self.service = NewAPICheckInService(store: store, session: session)
     }
 
-    func makeViewController() -> NewAPICheckInViewController {
-        NewAPICheckInViewController(store: store, service: service)
+    /// Full mini-program root with bottom tabs (签到 / 自定义 / 历史 / 设置).
+    func makeViewController() -> UIViewController {
+        NewAPICheckInTabBarController(store: store, service: service)
     }
 }
