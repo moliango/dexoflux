@@ -22,11 +22,6 @@ private final class PluginDockPassthroughView: UIView {
 
 @MainActor
 final class PluginDockViewController: UIViewController {
-    private enum PluginKind: String {
-        case newAPI
-        case ldcStore
-    }
-
     private let api: DiscourseAPI
     private let username: String?
     private let settings = AppSettings.shared
@@ -40,7 +35,6 @@ final class PluginDockViewController: UIViewController {
     private var menuTrailingConstraint: NSLayoutConstraint?
     private var edgeGesture: UIScreenEdgePanGestureRecognizer?
     private var activeWindow: PluginWindowContainerViewController?
-    private var cachedWindows: [PluginKind: PluginWindowContainerViewController] = [:]
 
     private let handleButton: UIButton = {
         let button = UIButton(type: .system)
@@ -169,11 +163,22 @@ final class PluginDockViewController: UIViewController {
 
     private func pluginStateDidChange() {
         rebuildMenu()
-        closeDisabledCachedWindows()
+        applySettings(animated: false)
+    }
+
+    /// Dock stays hidden when nothing is launchable (NewAPI / LD 士多 are mini-programs now).
+    private var hasLaunchableDockPlugins: Bool {
+        !launchableDockPluginIDs().isEmpty
+    }
+
+    private func launchableDockPluginIDs() -> [String] {
+        // Reserved for future floating Dock tools. Mini-program plugins open from Me.
+        _ = (api, username, registry, scope)
+        return []
     }
 
     private func applySettings(animated: Bool) {
-        let enabled = settings.pluginDockEnabled
+        let enabled = settings.pluginDockEnabled && hasLaunchableDockPlugins
         view.isHidden = !enabled
         view.isUserInteractionEnabled = enabled
         if !enabled {
@@ -242,68 +247,19 @@ final class PluginDockViewController: UIViewController {
         headerContainer.isLayoutMarginsRelativeArrangement = true
         headerContainer.layoutMargins = UIEdgeInsets(top: 2, left: 10, bottom: 4, right: 10)
         menuStack.addArrangedSubview(headerContainer)
-        if registry.isPluginEnabled(BuiltInPluginID.newAPICheckIn, for: scope) {
-            menuStack.addArrangedSubview(makeMenuButton(
-                title: String(localized: "plugins.newapi.title", defaultValue: "NewAPI 签到"),
-                subtitle: String(localized: "plugin.dock.newapi.subtitle", defaultValue: "管理账号并执行签到"),
-                image: PluginIconTile.image(kind: .newAPI, size: 34)
-            ) { [weak self] in self?.openPlugin(.newAPI) })
-        }
-        if registry.isPluginEnabled(BuiltInPluginID.ldcStore, for: scope) {
-            menuStack.addArrangedSubview(makeMenuButton(
-                title: String(localized: "plugins.ldc_store.title", defaultValue: "LD 士多"),
-                subtitle: String(localized: "plugin.dock.ldc_store.subtitle", defaultValue: "在独立窗口中浏览"),
-                image: PluginIconTile.image(kind: .ldcStore, size: 34)
-            ) { [weak self] in self?.openPlugin(.ldcStore) })
-        }
-    }
 
-    private func closeDisabledCachedWindows() {
-        if !registry.isPluginEnabled(BuiltInPluginID.newAPICheckIn, for: scope) {
-            closeCachedWindow(.newAPI)
-        }
-        if !registry.isPluginEnabled(BuiltInPluginID.ldcStore, for: scope) {
-            closeCachedWindow(.ldcStore)
-        }
-    }
-
-    private func closeCachedWindow(_ kind: PluginKind) {
-        guard let window = cachedWindows.removeValue(forKey: kind) else { return }
-        hideWindow(window, preserving: false, animated: false)
-    }
-
-    private func makeMenuButton(title: String, subtitle: String, image: UIImage?, action: @escaping () -> Void) -> UIButton {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = title
-        configuration.subtitle = subtitle
-        configuration.image = image
-        configuration.imagePadding = 12
-        configuration.titleAlignment = .leading
-        configuration.titlePadding = 2
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
-            outgoing.foregroundColor = UIColor.label
-            return outgoing
-        }
-        configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = UIFont.systemFont(ofSize: 12)
-            outgoing.foregroundColor = UIColor.secondaryLabel
-            return outgoing
-        }
-        configuration.background.cornerRadius = 14
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
-        let button = UIButton(configuration: configuration)
-        button.contentHorizontalAlignment = .leading
-        button.configurationUpdateHandler = { button in
-            button.configuration?.background.backgroundColor = button.isHighlighted
-                ? UIColor.tertiarySystemFill
-                : .clear
-        }
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
-        return button
+        // NewAPI / LD 士多 moved to Me mini-program cards. Dock keeps infrastructure
+        // for future floating tools, but currently has no launchable entries.
+        let empty = UILabel()
+        empty.text = String(localized: "plugin.dock.empty", defaultValue: "暂无 Dock 插件\n请到「我的」打开小程序")
+        empty.font = .systemFont(ofSize: 13, weight: .regular)
+        empty.textColor = .secondaryLabel
+        empty.numberOfLines = 0
+        empty.textAlignment = .left
+        let emptyContainer = UIStackView(arrangedSubviews: [empty])
+        emptyContainer.isLayoutMarginsRelativeArrangement = true
+        emptyContainer.layoutMargins = UIEdgeInsets(top: 4, left: 10, bottom: 8, right: 10)
+        menuStack.addArrangedSubview(emptyContainer)
     }
 
     @objc private func handleTapped() {
@@ -362,97 +318,9 @@ final class PluginDockViewController: UIViewController {
         }
     }
 
-    private func openPlugin(_ kind: PluginKind) {
-        setMenuVisible(false, animated: true)
-        let window = cachedWindows[kind] ?? makeWindow(for: kind)
-        cachedWindows[kind] = window
-        showWindow(window)
-    }
-
-    private func makeWindow(for kind: PluginKind) -> PluginWindowContainerViewController {
-        let content: UIViewController
-        let windowTitle: String
-        let windowIcon: UIImage?
-        switch kind {
-        case .newAPI:
-            content = UINavigationController(rootViewController: NewAPICheckInRuntime.shared.makeViewController())
-            windowTitle = String(localized: "plugins.newapi.title", defaultValue: "NewAPI 签到")
-            windowIcon = PluginIconTile.image(kind: .newAPI, size: 22)
-        case .ldcStore:
-            let browser = InAppBrowserViewController(
-                api: api,
-                username: username,
-                initialURL: URL(string: "https://ldcstore.com/"),
-                hidesHostTabBarAtRoot: false,
-                hidesBrowserControlBar: true
-            )
-            content = UINavigationController(rootViewController: browser)
-            windowTitle = String(localized: "plugins.ldc_store.title", defaultValue: "LD 士多")
-            windowIcon = PluginIconTile.image(kind: .ldcStore, size: 22)
-        }
-        let window = PluginWindowContainerViewController(content: content, title: windowTitle, icon: windowIcon)
-        window.onMinimize = { [weak self, weak window] in
-            guard let self, let window else { return }
-            hideWindow(window, preserving: true)
-        }
-        window.onClose = { [weak self, weak window] in
-            guard let self, let window else { return }
-            hideWindow(window, preserving: false)
-            cachedWindows[kind] = nil
-        }
-        return window
-    }
-
-    private func showWindow(_ window: PluginWindowContainerViewController) {
-        if let activeWindow, activeWindow !== window {
-            hideWindow(activeWindow, preserving: true)
-        }
-        activeWindow = window
-        if window.parent == nil {
-            addChild(window)
-            view.addSubview(window.view)
-            window.view.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                window.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 22),
-                window.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-                window.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-                window.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
-            ])
-            window.didMove(toParent: self)
-        } else if window.view.superview == nil {
-            view.addSubview(window.view)
-        }
-        window.view.isHidden = false
-        view.bringSubviewToFront(window.view)
-        handleButton.isHidden = true
-        window.view.alpha = 0
-        if UIAccessibility.isReduceMotionEnabled {
-            UIView.animate(withDuration: 0.18) {
-                window.view.alpha = 1
-            }
-        } else {
-            window.view.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
-            UIView.animate(
-                withDuration: 0.38,
-                delay: 0,
-                usingSpringWithDamping: 0.84,
-                initialSpringVelocity: 0.25,
-                options: [.allowUserInteraction, .beginFromCurrentState]
-            ) {
-                window.view.alpha = 1
-                window.view.transform = .identity
-            }
-        }
-    }
-
-    private func minimizeActiveWindow() {
-        guard let activeWindow else { return }
-        hideWindow(activeWindow, preserving: true)
-    }
-
     private func hideActiveWindowImmediately() {
         guard let activeWindow else { return }
-        hideWindow(activeWindow, preserving: true, animated: false)
+        hideWindow(activeWindow, preserving: false, animated: false)
     }
 
     private func hideWindow(

@@ -17,6 +17,7 @@ enum PluginContributionKind: String, Codable, CaseIterable, Hashable {
     case homeShortcut = "home.shortcut"
     case forumTab = "forum.tab"
     case metaverseService = "metaverse.service"
+    case miniProgram = "mini-program"
 }
 
 struct PluginContribution: Codable, Hashable, Identifiable {

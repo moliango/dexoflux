@@ -1,7 +1,7 @@
 import Foundation
 
 enum BuiltInPlugins {
-    static let all: [PluginManifest] = [ldc, cdk, topicExport, newAPICheckIn, ldcStore]
+    static let all: [PluginManifest] = [ldc, cdk, topicExport]
 
     static let ldc = PluginManifest(
         id: BuiltInPluginID.ldc,
@@ -134,65 +134,5 @@ enum BuiltInPlugins {
         ],
         defaultEnabled: true,
         order: 200
-    )
-
-    static let newAPICheckIn = PluginManifest(
-        id: BuiltInPluginID.newAPICheckIn,
-        displayName: "NewAPI 签到",
-        version: "0.1.0",
-        minimumHostVersion: "1.2",
-        publisher: "DexoFlux",
-        supportedHosts: [],
-        capabilities: [.restrictedNetwork, .pluginStorage, .secureStorage],
-        contributions: [
-            PluginContribution(
-                id: "main-tab",
-                kind: .forumTab,
-                titleKey: "plugins.newapi.title",
-                titleFallback: "NewAPI 签到",
-                systemImageName: "checkmark.circle.fill",
-                order: 300
-            ),
-            PluginContribution(
-                id: "settings",
-                kind: .settingsAction,
-                titleKey: "plugins.newapi.title",
-                titleFallback: "NewAPI 签到",
-                systemImageName: "gearshape",
-                order: 300
-            ),
-        ],
-        defaultEnabled: true,
-        order: 300
-    )
-
-    static let ldcStore = PluginManifest(
-        id: BuiltInPluginID.ldcStore,
-        displayName: "LD 士多",
-        version: "0.1.0",
-        minimumHostVersion: "1.2",
-        publisher: "DexoFlux",
-        supportedHosts: ["linux.do"],
-        capabilities: [.browserNavigation, .restrictedNetwork, .pluginStorage],
-        contributions: [
-            PluginContribution(
-                id: "main-tab",
-                kind: .forumTab,
-                titleKey: "plugins.ldc_store.title",
-                titleFallback: "LD 士多",
-                systemImageName: "LDStoreLogo",
-                order: 310
-            ),
-            PluginContribution(
-                id: "settings",
-                kind: .settingsAction,
-                titleKey: "plugins.ldc_store.title",
-                titleFallback: "LD 士多",
-                systemImageName: "gearshape",
-                order: 310
-            ),
-        ],
-        defaultEnabled: true,
-        order: 310
     )
 }
