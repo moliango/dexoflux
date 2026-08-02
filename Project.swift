@@ -57,7 +57,6 @@ let project = Project(
             settings: .settings(
                 base: [
                     "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
-                    "ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES": "DexoFluxOrbit DexoFluxCards DexoFluxSignal",
                     "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                     "CODE_SIGN_STYLE": "Automatic",
                     "CURRENT_PROJECT_VERSION": "1",
@@ -71,7 +70,7 @@ let project = Project(
                     "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad": "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown",
                     "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
                     "OTHER_LDFLAGS": "$(inherited) -ObjC",
-                    "MARKETING_VERSION": "1.5",
+                    "MARKETING_VERSION": "1.6",
                     "PRODUCT_NAME": "dexoflux",
                     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
                     "SWIFT_APPROACHABLE_CONCURRENCY": "YES",

@@ -96,6 +96,34 @@
         }
       }
     },
+    "action.copy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製"
+          }
+        }
+      }
+    },
     "action.delete" : {
       "localizations" : {
         "en" : {
@@ -2013,6 +2041,17 @@
         }
       }
     },
+    "common.back" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "返回"
+          }
+        }
+      }
+    },
     "common.cancel" : {
       "localizations" : {
         "en" : {
@@ -2091,6 +2130,17 @@
         }
       }
     },
+    "common.customize" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义"
+          }
+        }
+      }
+    },
     "common.delete" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -2130,6 +2180,17 @@
         }
       }
     },
+    "common.edit" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
     "common.error" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -2148,6 +2209,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "导入"
+          }
+        }
+      }
+    },
+    "common.more" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更多"
+          }
+        }
+      }
+    },
+    "common.next" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下一步"
           }
         }
       }
@@ -2243,6 +2326,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "粘贴"
+          }
+        }
+      }
+    },
+    "common.refresh" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "刷新"
+          }
+        }
+      }
+    },
+    "common.rename" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重命名"
           }
         }
       }
@@ -3162,17 +3267,6 @@
         }
       }
     },
-    "extensions.subtitle" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "连接 LDC 与 CDK 服务"
-          }
-        }
-      }
-    },
     "extensions.title" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -3511,28 +3605,6 @@
         }
       }
     },
-    "home.drawer.open" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "打开分类侧栏"
-          }
-        }
-      }
-    },
-    "home.drawer.open_hint" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "点按打开；长按管理置顶分类"
-          }
-        }
-      }
-    },
     "home.drawer.tags" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -3795,6 +3867,17 @@
         }
       }
     },
+    "home.load_more_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加载更多失败，点击重试"
+          }
+        }
+      }
+    },
     "home.login_prompt" : {
       "localizations" : {
         "en" : {
@@ -3819,6 +3902,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登錄後瀏覽此論壇"
+          }
+        }
+      }
+    },
+    "home.network.disconnected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网络已断开"
           }
         }
       }
@@ -4706,6 +4800,105 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要登錄"
+          }
+        }
+      }
+    },
+    "me.account_functions.all_hidden" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已隐藏全部账号功能，「我的」页不会显示账号功能列表。"
+          }
+        }
+      }
+    },
+    "me.account_functions.customize" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义账号功能"
+          }
+        }
+      }
+    },
+    "me.account_functions.hidden" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已隐藏"
+          }
+        }
+      }
+    },
+    "me.account_functions.hidden_empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没有隐藏的账号功能。"
+          }
+        }
+      }
+    },
+    "me.account_functions.hidden_help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点加号恢复到显示列表末尾。"
+          }
+        }
+      }
+    },
+    "me.account_functions.item_hidden" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已隐藏"
+          }
+        }
+      }
+    },
+    "me.account_functions.item_visible" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "显示在账号功能列表"
+          }
+        }
+      }
+    },
+    "me.account_functions.visible" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "显示"
+          }
+        }
+      }
+    },
+    "me.account_functions.visible_help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拖动右侧排序；点减号隐藏入口。"
           }
         }
       }
@@ -7759,6 +7952,677 @@
         }
       }
     },
+    "mini_program.action.copy_link" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "复制链接"
+          }
+        }
+      }
+    },
+    "mini_program.action.float" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浮窗"
+          }
+        }
+      }
+    },
+    "mini_program.action.reenter" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重新进入小程序"
+          }
+        }
+      }
+    },
+    "mini_program.add_url.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入网址后会自动尝试获取名称和 Logo。"
+          }
+        }
+      }
+    },
+    "mini_program.add_url.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加网址小程序"
+          }
+        }
+      }
+    },
+    "mini_program.all_section" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部小程序"
+          }
+        }
+      }
+    },
+    "mini_program.category.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "新建分类"
+          }
+        }
+      }
+    },
+    "mini_program.category.name" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类名称"
+          }
+        }
+      }
+    },
+    "mini_program.category.other" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "其他"
+          }
+        }
+      }
+    },
+    "mini_program.close" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "mini_program.copy_link.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "链接已复制"
+          }
+        }
+      }
+    },
+    "mini_program.copy_link.unavailable" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无链接可复制"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.add_drop" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拖动到此处添加为我的小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.close" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收起小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.delete_drop" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拖动到此处删除小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.frequent_section" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "常用的小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.guest" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未登录"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.more" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更多 >"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.my_programs" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我的小程序 >"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.open" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.recent_section" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近使用的小程序"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.recent_title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近"
+          }
+        }
+      }
+    },
+    "mini_program.drawer.search_placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索小程序"
+          }
+        }
+      }
+    },
+    "mini_program.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无可用小程序"
+          }
+        }
+      }
+    },
+    "mini_program.float.close_action" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "mini_program.float.close_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关闭后将退出该小程序"
+          }
+        }
+      }
+    },
+    "mini_program.float.close_title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关闭浮窗"
+          }
+        }
+      }
+    },
+    "mini_program.float.restore_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点按重新打开；长按关闭浮窗"
+          }
+        }
+      }
+    },
+    "mini_program.install_preview.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加到小程序"
+          }
+        }
+      }
+    },
+    "mini_program.logo.download_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无法从网站获取 Logo，请稍后重试或从相册选择"
+          }
+        }
+      }
+    },
+    "mini_program.logo.fetching" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在获取 Logo…"
+          }
+        }
+      }
+    },
+    "mini_program.logo.invalid_image" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "获取到的 Logo 不是有效图片"
+          }
+        }
+      }
+    },
+    "mini_program.logo.invalid_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网址无效，无法获取 Logo"
+          }
+        }
+      }
+    },
+    "mini_program.management.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加"
+          }
+        }
+      }
+    },
+    "mini_program.management.add_category" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "新建分类"
+          }
+        }
+      }
+    },
+    "mini_program.management.add_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加网址小程序"
+          }
+        }
+      }
+    },
+    "mini_program.management.builtin" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "内置"
+          }
+        }
+      }
+    },
+    "mini_program.management.builtin_subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "内置 · %@"
+          }
+        }
+      }
+    },
+    "mini_program.management.categories.footer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删除分类不会删除小程序，分类下内容会移动到「其他」。"
+          }
+        }
+      }
+    },
+    "mini_program.management.category_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 个小程序"
+          }
+        }
+      }
+    },
+    "mini_program.management.change_category" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "修改分类"
+          }
+        }
+      }
+    },
+    "mini_program.management.choose_logo" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "从相册选择 Logo"
+          }
+        }
+      }
+    },
+    "mini_program.management.edit" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑名称和网址"
+          }
+        }
+      }
+    },
+    "mini_program.management.fetch_logo" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "获取网站 Logo"
+          }
+        }
+      }
+    },
+    "mini_program.management.programs.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有小程序"
+          }
+        }
+      }
+    },
+    "mini_program.management.programs.empty_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点右上角 + 添加网址小程序"
+          }
+        }
+      }
+    },
+    "mini_program.management.programs.footer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点按条目管理；开关控制是否在首页显示。需要排序时点右上角「排序」。"
+          }
+        }
+      }
+    },
+    "mini_program.management.reorder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "排序"
+          }
+        }
+      }
+    },
+    "mini_program.management.reorder_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "使用上下箭头调整顺序，完成后点「完成」。"
+          }
+        }
+      }
+    },
+    "mini_program.management.stat.categories" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类"
+          }
+        }
+      }
+    },
+    "mini_program.management.stat.custom" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义"
+          }
+        }
+      }
+    },
+    "mini_program.management.stat.visible" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "显示中"
+          }
+        }
+      }
+    },
+    "mini_program.management.tab.categories" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类"
+          }
+        }
+      }
+    },
+    "mini_program.management.tab.programs" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "小程序"
+          }
+        }
+      }
+    },
+    "mini_program.management.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "小程序管理"
+          }
+        }
+      }
+    },
+    "mini_program.more" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更多"
+          }
+        }
+      }
+    },
+    "mini_program.my_programs.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我的小程序"
+          }
+        }
+      }
+    },
+    "mini_program.name" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "名称"
+          }
+        }
+      }
+    },
+    "mini_program.reenter.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已重新进入"
+          }
+        }
+      }
+    },
+    "mini_program.reenter.failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无法重新进入"
+          }
+        }
+      }
+    },
+    "mini_program.search.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未找到匹配的小程序"
+          }
+        }
+      }
+    },
     "new_topic.body.placeholder" : {
       "localizations" : {
         "en" : {
@@ -9465,7 +10329,19 @@
         }
       }
     },
+    "plugin.dock.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无 Dock 插件\n请到「我的」打开小程序"
+          }
+        }
+      }
+    },
     "plugin.dock.ldc_store.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9505,6 +10381,7 @@
       }
     },
     "plugin.dock.newapi.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9645,18 +10522,8 @@
         }
       }
     },
-    "plugins.internal" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "内部插件"
-          }
-        }
-      }
-    },
     "plugins.ldc_store.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9790,6 +10657,61 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Curl 内容无法解析，请检查 URL、引号和参数。"
+          }
+        }
+      }
+    },
+    "plugins.newapi.custom.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加页面"
+          }
+        }
+      }
+    },
+    "plugins.newapi.custom.edit" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑页面"
+          }
+        }
+      }
+    },
+    "plugins.newapi.custom.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有自定义页面"
+          }
+        }
+      }
+    },
+    "plugins.newapi.custom.empty_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点右上角 + 添加常用网页"
+          }
+        }
+      }
+    },
+    "plugins.newapi.custom.name" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "名称"
           }
         }
       }
@@ -10102,17 +11024,6 @@
         }
       }
     },
-    "plugins.newapi.history.title" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "签到历史"
-          }
-        }
-      }
-    },
     "plugins.newapi.history.today" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -10153,6 +11064,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "平台地址无效"
+          }
+        }
+      }
+    },
+    "plugins.newapi.login.clear_all_cookies" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除全部 Cookie（含 OAuth）"
+          }
+        }
+      }
+    },
+    "plugins.newapi.login.clear_site_cookies" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除本站 Cookie"
           }
         }
       }
@@ -10651,6 +11584,72 @@
         }
       }
     },
+    "plugins.newapi.settings.about" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关于"
+          }
+        }
+      }
+    },
+    "plugins.newapi.settings.check_in" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.settings.tabs" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "底部标签"
+          }
+        }
+      }
+    },
+    "plugins.newapi.settings.tabs.footer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关闭后对应标签会从底部栏隐藏，可随时再打开。"
+          }
+        }
+      }
+    },
+    "plugins.newapi.settings.version" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NewAPI 签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.settings.version_detail" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "小程序版 · 布局对齐 NewAPSign"
+          }
+        }
+      }
+    },
     "plugins.newapi.sign_in" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -10669,17 +11668,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "全部签到"
-          }
-        }
-      }
-    },
-    "plugins.newapi.signing" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "签到中…"
           }
         }
       }
@@ -10712,7 +11700,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "服务错误"
+            "value" : "服务器错误"
           }
         }
       }
@@ -10734,51 +11722,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "未知结果"
-          }
-        }
-      }
-    },
-    "plugins.newapi.summary.empty" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "添加平台后可一键完成每日签到"
-          }
-        }
-      }
-    },
-    "plugins.newapi.summary.expired" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%d 待重新登录"
-          }
-        }
-      }
-    },
-    "plugins.newapi.summary.platforms" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%d 个平台"
-          }
-        }
-      }
-    },
-    "plugins.newapi.summary.signed" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%d 已签到"
+            "value" : "未知"
           }
         }
       }
@@ -10794,7 +11738,52 @@
         }
       }
     },
+    "plugins.newapi.tab.check_in" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.tab.custom" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义"
+          }
+        }
+      }
+    },
+    "plugins.newapi.tab.history" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "历史"
+          }
+        }
+      }
+    },
+    "plugins.newapi.tab.settings" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "设置"
+          }
+        }
+      }
+    },
     "plugins.newapi.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10850,84 +11839,8 @@
         }
       }
     },
-    "plugins.permission.browser" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "浏览器"
-          }
-        }
-      }
-    },
-    "plugins.permission.forum_read" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "论坛读取"
-          }
-        }
-      }
-    },
-    "plugins.permission.network" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "受限网络"
-          }
-        }
-      }
-    },
-    "plugins.permission.secure_storage" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "安全存储"
-          }
-        }
-      }
-    },
-    "plugins.permission.storage" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "插件存储"
-          }
-        }
-      }
-    },
-    "plugins.permission.topic_export" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "话题导出"
-          }
-        }
-      }
-    },
-    "plugins.permission.topic_read" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "话题读取"
-          }
-        }
-      }
-    },
     "plugins.provider_format" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10951,83 +11864,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提供者：%@"
-          }
-        }
-      }
-    },
-    "plugins.safe_mode" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "安全模式"
-          }
-        }
-      }
-    },
-    "plugins.safe_mode.footer" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "安全模式会临时停用全部可选插件，但保留每个插件原来的启停设置。"
-          }
-        }
-      }
-    },
-    "plugins.safe_mode.subtitle" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "暂时停用所有内部插件"
-          }
-        }
-      }
-    },
-    "plugins.safety" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "运行保护"
-          }
-        }
-      }
-    },
-    "plugins.scope.footer" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "启停状态按当前论坛和账号独立保存。关闭插件不会删除授权信息或历史数据。"
-          }
-        }
-      }
-    },
-    "plugins.subtitle" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "管理内部插件与运行权限"
-          }
-        }
-      }
-    },
-    "plugins.title" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "插件中心"
           }
         }
       }
@@ -11614,6 +12450,380 @@
         }
       }
     },
+    "progress_gesture.action.ai" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI 助手"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.back" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "返回"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.bookmark" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "书签"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.browser" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浏览器打开"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.export" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导出话题"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.filter" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "只看楼主"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.jump_unread" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "跳到未读"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.nested" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "树形视图"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.next_post" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下一层"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.none" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.notification" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "通知"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.previous_post" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上一层"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.read_later" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "稍后再看"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.reading_settings" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "阅读设置"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.refresh" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "刷新"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.search" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.share" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分享链接"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.share_image" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分享图片"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.timeline" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "时间线"
+          }
+        }
+      }
+    },
+    "progress_gesture.action.top" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回到顶部"
+          }
+        }
+      }
+    },
+    "progress_gesture.enable" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "启用进度条手势"
+          }
+        }
+      }
+    },
+    "progress_gesture.enable.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在话题进度条上使用左滑 / 右滑 / 上滑与长按菜单"
+          }
+        }
+      }
+    },
+    "progress_gesture.long_press_menu" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "长按菜单"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.already_added" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已添加"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.available" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "可添加"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未配置"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.footer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "长按话题进度条时展开这些动作。可拖动排序，最多 8 项。"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.limit" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最多选择 %lld 项"
+          }
+        }
+      }
+    },
+    "progress_gesture.menu.selected_format" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已选 %1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "progress_gesture.pick_action" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择手势动作"
+          }
+        }
+      }
+    },
+    "progress_gesture.swipe_left" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "左滑"
+          }
+        }
+      }
+    },
+    "progress_gesture.swipe_right" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "右滑"
+          }
+        }
+      }
+    },
+    "progress_gesture.swipe_up" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上滑"
+          }
+        }
+      }
+    },
     "reply.customize" : {
       "localizations" : {
         "en" : {
@@ -12158,6 +13368,17 @@
         }
       }
     },
+    "reply.tool.grid.min_images" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "至少需要 2 张图片才能组成网格"
+          }
+        }
+      }
+    },
     "reply.tool.heading" : {
       "localizations" : {
         "en" : {
@@ -12494,6 +13715,17 @@
         }
       }
     },
+    "reply.tool.placeholder.spoiler" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "剧透内容"
+          }
+        }
+      }
+    },
     "reply.tool.placeholder.strikethrough" : {
       "localizations" : {
         "en" : {
@@ -12796,6 +14028,61 @@
         }
       }
     },
+    "search.date.custom" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自定义"
+          }
+        }
+      }
+    },
+    "search.date.month" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近一月"
+          }
+        }
+      }
+    },
+    "search.date.unlimited" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不限"
+          }
+        }
+      }
+    },
+    "search.date.week" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近一周"
+          }
+        }
+      }
+    },
+    "search.date.year" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近一年"
+          }
+        }
+      }
+    },
     "search.filter.advanced" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -12818,13 +14105,24 @@
         }
       }
     },
-    "search.filter.after" : {
+    "search.filter.advanced_title" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "开始日期"
+            "value" : "高级搜索"
+          }
+        }
+      }
+    },
+    "search.filter.all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部"
           }
         }
       }
@@ -12886,13 +14184,24 @@
         }
       }
     },
-    "search.filter.before" : {
+    "search.filter.apply" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "结束日期"
+            "value" : "应用筛选"
+          }
+        }
+      }
+    },
+    "search.filter.category" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分类"
           }
         }
       }
@@ -12908,13 +14217,24 @@
         }
       }
     },
-    "search.filter.dates" : {
+    "search.filter.date_range" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "时间范围"
+          }
+        }
+      }
+    },
+    "search.filter.hot_tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "热门标签"
           }
         }
       }
@@ -12976,13 +14296,24 @@
         }
       }
     },
-    "search.filter.none" : {
+    "search.filter.search_more_tags" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "不限"
+            "value" : "搜索更多"
+          }
+        }
+      }
+    },
+    "search.filter.selected_tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已选标签"
           }
         }
       }
@@ -12993,7 +14324,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "话题状态"
+            "value" : "状态"
           }
         }
       }
@@ -13009,24 +14340,13 @@
         }
       }
     },
-    "search.filter.tags.select" : {
+    "search.filter.tags_loading" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "选择标签"
-          }
-        }
-      }
-    },
-    "search.filter.title" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "高级筛选"
+            "value" : "加载热门标签…"
           }
         }
       }
@@ -13105,6 +14425,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "最近搜索"
+          }
+        }
+      }
+    },
+    "search.results_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "条结果"
           }
         }
       }
@@ -13221,6 +14552,17 @@
         }
       }
     },
+    "search.sort.prefix" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "排序："
+          }
+        }
+      }
+    },
     "search.sort.relevance" : {
       "localizations" : {
         "en" : {
@@ -13277,7 +14619,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "未关闭"
+            "value" : "进行中"
           }
         }
       }
@@ -13444,30 +14786,546 @@
         }
       }
     },
+    "search.untitled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无标题"
+          }
+        }
+      }
+    },
     "settings.about" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About & Updates"
+            "value" : "About"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关于与更新"
+            "value" : "关于"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關於與更新"
+            "value" : "關於"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關於與更新"
+            "value" : "關於"
+          }
+        }
+      }
+    },
+    "settings.about.app_logs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Logs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "應用日誌"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "應用日誌"
+          }
+        }
+      }
+    },
+    "settings.about.app_logs.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View and copy recent debug logs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看并复制最近调试日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看並複製最近除錯日誌"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看並複製最近除錯日誌"
+          }
+        }
+      }
+    },
+    "settings.about.developer_mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Developer Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發者模式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發者模式"
+          }
+        }
+      }
+    },
+    "settings.about.developer_mode.already_enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Developer mode is already enabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发者模式已启用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發者模式已啟用"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發者模式已啟用"
+          }
+        }
+      }
+    },
+    "settings.about.developer_mode.enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Developer mode enabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已启用开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已啟用開發者模式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已啟用開發者模式"
+          }
+        }
+      }
+    },
+    "settings.about.developer_mode.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to disable developer mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击关闭开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一下關閉開發者模式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一下關閉開發者模式"
+          }
+        }
+      }
+    },
+    "settings.about.feedback" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "反馈问题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回饋問題"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回饋問題"
+          }
+        }
+      }
+    },
+    "settings.about.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Made with UIKit & ❤️"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Made with UIKit & ❤️"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Made with UIKit & ❤️"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Made with UIKit & ❤️"
+          }
+        }
+      }
+    },
+    "settings.about.legalese" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unofficial Linux.do client\nBuilt with UIKit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非官方 Linux.do 客户端\n基于 UIKit"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非官方 Linux.do 用戶端\n基於 UIKit"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非官方 Linux.do 用戶端\n基於 UIKit"
+          }
+        }
+      }
+    },
+    "settings.about.open_source_license" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Source Licenses"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开源许可"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開源許可"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開源許可"
+          }
+        }
+      }
+    },
+    "settings.about.open_source_license.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Third-party dependencies and licenses"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第三方依赖与许可证"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第三方依賴與許可證"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第三方依賴及許可證"
+          }
+        }
+      }
+    },
+    "settings.about.perf_copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics report copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断报告已复制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "診斷報告已複製"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "診斷報告已複製"
+          }
+        }
+      }
+    },
+    "settings.about.perf_diagnostics" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performance Diagnostics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能诊断"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "效能診斷"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "效能診斷"
+          }
+        }
+      }
+    },
+    "settings.about.perf_diagnostics.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device and runtime summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设备与运行时摘要"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "裝置與執行時期摘要"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "裝置與執行時期摘要"
+          }
+        }
+      }
+    },
+    "settings.about.section.develop" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Develop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發"
+          }
+        }
+      }
+    },
+    "settings.about.section.info" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Info"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資訊"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資訊"
+          }
+        }
+      }
+    },
+    "settings.about.section.links" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連結"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連結"
+          }
+        }
+      }
+    },
+    "settings.about.source_code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目源码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專案原始碼"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專案原始碼"
           }
         }
       }
@@ -13477,30 +15335,59 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version information and update options"
+            "value" : "Version, licenses, and development links"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本信息与更新选项"
+            "value" : "版本、许可与开发链接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本資訊與更新選項"
+            "value" : "版本、許可與開發連結"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本資訊及更新選項"
+            "value" : "版本、許可及開發連結"
+          }
+        }
+      }
+    },
+    "settings.about.version_format %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
           }
         }
       }
     },
     "settings.app_icon" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13529,6 +15416,7 @@
       }
     },
     "settings.app_icon.cards" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13585,6 +15473,7 @@
       }
     },
     "settings.app_icon.orbit" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13613,6 +15502,7 @@
       }
     },
     "settings.app_icon.signal" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13702,7 +15592,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "分类侧栏（FluxDo）"
+            "value" : "分类侧栏"
           }
         }
       }
@@ -13713,7 +15603,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "开启后可从左缘右滑打开分类/标签侧栏，菜单键同步打开侧栏"
+            "value" : "从左缘右滑打开分类/标签侧栏；开启后隐藏顶部分类条与分类筛选"
           }
         }
       }
@@ -13742,6 +15632,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字體"
+          }
+        }
+      }
+    },
+    "settings.appearance.font_family" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "内容字体"
           }
         }
       }
@@ -13830,7 +15731,30 @@
         }
       }
     },
+    "settings.appearance.mini_programs" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "小程序"
+          }
+        }
+      }
+    },
+    "settings.appearance.mini_programs.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在首页显示小程序入口，并启用小程序管理"
+          }
+        }
+      }
+    },
     "settings.appearance.palette_style" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13859,6 +15783,7 @@
       }
     },
     "settings.appearance.plugin_dock" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13887,29 +15812,30 @@
       }
     },
     "settings.appearance.plugin_dock.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open LD Store and NewAPI windows from the screen edge"
+            "value" : "Open available floating plugin tools from the screen edge"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从屏幕边缘呼出 LD 士多和 NewAPI 窗口"
+            "value" : "从屏幕边缘呼出可用的插件浮动工具"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從螢幕邊緣叫出 LD 士多和 NewAPI 視窗"
+            "value" : "從螢幕邊緣叫出可用的插件浮動工具"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從螢幕邊緣叫出 LD 士多和 NewAPI 視窗"
+            "value" : "從螢幕邊緣叫出可用的插件浮動工具"
           }
         }
       }
@@ -13998,6 +15924,28 @@
         }
       }
     },
+    "settings.appearance.theme_taxonomy_colors" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "主题分类/标签色"
+          }
+        }
+      }
+    },
+    "settings.appearance.theme_taxonomy_colors.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开启后分类与标签使用当前主题配色；关闭则保留论坛原始颜色"
+          }
+        }
+      }
+    },
     "settings.appearance.xiaohongshu_staggered_cards" : {
       "localizations" : {
         "en" : {
@@ -14078,6 +16026,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啓動時打開上次論壇"
+          }
+        }
+      }
+    },
+    "settings.auto_open_last_forum.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "启动时直接进入上次打开的论坛"
           }
         }
       }
@@ -14447,6 +16406,7 @@
       }
     },
     "settings.bottom_bar.plugin_provider_format" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14961,6 +16921,7 @@
       }
     },
     "settings.data.ai_chat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15040,6 +17001,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自動管理"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "头像缓存上限"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.gb1" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1 GB"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.gb2" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "2 GB"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.gb15" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1.5 GB"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.mb500" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "500 MB"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.section" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "头像缓存上限"
+          }
+        }
+      }
+    },
+    "settings.data.avatar_cache_size.summary_format" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "内存与磁盘各上限 %@"
           }
         }
       }
@@ -15129,6 +17167,7 @@
       }
     },
     "settings.data.cache_footprint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15236,6 +17275,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除所有快取"
+          }
+        }
+      }
+    },
+    "settings.data.clear_all_cache.hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除图片、Cookie 与本地缓存"
           }
         }
       }
@@ -15436,6 +17486,28 @@
         }
       }
     },
+    "settings.data.clear_local.confirm.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "将清除资料页与表情本地缓存，不会退出登录。"
+          }
+        }
+      }
+    },
+    "settings.data.clear_local.confirm.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除本地缓存？"
+          }
+        }
+      }
+    },
     "settings.data.cookie_cache" : {
       "localizations" : {
         "en" : {
@@ -15488,6 +17560,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cookie 快取已清除。"
+          }
+        }
+      }
+    },
+    "settings.data.cookie_cache.hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "登录会话 Cookie，清除后可能需要重新验证"
           }
         }
       }
@@ -15549,6 +17632,7 @@
       }
     },
     "settings.data.hero.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15577,6 +17661,7 @@
       }
     },
     "settings.data.hero.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15656,6 +17741,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "圖片快取已清除。"
+          }
+        }
+      }
+    },
+    "settings.data.image_cache.hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "帖子图片与头像缓存，可重新下载"
           }
         }
       }
@@ -15768,6 +17864,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本機快取"
+          }
+        }
+      }
+    },
+    "settings.data.local_cache_cleared" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "本地缓存已清除"
+          }
+        }
+      }
+    },
+    "settings.data.local_cache.hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "资料页与表情等本地缓存"
           }
         }
       }
@@ -16502,6 +18620,72 @@
         }
       }
     },
+    "settings.network.avatar_loading" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "头像加载强度"
+          }
+        }
+      }
+    },
+    "settings.network.avatar_loading.high" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "高"
+          }
+        }
+      }
+    },
+    "settings.network.avatar_loading.low" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "低"
+          }
+        }
+      }
+    },
+    "settings.network.avatar_loading.medium" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "中"
+          }
+        }
+      }
+    },
+    "settings.network.avatar_loading.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "格式为：最大下载并发 / 最大预取并发 / 首页头像预取数量。高档就是当前默认值。"
+          }
+        }
+      }
+    },
+    "settings.network.avatar_loading.summary_format" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下载 %1$@ · 预取 %2$@ · 首页 %3$@"
+          }
+        }
+      }
+    },
     "settings.network.cloudflare_ready" : {
       "localizations" : {
         "en" : {
@@ -16642,6 +18826,50 @@
         }
       }
     },
+    "settings.network.debug_log" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "调试日志"
+          }
+        }
+      }
+    },
+    "settings.network.debug_log.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查看并复制最近 200 行"
+          }
+        }
+      }
+    },
+    "settings.network.doh_status" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "DoH 状态"
+          }
+        }
+      }
+    },
+    "settings.network.doh.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "通过加密 DNS 解析论坛域名"
+          }
+        }
+      }
+    },
     "settings.network.provider" : {
       "localizations" : {
         "en" : {
@@ -16666,6 +18894,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服務商"
+          }
+        }
+      }
+    },
+    "settings.network.section.auxiliary" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "辅助功能"
+          }
+        }
+      }
+    },
+    "settings.network.section.debug" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "调试"
+          }
+        }
+      }
+    },
+    "settings.network.section.proxy" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网络代理"
           }
         }
       }
@@ -16726,6 +18987,17 @@
         }
       }
     },
+    "settings.notion.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "书签同步到 Notion 数据库"
+          }
+        }
+      }
+    },
     "settings.operation_failed" : {
       "localizations" : {
         "en" : {
@@ -16750,6 +19022,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作失敗"
+          }
+        }
+      }
+    },
+    "settings.preferences" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "功能设置"
+          }
+        }
+      }
+    },
+    "settings.preferences.section.basic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "基础"
+          }
+        }
+      }
+    },
+    "settings.preferences.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "剪贴板、启动和通用行为"
           }
         }
       }
@@ -17359,6 +19664,7 @@
       }
     },
     "settings.reading.preview.sample_body" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17387,6 +19693,7 @@
       }
     },
     "settings.reading.preview.sample_title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17415,6 +19722,7 @@
       }
     },
     "settings.reading.preview.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17443,6 +19751,7 @@
       }
     },
     "settings.reading.preview.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17526,6 +19835,17 @@
         }
       }
     },
+    "settings.reading.section.progress_gesture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "进度条手势"
+          }
+        }
+      }
+    },
     "settings.reading.section.reading" : {
       "localizations" : {
         "en" : {
@@ -17550,6 +19870,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "閱讀"
+          }
+        }
+      }
+    },
+    "settings.reading.section.threaded" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "树形回复"
+          }
+        }
+      }
+    },
+    "settings.reading.section.topic_card" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "话题卡片"
           }
         }
       }
@@ -17882,6 +20224,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查更新"
+          }
+        }
+      }
+    },
+    "settings.update.check_now.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "立即检查是否有新版本"
           }
         }
       }
@@ -18779,6 +21132,7 @@
       }
     },
     "topic_detail.action.bookmark" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18863,6 +21217,7 @@
       }
     },
     "topic_detail.action.timeline" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18891,6 +21246,7 @@
       }
     },
     "topic_detail.action.top" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

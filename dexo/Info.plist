@@ -10,42 +10,6 @@
 	<true/>
 	<key>CFBundleIcons</key>
 	<dict>
-		<key>CFBundleAlternateIcons</key>
-		<dict>
-			<key>DexoFluxCards</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxCards</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxCards</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-			<key>DexoFluxOrbit</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxOrbit</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxOrbit</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-			<key>DexoFluxSignal</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxSignal</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxSignal</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-		</dict>
 		<key>CFBundlePrimaryIcon</key>
 		<dict>
 			<key>CFBundleIconName</key>
@@ -54,42 +18,6 @@
 	</dict>
 	<key>CFBundleIcons~ipad</key>
 	<dict>
-		<key>CFBundleAlternateIcons</key>
-		<dict>
-			<key>DexoFluxCards</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxCards</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxCards</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-			<key>DexoFluxOrbit</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxOrbit</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxOrbit</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-			<key>DexoFluxSignal</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>DexoFluxSignal</string>
-				</array>
-				<key>CFBundleIconName</key>
-				<string>DexoFluxSignal</string>
-				<key>UIPrerenderedIcon</key>
-				<false/>
-			</dict>
-		</dict>
 		<key>CFBundlePrimaryIcon</key>
 		<dict>
 			<key>CFBundleIconName</key>
@@ -134,9 +62,7 @@
 		</dict>
 	</dict>
 	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-	</array>
+	<array/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
