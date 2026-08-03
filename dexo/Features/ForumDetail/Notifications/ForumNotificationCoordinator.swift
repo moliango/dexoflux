@@ -347,12 +347,20 @@ enum ForumNotificationRoutePresenter {
         guard let route = ForumNotificationRouteStore.shared.pendingRoute else { return }
         let targetBaseURL = ForumInstance.normalizedBaseURL(route.baseURL)
 
+        // Same forum already visible — push into that container (don't rely on Combine race).
         if let currentContainer = ForumOverlayManager.shared.currentContainer,
            ForumInstance.normalizedBaseURL(currentContainer.forum.baseURL) == targetBaseURL {
+            currentContainer.presentPendingNotificationRouteIfPossible()
             return
         }
         if let rootContainer = window.rootViewController as? ForumContainerViewController,
            ForumInstance.normalizedBaseURL(rootContainer.forum.baseURL) == targetBaseURL {
+            rootContainer.presentPendingNotificationRouteIfPossible()
+            return
+        }
+        if let nested = window.rootViewController?.children.compactMap({ $0 as? ForumContainerViewController }).first,
+           ForumInstance.normalizedBaseURL(nested.forum.baseURL) == targetBaseURL {
+            nested.presentPendingNotificationRouteIfPossible()
             return
         }
 

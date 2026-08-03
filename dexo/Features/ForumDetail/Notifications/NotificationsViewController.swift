@@ -2,7 +2,8 @@ import SDWebImage
 import UIKit
 
 final class NotificationsViewController: ObservableViewController {
-    var onTopicSelected: ((Int) -> Void)?
+    /// topicId + optional post floor for deep link into the right reply (Phase 3).
+    var onTopicSelected: ((Int, Int?) -> Void)?
 
     private let api: DiscourseAPI
     private let viewModel: NotificationsViewModel
@@ -243,12 +244,17 @@ final class NotificationsViewController: ObservableViewController {
         }
 
         guard let topicId = notification.topicId else { return }
+        let postNumber = notification.postNumber
         if let onTopicSelected {
             dismiss(animated: true) {
-                onTopicSelected(topicId)
+                onTopicSelected(topicId, postNumber)
             }
         } else {
-            let detailVC = TopicDetailViewController(api: api, topicId: topicId)
+            let detailVC = TopicDetailViewController(
+                api: api,
+                topicId: topicId,
+                initialFloor: postNumber
+            )
             navigationController?.pushViewController(detailVC, animated: true)
         }
     }

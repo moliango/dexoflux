@@ -19,6 +19,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let defaultForum = DatabaseManager.shared.defaultForum()
         window.rootViewController = ForumContainerViewController(forum: defaultForum, showsDismissButton: false)
         window.makeKeyAndVisible()
+
+        // Cold-start from notification tap (in addition to UNUserNotificationCenterDelegate).
+        if let response = connectionOptions.notificationResponse {
+            enqueueNotificationRoute(from: response.notification.request.content.userInfo)
+            ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
+        }
+    }
+
+    private func enqueueNotificationRoute(from userInfo: [AnyHashable: Any]) {
+        guard let baseURL = userInfo[ForumNotificationRoute.UserInfoKey.baseURL] as? String else { return }
+        let route = ForumNotificationRoute(
+            baseURL: baseURL,
+            notificationId: userInfo[ForumNotificationRoute.UserInfoKey.notificationId] as? Int,
+            topicId: userInfo[ForumNotificationRoute.UserInfoKey.topicId] as? Int,
+            postNumber: userInfo[ForumNotificationRoute.UserInfoKey.postNumber] as? Int
+        )
+        ForumNotificationRouteStore.shared.enqueue(route)
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}

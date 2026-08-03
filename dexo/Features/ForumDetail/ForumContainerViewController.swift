@@ -246,7 +246,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
     }
 
-    private func presentPendingNotificationRouteIfPossible() {
+    /// Consumes a pending local-notification route for this forum (topic + floor).
+    func presentPendingNotificationRouteIfPossible() {
         guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
         guard ForumOverlayManager.shared.prepareForNotificationRoute(in: self) else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
