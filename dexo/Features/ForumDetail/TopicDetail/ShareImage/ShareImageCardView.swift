@@ -1,3 +1,4 @@
+import CookedHTML
 import SDWebImage
 import UIKit
 
@@ -174,6 +175,7 @@ final class ShareImageCardView: UIView {
         createdAt: String?,
         avatarURL: URL?,
         cookedHTML: String,
+        contentBlocks: [ContentBlock] = [],
         shareURL: String
     ) {
         self.theme = theme
@@ -211,10 +213,20 @@ final class ShareImageCardView: UIView {
         linkLabel.text = shareURL
         linkLabel.textColor = theme.secondaryTextColor
 
-        rebuildBody(cookedHTML: cookedHTML, baseURL: baseURL, textColor: theme.primaryTextColor.withAlphaComponent(0.88))
+        rebuildBody(
+            cookedHTML: cookedHTML,
+            contentBlocks: contentBlocks,
+            baseURL: baseURL,
+            textColor: theme.primaryTextColor.withAlphaComponent(0.88)
+        )
     }
 
-    private func rebuildBody(cookedHTML: String, baseURL: String, textColor: UIColor) {
+    private func rebuildBody(
+        cookedHTML: String,
+        contentBlocks: [ContentBlock],
+        baseURL: String,
+        textColor: UIColor
+    ) {
         loadGeneration += 1
         let generation = loadGeneration
 
@@ -223,7 +235,25 @@ final class ShareImageCardView: UIView {
             $0.removeFromSuperview()
         }
 
-        let segments = ShareImageBodyComposer.segments(from: cookedHTML, baseURL: baseURL)
+        let bodyFont = UIFont.systemFont(ofSize: 15)
+        // Always compose from cooked HTML first (normalize + parse + sanitize).
+        // contentBlocks are a fallback only — they once caused bare MD to paint when
+        // the block walk left markdown markers in text nodes.
+        var segments = ShareImageBodyComposer.segments(
+            from: cookedHTML,
+            baseURL: baseURL,
+            textColor: textColor,
+            font: bodyFont
+        )
+        if segments.isEmpty, !contentBlocks.isEmpty {
+            segments = ShareImageBodyComposer.segments(
+                from: contentBlocks,
+                baseURL: baseURL,
+                textColor: textColor,
+                font: bodyFont
+            )
+        }
+        segments = ShareImageBodyComposer.sanitized(segments)
         let imageURLs = ShareImageBodyComposer.imageURLs(in: segments)
         let contentWidth = cardWidth - 16 * 2 - 12 * 2
 
@@ -247,6 +277,9 @@ final class ShareImageCardView: UIView {
             switch segment {
             case .text(let text):
                 bodyStack.addArrangedSubview(makeTextLabel(text, color: textColor))
+
+            case .richText(let attributed):
+                bodyStack.addArrangedSubview(makeRichTextLabel(attributed))
 
             case .image(let url):
                 let imageView = makeImageView(contentWidth: contentWidth)
@@ -289,6 +322,14 @@ final class ShareImageCardView: UIView {
         } else {
             label.text = text
         }
+        return label
+    }
+
+    private func makeRichTextLabel(_ attributed: NSAttributedString) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.attributedText = attributed
         return label
     }
 

@@ -1,3 +1,4 @@
+import CookedHTML
 import Photos
 import UIKit
 
@@ -11,9 +12,40 @@ final class ShareImagePreviewViewController: UIViewController {
         let username: String
         let createdAtText: String?
         let avatarURL: URL?
+        /// Discourse cooked HTML only — never markdown `raw`.
         let cookedHTML: String
+        /// On-screen parsed blocks from topic detail (preferred over re-parsing HTML).
+        let contentBlocks: [ContentBlock]
         let shareURL: String
         let postNumber: Int
+
+        init(
+            topicId: Int,
+            baseURL: String,
+            title: String,
+            brandName: String,
+            authorName: String,
+            username: String,
+            createdAtText: String?,
+            avatarURL: URL?,
+            cookedHTML: String,
+            contentBlocks: [ContentBlock] = [],
+            shareURL: String,
+            postNumber: Int
+        ) {
+            self.topicId = topicId
+            self.baseURL = baseURL
+            self.title = title
+            self.brandName = brandName
+            self.authorName = authorName
+            self.username = username
+            self.createdAtText = createdAtText
+            self.avatarURL = avatarURL
+            self.cookedHTML = cookedHTML
+            self.contentBlocks = contentBlocks
+            self.shareURL = shareURL
+            self.postNumber = postNumber
+        }
     }
 
     private let model: Model
@@ -251,6 +283,7 @@ final class ShareImagePreviewViewController: UIViewController {
             createdAt: model.createdAtText,
             avatarURL: model.avatarURL,
             cookedHTML: model.cookedHTML,
+            contentBlocks: model.contentBlocks,
             shareURL: model.shareURL
         )
         cardHost.backgroundColor = theme.backgroundColor
