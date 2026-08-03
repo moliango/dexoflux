@@ -318,11 +318,10 @@ final class MiniProgramDrawerViewController: UIViewController {
             self.isAnimating = false
         }
         if animated {
+            // Ease-out (no spring): spring overshoot made open/close feel like a bounce.
             UIView.animate(
-                withDuration: 0.34,
+                withDuration: 0.30,
                 delay: 0,
-                usingSpringWithDamping: 0.92,
-                initialSpringVelocity: 0.4,
                 options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
                 animations: animations,
                 completion: { _ in finish() }
@@ -333,8 +332,15 @@ final class MiniProgramDrawerViewController: UIViewController {
         }
     }
 
-    func close(animated: Bool, completion: (() -> Void)? = nil) {
+    /// - Parameter notifiesDismissed: when false (e.g. selecting a program), skip
+    ///   `onDismissed` so the host does not bounce the tab bar back mid-transition.
+    func close(
+        animated: Bool,
+        notifiesDismissed: Bool = true,
+        completion: (() -> Void)? = nil
+    ) {
         guard isOpen || !view.isHidden else {
+            if notifiesDismissed { onDismissed?() }
             completion?()
             return
         }
@@ -344,12 +350,31 @@ final class MiniProgramDrawerViewController: UIViewController {
         }
 
         searchField.resignFirstResponder()
-        endDrag(action: .cancel)
+        // Cancel drag without extra bounce animations during close.
+        if isDragging || dragSnapshot != nil {
+            dragSnapshot?.removeFromSuperview()
+            dragSourceView?.alpha = 1
+            dragSnapshot = nil
+            dragProgram = nil
+            dragSourceView = nil
+            isDragging = false
+            dropZonesContainer.isHidden = true
+            dropZonesContainer.alpha = 0
+            dropZonesContainer.transform = .identity
+        }
         isOpen = false
         isAnimating = true
         animationGeneration += 1
         let generation = animationGeneration
-        let height = panelHeightConstraint?.constant ?? max(view.bounds.height, 1)
+
+        // Use the live host height so the panel fully clears the screen even if
+        // bounds changed after open (keyboard / rotation / safe area).
+        let height = max(view.bounds.height, panelHeightConstraint?.constant ?? 0, 1)
+        panelHeightConstraint?.constant = height
+        // Continue from the current drag offset (no snap-to-open then close jitter).
+        let currentOffset = panelTopConstraint?.constant ?? 0
+        panelTopConstraint?.constant = min(currentOffset, 0)
+        view.layoutIfNeeded()
         panelTopConstraint?.constant = -height
 
         let animations = {
@@ -360,12 +385,17 @@ final class MiniProgramDrawerViewController: UIViewController {
             guard generation == self.animationGeneration else { return }
             self.isAnimating = false
             self.view.isHidden = true
-            self.onDismissed?()
+            // Reset panel off-screen for the next open without an intermediate flash.
+            self.panelTopConstraint?.constant = -height
+            if notifiesDismissed {
+                self.onDismissed?()
+            }
             completion?()
         }
         if animated {
+            // Ease-in only — spring on close overshoots and reads as bottom jitter.
             UIView.animate(
-                withDuration: 0.24,
+                withDuration: 0.28,
                 delay: 0,
                 options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction],
                 animations: animations,
@@ -821,19 +851,21 @@ final class MiniProgramDrawerViewController: UIViewController {
     // MARK: - Actions
 
     private func selectProgram(_ program: MiniProgramDescriptor) {
-        close(animated: true) { [weak self] in
+        // Skip onDismissed: presenting the host keeps tab bar hidden; host
+        // teardown restores chrome. Avoids tab-bar bounce under the modal.
+        close(animated: true, notifiesDismissed: false) { [weak self] in
             self?.onSelectProgram?(program)
         }
     }
 
     private func openMyPrograms() {
-        close(animated: true) { [weak self] in
+        close(animated: true, notifiesDismissed: true) { [weak self] in
             self?.onOpenMyPrograms?()
         }
     }
 
     @objc private func closeTapped() {
-        close(animated: true)
+        close(animated: true, notifiesDismissed: true)
     }
 
     @objc private func searchTextChanged() {
@@ -859,11 +891,14 @@ final class MiniProgramDrawerViewController: UIViewController {
         case .ended, .cancelled:
             let velocity = gesture.velocity(in: view).y
             let offset = panelTopConstraint?.constant ?? 0
-            // Hard upward fling or pull past threshold → close.
+            // Hard upward fling or pull past threshold → close (continues from offset).
             let shouldClose = offset < -56 || velocity < -500
             if shouldClose {
-                close(animated: true)
+                close(animated: true, notifiesDismissed: true)
             } else {
+                isAnimating = true
+                animationGeneration += 1
+                let generation = animationGeneration
                 panelTopConstraint?.constant = 0
                 UIView.animate(
                     withDuration: 0.22,
@@ -872,6 +907,9 @@ final class MiniProgramDrawerViewController: UIViewController {
                 ) {
                     self.dimmingView.alpha = 1
                     self.view.layoutIfNeeded()
+                } completion: { _ in
+                    guard generation == self.animationGeneration else { return }
+                    self.isAnimating = false
                 }
             }
         default:

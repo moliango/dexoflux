@@ -15,6 +15,8 @@ extension HomeViewController {
             )
             created.onSelectProgram = { [weak self] program in
                 guard let self else { return }
+                // Present after the drawer has fully closed to avoid stacked
+                // transitions (drawer + tab bar + modal) that look like a crash/jitter.
                 MiniProgramFactory.present(
                     program: program,
                     from: self,
@@ -51,15 +53,12 @@ extension HomeViewController {
         // created before this behavior existed.
         drawer.onDismissed = { [weak self] in
             guard let self else { return }
-            if let forumTab = self.tabBarController as? ForumTabBarController {
-                forumTab.setTabBarHiddenByScroll(false, animated: true)
-            } else {
-                self.tabBarController?.tabBar.isHidden = false
-            }
+            self.restoreTabBarAfterMiniProgramChrome()
         }
 
         // ForumTabBarController always re-brings tabBar to front on layout —
         // hide it while the drawer is open so the panel is truly full-screen.
+        // Use non-animated hide so open/close does not bounce home content insets.
         if let forumTab = tabBarController as? ForumTabBarController {
             forumTab.setTabBarHiddenByScroll(true, animated: false)
         } else {
@@ -71,6 +70,18 @@ extension HomeViewController {
             hostView.bringSubviewToFront(drawer.view)
         }
         drawer.open(animated: true, username: authGate?.currentUsername())
+    }
+
+    /// Restore bottom tab bar after mini-program drawer/host chrome without layout bounce.
+    func restoreTabBarAfterMiniProgramChrome() {
+        if let forumTab = tabBarController as? ForumTabBarController {
+            // Non-animated: animated reveal reflows home insets and reads as jitter.
+            forumTab.setTabBarHiddenByScroll(false, animated: false)
+            forumTab.forceRevealTabBarForRootContent()
+        } else {
+            tabBarController?.tabBar.isHidden = false
+        }
+        updateBottomChrome(animated: false)
     }
 
     @objc func categoryManagerLongPressed(_ gesture: UILongPressGestureRecognizer) {

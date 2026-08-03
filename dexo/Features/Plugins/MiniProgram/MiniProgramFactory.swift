@@ -100,7 +100,31 @@ enum MiniProgramFactory {
             icon: icon(for: program.id)
         )
         host.modalPresentationStyle = .fullScreen
-        presenter.present(host, animated: true)
+        // Present from the top-most VC so we never stack on a half-dismissed drawer
+        // transition (that path used to assert / look like a crash offline).
+        let anchor = topMostPresenter(from: presenter)
+        guard anchor.presentedViewController == nil else {
+            anchor.dismiss(animated: false) {
+                anchor.present(host, animated: true)
+            }
+            return
+        }
+        anchor.present(host, animated: true)
+    }
+
+    @MainActor
+    private static func topMostPresenter(from base: UIViewController) -> UIViewController {
+        var top = base
+        while let presented = top.presentedViewController {
+            top = presented
+        }
+        if let nav = top as? UINavigationController, let visible = nav.visibleViewController {
+            return topMostPresenter(from: visible)
+        }
+        if let tab = top as? UITabBarController, let selected = tab.selectedViewController {
+            return topMostPresenter(from: selected)
+        }
+        return top
     }
 
     /// Best-effort public URL for「复制链接」. Built-ins without a web URL return nil.

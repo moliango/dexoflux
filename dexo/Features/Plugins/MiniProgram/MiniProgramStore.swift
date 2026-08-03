@@ -16,7 +16,7 @@ final class MiniProgramStore {
     }
 
     func favoritePrograms() -> [MiniProgramRecord] {
-        let byID = Dictionary(uniqueKeysWithValues: allPrograms().map { ($0.id, $0) })
+        let byID = Self.dictionaryByID(allPrograms())
         return favoriteProgramIDs
             .compactMap { byID[$0] }
             .prefix(Self.maxFavoriteCount)
@@ -198,12 +198,15 @@ final class MiniProgramStore {
         guard let index = snapshot.programs.firstIndex(where: { $0.id == id }) else {
             throw MiniProgramStoreError.programNotFound
         }
-        guard !snapshot.programs[index].isBuiltIn else {
+        // Only true built-ins are locked. Custom (.url) programs are always editable
+        // even if an older catalog snapshot mis-tagged fields.
+        guard snapshot.programs[index].kind != .builtIn else {
             throw MiniProgramStoreError.builtInCannotBeEditedAsCustom
         }
         guard let normalizedURL = Self.normalizedURLString(url) else {
             throw MiniProgramStoreError.invalidURL
         }
+        snapshot.programs[index].kind = .url
         snapshot.programs[index].displayName = normalizedName(name, fallback: url.host ?? normalizedURL)
         snapshot.programs[index].urlString = normalizedURL
         snapshot.programs[index].categoryID = categoryExists(categoryID) ? categoryID : MiniProgramCategoryID.other
@@ -271,8 +274,19 @@ final class MiniProgramStore {
     }
 
     func recentPrograms() -> [MiniProgramRecord] {
-        let programsByID = Dictionary(uniqueKeysWithValues: visiblePrograms().map { ($0.id, $0) })
+        // Never use Dictionary(uniqueKeysWithValues:) — duplicate ids fatal crash.
+        let programsByID = Self.dictionaryByID(visiblePrograms())
         return snapshot.recentProgramIDs.compactMap { programsByID[$0] }
+    }
+
+    /// Safe id→record map. Last write wins; never traps on duplicate keys.
+    private static func dictionaryByID(_ programs: [MiniProgramRecord]) -> [String: MiniProgramRecord] {
+        var map: [String: MiniProgramRecord] = [:]
+        map.reserveCapacity(programs.count)
+        for program in programs {
+            map[program.id] = program
+        }
+        return map
     }
 
     private func categoryExists(_ id: String) -> Bool {
@@ -367,14 +381,40 @@ private extension MiniProgramStore {
     }
 
     static func normalizeReferences(in snapshot: inout MiniProgramCatalogSnapshot) {
+        // Deduplicate program ids (corrupt/migrated catalogs used to crash
+        // Dictionary(uniqueKeysWithValues:) when opening the drawer offline).
+        var seenProgramIDs = Set<String>()
+        var uniquePrograms: [MiniProgramRecord] = []
+        uniquePrograms.reserveCapacity(snapshot.programs.count)
+        for program in snapshot.programs {
+            if seenProgramIDs.insert(program.id).inserted {
+                uniquePrograms.append(program)
+            }
+        }
+        snapshot.programs = uniquePrograms
+
+        var seenCategoryIDs = Set<String>()
+        var uniqueCategories: [MiniProgramCategory] = []
+        uniqueCategories.reserveCapacity(snapshot.categories.count)
+        for category in snapshot.categories {
+            if seenCategoryIDs.insert(category.id).inserted {
+                uniqueCategories.append(category)
+            }
+        }
+        snapshot.categories = uniqueCategories
+
         let categoryIDs = Set(snapshot.categories.map(\.id))
         for index in snapshot.programs.indices where !categoryIDs.contains(snapshot.programs[index].categoryID) {
             snapshot.programs[index].categoryID = MiniProgramCategoryID.other
         }
         let visibleIDs = Set(snapshot.programs.filter(\.isVisible).map(\.id))
-        var seen = Set<String>()
+        var seenRecent = Set<String>()
         snapshot.recentProgramIDs = snapshot.recentProgramIDs.filter { id in
-            visibleIDs.contains(id) && seen.insert(id).inserted
+            visibleIDs.contains(id) && seenRecent.insert(id).inserted
+        }
+        var seenFavorite = Set<String>()
+        snapshot.favoriteProgramIDs = snapshot.favoriteProgramIDs.filter { id in
+            visibleIDs.contains(id) && seenFavorite.insert(id).inserted
         }
     }
 

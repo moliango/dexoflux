@@ -132,11 +132,17 @@ enum MiniProgramStoreError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .programNotFound:
-            return "Mini program not found"
+            return String(localized: "mini_program.error.not_found", defaultValue: "找不到该小程序")
         case .builtInCannotBeEditedAsCustom:
-            return "Built-in mini programs cannot be edited as custom URL programs"
+            return String(
+                localized: "mini_program.error.builtin_locked",
+                defaultValue: "内置小程序不能修改名称和网址"
+            )
         case .invalidURL:
-            return "Invalid mini program URL"
+            return String(
+                localized: "mini_program.error.invalid_url",
+                defaultValue: "网址无效，请输入以 http:// 或 https:// 开头的地址"
+            )
         }
     }
 }
