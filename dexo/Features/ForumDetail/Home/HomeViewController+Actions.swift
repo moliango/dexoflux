@@ -30,7 +30,11 @@ extension HomeViewController {
                     api: self.api,
                     username: self.authGate?.currentUsername()
                 )
+                // hidesBottomBarWhenPushed is set on the launcher; push full-screen
+                // without the forum tab bar (WeChat-style mini-program list).
                 self.navigationController?.pushViewController(launcher, animated: true)
+                (self.tabBarController as? ForumTabBarController)?
+                    .syncTabBarVisibilityForCurrentContent()
             }
             // Host on ForumTabBarController so the drawer can cover the full
             // screen including the custom tab bar region.

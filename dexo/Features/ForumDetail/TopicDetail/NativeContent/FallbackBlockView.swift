@@ -1,7 +1,7 @@
 import UIKit
 
 /// A placeholder view that asynchronously renders an HTML block via WebView snapshot.
-/// Used for content blocks that have no native renderer (e.g. table, onebox, details).
+/// Used for content blocks that have no native renderer (e.g. raw HTML fallback).
 final class FallbackBlockView: UIView {
     private let snapshotImageView: UIImageView = {
         let iv = UIImageView()
@@ -23,16 +23,41 @@ final class FallbackBlockView: UIView {
         return v
     }()
 
+    private lazy var retryButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: "arrow.clockwise",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        )
+        config.title = String(localized: "common.retry", defaultValue: "重试")
+        config.imagePadding = 6
+        config.baseForegroundColor = .secondaryLabel
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isHidden = true
+        button.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+        return button
+    }()
+
     private var heightConstraint: NSLayoutConstraint!
     private var renderTask: Task<Void, Never>?
     private var placeholderBlocks: [SkeletonBlockView] = []
 
+    private let html: String
+    private let containerWidth: CGFloat
+    private let baseURL: String
+
     init(html: String, containerWidth: CGFloat, baseURL: String) {
+        self.html = html
+        self.containerWidth = containerWidth
+        self.baseURL = baseURL
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(placeholderView)
         addSubview(snapshotImageView)
+        addSubview(retryButton)
         setupPlaceholderSkeleton()
 
         heightConstraint = heightAnchor.constraint(equalToConstant: 80)
@@ -49,32 +74,13 @@ final class FallbackBlockView: UIView {
             snapshotImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
             snapshotImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
+            retryButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+            retryButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+
             heightConstraint,
         ])
 
-        renderTask = Task { @MainActor [weak self] in
-            let rendered = await PostContentRenderer.shared.renderHTMLBlock(
-                html: html,
-                baseURL: baseURL,
-                width: containerWidth
-            )
-            guard let self, !Task.isCancelled else { return }
-            self.snapshotImageView.image = rendered.snapshot
-            self.heightConstraint.constant = rendered.height
-            self.placeholderBlocks.forEach { $0.stopAnimating() }
-            self.placeholderView.isHidden = true
-
-            // Walk up to find the owning UITableView and trigger a height update
-            var view: UIView? = self.superview
-            while let v = view {
-                if let tableView = v as? UITableView {
-                    tableView.beginUpdates()
-                    tableView.endUpdates()
-                    break
-                }
-                view = v.superview
-            }
-        }
+        startRender()
     }
 
     required init?(coder: NSCoder) {
@@ -85,6 +91,61 @@ final class FallbackBlockView: UIView {
         renderTask?.cancel()
         renderTask = nil
         placeholderBlocks.forEach { $0.stopAnimating() }
+    }
+
+    @objc private func retryTapped() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        startRender()
+    }
+
+    private func startRender() {
+        renderTask?.cancel()
+        retryButton.isHidden = true
+        snapshotImageView.image = nil
+        placeholderView.isHidden = false
+        placeholderBlocks.forEach { $0.startAnimating() }
+        heightConstraint.constant = max(heightConstraint.constant, 80)
+
+        let html = self.html
+        let baseURL = self.baseURL
+        let containerWidth = self.containerWidth
+
+        renderTask = Task { @MainActor [weak self] in
+            let rendered = await PostContentRenderer.shared.renderHTMLBlock(
+                html: html,
+                baseURL: baseURL,
+                width: containerWidth
+            )
+            guard let self, !Task.isCancelled else { return }
+            self.placeholderBlocks.forEach { $0.stopAnimating() }
+
+            if let snapshot = rendered.snapshot {
+                self.snapshotImageView.image = snapshot
+                self.heightConstraint.constant = rendered.height
+                self.placeholderView.isHidden = true
+                self.retryButton.isHidden = true
+            } else {
+                // Keep skeleton area + retry instead of a blank hole (Phase 1).
+                self.snapshotImageView.image = nil
+                self.placeholderView.isHidden = false
+                self.retryButton.isHidden = false
+                self.heightConstraint.constant = max(rendered.height, 100)
+            }
+
+            self.invalidateTableViewHeight()
+        }
+    }
+
+    private func invalidateTableViewHeight() {
+        var view: UIView? = superview
+        while let v = view {
+            if let tableView = v as? UITableView {
+                tableView.beginUpdates()
+                tableView.endUpdates()
+                break
+            }
+            view = v.superview
+        }
     }
 
     private func setupPlaceholderSkeleton() {

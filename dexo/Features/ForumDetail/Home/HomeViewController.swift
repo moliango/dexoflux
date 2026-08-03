@@ -707,6 +707,8 @@ final class HomeViewController: ObservableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         observe(viewModel)
+        // Keep the home bell badge in sync with coordinator refresh / mark-read (Phase 3).
+        observe(notificationCoordinator)
         view.backgroundColor = .systemGroupedBackground
 
         tableView.tableFooterView = emptyFooterView
@@ -747,8 +749,10 @@ final class HomeViewController: ObservableViewController {
         emptyStateView.onRefresh = { [weak self] in
             self?.refreshFromEmptyState()
         }
-        offlineIndicatorView.onRetry = {
+        offlineIndicatorView.onRetry = { [weak self] in
             ConnectivityService.shared.check()
+            // Always attempt list recovery — path may already look "up" while forum is still down.
+            self?.recoverTransportAndReload()
         }
 
         let fabBottomConstraint = floatingActionButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -currentBottomChromeHeight - 20)

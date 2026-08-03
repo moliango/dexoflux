@@ -148,7 +148,7 @@ final class HomeViewModel: DexoObservableObject {
     }
 
     @discardableResult
-    func updateTopicReadProgress(topicId: Int, highestSeen: Int) -> Bool {
+    func updateTopicReadProgress(topicId: Int, highestSeen: Int, notify: Bool = true) -> Bool {
         guard highestSeen > 0,
               let index = topics.firstIndex(where: { $0.id == topicId })
         else { return false }
@@ -158,7 +158,10 @@ final class HomeViewModel: DexoObservableObject {
             return false
         }
         topics[index] = current.updatingReadProgress(highestSeen: highestSeen)
-        notifyChanged()
+        // Callers that only need a single-row reconfigure pass `notify: false` (Phase 7).
+        if notify {
+            notifyChanged()
+        }
         return true
     }
 

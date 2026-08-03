@@ -157,9 +157,13 @@ extension HomeViewController {
             authGate: authGate,
             notificationCoordinator: notificationCoordinator
         )
-        notificationsVC.onTopicSelected = { [weak self] topicId in
+        notificationsVC.onTopicSelected = { [weak self] topicId, postNumber in
             guard let self else { return }
-            let detailVC = TopicDetailViewController(api: self.api, topicId: topicId)
+            let detailVC = TopicDetailViewController(
+                api: self.api,
+                topicId: topicId,
+                initialFloor: postNumber
+            )
             self.navigationController?.pushViewController(detailVC, animated: true)
         }
         let nav = UINavigationController(rootViewController: notificationsVC)

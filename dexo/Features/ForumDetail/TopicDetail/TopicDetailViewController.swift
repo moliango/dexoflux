@@ -7,6 +7,8 @@ final class TopicDetailViewController: ObservableViewController {
     private let api: DiscourseAPI
     private let topicId: Int
     private let initialFloor: Int?
+    /// Last read post number from list/detail — used by jump-to-unread (Phase 1).
+    private var lastReadPostNumber: Int?
     private let baseURL: String
     private var hasTitleHeader = false
     private var lastCategoryPresentation: TopicCategoryBadgePresentation?
@@ -59,7 +61,9 @@ final class TopicDetailViewController: ObservableViewController {
     private lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
         let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleBackSwipeFallback(_:)))
         gesture.maximumNumberOfTouches = 1
-        gesture.cancelsTouchesInView = true
+        // Don't cancel child touches by default — progress-bar pans live on a
+        // descendant and must keep receiving the touch sequence.
+        gesture.cancelsTouchesInView = false
         gesture.delegate = self
         return gesture
     }()
@@ -269,11 +273,17 @@ final class TopicDetailViewController: ObservableViewController {
         return v
     }()
 
-    init(api: DiscourseAPI, topicId: Int, initialFloor: Int? = nil) {
+    init(
+        api: DiscourseAPI,
+        topicId: Int,
+        initialFloor: Int? = nil,
+        lastReadPostNumber: Int? = nil
+    ) {
         self.api = api
         self.viewModel = TopicDetailViewModel(api: api)
         self.topicId = topicId
         self.initialFloor = initialFloor
+        self.lastReadPostNumber = lastReadPostNumber
         self.baseURL = api.baseURL
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
@@ -371,8 +381,14 @@ final class TopicDetailViewController: ObservableViewController {
 
         Task {
             await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
+            // Prefer list hint; fall back to detail payload when present.
+            if let detailLastRead = viewModel.topic?.lastReadPostNumber {
+                lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLastRead)
+            }
             if let initialFloor {
                 jumpToFloor(initialFloor)
+            } else if let resume = resumeUnreadFloor() {
+                jumpToFloor(resume)
             }
         }
         Task {
@@ -419,9 +435,10 @@ final class TopicDetailViewController: ObservableViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Keep the progress capsule above the full-screen table so pan/long-press
-        // hit-test the bar instead of scrolling the topic list.
-        view.bringSubviewToFront(bottomBar)
+        // hit-test the bar instead of scrolling the topic list. Reply stays trailing
+        // and must not cover the centered capsule — bring bar last.
         view.bringSubviewToFront(floatingReplyButton)
+        view.bringSubviewToFront(bottomBar)
         // Reserve bottom space for the centered floor control and the floating reply affordance.
         let bottomInset: CGFloat = 56 + 12 + 32
         if tableView.contentInset.bottom != bottomInset {
@@ -519,6 +536,8 @@ final class TopicDetailViewController: ObservableViewController {
 
         bottomBar.isHidden = !viewModel.isReady
         floatingReplyButton.isHidden = !viewModel.isReady
+        // Settings observe → updateUI; keep swipe/long-press enablement in sync.
+        bottomBar.refreshGestureRecognizers()
         updateBottomBarProgress()
 
         // Show posts — all visible posts that have parsed blocks
@@ -1180,14 +1199,8 @@ final class TopicDetailViewController: ObservableViewController {
             menu: UIMenu(children: actions)
         )
         moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
-        let aiButton = UIBarButtonItem(
-            image: UIImage(systemName: "sparkles"),
-            style: .plain,
-            target: self,
-            action: #selector(aiAssistantTapped)
-        )
-        aiButton.accessibilityLabel = String(localized: "ai.chat.title", defaultValue: "AI 助手")
-        navigationItem.rightBarButtonItems = [moreButton, aiButton, searchButton]
+        // AI 助手只保留在进度条长按弧形菜单里，避免顶栏重复入口。
+        navigationItem.rightBarButtonItems = [moreButton, searchButton]
     }
 
     @objc private func aiAssistantTapped() {
@@ -1333,6 +1346,20 @@ final class TopicDetailViewController: ObservableViewController {
         let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let shareURL = "\(trimmedBase)/t/\(topicId)/\(post.postNumber)"
 
+        // Always share **readable cooked HTML**. Never paint markdown `raw` as-is.
+        // If cooked is missing, convert raw → simple HTML first.
+        let cookedTrimmed = post.cooked.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shareHTML: String = {
+            if !cookedTrimmed.isEmpty {
+                return PostImageLinkPreprocessor.rewrite(cookedTrimmed)
+            }
+            if let raw = post.raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                return ShareImageBodyComposer.normalizeCookedInput(raw)
+            }
+            return ""
+        }()
+        let contentBlocks = (viewModel.parsedBlocks[post.id] ?? []).map(\.block)
+
         let preview = ShareImagePreviewViewController(
             model: .init(
                 topicId: topicId,
@@ -1343,7 +1370,8 @@ final class TopicDetailViewController: ObservableViewController {
                 username: post.username,
                 createdAtText: createdAtText,
                 avatarURL: avatarURL,
-                cookedHTML: post.cooked,
+                cookedHTML: shareHTML,
+                contentBlocks: contentBlocks,
                 shareURL: shareURL,
                 postNumber: post.postNumber
             )
@@ -1710,14 +1738,28 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
     }
 
     private func jumpToUnreadOrFirst() {
-        let current = currentVisibleFloor()
         let total = viewModel.totalFloors
         guard total > 0 else { return }
+        // Real unread: last_read + 1 (from list or detail). Fallback: next floor / top.
+        if let unread = resumeUnreadFloor() {
+            jumpToFloor(unread)
+            return
+        }
+        let current = currentVisibleFloor()
         if current < total {
             jumpToFloor(current + 1)
         } else {
             jumpToFloor(1)
         }
+    }
+
+    /// First unread floor from `lastReadPostNumber`, clamped to total floors.
+    private func resumeUnreadFloor() -> Int? {
+        let total = viewModel.totalFloors
+        guard total > 0 else { return nil }
+        let lastRead = lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber ?? 0
+        guard lastRead > 0, lastRead < total else { return nil }
+        return min(lastRead + 1, total)
     }
 
     private func openTopicInBrowser() {
@@ -1856,6 +1898,9 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             ])
         }
         jumpOverlay.isHidden = false
+        // Keep progress capsule interactive above the jump dimming layer.
+        view.bringSubviewToFront(floatingReplyButton)
+        view.bringSubviewToFront(bottomBar)
     }
 
     private func hideJumpOverlay() {
@@ -2276,7 +2321,8 @@ extension TopicDetailViewController: PostCellDelegate {
             topicId: topicId,
             replyToPost: post,
             baseURL: baseURL,
-            initialText: initialText
+            initialText: initialText,
+            mentionSeedUsers: mentionSeedUsersFromLoadedPosts()
         )
         composer.onPostCreated = { [weak self] in
             guard let self else { return }
@@ -2291,6 +2337,25 @@ extension TopicDetailViewController: PostCellDelegate {
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
         }
         present(composer, animated: true)
+    }
+
+    /// Unique authors from currently loaded posts — instant @ list like FluxDo.
+    private func mentionSeedUsersFromLoadedPosts() -> [DiscourseMentionUser] {
+        var seen = Set<String>()
+        var users: [DiscourseMentionUser] = []
+        for post in viewModel.posts {
+            let key = post.username.lowercased()
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            users.append(
+                DiscourseMentionUser(
+                    username: post.username,
+                    name: post.name,
+                    avatarTemplate: post.avatarTemplate
+                )
+            )
+            if users.count >= 12 { break }
+        }
+        return users
     }
 
     private func loadAndPresentPostEditor(postId: Int) {
@@ -2309,7 +2374,8 @@ extension TopicDetailViewController: PostCellDelegate {
                     replyToPost: nil,
                     baseURL: baseURL,
                     initialText: raw,
-                    submissionMode: .edit(postId: postId)
+                    submissionMode: .edit(postId: postId),
+                    mentionSeedUsers: self.mentionSeedUsersFromLoadedPosts()
                 )
                 composer.onPostUpdated = { [weak self] updatedPostId in
                     guard let self else { return }

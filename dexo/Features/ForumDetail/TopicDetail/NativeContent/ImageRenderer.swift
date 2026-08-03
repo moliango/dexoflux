@@ -26,6 +26,10 @@ final class TappableImageContainer: UIView {
     private static let referenceWidth: CGFloat = 690
 
     private let refererBaseURL: String?
+    private let sourceURL: URL
+    private let loadContainerWidth: CGFloat
+    private let loadHasOriginalSize: Bool
+    private var didFailLoad = false
 
     init(
         url: URL,
@@ -39,6 +43,9 @@ final class TappableImageContainer: UIView {
         imageURL = href ?? url
         self.galleryImageURLs = galleryImageURLs
         self.refererBaseURL = refererBaseURL
+        self.sourceURL = url
+        self.loadContainerWidth = containerWidth
+        self.loadHasOriginalSize = width != nil && height != nil
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -89,13 +96,15 @@ final class TappableImageContainer: UIView {
         // Pause GIF animation by default; resumed when visible on screen
         imageView.autoPlayAnimatedImage = false
 
-        let hasOriginalSize = width != nil && height != nil
-
-        loadImage(url: url, containerWidth: containerWidth, hasOriginalSize: hasOriginalSize)
+        loadImage(url: url, containerWidth: containerWidth, hasOriginalSize: loadHasOriginalSize)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(imageTapped))
         addGestureRecognizer(tap)
         isUserInteractionEnabled = true
+        accessibilityHint = String(
+            localized: "topic.image.retry_hint",
+            defaultValue: "加载失败时可点按重试"
+        )
     }
 
     @available(*, unavailable)
@@ -104,19 +113,32 @@ final class TappableImageContainer: UIView {
     }
 
     private func loadImage(url: URL, containerWidth: CGFloat, hasOriginalSize: Bool) {
+        didFailLoad = false
+        imageView.backgroundColor = .secondarySystemFill
+        imageView.contentMode = .scaleAspectFill
+        imageView.tintColor = nil
+        imageView.image = nil
+
         let apply: (UIImage?) -> Void = { [weak self] image in
             guard let self else { return }
             guard let image else {
+                self.didFailLoad = true
                 self.imageView.backgroundColor = .tertiarySystemFill
                 self.imageView.contentMode = .center
                 let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
                 self.imageView.image = UIImage(
-                    systemName: "photo.badge.exclamationmark",
+                    systemName: "arrow.clockwise.circle",
                     withConfiguration: config
                 )
                 self.imageView.tintColor = .tertiaryLabel
+                self.accessibilityLabel = String(
+                    localized: "topic.image.load_failed",
+                    defaultValue: "图片加载失败，点按重试"
+                )
                 return
             }
+            self.didFailLoad = false
+            self.accessibilityLabel = nil
             self.imageView.backgroundColor = .clear
             self.imageView.contentMode = .scaleAspectFill
             self.imageView.tintColor = nil
@@ -165,6 +187,16 @@ final class TappableImageContainer: UIView {
     }
 
     @objc private func imageTapped() {
+        // Failed load → tap retries instead of opening the gallery (Phase 1).
+        if didFailLoad {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            loadImage(
+                url: sourceURL,
+                containerWidth: loadContainerWidth,
+                hasOriginalSize: loadHasOriginalSize
+            )
+            return
+        }
         guard let imageURL else { return }
         let imageURLs = galleryImageURLs.isEmpty ? [imageURL] : galleryImageURLs
         delegate?.postCell(didTapImageURL: imageURL, imageURLs: imageURLs)

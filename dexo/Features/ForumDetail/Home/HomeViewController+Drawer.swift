@@ -171,7 +171,24 @@ extension HomeViewController {
     }
 
     func openTopic(_ topicId: Int) {
-        let detailVC = TopicDetailViewController(api: api, topicId: topicId)
+        let topic = viewModel.topics.first(where: { $0.id == topicId })
+        // Resume at first unread floor when list has last_read (Phase 1).
+        let resumeFloor = Self.resumeReadingFloor(for: topic)
+        let detailVC = TopicDetailViewController(
+            api: api,
+            topicId: topicId,
+            initialFloor: resumeFloor,
+            lastReadPostNumber: topic?.lastReadPostNumber
+        )
         navigationController?.pushViewController(detailVC, animated: true)
+    }
+
+    /// First unread post number, or `nil` to open at the top.
+    static func resumeReadingFloor(for topic: DiscourseTopicList.Topic?) -> Int? {
+        guard let topic else { return nil }
+        let lastRead = topic.lastReadPostNumber ?? 0
+        let highest = topic.highestPostNumber ?? topic.postsCount
+        guard lastRead > 0, highest > lastRead else { return nil }
+        return min(lastRead + 1, highest)
     }
 }

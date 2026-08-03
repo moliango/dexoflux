@@ -56,7 +56,13 @@ extension HomeViewController {
                   let topicId = notification.userInfo?[TopicReadProgressUserInfoKey.topicId] as? Int,
                   let highestSeen = notification.userInfo?[TopicReadProgressUserInfoKey.highestSeen] as? Int
             else { return }
-            self.viewModel.updateTopicReadProgress(topicId: topicId, highestSeen: highestSeen)
+            // Phase 7: reconfigure the single row — avoid full Home chrome rebuild.
+            guard self.viewModel.updateTopicReadProgress(
+                topicId: topicId,
+                highestSeen: highestSeen,
+                notify: false
+            ) else { return }
+            self.applyTopicSnapshot(animatingDifferences: false)
         }
     }
 

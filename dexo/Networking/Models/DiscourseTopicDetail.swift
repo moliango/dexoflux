@@ -32,6 +32,8 @@ struct DiscourseTopicDetail: Decodable {
     var userCreatedSharedIssue: Bool
     var notificationLevel: NotificationLevel
     let canEdit: Bool
+    /// Server last-read floor; used to resume / jump-to-unread (Phase 1).
+    let lastReadPostNumber: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, title, tags, bookmarked, views
@@ -48,6 +50,7 @@ struct DiscourseTopicDetail: Decodable {
         case canCreateSharedIssue = "can_create_shared_issue"
         case sharedIssueCount = "shared_issue_count"
         case userCreatedSharedIssue = "user_created_shared_issue"
+        case lastReadPostNumber = "last_read_post_number"
         case details
     }
 
@@ -71,6 +74,7 @@ struct DiscourseTopicDetail: Decodable {
         canCreateSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .canCreateSharedIssue)) ?? false
         sharedIssueCount = container.decodeLossyInt(forKey: .sharedIssueCount) ?? 0
         userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
+        lastReadPostNumber = container.decodeLossyInt(forKey: .lastReadPostNumber)
         let details = try? container.decodeIfPresent(Details.self, forKey: .details)
         notificationLevel = NotificationLevel(rawValue: details?.notificationLevel ?? 1) ?? .regular
         canEdit = details?.canEdit ?? false
