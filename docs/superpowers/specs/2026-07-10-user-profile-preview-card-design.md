@@ -19,7 +19,7 @@ Restyle the UIKit user profile preview to use the reference card hierarchy witho
 - Avatar halo: about 64-72 pt overall.
 - Display name source size: 18 pt through `AppSettings.appInterfaceFont(...)`.
 - Username and trust level: about 11 pt source size.
-- Bio: about 12.75 pt source size, up to three lines.
+- Bio: about 14.67 pt source size, up to three lines.
 - Metadata and statistics: about 10.25-10.75 pt source size.
 - Primary action visual height: 34 pt; secondary action visual height: 32 pt.
 - Expand button hit testing to at least 44 pt without enlarging the visible controls.

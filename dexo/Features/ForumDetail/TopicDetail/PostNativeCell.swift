@@ -190,7 +190,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let timeLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 11.75)
+        label.font = .systemFont(ofSize: 13.67)
         label.textColor = .secondaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -220,7 +220,7 @@ final class PostNativeCell: UITableViewCell {
 
     private let floorLabel: UILabel = {
         let label = UILabel()
-        label.font = .monospacedDigitSystemFont(ofSize: 11.75, weight: .regular)
+        label.font = .monospacedDigitSystemFont(ofSize: 13.67, weight: .regular)
         label.textColor = .tertiaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
         return label

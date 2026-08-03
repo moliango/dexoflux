@@ -149,10 +149,10 @@ extension AppSettings {
 
         var basePointSize: CGFloat {
             switch self {
-            case .small: return 11.75
-            case .standard: return 12.75
-            case .large: return 14
-            case .extraLarge: return 15.25
+            case .small: return 13.67
+            case .standard: return 13.94
+            case .large: return 15.92
+            case .extraLarge: return 17.17
             }
         }
 

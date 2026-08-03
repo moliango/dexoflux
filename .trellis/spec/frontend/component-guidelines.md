@@ -50,8 +50,8 @@ Questions to answer:
 ### Typography Baseline
 
 - UIKit interface text uses `AppSettings.appInterfaceFont(...)` or the installed `UIFont.systemFont` override. Do not hardcode a separate visual default for the Me tab or other app chrome.
-- The global interface font slider default is `100%`, but the visual baseline intentionally applies `AppSettings.interfaceFontDefaultVisualMultiplier = 0.85`. A `15pt` source label therefore renders at about `12.75pt` by default.
-- Treat `12.75pt` as the default visual interface body size for Me tab ordinary labels and similar chrome. Do not "fix" this by resetting the slider default to `85%`; `85%` is legacy migration input, not the current user-facing default.
+- The global interface font slider default is `100%`, but the visual baseline intentionally applies `AppSettings.interfaceFontDefaultVisualMultiplier` (`14.67 / 15`). A `15pt` source label therefore renders at `14.67pt` by default.
+- Treat `14.67pt` as the default visual interface body size for Me tab ordinary labels and similar chrome. Do not "fix" this by resetting the slider default to a non-100% value; `85%` is legacy migration input, not the current user-facing default. Content standard body size (`ContentFontSize.standard.basePointSize`) is also `14.67pt` so reading content and interface chrome stay aligned at the default scale.
 - Tab bar fonts stay outside global interface scaling and must continue to use `AppSettings.tabBarItemFont(selected:)`.
 - Topic Detail post body and post-context identity text are content typography, not app chrome. Author name, username, user title, floor/time metadata, reply-target labels, and adjacent avatar sizing should scale from the content font settings so they stay visually aligned with comments.
 

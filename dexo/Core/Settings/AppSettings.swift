@@ -11,7 +11,11 @@ final class AppSettings: DexoObservableObject {
     static let defaultFontScalePercent = 100
     static let defaultInterfaceFontScalePercent = 100
     static let legacyInterfaceFontDefaultPercent = 85
-    static let interfaceFontDefaultVisualMultiplier: CGFloat = 0.85
+    /// Default visual size for a 15pt source interface label (Me tab body chrome, etc.).
+    static let interfaceFontDefaultVisualPointSize: CGFloat = 14.67
+    static let interfaceFontReferencePointSize: CGFloat = 15
+    static let interfaceFontDefaultVisualMultiplier: CGFloat =
+        interfaceFontDefaultVisualPointSize / interfaceFontReferencePointSize
 
     let defaults = UserDefaults.standard
 

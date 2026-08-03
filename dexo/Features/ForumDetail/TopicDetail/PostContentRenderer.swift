@@ -30,9 +30,9 @@ private struct WebRenderStyle: Sendable {
     let bodyFontFamilyCSS: String
 
     static let `default` = WebRenderStyle(
-        bodyFontSize: 12.75,
-        quoteFontSize: 11.75,
-        codeFontSize: 10.75,
+        bodyFontSize: 13.94,
+        quoteFontSize: 12.94,
+        codeFontSize: 11.94,
         accentHex: "#0079d3",
         backgroundHex: "transparent",
         mutedBackgroundHex: "#f6f8ff",
