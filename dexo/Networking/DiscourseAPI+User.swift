@@ -77,6 +77,14 @@ extension DiscourseAPI {
         try await requestVoid(route: .unfollow(username: username))
     }
 
+    /// Composer @-mention search. Empty `term` + `topicId` returns recent participants.
+    func searchUsersForMention(term: String, topicId: Int? = nil) async throws -> [DiscourseMentionUser] {
+        let response: DiscourseUserSearchResponse = try await request(
+            route: .userSearch(term: term, topicId: topicId)
+        )
+        return response.users
+    }
+
     func fetchUserActions(username: String, filter: String, offset: Int = 0) async throws -> [DiscourseUserAction] {
         let response: DiscourseUserActionResponse = try await request(
             route: .userActions(username: username, filter: filter, offset: offset)

@@ -25,13 +25,7 @@ struct NewTopicSubmission: Equatable {
 }
 
 final class NewTopicComposerViewController: UIViewController {
-    private enum ComposerPanel {
-        case none
-        case emoji
-        case tools
-    }
-
-    private static let customPanelHeight: CGFloat = 420
+    // Panel state shared via ComposerPanelKind
 
     private let api: DiscourseAPI
     private let categories: [DiscourseCategory]
@@ -41,13 +35,15 @@ final class NewTopicComposerViewController: UIViewController {
     private let initialTitle: String
     private let initialRaw: String
 
-    private var currentPanel: ComposerPanel = .none
+    private var currentPanel: ComposerPanelKind = .none
     private var hasLoadedForumEmojis = false
     private var isPreviewingMarkdown = false
     private var isUploading = false
     private var isSubmitting = false
+    private var draftSaveTask: Task<Void, Never>?
     private var panelHeightConstraint: NSLayoutConstraint?
-
+    private let markdownCoordinator = ComposerMarkdownCoordinator()
+    
     var onTopicCreated: ((Int) -> Void)?
 
     private let titleField: UITextField = {
@@ -163,15 +159,15 @@ final class NewTopicComposerViewController: UIViewController {
         return view
     }()
 
-    private let emojiToggleButton = NewTopicComposerViewController.makeCircleToolbarButton(
+    private let emojiToggleButton = ComposerToolbarFactory.makeCircleButton(
         systemName: "face.smiling",
         accessibilityLabel: String(localized: "reply.toolbar.emoji")
     )
-    private let previewToggleButton = NewTopicComposerViewController.makePlainToolbarButton(
+    private let previewToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "eye",
         accessibilityLabel: String(localized: "reply.toolbar.preview")
     )
-    private let toolsToggleButton = NewTopicComposerViewController.makePlainToolbarButton(
+    private let toolsToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "plus.circle.fill",
         accessibilityLabel: String(localized: "reply.toolbar.more_tools")
     )
@@ -199,10 +195,10 @@ final class NewTopicComposerViewController: UIViewController {
         let picker = EmojiStickerPanelView()
         picker.translatesAutoresizingMaskIntoConstraints = false
         picker.onEmojiSelected = { [weak self] emoji in
-            self?.replaceSelection(with: emoji)
+            self?.composerInsertRaw(emoji)
         }
         picker.onStickerMarkdownSelected = { [weak self] markdown in
-            self?.replaceSelection(with: markdown + "\n")
+            self?.composerInsertRaw(markdown + "\n")
         }
         return picker
     }()
@@ -211,7 +207,7 @@ final class NewTopicComposerViewController: UIViewController {
         let panel = ComposerToolPanelView()
         panel.translatesAutoresizingMaskIntoConstraints = false
         panel.onToolSelected = { [weak self] tool in
-            self?.handleTool(tool)
+            self?.markdownCoordinator.handleTool(tool)
         }
         return panel
     }()
@@ -281,11 +277,29 @@ final class NewTopicComposerViewController: UIViewController {
         setupCustomPanel()
         emojiPickerView.presentingViewController = self
 
-        titleField.text = initialTitle
-        textView.text = initialRaw
+        // Explicit initial (server draft) wins; otherwise restore local autosave.
+        let hasExplicitInitial = !initialTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !initialRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if hasExplicitInitial {
+            titleField.text = initialTitle
+            textView.text = initialRaw
+        } else if let draft = ComposerLocalDraftStore.loadNewTopic(baseURL: api.baseURL) {
+            titleField.text = draft.title
+            textView.text = draft.raw
+            if let categoryId = draft.categoryId {
+                selectedCategoryId = categoryId
+            }
+            if !draft.tags.isEmpty {
+                selectedTags = Self.normalizedTags(draft.tags)
+            }
+        } else {
+            titleField.text = initialTitle
+            textView.text = initialRaw
+        }
         titleField.delegate = self
         titleField.addTarget(self, action: #selector(textInputsChanged), for: .editingChanged)
         textView.delegate = self
+        markdownCoordinator.surface = self
         categoryButton.addTarget(self, action: #selector(categoryButtonPressed), for: .touchDown)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
@@ -303,6 +317,31 @@ final class NewTopicComposerViewController: UIViewController {
         } else {
             textView.becomeFirstResponder()
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        draftSaveTask?.cancel()
+        persistLocalDraftImmediately()
+    }
+
+    private func scheduleLocalDraftSave() {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistLocalDraftImmediately()
+        }
+    }
+
+    private func persistLocalDraftImmediately() {
+        ComposerLocalDraftStore.saveNewTopic(
+            baseURL: api.baseURL,
+            title: titleField.text ?? "",
+            raw: textView.text ?? "",
+            categoryId: selectedCategoryId,
+            tags: selectedTags
+        )
     }
 
     private func setupHierarchy() {
@@ -369,78 +408,22 @@ final class NewTopicComposerViewController: UIViewController {
     private func setupToolbar() {
         bottomStackView.addArrangedSubview(toolbarContainer)
         bottomStackView.addArrangedSubview(customPanelContainer)
-        toolbarContainer.heightAnchor.constraint(equalToConstant: 62).isActive = true
-        toolbarContainer.addSubview(emojiToggleButton)
-        toolbarContainer.addSubview(uploadStatusLabel)
-        toolbarContainer.addSubview(rightToolbarPill)
-        rightToolbarPill.addSubview(previewToggleButton)
-        rightToolbarPill.addSubview(toolsToggleButton)
-
-        NSLayoutConstraint.activate([
-            emojiToggleButton.leadingAnchor.constraint(equalTo: toolbarContainer.leadingAnchor, constant: 24),
-            emojiToggleButton.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-            emojiToggleButton.widthAnchor.constraint(equalToConstant: 44),
-            emojiToggleButton.heightAnchor.constraint(equalToConstant: 44),
-
-            uploadStatusLabel.leadingAnchor.constraint(equalTo: emojiToggleButton.trailingAnchor, constant: 12),
-            uploadStatusLabel.trailingAnchor.constraint(equalTo: rightToolbarPill.leadingAnchor, constant: -12),
-            uploadStatusLabel.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-
-            rightToolbarPill.trailingAnchor.constraint(equalTo: toolbarContainer.trailingAnchor, constant: -24),
-            rightToolbarPill.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-            rightToolbarPill.heightAnchor.constraint(equalToConstant: 44),
-
-            previewToggleButton.leadingAnchor.constraint(equalTo: rightToolbarPill.leadingAnchor, constant: 10),
-            previewToggleButton.topAnchor.constraint(equalTo: rightToolbarPill.topAnchor),
-            previewToggleButton.bottomAnchor.constraint(equalTo: rightToolbarPill.bottomAnchor),
-            previewToggleButton.widthAnchor.constraint(equalToConstant: 44),
-
-            toolsToggleButton.leadingAnchor.constraint(equalTo: previewToggleButton.trailingAnchor, constant: 4),
-            toolsToggleButton.trailingAnchor.constraint(equalTo: rightToolbarPill.trailingAnchor, constant: -10),
-            toolsToggleButton.topAnchor.constraint(equalTo: rightToolbarPill.topAnchor),
-            toolsToggleButton.bottomAnchor.constraint(equalTo: rightToolbarPill.bottomAnchor),
-            toolsToggleButton.widthAnchor.constraint(equalToConstant: 44),
-        ])
+        ComposerToolbarFactory.installToolbarLayout(
+            in: toolbarContainer,
+            emojiButton: emojiToggleButton,
+            uploadStatusLabel: uploadStatusLabel,
+            rightPill: rightToolbarPill,
+            previewButton: previewToggleButton,
+            toolsButton: toolsToggleButton
+        )
     }
 
     private func setupCustomPanel() {
-        customPanelContainer.addSubview(emojiPickerView)
-        customPanelContainer.addSubview(toolsPanelView)
-        let height = customPanelContainer.heightAnchor.constraint(equalToConstant: 0)
-        panelHeightConstraint = height
-        NSLayoutConstraint.activate([
-            height,
-            emojiPickerView.topAnchor.constraint(equalTo: customPanelContainer.topAnchor),
-            emojiPickerView.leadingAnchor.constraint(equalTo: customPanelContainer.leadingAnchor),
-            emojiPickerView.trailingAnchor.constraint(equalTo: customPanelContainer.trailingAnchor),
-            emojiPickerView.bottomAnchor.constraint(equalTo: customPanelContainer.bottomAnchor),
-            toolsPanelView.topAnchor.constraint(equalTo: customPanelContainer.topAnchor),
-            toolsPanelView.leadingAnchor.constraint(equalTo: customPanelContainer.leadingAnchor),
-            toolsPanelView.trailingAnchor.constraint(equalTo: customPanelContainer.trailingAnchor),
-            toolsPanelView.bottomAnchor.constraint(equalTo: customPanelContainer.bottomAnchor),
-        ])
-        emojiPickerView.isHidden = true
-        toolsPanelView.isHidden = true
-    }
-
-    private static func makeCircleToolbarButton(systemName: String, accessibilityLabel: String) -> UIButton {
-        let button = makePlainToolbarButton(systemName: systemName, accessibilityLabel: accessibilityLabel)
-        button.backgroundColor = .secondarySystemGroupedBackground
-        button.layer.cornerRadius = 22
-        button.layer.cornerCurve = .continuous
-        return button
-    }
-
-    private static func makePlainToolbarButton(systemName: String, accessibilityLabel: String) -> UIButton {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setImage(
-            UIImage(systemName: systemName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
-            for: .normal
+        panelHeightConstraint = ComposerToolbarFactory.installPanelLayout(
+            in: customPanelContainer,
+            emojiPanel: emojiPickerView,
+            toolsPanel: toolsPanelView
         )
-        button.tintColor = .label
-        button.accessibilityLabel = accessibilityLabel
-        return button
     }
 
     private static func normalizedTags(_ tags: [String]) -> [String] {
@@ -551,6 +534,7 @@ final class NewTopicComposerViewController: UIViewController {
 
     @objc private func textInputsChanged() {
         updateEditorState()
+        scheduleLocalDraftSave()
     }
 
     private func updateEditorState() {
@@ -596,7 +580,7 @@ final class NewTopicComposerViewController: UIViewController {
         updateEditorState()
     }
 
-    private func setPanel(_ panel: ComposerPanel) {
+    private func setPanel(_ panel: ComposerPanelKind) {
         if isPreviewingMarkdown {
             isPreviewingMarkdown = false
             textView.isHidden = false
@@ -613,13 +597,13 @@ final class NewTopicComposerViewController: UIViewController {
             textView.resignFirstResponder()
             emojiPickerView.isHidden = false
             toolsPanelView.isHidden = true
-            panelHeightConstraint?.constant = Self.customPanelHeight
+            panelHeightConstraint?.constant = ComposerToolbarFactory.customPanelHeight
             loadForumEmojis()
         case .tools:
             textView.resignFirstResponder()
             emojiPickerView.isHidden = true
             toolsPanelView.isHidden = false
-            panelHeightConstraint?.constant = Self.customPanelHeight
+            panelHeightConstraint?.constant = ComposerToolbarFactory.customPanelHeight
         }
         updateToolbarState()
         DexoMotion.animate(duration: DexoMotion.short) { self.view.layoutIfNeeded() }
@@ -637,12 +621,15 @@ final class NewTopicComposerViewController: UIViewController {
     }
 
     private func updateToolbarState() {
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        previewToggleButton.setImage(UIImage(systemName: isPreviewingMarkdown ? "eye.slash.fill" : "eye", withConfiguration: config), for: .normal)
-        previewToggleButton.tintColor = isPreviewingMarkdown ? .systemBlue : .label
-        toolsToggleButton.tintColor = currentPanel == .tools ? .systemBlue : .label
-        emojiToggleButton.tintColor = currentPanel == .emoji ? .systemBlue : .label
+        ComposerToolbarFactory.updateToolbarTints(
+            emojiButton: emojiToggleButton,
+            previewButton: previewToggleButton,
+            toolsButton: toolsToggleButton,
+            panel: currentPanel,
+            isPreviewing: isPreviewingMarkdown
+        )
     }
+
 
     private func loadForumEmojis() {
         guard !hasLoadedForumEmojis else { return }
@@ -656,410 +643,6 @@ final class NewTopicComposerViewController: UIViewController {
                 emojiPickerView.showError()
             }
         }
-    }
-
-    private func handleTool(_ tool: ComposerMarkdownTool) {
-        guard !isUploading else { return }
-        switch tool {
-        case .image: pickImages()
-        case .attachment: pickAttachment()
-        case .media: chooseMedia()
-        case .heading: chooseHeading()
-        case .bold: wrapSelection(start: "**", end: "**", placeholder: String(localized: "reply.tool.placeholder.bold"))
-        case .italic: wrapSelection(start: "*", end: "*", placeholder: String(localized: "reply.tool.placeholder.italic"))
-        case .strikethrough: wrapSelection(start: "~~", end: "~~", placeholder: String(localized: "reply.tool.placeholder.strikethrough"))
-        case .bulletList: applyLinePrefix("- ")
-        case .numberedList: applyLinePrefix("1. ")
-        case .link: insertLink()
-        case .quote: applyLinePrefix("> ")
-        case .callout: chooseCallout()
-        case .template: insertTemplate()
-        case .aiReview: runAIPostReview()
-        case .inlineCode:
-            wrapSelection(start: "`", end: "`", placeholder: String(localized: "reply.tool.placeholder.code"))
-        case .codeBlock: insertCodeBlock()
-        case .spoiler:
-            wrapSelection(
-                start: "[spoiler]",
-                end: "[/spoiler]",
-                placeholder: String(localized: "reply.tool.placeholder.spoiler", defaultValue: "剧透内容")
-            )
-        case .imageGrid: wrapImagesInGrid()
-        case .insertBlock: chooseInsertBlock()
-        }
-        if tool.closesPanelAfterAction { closePanel(returnToKeyboard: true) }
-    }
-
-    private var pendingMediaKind: MediaPickKind?
-
-    private enum MediaPickKind {
-        case audio, video, voice
-    }
-
-    private func chooseMedia() {
-        let alert = UIAlertController(title: "音视频", message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "上传音频", style: .default) { [weak self] _ in self?.pickMedia(kind: .audio) })
-        alert.addAction(UIAlertAction(title: "上传视频", style: .default) { [weak self] _ in self?.pickMedia(kind: .video) })
-        alert.addAction(UIAlertAction(title: "语音消息", style: .default) { [weak self] _ in self?.pickMedia(kind: .voice) })
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func pickMedia(kind: MediaPickKind) {
-        pendingMediaKind = kind
-        let types: [UTType] = (kind == .video)
-            ? [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
-            : [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-
-    @MainActor
-    private func uploadMediaFile(url: URL, kind: MediaPickKind) async {
-        setUploading(true, text: String(localized: "reply.uploading"))
-        defer {
-            setUploading(false, text: nil)
-            pendingMediaKind = nil
-        }
-        do {
-            let xzURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension("xz")
-            if FileManager.default.fileExists(atPath: xzURL.path) {
-                try FileManager.default.removeItem(at: xzURL)
-            }
-            try FileManager.default.copyItem(at: url, to: xzURL)
-            let upload = try await api.uploadComposerFile(fileURL: xzURL, filename: xzURL.lastPathComponent)
-            try? FileManager.default.removeItem(at: xzURL)
-            let originalExt = url.pathExtension.lowercased()
-            let isAudio = kind != .video
-            let mime = UTType(filenameExtension: originalExt)?.preferredMIMEType
-                ?? (isAudio ? "audio/mpeg" : "video/mp4")
-            let src = Self.mediaPlaybackPath(from: upload.shortURL)
-            let tag: String
-            if isAudio {
-                let audio = "<audio controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</audio>"
-                tag = kind == .voice ? "[wrap=voice]\n\(audio)\n[/wrap]" : audio
-            } else {
-                tag = "<video width=\"640\" height=\"360\" controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</video>"
-            }
-            let prefix = textView.text.isEmpty || textView.text.hasSuffix("\n") ? "" : "\n"
-            replaceSelection(with: "\(prefix)\(tag)\n")
-        } catch {
-            showUploadError(error)
-        }
-    }
-
-    private static func mediaPlaybackPath(from shortURL: String) -> String {
-        if shortURL.hasPrefix("upload://") {
-            var token = String(shortURL.dropFirst("upload://".count))
-            if let dot = token.lastIndex(of: ".") {
-                token = String(token[..<dot])
-            }
-            return "/uploads/short-url/\(token).xz"
-        }
-        if let dot = shortURL.lastIndex(of: ".") {
-            return String(shortURL[..<dot]) + ".xz"
-        }
-        return shortURL
-    }
-
-    private func chooseCallout() {
-        let types = [
-            "note", "tip", "info", "warning", "danger", "bug",
-            "example", "quote", "abstract", "todo", "success", "question", "failure",
-        ]
-        let alert = UIAlertController(title: String(localized: "reply.tool.note"), message: nil, preferredStyle: .actionSheet)
-        for type in types {
-            alert.addAction(UIAlertAction(title: type.capitalized, style: .default) { [weak self] _ in
-                self?.insertCallout(type)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func insertCallout(_ type: String) {
-        let placeholder = String(localized: "reply.tool.placeholder.note")
-        if textView.selectedRange.length > 0,
-           let range = Range(textView.selectedRange, in: textView.text) {
-            let selected = String(textView.text[range])
-            let quoted = selected
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map { "> \($0)" }
-                .joined(separator: "\n")
-            replaceSelection(with: "> [!\(type)]\n\(quoted)")
-        } else {
-            replaceSelection(with: "\n> [!\(type)]\n> \(placeholder)\n")
-        }
-    }
-
-    private func insertCodeBlock() {
-        let placeholder = String(localized: "reply.tool.placeholder.code")
-        if textView.selectedRange.length > 0,
-           let range = Range(textView.selectedRange, in: textView.text) {
-            replaceSelection(with: "```\n\(textView.text[range])\n```")
-        } else {
-            replaceSelection(with: "```\n\(placeholder)\n```\n")
-        }
-    }
-
-    private func chooseInsertBlock() {
-        let items: [(String, String)] = [
-            ("表格", "| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |\n"),
-            ("公式块", "$$\nE=mc^2\n$$\n"),
-            ("分隔线", "---\n"),
-            ("折叠详情", "[details=\"点开看\"]\n折叠内容\n[/details]\n"),
-        ]
-        let alert = UIAlertController(title: "插入块", message: nil, preferredStyle: .actionSheet)
-        for item in items {
-            alert.addAction(UIAlertAction(title: item.0, style: .default) { [weak self] _ in
-                self?.replaceSelection(with: item.1)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func wrapImagesInGrid() {
-        let text = textView.text ?? ""
-        let imagePattern = try! NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]+\)"#)
-        let nsText = text as NSString
-        let matches = imagePattern.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-        guard matches.count >= 2 else {
-            let alert = UIAlertController(
-                title: nil,
-                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-
-        if textView.selectedRange.length > 0,
-           let range = Range(textView.selectedRange, in: text) {
-            let selected = String(text[range])
-            let selectedMatches = imagePattern.matches(
-                in: selected,
-                range: NSRange(location: 0, length: (selected as NSString).length)
-            )
-            if selectedMatches.count >= 2 {
-                replaceSelection(with: "[grid]\n\(selected)\n[/grid]")
-                return
-            }
-        }
-
-        var bestStart = matches[0].range.location
-        var bestEnd = NSMaxRange(matches[0].range)
-        var runStart = bestStart
-        var runEnd = bestEnd
-        var runCount = 1
-        var bestCount = 1
-        for i in 1 ..< matches.count {
-            let prevEnd = NSMaxRange(matches[i - 1].range)
-            let curStart = matches[i].range.location
-            let between = nsText.substring(with: NSRange(location: prevEnd, length: curStart - prevEnd))
-            if between.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                runEnd = NSMaxRange(matches[i].range)
-                runCount += 1
-            } else {
-                if runCount > bestCount {
-                    bestCount = runCount
-                    bestStart = runStart
-                    bestEnd = runEnd
-                }
-                runStart = matches[i].range.location
-                runEnd = NSMaxRange(matches[i].range)
-                runCount = 1
-            }
-        }
-        if runCount > bestCount {
-            bestCount = runCount
-            bestStart = runStart
-            bestEnd = runEnd
-        }
-        guard bestCount >= 2 else {
-            let alert = UIAlertController(
-                title: nil,
-                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-        let chunk = nsText.substring(with: NSRange(location: bestStart, length: bestEnd - bestStart))
-        textView.text = nsText.replacingCharacters(
-            in: NSRange(location: bestStart, length: bestEnd - bestStart),
-            with: "[grid]\n\(chunk)\n[/grid]"
-        )
-        updateEditorState()
-    }
-
-    private func runAIPostReview() {
-        let content = (textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return }
-        let hud = UIAlertController(title: String(localized: "ai.review.running", defaultValue: "AI 预审中…"), message: nil, preferredStyle: .alert)
-        present(hud, animated: true)
-        Task {
-            do {
-                let result = try await AIPostReviewService.reviewDraft(title: nil, content: content, categoryName: nil)
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        let alert = UIAlertController(title: String(localized: "ai.review.result", defaultValue: "预审结果"), message: result, preferredStyle: .alert)
-                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
-                        self.present(alert, animated: true)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        let alert = UIAlertController(title: String(localized: "common.error", defaultValue: "错误"), message: error.localizedDescription, preferredStyle: .alert)
-                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
-                        self.present(alert, animated: true)
-                    }
-                }
-            }
-        }
-    }
-
-    private func replaceSelection(with text: String) {
-        guard let range = Range(textView.selectedRange, in: textView.text) else { return }
-        textView.text.replaceSubrange(range, with: text)
-        if let end = textView.position(from: textView.beginningOfDocument, offset: textView.selectedRange.location + text.utf16.count) {
-            textView.selectedTextRange = textView.textRange(from: end, to: end)
-        }
-        updateEditorState()
-    }
-
-    private func wrapSelection(start: String, end: String, placeholder: String) {
-        let selected = textView.selectedTextRange.flatMap { textView.text(in: $0) }
-        replaceSelection(with: "\(start)\((selected?.isEmpty == false ? selected : placeholder) ?? placeholder)\(end)")
-    }
-
-    private func applyLinePrefix(_ prefix: String) {
-        let nsText = textView.text as NSString
-        let lineRange = nsText.lineRange(for: NSRange(location: min(textView.selectedRange.location, nsText.length), length: 0))
-        if nsText.substring(with: lineRange).hasPrefix(prefix) {
-            textView.text = nsText.replacingCharacters(in: NSRange(location: lineRange.location, length: prefix.count), with: "")
-        } else {
-            textView.text = nsText.replacingCharacters(in: NSRange(location: lineRange.location, length: 0), with: prefix)
-        }
-        updateEditorState()
-    }
-
-    private func chooseHeading() {
-        let alert = UIAlertController(title: String(localized: "reply.tool.heading"), message: nil, preferredStyle: .actionSheet)
-        for level in 1 ... 5 {
-            alert.addAction(UIAlertAction(title: "H\(level)", style: .default) { [weak self] _ in
-                self?.applyLinePrefix(String(repeating: "#", count: level) + " ")
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func insertLink() {
-        let alert = UIAlertController(title: String(localized: "reply.tool.link"), message: nil, preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = String(localized: "reply.tool.link_text") }
-        alert.addTextField { field in
-            field.placeholder = "https://"
-            field.keyboardType = .URL
-            field.autocapitalizationType = .none
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "reply.tool.insert"), style: .default) { [weak self, weak alert] _ in
-            let title = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let url = alert?.textFields?.dropFirst().first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let self, let url, !url.isEmpty else { return }
-            replaceSelection(with: "[\((title?.isEmpty == false ? title : url) ?? url)](\(url))")
-        })
-        present(alert, animated: true)
-    }
-
-    private func insertTemplate() {
-        let alert = UIAlertController(title: String(localized: "reply.tool.template"), message: nil, preferredStyle: .actionSheet)
-        let templates = [
-            (String(localized: "reply.template.summary"), "## \(String(localized: "reply.template.summary"))\n\n- \n"),
-            (String(localized: "reply.template.steps"), "## \(String(localized: "reply.template.steps"))\n\n1. \n2. \n3. \n"),
-            (String(localized: "reply.template.code"), "```\n\(String(localized: "reply.tool.placeholder.code"))\n```\n"),
-        ]
-        templates.forEach { template in
-            alert.addAction(UIAlertAction(title: template.0, style: .default) { [weak self] _ in self?.replaceSelection(with: template.1) })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        present(alert, animated: true)
-    }
-
-    private func pickImages() {
-        var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .images
-        configuration.selectionLimit = 0
-        let picker = PHPickerViewController(configuration: configuration)
-        picker.delegate = self
-        present(picker, animated: true)
-    }
-
-    private func pickAttachment() {
-        pendingMediaKind = nil
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-
-    @MainActor
-    private func uploadPickedFiles(_ files: [(url: URL, filename: String)]) async {
-        guard !files.isEmpty else { return }
-        setUploading(true, text: String(localized: "reply.uploading"))
-        defer { setUploading(false, text: nil) }
-        for (index, file) in files.enumerated() {
-            if files.count > 1 { uploadStatusLabel.text = "\(index + 1)/\(files.count)" }
-            do {
-                let upload = try await api.uploadComposerFile(fileURL: file.url, filename: file.filename)
-                let prefix = textView.text.isEmpty || textView.text.hasSuffix("\n") ? "" : "\n"
-                replaceSelection(with: "\(prefix)\(upload.markdown)\n")
-            } catch {
-                showUploadError(error)
-                return
-            }
-        }
-    }
-
-    private func setUploading(_ uploading: Bool, text: String?) {
-        isUploading = uploading
-        uploadStatusLabel.text = text
-        uploadStatusLabel.isHidden = !uploading
-        textView.isEditable = !uploading
-        titleField.isEnabled = !uploading
-        categoryButton.isEnabled = !uploading
-        toolsPanelView.isUploading = uploading
-        updateEditorState()
-    }
-
-    private func showUploadError(_ error: Error) {
-        let alert = UIAlertController(title: String(localized: "reply.upload.failed"), message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-        present(alert, animated: true)
     }
 
     @objc private func cancelTapped() {
@@ -1118,6 +701,7 @@ final class NewTopicComposerViewController: UIViewController {
                         userInfo: [NSLocalizedDescriptionKey: String(localized: "new_topic.create.missing_topic")]
                     )
                 }
+                ComposerLocalDraftStore.clearNewTopic(baseURL: api.baseURL)
                 dismiss(animated: true) { [weak self] in self?.onTopicCreated?(topicId) }
             } catch {
                 isSubmitting = false
@@ -1127,7 +711,13 @@ final class NewTopicComposerViewController: UIViewController {
                     message: error.localizedDescription,
                     preferredStyle: .alert
                 )
-                alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+                alert.addAction(UIAlertAction(
+                    title: String(localized: "common.retry", defaultValue: "重试"),
+                    style: .default
+                ) { [weak self] _ in
+                    self?.sendTapped()
+                })
+                alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .cancel))
                 present(alert, animated: true)
             }
         }
@@ -1165,6 +755,7 @@ extension NewTopicComposerViewController: UITextFieldDelegate {
 extension NewTopicComposerViewController: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         updateEditorState()
+        scheduleLocalDraftSave()
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
@@ -1172,67 +763,72 @@ extension NewTopicComposerViewController: UITextViewDelegate {
     }
 }
 
-extension NewTopicComposerViewController: PHPickerViewControllerDelegate {
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-        guard !results.isEmpty else { return }
-        Task {
-            var files: [(url: URL, filename: String)] = []
-            for result in results {
-                if let file = try? await temporaryImageFile(from: result) { files.append(file) }
-            }
-            await uploadPickedFiles(files)
-        }
+
+// MARK: - ComposerTextSurface
+
+extension NewTopicComposerViewController: ComposerTextSurface {
+    var composerHostViewController: UIViewController { self }
+    var composerAPI: DiscourseAPI { api }
+    var composerTextView: UITextView { textView }
+    var composerToolsAnchorView: UIView { toolsToggleButton }
+    var composerIsUploading: Bool { isUploading }
+    var composerRawText: String { textView.text ?? "" }
+
+    func composerSelectedRawText() -> String {
+        ComposerPlainTextEditing.selectedText(in: textView)
     }
 
-    private func temporaryImageFile(from result: PHPickerResult) async throws -> (url: URL, filename: String) {
-        let provider = result.itemProvider
-        let identifier = provider.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: .image) == true }
-            ?? UTType.image.identifier
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.loadFileRepresentation(forTypeIdentifier: identifier) { url, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let url else {
-                    continuation.resume(throwing: DiscourseAPIError(
-                        messages: [String(localized: "reply.upload.failed")],
-                        errorType: "upload_failed"
-                    ))
-                    return
-                }
-                do {
-                    let ext = UTType(identifier)?.preferredFilenameExtension ?? url.pathExtension
-                    let cleanExt = ext.isEmpty ? "jpg" : ext
-                    let destination = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathExtension(cleanExt)
-                    try FileManager.default.copyItem(at: url, to: destination)
-                    continuation.resume(returning: (destination, "\(provider.suggestedName ?? "image").\(cleanExt)"))
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+    func composerInsertRaw(_ text: String) {
+        ComposerPlainTextEditing.replaceSelection(in: textView, with: text)
+        updateEditorState()
+        scheduleLocalDraftSave()
+    }
+
+    func composerWrapSelection(start: String, end: String, placeholder: String) {
+        ComposerPlainTextEditing.wrapSelection(in: textView, start: start, end: end, placeholder: placeholder)
+        updateEditorState()
+        scheduleLocalDraftSave()
+    }
+
+    func composerApplyLinePrefix(_ prefix: String) {
+        ComposerPlainTextEditing.applyLinePrefix(in: textView, prefix: prefix)
+        updateEditorState()
+        scheduleLocalDraftSave()
+    }
+
+    func composerReplaceFullRaw(_ raw: String) {
+        textView.text = raw
+        updateEditorState()
+        scheduleLocalDraftSave()
+    }
+
+    func composerDidEditContent() {
+        updateEditorState()
+        scheduleLocalDraftSave()
+    }
+
+    func composerSetUploading(_ uploading: Bool, statusText: String?) {
+        isUploading = uploading
+        uploadStatusLabel.text = statusText
+        uploadStatusLabel.isHidden = !uploading
+        textView.isEditable = !uploading
+        titleField.isEnabled = !uploading
+        categoryButton.isEnabled = !uploading
+        toolsPanelView.isUploading = uploading
+        updateEditorState()
+    }
+
+    func composerCloseToolPanel(returnToKeyboard: Bool) {
+        closePanel(returnToKeyboard: returnToKeyboard)
+    }
+
+    func composerExitMarkdownPreviewIfNeeded() {
+        guard isPreviewingMarkdown else { return }
+        isPreviewingMarkdown = false
+        textView.isHidden = false
+        previewView.isHidden = true
+        updateToolbarState()
+        updateEditorState()
     }
 }
 
-extension NewTopicComposerViewController: UIDocumentPickerDelegate {
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let url = urls.first else { return }
-        Task {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            if let kind = pendingMediaKind {
-                await uploadMediaFile(url: url, kind: kind)
-            } else {
-                await uploadPickedFiles([(url, url.lastPathComponent)])
-            }
-        }
-    }
-
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        pendingMediaKind = nil
-    }
-}

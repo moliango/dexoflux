@@ -35,6 +35,8 @@ enum DiscourseRouter {
     case clearRecentSearches
     case tags
     case tagSearch(query: String, categoryId: Int?)
+    /// Composer @-mention user search (`/u/search/users`).
+    case userSearch(term: String, topicId: Int?)
     case bookmarks(username: String)
     case userSummary(username: String)
     case userProfile(username: String)
@@ -154,6 +156,14 @@ enum DiscourseRouter {
             //            if let categoryId {
             //                path += "&categoryId=\(categoryId)"
             //            }
+            return path
+        case .userSearch(let term, let topicId):
+            // Match FluxDo: GET /u/search/users?term=&topic_id=&include_groups=&limit=
+            let encoded = Self.queryValue(term)
+            var path = "/u/search/users?term=\(encoded)&include_groups=true&include_mentionable_groups=false&limit=8"
+            if let topicId {
+                path += "&topic_id=\(topicId)"
+            }
             return path
         case .bookmarks(let username):
             return "/u/\(username)/bookmarks.json"

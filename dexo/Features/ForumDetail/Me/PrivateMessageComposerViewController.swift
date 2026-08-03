@@ -120,7 +120,13 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
 
     private func showError(_ error: Error) {
         let alert = UIAlertController(title: nil, message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(
+            title: String(localized: "common.retry", defaultValue: "重试"),
+            style: .default
+        ) { [weak self] _ in
+            self?.sendTapped()
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .cancel))
         present(alert, animated: true)
     }
 

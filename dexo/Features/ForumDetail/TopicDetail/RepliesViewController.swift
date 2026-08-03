@@ -509,7 +509,14 @@ extension RepliesViewController: PostCellDelegate {
             topicId: topicId,
             replyToPost: post,
             baseURL: baseURL,
-            initialText: initialText
+            initialText: initialText,
+            mentionSeedUsers: [
+                DiscourseMentionUser(
+                    username: post.username,
+                    name: post.name,
+                    avatarTemplate: post.avatarTemplate
+                )
+            ]
         )
         composer.onPostCreated = { [weak self] in
             guard let self else { return }

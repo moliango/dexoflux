@@ -3,13 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class ReplyComposerViewController: UIViewController {
-    private enum ComposerPanel {
-        case none
-        case emoji
-        case tools
-    }
-
-    private static let customPanelHeight: CGFloat = 420
     private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":([^\\s:]+(?::t\\d)?):")
 
     private let api: DiscourseAPI
@@ -18,15 +11,26 @@ final class ReplyComposerViewController: UIViewController {
     private let baseURL: String
     private let initialText: String?
     private let submissionMode: ReplyComposerSubmissionMode
+    /// Local @ candidates (topic posters) shown instantly while the API search runs — FluxDo parity.
+    private let mentionSeedUsers: [DiscourseMentionUser]
     var onPostCreated: (() -> Void)?
     var onPostUpdated: ((Int) -> Void)?
 
-    private var currentPanel: ComposerPanel = .none
+    private var currentPanel: ComposerPanelKind = .none
     private var hasLoadedForumEmojis = false
     private var isPreviewingMarkdown = false
     private var isUploading = false
+    private var isSubmitting = false
     private var isApplyingAttributedText = false
+    private var draftSaveTask: Task<Void, Never>?
     private var panelHeightConstraint: NSLayoutConstraint?
+    private let markdownCoordinator = ComposerMarkdownCoordinator()
+    /// UTF-16 range of the active `@term` token in the display string (includes `@`).
+    private var activeMentionRange: NSRange?
+    private var mentionSearchTask: Task<Void, Never>?
+    private var mentionSearchGeneration = 0
+    private var mentionPickerBottomConstraint: NSLayoutConstraint?
+    private var mentionPickerLeadingConstraint: NSLayoutConstraint?
 
     private let grabberView: UIView = {
         let view = UIView()
@@ -146,17 +150,17 @@ final class ReplyComposerViewController: UIViewController {
         return view
     }()
 
-    private let emojiToggleButton = ReplyComposerViewController.makeCircleToolbarButton(
+    private let emojiToggleButton = ComposerToolbarFactory.makeCircleButton(
         systemName: "face.smiling",
         accessibilityLabel: String(localized: "reply.toolbar.emoji")
     )
 
-    private let previewToggleButton = ReplyComposerViewController.makePlainIconButton(
+    private let previewToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "eye",
         accessibilityLabel: String(localized: "reply.toolbar.preview")
     )
 
-    private let toolsToggleButton = ReplyComposerViewController.makePlainIconButton(
+    private let toolsToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "plus.circle.fill",
         accessibilityLabel: String(localized: "reply.toolbar.more_tools")
     )
@@ -196,9 +200,17 @@ final class ReplyComposerViewController: UIViewController {
         let panel = ComposerToolPanelView()
         panel.translatesAutoresizingMaskIntoConstraints = false
         panel.onToolSelected = { [weak self] tool in
-            self?.handleTool(tool)
+            self?.markdownCoordinator.handleTool(tool)
         }
         return panel
+    }()
+
+    private lazy var mentionPickerView: ComposerMentionPickerView = {
+        let picker = ComposerMentionPickerView()
+        picker.onSelect = { [weak self] user in
+            self?.insertMention(user)
+        }
+        return picker
     }()
 
     init(
@@ -207,7 +219,8 @@ final class ReplyComposerViewController: UIViewController {
         replyToPost: DiscourseTopicDetail.Post?,
         baseURL: String,
         initialText: String? = nil,
-        submissionMode: ReplyComposerSubmissionMode = .reply
+        submissionMode: ReplyComposerSubmissionMode = .reply,
+        mentionSeedUsers: [DiscourseMentionUser] = []
     ) {
         self.api = api
         self.topicId = topicId
@@ -215,6 +228,7 @@ final class ReplyComposerViewController: UIViewController {
         self.baseURL = baseURL
         self.initialText = initialText
         self.submissionMode = submissionMode
+        self.mentionSeedUsers = mentionSeedUsers
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -251,11 +265,25 @@ final class ReplyComposerViewController: UIViewController {
         view.addSubview(previewView)
         view.addSubview(placeholderLabel)
         view.addSubview(bottomStackView)
+        // Above text, below chrome — so @ list is tappable over the editor.
+        view.addSubview(mentionPickerView)
 
         setupToolbar()
         setupCustomPanel()
         emojiPickerView.presentingViewController = self
+        mentionPickerView.configure(baseURL: baseURL)
         PresenceService.shared.attach(api: api)
+
+        let mentionLeading = mentionPickerView.leadingAnchor.constraint(
+            equalTo: textView.leadingAnchor,
+            constant: 22
+        )
+        let mentionTop = mentionPickerView.topAnchor.constraint(
+            equalTo: textView.topAnchor,
+            constant: 56
+        )
+        mentionPickerLeadingConstraint = mentionLeading
+        mentionPickerBottomConstraint = mentionTop
 
         NSLayoutConstraint.activate([
             grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
@@ -301,6 +329,10 @@ final class ReplyComposerViewController: UIViewController {
             bottomStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomStackView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+
+            mentionLeading,
+            mentionTop,
+            mentionPickerView.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -22),
         ])
 
         discardButton.addTarget(self, action: #selector(discardTapped), for: .touchUpInside)
@@ -310,9 +342,18 @@ final class ReplyComposerViewController: UIViewController {
         toolsToggleButton.addTarget(self, action: #selector(toggleToolsPanel), for: .touchUpInside)
 
         textView.delegate = self
+        markdownCoordinator.surface = self
 
+        // Prefer explicit initial text (server draft / quote); else restore local autosave.
         if let initialText, !initialText.isEmpty {
             setRawComposerText(initialText)
+        } else if case .reply = submissionMode,
+                  let saved = ComposerLocalDraftStore.loadReply(
+                      baseURL: baseURL,
+                      topicId: topicId,
+                      replyToPostNumber: replyToPost?.postNumber
+                  ) {
+            setRawComposerText(saved)
         }
         updatePlaceholder()
         updateSendButton()
@@ -327,103 +368,63 @@ final class ReplyComposerViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         PresenceService.shared.leave()
+        draftSaveTask?.cancel()
+        persistLocalDraftImmediately()
     }
 
-    private static func makeCircleToolbarButton(systemName: String, accessibilityLabel: String) -> UIButton {
-        let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 19, weight: .regular)
-        button.setImage(UIImage(systemName: systemName, withConfiguration: config), for: .normal)
-        button.tintColor = .label
-        button.backgroundColor = .secondarySystemGroupedBackground
-        button.layer.cornerRadius = 22
-        button.layer.cornerCurve = .continuous
-        button.accessibilityLabel = accessibilityLabel
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
+    private func scheduleLocalDraftSave() {
+        guard case .reply = submissionMode else { return }
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistLocalDraftImmediately()
+        }
     }
 
-    private static func makePlainIconButton(systemName: String, accessibilityLabel: String) -> UIButton {
-        let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        button.setImage(UIImage(systemName: systemName, withConfiguration: config), for: .normal)
-        button.tintColor = .label
-        button.accessibilityLabel = accessibilityLabel
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
+    private func persistLocalDraftImmediately() {
+        guard case .reply = submissionMode else { return }
+        ComposerLocalDraftStore.saveReply(
+            baseURL: baseURL,
+            topicId: topicId,
+            replyToPostNumber: replyToPost?.postNumber,
+            raw: composerRawText
+        )
     }
 
     private func setupToolbar() {
         bottomStackView.addArrangedSubview(toolbarContainer)
         bottomStackView.addArrangedSubview(customPanelContainer)
-        toolbarContainer.heightAnchor.constraint(equalToConstant: 62).isActive = true
-
-        toolbarContainer.addSubview(emojiToggleButton)
-        toolbarContainer.addSubview(uploadStatusLabel)
-        toolbarContainer.addSubview(rightToolbarPill)
-        rightToolbarPill.addSubview(previewToggleButton)
-        rightToolbarPill.addSubview(toolsToggleButton)
-
-        NSLayoutConstraint.activate([
-            emojiToggleButton.leadingAnchor.constraint(equalTo: toolbarContainer.leadingAnchor, constant: 24),
-            emojiToggleButton.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-            emojiToggleButton.widthAnchor.constraint(equalToConstant: 44),
-            emojiToggleButton.heightAnchor.constraint(equalToConstant: 44),
-
-            rightToolbarPill.trailingAnchor.constraint(equalTo: toolbarContainer.trailingAnchor, constant: -24),
-            rightToolbarPill.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-            rightToolbarPill.heightAnchor.constraint(equalToConstant: 44),
-
-            uploadStatusLabel.leadingAnchor.constraint(equalTo: emojiToggleButton.trailingAnchor, constant: 14),
-            uploadStatusLabel.trailingAnchor.constraint(equalTo: rightToolbarPill.leadingAnchor, constant: -14),
-            uploadStatusLabel.centerYAnchor.constraint(equalTo: toolbarContainer.centerYAnchor),
-
-            previewToggleButton.leadingAnchor.constraint(equalTo: rightToolbarPill.leadingAnchor, constant: 10),
-            previewToggleButton.topAnchor.constraint(equalTo: rightToolbarPill.topAnchor),
-            previewToggleButton.bottomAnchor.constraint(equalTo: rightToolbarPill.bottomAnchor),
-            previewToggleButton.widthAnchor.constraint(equalToConstant: 44),
-
-            toolsToggleButton.leadingAnchor.constraint(equalTo: previewToggleButton.trailingAnchor, constant: 4),
-            toolsToggleButton.trailingAnchor.constraint(equalTo: rightToolbarPill.trailingAnchor, constant: -10),
-            toolsToggleButton.topAnchor.constraint(equalTo: rightToolbarPill.topAnchor),
-            toolsToggleButton.bottomAnchor.constraint(equalTo: rightToolbarPill.bottomAnchor),
-            toolsToggleButton.widthAnchor.constraint(equalToConstant: 44),
-        ])
+        ComposerToolbarFactory.installToolbarLayout(
+            in: toolbarContainer,
+            emojiButton: emojiToggleButton,
+            uploadStatusLabel: uploadStatusLabel,
+            rightPill: rightToolbarPill,
+            previewButton: previewToggleButton,
+            toolsButton: toolsToggleButton
+        )
     }
 
     private func setupCustomPanel() {
-        customPanelContainer.addSubview(emojiPickerView)
-        customPanelContainer.addSubview(toolsPanelView)
-
-        let panelHeight = customPanelContainer.heightAnchor.constraint(equalToConstant: 0)
-        panelHeightConstraint = panelHeight
-
-        NSLayoutConstraint.activate([
-            panelHeight,
-
-            emojiPickerView.topAnchor.constraint(equalTo: customPanelContainer.topAnchor),
-            emojiPickerView.leadingAnchor.constraint(equalTo: customPanelContainer.leadingAnchor),
-            emojiPickerView.trailingAnchor.constraint(equalTo: customPanelContainer.trailingAnchor),
-            emojiPickerView.bottomAnchor.constraint(equalTo: customPanelContainer.bottomAnchor),
-
-            toolsPanelView.topAnchor.constraint(equalTo: customPanelContainer.topAnchor),
-            toolsPanelView.leadingAnchor.constraint(equalTo: customPanelContainer.leadingAnchor),
-            toolsPanelView.trailingAnchor.constraint(equalTo: customPanelContainer.trailingAnchor),
-            toolsPanelView.bottomAnchor.constraint(equalTo: customPanelContainer.bottomAnchor),
-        ])
-
-        emojiPickerView.isHidden = true
-        toolsPanelView.isHidden = true
+        panelHeightConstraint = ComposerToolbarFactory.installPanelLayout(
+            in: customPanelContainer,
+            emojiPanel: emojiPickerView,
+            toolsPanel: toolsPanelView
+        )
     }
 
     @objc private func toggleEmojiPicker() {
+        hideMentionPicker()
         setPanel(currentPanel == .emoji ? .none : .emoji)
     }
 
     @objc private func toggleToolsPanel() {
+        hideMentionPicker()
         setPanel(currentPanel == .tools ? .none : .tools)
     }
 
     @objc private func toggleMarkdownPreview() {
+        hideMentionPicker()
         isPreviewingMarkdown.toggle()
         if isPreviewingMarkdown {
             closePanel(returnToKeyboard: false)
@@ -435,7 +436,7 @@ final class ReplyComposerViewController: UIViewController {
         updatePreviewState()
     }
 
-    private func setPanel(_ panel: ComposerPanel) {
+    private func setPanel(_ panel: ComposerPanelKind) {
         if isPreviewingMarkdown {
             isPreviewingMarkdown = false
             updatePreviewState()
@@ -452,13 +453,13 @@ final class ReplyComposerViewController: UIViewController {
             textView.resignFirstResponder()
             emojiPickerView.isHidden = false
             toolsPanelView.isHidden = true
-            panelHeightConstraint?.constant = Self.customPanelHeight
+            panelHeightConstraint?.constant = ComposerToolbarFactory.customPanelHeight
             loadForumEmojis()
         case .tools:
             textView.resignFirstResponder()
             emojiPickerView.isHidden = true
             toolsPanelView.isHidden = false
-            panelHeightConstraint?.constant = Self.customPanelHeight
+            panelHeightConstraint?.constant = ComposerToolbarFactory.customPanelHeight
         }
         updateToolbarState()
         UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
@@ -467,7 +468,13 @@ final class ReplyComposerViewController: UIViewController {
     }
 
     private func closePanel(returnToKeyboard: Bool) {
-        guard currentPanel != .none else { return }
+        guard currentPanel != .none else {
+            if returnToKeyboard {
+                textView.becomeFirstResponder()
+            }
+            return
+        }
+        hideMentionPicker()
         currentPanel = .none
         emojiPickerView.isHidden = true
         toolsPanelView.isHidden = true
@@ -499,7 +506,8 @@ final class ReplyComposerViewController: UIViewController {
         }
     }
 
-    private var composerRawText: String {
+    /// Raw markdown for the body (ComposerTextSurface uses the same extraction).
+    private var bodyRawText: String {
         rawText(from: textView.attributedText ?? NSAttributedString(string: textView.text ?? ""))
     }
 
@@ -610,11 +618,14 @@ final class ReplyComposerViewController: UIViewController {
         textView.typingAttributes = composerTextAttributes
         textView.selectedRange = clampedRange(selectedRange, length: attributed.length)
         isApplyingAttributedText = false
+
         loadComposerEmojiImages(in: attributed)
         updatePlaceholder()
         updateSendButton()
         if isPreviewingMarkdown {
             previewView.update(markdown: composerRawText)
+        } else {
+            refreshMentionSuggestions()
         }
     }
 
@@ -647,66 +658,336 @@ final class ReplyComposerViewController: UIViewController {
 
     private func insertText(_ text: String) {
         replaceSelection(withRawText: text)
+        refreshMentionSuggestions()
     }
 
-    private func handleTool(_ tool: ComposerMarkdownTool) {
-        if isUploading { return }
-        if isPreviewingMarkdown {
-            isPreviewingMarkdown = false
-            updatePreviewState()
+    // MARK: - @ mention
+
+    private func refreshMentionSuggestions() {
+        guard !isPreviewingMarkdown, !isApplyingAttributedText else {
+            hideMentionPicker()
+            return
+        }
+        let display = composerDisplayText
+        let cursor = textView.selectedRange.location
+        guard let query = Self.activeMentionQuery(in: display, cursor: cursor) else {
+            hideMentionPicker()
+            return
+        }
+        activeMentionRange = query.range
+        repositionMentionPicker()
+        scheduleMentionSearch(term: query.term)
+    }
+
+    private func hideMentionPicker() {
+        activeMentionRange = nil
+        mentionSearchTask?.cancel()
+        mentionSearchTask = nil
+        mentionPickerView.hide(animated: true)
+    }
+
+    private func scheduleMentionSearch(term: String) {
+        mentionSearchTask?.cancel()
+        mentionSearchGeneration += 1
+        let generation = mentionSearchGeneration
+        let topicId = self.topicId
+        let seed = localMentionSeeds(matching: term)
+
+        // FluxDo shows the overlay as soon as @ is active. Local topic posters
+        // fill the list instantly (matches the screenshot of many candidates).
+        view.bringSubviewToFront(mentionPickerView)
+        if !seed.isEmpty {
+            mentionPickerView.update(users: seed, animated: true)
+            view.layoutIfNeeded()
+            repositionMentionPicker()
         }
 
-        switch tool {
-        case .image:
-            pickImages()
-        case .attachment:
-            pickAttachment()
-        case .media:
-            chooseMedia()
-        case .heading:
-            chooseHeading()
-        case .bold:
-            wrapSelection(start: "**", end: "**", placeholder: String(localized: "reply.tool.placeholder.bold"))
-        case .italic:
-            wrapSelection(start: "*", end: "*", placeholder: String(localized: "reply.tool.placeholder.italic"))
-        case .strikethrough:
-            wrapSelection(start: "~~", end: "~~", placeholder: String(localized: "reply.tool.placeholder.strikethrough"))
-        case .bulletList:
-            applyLinePrefix("- ")
-        case .numberedList:
-            applyLinePrefix("1. ")
-        case .link:
-            insertLink()
-        case .quote:
-            applyLinePrefix("> ")
-        case .callout:
-            chooseCallout()
-        case .template:
-            insertTemplate()
-        case .aiReview:
-            runAIPostReview()
-        case .inlineCode:
-            wrapSelection(start: "`", end: "`", placeholder: String(localized: "reply.tool.placeholder.code"))
-        case .codeBlock:
-            insertCodeBlock()
-        case .spoiler:
-            wrapSelection(
-                start: "[spoiler]",
-                end: "[/spoiler]",
-                placeholder: String(localized: "reply.tool.placeholder.spoiler", defaultValue: "剧透内容")
+        mentionSearchTask = Task { [weak self] in
+            // FluxDo default debounce is 300ms; keep empty-term snappy (topic participants).
+            let delay: UInt64 = term.isEmpty ? 80_000_000 : 300_000_000
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            do {
+                let remote = try await self?.api.searchUsersForMention(term: term, topicId: topicId) ?? []
+                guard !Task.isCancelled, let self, generation == self.mentionSearchGeneration else { return }
+                let merged = Self.mergeMentionUsers(seed: seed, remote: remote)
+                await MainActor.run {
+                    guard generation == self.mentionSearchGeneration, self.activeMentionRange != nil else { return }
+                    self.view.bringSubviewToFront(self.mentionPickerView)
+                    self.mentionPickerView.update(users: merged, animated: true)
+                    self.view.layoutIfNeeded()
+                    self.repositionMentionPicker()
+                }
+            } catch {
+                guard !Task.isCancelled, let self, generation == self.mentionSearchGeneration else { return }
+                await MainActor.run {
+                    // Keep local seeds on network failure so @ still does something.
+                    if seed.isEmpty {
+                        self.mentionPickerView.hide(animated: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func localMentionSeeds(matching term: String) -> [DiscourseMentionUser] {
+        var seeds: [DiscourseMentionUser] = mentionSeedUsers
+        if let reply = replyToPost {
+            seeds.insert(
+                DiscourseMentionUser(
+                    username: reply.username,
+                    name: reply.name,
+                    avatarTemplate: reply.avatarTemplate
+                ),
+                at: 0
             )
-        case .imageGrid:
-            wrapImagesInGrid()
-        case .insertBlock:
-            chooseInsertBlock()
         }
-
-        if tool.closesPanelAfterAction {
-            closePanel(returnToKeyboard: true)
+        // Dedupe while preserving order (reply target first).
+        var seen = Set<String>()
+        seeds = seeds.filter { user in
+            let key = user.username.lowercased()
+            guard !key.isEmpty else { return false }
+            return seen.insert(key).inserted
+        }
+        let needle = term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return Array(seeds.prefix(8)) }
+        return seeds.filter {
+            $0.username.lowercased().hasPrefix(needle)
+                || ($0.name?.lowercased().contains(needle) ?? false)
         }
     }
 
-    private func wrapSelection(start: String, end: String, placeholder: String) {
+    private static func mergeMentionUsers(
+        seed: [DiscourseMentionUser],
+        remote: [DiscourseMentionUser]
+    ) -> [DiscourseMentionUser] {
+        var seen = Set<String>()
+        var result: [DiscourseMentionUser] = []
+        for user in seed + remote {
+            let key = user.username.lowercased()
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            result.append(user)
+            if result.count >= 12 { break }
+        }
+        return result
+    }
+
+    private func insertMention(_ user: DiscourseMentionUser) {
+        guard let range = activeMentionRange else { return }
+        let insertion = "@\(user.username) "
+        replaceDisplayRange(range, withRawText: insertion)
+        hideMentionPicker()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func repositionMentionPicker() {
+        // Keep the card near the caret so it matches FluxDO-style placement.
+        guard let range = activeMentionRange,
+              range.location != NSNotFound,
+              textView.bounds.height > 0
+        else { return }
+
+        let caretRange = NSRange(location: min(range.location, max(textView.attributedText.length - 1, 0)), length: 0)
+        var caretRect = textView.caretRect(for: textView.position(
+            from: textView.beginningOfDocument,
+            offset: caretRange.location
+        ) ?? textView.endOfDocument)
+
+        if caretRect.isNull || caretRect.origin.x.isInfinite || caretRect.origin.y.isInfinite {
+            caretRect = CGRect(x: 22, y: 22, width: 2, height: 28)
+        }
+
+        // Convert caret into textView coordinates already; offset from textView top/leading.
+        let top = max(12, min(caretRect.maxY + 8 - textView.contentOffset.y, textView.bounds.height - 80))
+        let leading = max(16, min(caretRect.minX - textView.contentOffset.x, textView.bounds.width - 220))
+        mentionPickerBottomConstraint?.constant = top
+        mentionPickerLeadingConstraint?.constant = leading
+    }
+
+    /// Finds `@term` immediately before the cursor — FluxDo parity:
+    /// `RegExp(r'@([\w_-]*)$')` with `@` at start or after whitespace/newline.
+    static func activeMentionQuery(in displayText: String, cursor: Int) -> (term: String, range: NSRange)? {
+        let ns = displayText as NSString
+        let length = ns.length
+        guard cursor > 0, cursor <= length else { return nil }
+
+        // Use NSString end-to-end so UTF-16 indices match UITextView.selectedRange.
+        let before = ns.substring(to: cursor) as NSString
+        // Explicit ASCII class (FluxDo `\w` ≈ [A-Za-z0-9_]); hyphen must be at end of class.
+        guard let regex = try? NSRegularExpression(pattern: #"@([A-Za-z0-9_-]*)$"#, options: []) else {
+            return nil
+        }
+        let full = NSRange(location: 0, length: before.length)
+        guard let match = regex.firstMatch(in: before as String, options: [], range: full),
+              match.numberOfRanges >= 2
+        else { return nil }
+
+        let atIndex = match.range.location
+        // Boundary: start of text, or whitespace / newline before @ (FluxDo).
+        if atIndex > 0 {
+            let prev = before.character(at: atIndex - 1)
+            guard let prevScalar = UnicodeScalar(prev),
+                  CharacterSet.whitespacesAndNewlines.contains(prevScalar)
+            else { return nil }
+        }
+
+        let termRange = match.range(at: 1)
+        let term = before.substring(with: termRange)
+        return (term, NSRange(location: atIndex, length: match.range.length))
+    }
+
+    private func applyFullRawText(_ raw: String) {
+        isApplyingAttributedText = true
+        textView.attributedText = makeComposerAttributedString(raw)
+        isApplyingAttributedText = false
+        updatePlaceholder()
+        updateSendButton()
+        if isPreviewingMarkdown {
+            previewView.update(markdown: raw)
+        }
+    }
+
+    private func updatePlaceholder() {
+        placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
+    }
+
+    private func updateSendButton() {
+        let enabled = !(composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        sendButton.isEnabled = enabled && !isUploading
+        sendButton.alpha = sendButton.isEnabled ? 1 : 0.55
+    }
+
+    private func updatePreviewState() {
+        textView.isHidden = isPreviewingMarkdown
+        previewView.isHidden = !isPreviewingMarkdown
+        placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
+        updateToolbarState()
+    }
+
+    private func updateToolbarState() {
+        ComposerToolbarFactory.updateToolbarTints(
+            emojiButton: emojiToggleButton,
+            previewButton: previewToggleButton,
+            toolsButton: toolsToggleButton,
+            panel: currentPanel,
+            isPreviewing: isPreviewingMarkdown
+        )
+    }
+
+    @objc private func discardTapped() {
+        hideMentionPicker()
+        guard !composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            dismiss(animated: true)
+            return
+        }
+        let alert = UIAlertController(
+            title: String(localized: "reply.discard.confirm.title"),
+            message: String(localized: "reply.discard.confirm.message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "reply.discard"), style: .destructive) { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func sendTapped() {
+        hideMentionPicker()
+        let raw = composerRawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, !isSubmitting else { return }
+
+        isSubmitting = true
+        sendButton.isEnabled = false
+        textView.isEditable = false
+        closePanel(returnToKeyboard: false)
+
+        Task {
+            do {
+                switch submissionMode {
+                case .reply:
+                    let response = try await api.createReply(
+                        topicId: topicId,
+                        replyToPostNumber: replyToPost?.postNumber,
+                        raw: raw
+                    )
+                    ComposerLocalDraftStore.clearReply(
+                        baseURL: baseURL,
+                        topicId: topicId,
+                        replyToPostNumber: replyToPost?.postNumber
+                    )
+                    if response.isEnqueued {
+                        presentQueuedAlert()
+                        return
+                    }
+                    dismiss(animated: true) { [weak self] in
+                        self?.onPostCreated?()
+                    }
+                case .edit(let postId):
+                    try await api.updatePost(id: postId, raw: raw)
+                    dismiss(animated: true) { [weak self] in
+                        self?.onPostUpdated?(postId)
+                    }
+                }
+            } catch {
+                isSubmitting = false
+                sendButton.isEnabled = true
+                textView.isEditable = true
+                let alert = UIAlertController(
+                    title: String(localized: "reply.send.failed"),
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(
+                    title: String(localized: "common.retry", defaultValue: "重试"),
+                    style: .default
+                ) { [weak self] _ in
+                    self?.sendTapped()
+                })
+                alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .cancel))
+                present(alert, animated: true)
+            }
+        }
+    }
+
+    private func presentQueuedAlert() {
+        let alert = UIAlertController(
+            title: String(localized: "post.submit.queued.title"),
+            message: String(localized: "post.submit.queued.message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default) { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+        present(alert, animated: true)
+    }
+}
+
+// MARK: - ComposerTextSurface
+
+extension ReplyComposerViewController: ComposerTextSurface {
+    var composerHostViewController: UIViewController { self }
+    var composerAPI: DiscourseAPI { api }
+    var composerTextView: UITextView { textView }
+    var composerToolsAnchorView: UIView { toolsToggleButton }
+    var composerIsUploading: Bool { isUploading }
+
+    var composerRawText: String { bodyRawText }
+
+    func composerSelectedRawText() -> String {
+        let selection = textView.selectedRange
+        guard selection.length > 0 else { return "" }
+        return rawText(inDisplayRange: selection)
+    }
+
+    func composerInsertRaw(_ text: String) {
+        replaceSelection(withRawText: text)
+        updatePlaceholder()
+        updateSendButton()
+        scheduleLocalDraftSave()
+    }
+
+    func composerWrapSelection(start: String, end: String, placeholder: String) {
         let selection = textView.selectedRange
         let selected = selection.length > 0 ? rawText(inDisplayRange: selection) : placeholder
         let replacement = "\(start)\(selected)\(end)"
@@ -716,9 +997,12 @@ final class ReplyComposerViewController: UIViewController {
             withRawText: replacement,
             selectedRangeInInsertedText: NSRange(location: start.count, length: selectedDisplayLength)
         )
+        updatePlaceholder()
+        updateSendButton()
+        scheduleLocalDraftSave()
     }
 
-    private func applyLinePrefix(_ prefix: String) {
+    func composerApplyLinePrefix(_ prefix: String) {
         let text = composerDisplayText
         let nsText = text as NSString
         let selection = textView.selectedRange
@@ -740,565 +1024,59 @@ final class ReplyComposerViewController: UIViewController {
         }
         updatePlaceholder()
         updateSendButton()
+        scheduleLocalDraftSave()
     }
 
-    private func insertBlock(_ block: String) {
-        let text = composerDisplayText
-        let selection = textView.selectedRange
-        let nsText = text as NSString
-        let needsLeadingNewline = selection.location > 0 && nsText.substring(with: NSRange(location: selection.location - 1, length: 1)) != "\n"
-        let insertion = needsLeadingNewline ? "\n\(block)" : block
-        replaceDisplayRange(selection, withRawText: insertion)
+    func composerReplaceFullRaw(_ raw: String) {
+        applyFullRawText(raw)
+        scheduleLocalDraftSave()
     }
 
-    private func chooseHeading() {
-        let alert = UIAlertController(
-            title: String(localized: "reply.tool.heading"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        for level in 1 ... 5 {
-            alert.addAction(UIAlertAction(title: "H\(level)", style: .default) { [weak self] _ in
-                self?.applyLinePrefix(String(repeating: "#", count: level) + " ")
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    /// FluxDo callout 类型菜单：note / tip / info / warning …
-    private func chooseCallout() {
-        let types = [
-            "note", "tip", "info", "warning", "danger", "bug",
-            "example", "quote", "abstract", "todo", "success", "question", "failure",
-        ]
-        let alert = UIAlertController(
-            title: String(localized: "reply.tool.note"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        for type in types {
-            alert.addAction(UIAlertAction(title: type.capitalized, style: .default) { [weak self] _ in
-                self?.insertCallout(type)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func insertCallout(_ type: String) {
-        let placeholder = String(localized: "reply.tool.placeholder.note")
-        let selection = textView.selectedRange
-        if selection.length > 0 {
-            let selected = rawText(inDisplayRange: selection)
-            let quoted = selected
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map { "> \($0)" }
-                .joined(separator: "\n")
-            replaceDisplayRange(selection, withRawText: "> [!\(type)]\n\(quoted)")
-        } else {
-            insertBlock("> [!\(type)]\n> \(placeholder)\n")
-        }
-    }
-
-    private func insertCodeBlock() {
-        let selection = textView.selectedRange
-        let placeholder = String(localized: "reply.tool.placeholder.code")
-        if selection.length > 0 {
-            let selected = rawText(inDisplayRange: selection)
-            let block = "```\n\(selected)\n```"
-            replaceDisplayRange(selection, withRawText: block)
-        } else {
-            insertBlock("```\n\(placeholder)\n```\n")
-        }
-    }
-
-    /// 插入块：表格 / 公式 / 分隔线 / 折叠详情
-    private func chooseInsertBlock() {
-        let items: [(String, String)] = [
-            ("表格", "| 列 1 | 列 2 |\n|---|---|\n| 内容 | 内容 |\n"),
-            ("公式块", "$$\nE=mc^2\n$$\n"),
-            ("分隔线", "---\n"),
-            ("折叠详情", "[details=\"点开看\"]\n折叠内容\n[/details]\n"),
-        ]
-        let alert = UIAlertController(
-            title: "插入块",
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        for item in items {
-            alert.addAction(UIAlertAction(title: item.0, style: .default) { [weak self] _ in
-                self?.insertBlock(item.1)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    /// 将连续图片 markdown 包进 `[grid]…[/grid]`（对齐 FluxDo）
-    private func wrapImagesInGrid() {
-        let raw = composerRawText
-        let imagePattern = try! NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]+\)"#)
-        let nsRaw = raw as NSString
-        let fullRange = NSRange(location: 0, length: nsRaw.length)
-        let matches = imagePattern.matches(in: raw, range: fullRange)
-        guard matches.count >= 2 else {
-            let alert = UIAlertController(
-                title: nil,
-                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-
-        // 优先用选区；否则取光标附近连续图片块
-        let displaySelection = textView.selectedRange
-        let rawSelectionStart: Int
-        let rawSelectionEnd: Int
-        if displaySelection.length > 0 {
-            let selectedRaw = rawText(inDisplayRange: displaySelection)
-            let selectedMatches = imagePattern.matches(in: selectedRaw, range: NSRange(location: 0, length: (selectedRaw as NSString).length))
-            if selectedMatches.count >= 2 {
-                let wrapped = "[grid]\n\(selectedRaw)\n[/grid]"
-                replaceDisplayRange(displaySelection, withRawText: wrapped)
-                return
-            }
-            rawSelectionStart = 0
-            rawSelectionEnd = 0
-            _ = rawSelectionStart
-            _ = rawSelectionEnd
-        }
-
-        // 找最大连续图片组（之间仅空白）
-        var bestStart = matches[0].range.location
-        var bestEnd = NSMaxRange(matches[0].range)
-        var runStart = bestStart
-        var runEnd = bestEnd
-        var runCount = 1
-        var bestCount = 1
-
-        for i in 1 ..< matches.count {
-            let prevEnd = NSMaxRange(matches[i - 1].range)
-            let curStart = matches[i].range.location
-            let between = nsRaw.substring(with: NSRange(location: prevEnd, length: curStart - prevEnd))
-            if between.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                runEnd = NSMaxRange(matches[i].range)
-                runCount += 1
-            } else {
-                if runCount > bestCount {
-                    bestCount = runCount
-                    bestStart = runStart
-                    bestEnd = runEnd
-                }
-                runStart = matches[i].range.location
-                runEnd = NSMaxRange(matches[i].range)
-                runCount = 1
-            }
-        }
-        if runCount > bestCount {
-            bestCount = runCount
-            bestStart = runStart
-            bestEnd = runEnd
-        }
-        guard bestCount >= 2 else {
-            let alert = UIAlertController(
-                title: nil,
-                message: String(localized: "reply.tool.grid.min_images", defaultValue: "至少需要 2 张图片才能组成网格"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-
-        let chunk = nsRaw.substring(with: NSRange(location: bestStart, length: bestEnd - bestStart))
-        let wrapped = "[grid]\n\(chunk)\n[/grid]"
-        // 用 raw 全文替换后重刷（composer 以 raw 为源）
-        let newRaw = nsRaw.replacingCharacters(in: NSRange(location: bestStart, length: bestEnd - bestStart), with: wrapped)
-        applyFullRawText(newRaw)
-    }
-
-    private func applyFullRawText(_ raw: String) {
-        isApplyingAttributedText = true
-        textView.attributedText = makeComposerAttributedString(raw)
-        isApplyingAttributedText = false
+    func composerDidEditContent() {
         updatePlaceholder()
         updateSendButton()
-        if isPreviewingMarkdown {
-            previewView.update(markdown: raw)
-        }
+        scheduleLocalDraftSave()
     }
 
-    private var pendingMediaKind: MediaPickKind?
-
-    private enum MediaPickKind {
-        case audio
-        case video
-        case voice
-    }
-
-    /// 音视频：上传音频 / 上传视频 / 语音消息
-    private func chooseMedia() {
-        let alert = UIAlertController(title: "音视频", message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "上传音频", style: .default) { [weak self] _ in
-            self?.pickMedia(kind: .audio)
-        })
-        alert.addAction(UIAlertAction(title: "上传视频", style: .default) { [weak self] _ in
-            self?.pickMedia(kind: .video)
-        })
-        alert.addAction(UIAlertAction(title: "语音消息", style: .default) { [weak self] _ in
-            self?.pickMedia(kind: .voice)
-        })
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = toolsToggleButton
-            pop.sourceRect = toolsToggleButton.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func pickMedia(kind: MediaPickKind) {
-        pendingMediaKind = kind
-        let types: [UTType]
-        switch kind {
-        case .audio, .voice:
-            types = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        case .video:
-            types = [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
-        }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-
-    @MainActor
-    private func uploadMediaFile(url: URL, kind: MediaPickKind) async {
-        setUploading(true, text: String(localized: "reply.uploading"))
-        defer {
-            setUploading(false, text: nil)
-            pendingMediaKind = nil
-        }
-        do {
-            // FluxDo：改名为 .xz 绕站点扩展名白名单
-            let xzURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension("xz")
-            if FileManager.default.fileExists(atPath: xzURL.path) {
-                try FileManager.default.removeItem(at: xzURL)
-            }
-            try FileManager.default.copyItem(at: url, to: xzURL)
-            let upload = try await api.uploadComposerFile(fileURL: xzURL, filename: xzURL.lastPathComponent)
-            try? FileManager.default.removeItem(at: xzURL)
-
-            let originalExt = url.pathExtension.lowercased()
-            let mime: String
-            let isAudio: Bool
-            switch kind {
-            case .audio, .voice:
-                isAudio = true
-                mime = UTType(filenameExtension: originalExt)?.preferredMIMEType ?? "audio/mpeg"
-            case .video:
-                isAudio = false
-                mime = UTType(filenameExtension: originalExt)?.preferredMIMEType ?? "video/mp4"
-            }
-            let src = Self.mediaPlaybackPath(from: upload.shortURL)
-            let tag: String
-            if isAudio {
-                let audio = "<audio controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</audio>"
-                tag = kind == .voice ? "[wrap=voice]\n\(audio)\n[/wrap]" : audio
-            } else {
-                tag = "<video width=\"640\" height=\"360\" controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</video>"
-            }
-            insertUploadMarkdown(tag)
-        } catch {
-            showUploadError(error)
-        }
-    }
-
-    /// `upload://token.ext` → `/uploads/short-url/token.xz`
-    private static func mediaPlaybackPath(from shortURL: String) -> String {
-        if shortURL.hasPrefix("upload://") {
-            var token = String(shortURL.dropFirst("upload://".count))
-            if let dot = token.lastIndex(of: ".") {
-                token = String(token[..<dot])
-            }
-            return "/uploads/short-url/\(token).xz"
-        }
-        if let dot = shortURL.lastIndex(of: ".") {
-            return String(shortURL[..<dot]) + ".xz"
-        }
-        return shortURL
-    }
-
-    private func insertLink() {
-        let selected = textView.selectedRange.length > 0 ? rawText(inDisplayRange: textView.selectedRange) : ""
-        let alert = UIAlertController(
-            title: String(localized: "reply.tool.link"),
-            message: nil,
-            preferredStyle: .alert
-        )
-        alert.addTextField { field in
-            field.placeholder = String(localized: "reply.tool.link_text")
-            field.text = selected
-        }
-        alert.addTextField { field in
-            field.placeholder = "https://"
-            field.keyboardType = .URL
-            field.autocapitalizationType = .none
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "reply.tool.insert"), style: .default) { [weak self, weak alert] _ in
-            guard let self else { return }
-            let title = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let url = alert?.textFields?.dropFirst().first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let url, !url.isEmpty else { return }
-            let linkTitle = (title?.isEmpty == false ? title : url) ?? url
-            self.replaceSelection(withRawText: "[\(linkTitle)](\(url))")
-        })
-        present(alert, animated: true)
-    }
-
-    
-    private func runAIPostReview() {
-        let content = composerRawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return }
-        let hud = UIAlertController(title: String(localized: "ai.review.running", defaultValue: "AI 预审中…"), message: nil, preferredStyle: .alert)
-        present(hud, animated: true)
-        Task {
-            do {
-                let result = try await AIPostReviewService.reviewDraft(title: nil, content: content, categoryName: nil)
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        let alert = UIAlertController(title: String(localized: "ai.review.result", defaultValue: "预审结果"), message: result, preferredStyle: .alert)
-                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
-                        self.present(alert, animated: true)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        let alert = UIAlertController(title: String(localized: "common.error", defaultValue: "错误"), message: error.localizedDescription, preferredStyle: .alert)
-                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
-                        self.present(alert, animated: true)
-                    }
-                }
-            }
-        }
-    }
-
-private func insertTemplate() {
-        let alert = UIAlertController(
-            title: String(localized: "reply.tool.template"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        let templates: [(String, String)] = [
-            (String(localized: "reply.template.summary"), "## \(String(localized: "reply.template.summary"))\n\n- \n"),
-            (String(localized: "reply.template.steps"), "## \(String(localized: "reply.template.steps"))\n\n1. \n2. \n3. \n"),
-            (String(localized: "reply.template.code"), "```\n\(String(localized: "reply.tool.placeholder.code"))\n```\n"),
-        ]
-        for template in templates {
-            alert.addAction(UIAlertAction(title: template.0, style: .default) { [weak self] _ in
-                self?.insertBlock(template.1)
-            })
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        present(alert, animated: true)
-    }
-
-    private func replaceSelection(with text: String) {
-        replaceSelection(withRawText: text)
-    }
-
-    private func pickImages() {
-        var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = .images
-        config.selectionLimit = 0
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = self
-        present(picker, animated: true)
-    }
-
-    private func pickAttachment() {
-        pendingMediaKind = nil
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-
-    @MainActor
-    private func uploadPickedFiles(_ files: [(url: URL, filename: String)]) async {
-        guard !files.isEmpty else { return }
-        setUploading(true, text: String(localized: "reply.uploading"))
-        defer { setUploading(false, text: nil) }
-
-        for (index, file) in files.enumerated() {
-            if files.count > 1 {
-                setUploading(true, text: "\(index + 1)/\(files.count)")
-            }
-            do {
-                let upload = try await api.uploadComposerFile(fileURL: file.url, filename: file.filename)
-                insertUploadMarkdown(upload.markdown)
-            } catch {
-                showUploadError(error)
-                return
-            }
-        }
-    }
-
-    private func insertUploadMarkdown(_ markdown: String) {
-        let text = composerDisplayText
-        let selection = textView.selectedRange
-        let nsText = text as NSString
-        let needsLeadingNewline = selection.location > 0 && nsText.substring(with: NSRange(location: selection.location - 1, length: 1)) != "\n"
-        let insertion = "\(needsLeadingNewline ? "\n" : "")\(markdown)\n"
-        replaceSelection(withRawText: insertion)
-    }
-
-    @MainActor
-    private func setUploading(_ uploading: Bool, text: String?) {
+    func composerSetUploading(_ uploading: Bool, statusText: String?) {
         isUploading = uploading
-        uploadStatusLabel.text = text
+        uploadStatusLabel.text = statusText
         uploadStatusLabel.isHidden = !uploading
         textView.isEditable = !uploading
         updateSendButton()
         toolsPanelView.isUploading = uploading
     }
 
-    private func showUploadError(_ error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "reply.upload.failed"),
-            message: error.localizedDescription,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-        present(alert, animated: true)
+    func composerCloseToolPanel(returnToKeyboard: Bool) {
+        closePanel(returnToKeyboard: returnToKeyboard)
     }
 
-    private func updatePlaceholder() {
-        placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
-    }
-
-    private func updateSendButton() {
-        let enabled = !(composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        sendButton.isEnabled = enabled && !isUploading
-        sendButton.alpha = sendButton.isEnabled ? 1 : 0.55
-    }
-
-    private func updatePreviewState() {
-        textView.isHidden = isPreviewingMarkdown
-        previewView.isHidden = !isPreviewingMarkdown
-        placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
-        updateToolbarState()
-    }
-
-    private func updateToolbarState() {
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        let previewSymbol = isPreviewingMarkdown ? "eye.slash.fill" : "eye"
-        previewToggleButton.setImage(UIImage(systemName: previewSymbol, withConfiguration: symbolConfig), for: .normal)
-        previewToggleButton.tintColor = isPreviewingMarkdown ? .systemBlue : .label
-        toolsToggleButton.tintColor = currentPanel == .tools ? .systemBlue : .label
-        emojiToggleButton.tintColor = currentPanel == .emoji ? .systemBlue : .label
-    }
-
-    @objc private func discardTapped() {
-        guard !composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            dismiss(animated: true)
-            return
-        }
-        let alert = UIAlertController(
-            title: String(localized: "reply.discard.confirm.title"),
-            message: String(localized: "reply.discard.confirm.message"),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "reply.discard"), style: .destructive) { [weak self] _ in
-            self?.dismiss(animated: true)
-        })
-        present(alert, animated: true)
-    }
-
-    @objc private func sendTapped() {
-        let raw = composerRawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return }
-
-        sendButton.isEnabled = false
-        textView.isEditable = false
-        closePanel(returnToKeyboard: false)
-
-        Task {
-            do {
-                switch submissionMode {
-                case .reply:
-                    let response = try await api.createReply(
-                        topicId: topicId,
-                        replyToPostNumber: replyToPost?.postNumber,
-                        raw: raw
-                    )
-                    if response.isEnqueued {
-                        presentQueuedAlert()
-                        return
-                    }
-                    dismiss(animated: true) { [weak self] in
-                        self?.onPostCreated?()
-                    }
-                case .edit(let postId):
-                    try await api.updatePost(id: postId, raw: raw)
-                    dismiss(animated: true) { [weak self] in
-                        self?.onPostUpdated?(postId)
-                    }
-                }
-            } catch {
-                sendButton.isEnabled = true
-                textView.isEditable = true
-                let alert = UIAlertController(
-                    title: String(localized: "reply.send.failed"),
-                    message: error.localizedDescription,
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-                present(alert, animated: true)
-            }
-        }
-    }
-
-    private func presentQueuedAlert() {
-        let alert = UIAlertController(
-            title: String(localized: "post.submit.queued.title"),
-            message: String(localized: "post.submit.queued.message"),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default) { [weak self] _ in
-            self?.dismiss(animated: true)
-        })
-        present(alert, animated: true)
+    func composerExitMarkdownPreviewIfNeeded() {
+        guard isPreviewingMarkdown else { return }
+        isPreviewingMarkdown = false
+        updatePreviewState()
     }
 }
+
+
 
 extension ReplyComposerViewController: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         guard !isApplyingAttributedText else { return }
         updatePlaceholder()
         updateSendButton()
+        scheduleLocalDraftSave()
         if isPreviewingMarkdown {
             previewView.update(markdown: composerRawText)
+            hideMentionPicker()
+        } else {
+            refreshMentionSuggestions()
         }
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        guard !isApplyingAttributedText else { return }
+        refreshMentionSuggestions()
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
@@ -1306,80 +1084,13 @@ extension ReplyComposerViewController: UITextViewDelegate {
             closePanel(returnToKeyboard: false)
         }
     }
-}
 
-extension ReplyComposerViewController: PHPickerViewControllerDelegate {
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-        guard !results.isEmpty else { return }
-        Task {
-            var files: [(url: URL, filename: String)] = []
-            for result in results {
-                if let file = try? await temporaryImageFile(from: result) {
-                    files.append(file)
-                }
-            }
-            await uploadPickedFiles(files)
-        }
+    func textViewDidEndEditing(_ textView: UITextView) {
+        hideMentionPicker()
     }
 
-    private func temporaryImageFile(from result: PHPickerResult) async throws -> (url: URL, filename: String) {
-        let provider = result.itemProvider
-        let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
-            UTType(identifier)?.conforms(to: .image) == true
-        } ?? UTType.image.identifier
-
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let url else {
-                    continuation.resume(throwing: DiscourseAPIError(messages: [String(localized: "reply.upload.failed")], errorType: "upload_failed"))
-                    return
-                }
-                do {
-                    let type = UTType(typeIdentifier)
-                    let ext = type?.preferredFilenameExtension ?? url.pathExtension
-                    let cleanExt = ext.isEmpty ? "jpg" : ext
-                    let baseName = provider.suggestedName ?? "image"
-                    let filename = "\(baseName).\(cleanExt)"
-                    let destination = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathExtension(cleanExt)
-                    if FileManager.default.fileExists(atPath: destination.path) {
-                        try FileManager.default.removeItem(at: destination)
-                    }
-                    try FileManager.default.copyItem(at: url, to: destination)
-                    continuation.resume(returning: (destination, filename))
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-}
-
-extension ReplyComposerViewController: UIDocumentPickerDelegate {
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let url = urls.first else { return }
-        Task {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer {
-                if scoped {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            if let kind = pendingMediaKind {
-                await uploadMediaFile(url: url, kind: kind)
-            } else {
-                await uploadPickedFiles([(url, url.lastPathComponent)])
-            }
-        }
-    }
-
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        pendingMediaKind = nil
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === textView, activeMentionRange != nil else { return }
+        repositionMentionPicker()
     }
 }

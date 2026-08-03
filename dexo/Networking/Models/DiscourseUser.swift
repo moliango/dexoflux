@@ -382,3 +382,43 @@ struct DiscourseInviteLink: Decodable, Identifiable {
         return Int(hash % UInt64(Int.max))
     }
 }
+
+// MARK: - Composer @-mention user search
+
+struct DiscourseUserSearchResponse: Decodable {
+    let users: [DiscourseMentionUser]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        users = (try? container.decodeIfPresent([DiscourseMentionUser].self, forKey: .users)) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case users
+    }
+}
+
+struct DiscourseMentionUser: Decodable, Hashable, Identifiable {
+    var id: String { username.lowercased() }
+    let username: String
+    let name: String?
+    let avatarTemplate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case username, name
+        case avatarTemplate = "avatar_template"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        username = (try? container.decodeIfPresent(String.self, forKey: .username)) ?? ""
+        name = try? container.decodeIfPresent(String.self, forKey: .name)
+        avatarTemplate = try? container.decodeIfPresent(String.self, forKey: .avatarTemplate)
+    }
+
+    init(username: String, name: String?, avatarTemplate: String?) {
+        self.username = username
+        self.name = name
+        self.avatarTemplate = avatarTemplate
+    }
+}
