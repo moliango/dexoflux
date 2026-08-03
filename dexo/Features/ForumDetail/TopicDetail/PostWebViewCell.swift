@@ -75,6 +75,12 @@ private extension InlineNode {
 
 extension UIViewController {
     func presentTopicImageGallery(currentURL: URL, imageURLs: [URL]) {
+        // Avoid stacking two galleries (tap races / web+native double fire) —
+        // closing the top one used to "pop" the lower one from the side.
+        if presentedViewController != nil {
+            return
+        }
+
         var galleryURLs = TopicImageGallerySources.uniqueImageURLs(imageURLs)
         if !galleryURLs.contains(where: { $0.absoluteString == currentURL.absoluteString }) {
             galleryURLs.insert(currentURL, at: 0)
@@ -83,6 +89,7 @@ extension UIViewController {
 
         let controller = TopicImageGalleryViewController(urls: galleryURLs, initialURL: currentURL)
         controller.modalPresentationStyle = .fullScreen
+        controller.modalTransitionStyle = .crossDissolve
         present(controller, animated: true)
     }
 }
@@ -91,6 +98,7 @@ final class TopicImageGalleryViewController: UIViewController {
     private let urls: [URL]
     private var currentIndex: Int
     private var didScrollToInitialIndex = false
+    private var isDismissing = false
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -328,7 +336,21 @@ final class TopicImageGalleryViewController: UIViewController {
     }
 
     @objc private func closeTapped() {
-        dismiss(animated: true)
+        guard !isDismissing, !isBeingDismissed else { return }
+        isDismissing = true
+        // Snap to the current page first so dismiss does not animate a mid-swipe
+        // horizontal offset (reads as "slide out to the side, then close again").
+        collectionView.isUserInteractionEnabled = false
+        let width = max(collectionView.bounds.width, 1)
+        if urls.indices.contains(currentIndex) {
+            collectionView.setContentOffset(
+                CGPoint(x: CGFloat(currentIndex) * width, y: 0),
+                animated: false
+            )
+        }
+        dismiss(animated: true) { [weak self] in
+            self?.isDismissing = false
+        }
     }
 
     @objc private func image(_ image: UIImage, didFinishSavingWithError error: NSError?, contextInfo: UnsafeRawPointer) {

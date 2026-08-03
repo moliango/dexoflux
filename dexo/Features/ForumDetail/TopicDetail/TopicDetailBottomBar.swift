@@ -102,11 +102,41 @@ final class TopicDetailBottomBar: UIControl {
     private var swipePill: UILabel?
     private var didConsumePanAsSwipe = false
 
+    private lazy var longPressGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        // FluxDO: 200ms long-press opens radial menu.
+        gesture.minimumPressDuration = 0.2
+        gesture.allowableMovement = 12
+        gesture.cancelsTouchesInView = true
+        gesture.delegate = self
+        return gesture
+    }()
+
+    private lazy var panGesture: UIPanGestureRecognizer = {
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        gesture.maximumNumberOfTouches = 1
+        gesture.cancelsTouchesInView = true
+        gesture.delegate = self
+        return gesture
+    }()
+
+    private lazy var tapGesture: UITapGestureRecognizer = {
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         clipsToBounds = false
         backgroundColor = .clear
+        isExclusiveTouch = true
+        isMultipleTouchEnabled = false
+        // Prefer gesture recognizers over UIControl tracking so pan/long-press
+        // are not starved by touchUpInside on a tiny floating control.
+        isUserInteractionEnabled = true
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.14
         layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -117,20 +147,15 @@ final class TopicDetailBottomBar: UIControl {
         addSubview(labelStack)
         layer.addSublayer(pressProgressLayer)
 
-        addTarget(self, action: #selector(tapped), for: .touchUpInside)
         addTarget(self, action: #selector(touchDown), for: .touchDown)
         addTarget(self, action: #selector(touchEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-        longPress.minimumPressDuration = 0.2
-        longPress.cancelsTouchesInView = true
-        addGestureRecognizer(longPress)
-
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        pan.cancelsTouchesInView = true
-        pan.delegate = self
-        // Movement starts pan; stillness lets long-press win at 200ms (FluxDO parity).
-        addGestureRecognizer(pan)
+        // Movement → pan (swipe actions). Stillness 200ms → long-press menu.
+        // Tap opens timeline when pan/long-press did not consume the touch.
+        // Do NOT require(toFail: longPress) — that would delay every tap by 200ms.
+        addGestureRecognizer(longPressGesture)
+        addGestureRecognizer(panGesture)
+        addGestureRecognizer(tapGesture)
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Metrics.height),
@@ -171,6 +196,11 @@ final class TopicDetailBottomBar: UIControl {
         ).cgPath
     }
 
+    /// Enlarge the hit target slightly — the 120×40 capsule is easy to miss.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -14, dy: -14).contains(point)
+    }
+
     func configure(currentFloor: Int, totalFloors: Int) {
         applyThemeStyle()
         let safeTotal = max(totalFloors, 0)
@@ -180,6 +210,14 @@ final class TopicDetailBottomBar: UIControl {
         progressFraction = safeTotal > 0 ? CGFloat(safeCurrent) / CGFloat(safeTotal) : 0
         setNeedsLayout()
         accessibilityLabel = String(localized: "topic_detail.progress.accessibility \(safeCurrent) \(safeTotal)")
+        refreshGestureRecognizers()
+    }
+
+    /// Re-read AppSettings so swipe/long-press stay in sync with Reading settings.
+    func refreshGestureRecognizers() {
+        let enabled = gesturesEnabled
+        panGesture.isEnabled = enabled
+        longPressGesture.isEnabled = enabled
     }
 
     private func applyThemeStyle() {
@@ -202,6 +240,8 @@ final class TopicDetailBottomBar: UIControl {
 
     @objc private func tapped() {
         guard !isPresentingRadialMenu, !didConsumePanAsSwipe else { return }
+        // Reset after a successful swipe so the next plain tap still works.
+        didConsumePanAsSwipe = false
         delegate?.bottomBarDidTapTimeline()
     }
 
@@ -214,16 +254,20 @@ final class TopicDetailBottomBar: UIControl {
         if !isPresentingRadialMenu {
             retractPressProgress()
         }
-        didConsumePanAsSwipe = false
+        // Defer clearing the swipe flag so tapGesture (if any) still sees it.
+        DispatchQueue.main.async { [weak self] in
+            self?.didConsumePanAsSwipe = false
+        }
     }
 
     // MARK: - Long press radial menu
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesturesEnabled else { return }
-        let location = window.map { gesture.location(in: $0) } ?? gesture.location(in: nil)
+        let location = gesture.location(in: window ?? self)
         switch gesture.state {
         case .began:
+            didConsumePanAsSwipe = true // suppress tap
             presentRadialMenu(at: location)
         case .changed:
             updateRadialHighlight(at: location)
@@ -437,16 +481,60 @@ extension TopicDetailBottomBar: UIGestureRecognizerDelegate {
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
+        // Keep pan / long-press / tap mutually exclusive on the capsule.
         false
     }
 
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        // When the master switch is off, only allow tap → timeline.
+        if gestureRecognizer === panGesture || gestureRecognizer === longPressGesture {
+            return gesturesEnabled
+        }
+        return true
+    }
+
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else {
+        if gestureRecognizer === tapGesture {
+            return !isPresentingRadialMenu && !didConsumePanAsSwipe
+        }
+        if gestureRecognizer === longPressGesture {
+            return gesturesEnabled
+        }
+        guard gestureRecognizer === panGesture else {
             return super.gestureRecognizerShouldBegin(gestureRecognizer)
         }
-        let velocity = pan.velocity(in: self)
-        // Prefer horizontal / upward pans so vertical list scroll isn't stolen loosely.
-        return abs(velocity.x) > abs(velocity.y) * 0.55 || velocity.y < -40
+        guard gesturesEnabled else { return false }
+
+        // Use translation (not velocity). Velocity is often ~0 when UIKit first
+        // asks shouldBegin, which previously made every swipe fail — settings
+        // looked connected but gestures never fired.
+        let translation = panGesture.translation(in: self)
+        let absX = abs(translation.x)
+        let absY = abs(translation.y)
+        guard max(absX, absY) >= Metrics.swipeDeadZone else { return false }
+        if absX >= absY {
+            // Left / right swipe
+            return true
+        }
+        // Up only (down is not a bound progress gesture)
+        return translation.y < 0
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        // Our pan/long-press win over ancestor pans (e.g. nav back-swipe fallback).
+        if gestureRecognizer === panGesture || gestureRecognizer === longPressGesture {
+            if otherGestureRecognizer is UIPanGestureRecognizer,
+               otherGestureRecognizer.view !== self {
+                return true
+            }
+        }
+        return false
     }
 }
 

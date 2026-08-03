@@ -214,8 +214,6 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         return v
     }()
 
-    private let loadingSkeletonView = TopicDetailSkeletonView()
-
     private let emptyLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "search.no_results")
@@ -265,7 +263,9 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         filterBar.backgroundColor = .systemGroupedBackground
         tableView.backgroundColor = .systemGroupedBackground
         headerContainer.backgroundColor = .systemGroupedBackground
-        loadingSkeletonView.applyThemeStyle()
+        // Search should not show topic-detail skeleton "进度条" placeholders.
+        tableView.showsVerticalScrollIndicator = false
+        tableView.showsHorizontalScrollIndicator = false
 
         setupHeader()
         setupFilterBar()
@@ -273,7 +273,6 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         updateFilterButtons()
 
         view.addSubview(tableView)
-        view.addSubview(loadingSkeletonView)
         view.addSubview(activityIndicator)
         view.addSubview(emptyLabel)
         view.addSubview(listStateView)
@@ -283,11 +282,6 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            loadingSkeletonView.topAnchor.constraint(equalTo: tableView.topAnchor),
-            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            loadingSkeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
@@ -825,12 +819,15 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     // MARK: - Search
 
     override func updateUI() {
-        activityIndicator.stopAnimating()
-        loadingSkeletonView.applyThemeStyle()
         let showsInitialLoading = viewModel.isSearching
             && viewModel.searchResults.isEmpty
             && viewModel.errorMessage == nil
-        loadingSkeletonView.setSkeletonActive(showsInitialLoading, animated: view.window != nil)
+        // Only a centered spinner — no skeleton progress bars on the search page.
+        if showsInitialLoading {
+            activityIndicator.startAnimating()
+        } else {
+            activityIndicator.stopAnimating()
+        }
 
         emptyLabel.isHidden = true
         if let error = viewModel.errorMessage {
