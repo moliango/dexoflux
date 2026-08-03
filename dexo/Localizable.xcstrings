@@ -2352,6 +2352,17 @@
         }
       }
     },
+    "common.retry" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重试"
+          }
+        }
+      }
+    },
     "common.save" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8519,7 +8530,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "从相册选择 Logo"
+            "value" : "从本地上传图标"
           }
         }
       }
@@ -8574,7 +8585,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "点按条目管理；开关控制是否在首页显示。需要排序时点右上角「排序」。"
+            "value" : "长按条目可编辑名称、获取 Logo；开关控制是否在首页显示。需要排序时点右上角「排序」。"
           }
         }
       }
@@ -8596,7 +8607,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "使用上下箭头调整顺序，完成后点「完成」。"
+            "value" : "按住右侧三道杠拖动调整顺序，完成后点「完成」。"
+          }
+        }
+      }
+    },
+    "mini_program.management.reorder_hint.categories" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按住右侧三道杠拖动分类顺序，完成后点「完成」。"
+          }
+        }
+      }
+    },
+    "mini_program.management.row_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "长按可编辑、获取 Logo 或删除"
           }
         }
       }
@@ -13422,6 +13455,50 @@
         }
       }
     },
+    "reply.tool.block.details" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "折叠详情"
+          }
+        }
+      }
+    },
+    "reply.tool.block.divider" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分隔线"
+          }
+        }
+      }
+    },
+    "reply.tool.block.math" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "公式块"
+          }
+        }
+      }
+    },
+    "reply.tool.block.table" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "表格"
+          }
+        }
+      }
+    },
     "reply.tool.bold" : {
       "localizations" : {
         "en" : {
@@ -13573,6 +13650,17 @@
         }
       }
     },
+    "reply.tool.insert_block" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "插入块"
+          }
+        }
+      }
+    },
     "reply.tool.italic" : {
       "localizations" : {
         "en" : {
@@ -13653,6 +13741,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "鏈接文本"
+          }
+        }
+      }
+    },
+    "reply.tool.media" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音视频"
+          }
+        }
+      }
+    },
+    "reply.tool.media.audio" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上传音频"
+          }
+        }
+      }
+    },
+    "reply.tool.media.video" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上传视频"
+          }
+        }
+      }
+    },
+    "reply.tool.media.voice" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "语音消息"
           }
         }
       }
@@ -18702,6 +18834,17 @@
         }
       }
     },
+    "settings.mini_programs.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开关、排序、编辑与 Logo"
+          }
+        }
+      }
+    },
     "settings.network" : {
       "localizations" : {
         "en" : {
@@ -22573,6 +22716,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "只看楼主"
+          }
+        }
+      }
+    },
+    "topic.image.load_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "图片加载失败，点按重试"
+          }
+        }
+      }
+    },
+    "topic.image.retry_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加载失败时可点按重试"
           }
         }
       }
