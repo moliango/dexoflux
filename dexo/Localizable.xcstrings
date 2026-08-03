@@ -5701,6 +5701,17 @@
         }
       }
     },
+    "me.browser.dns_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无法解析网站地址，请检查网络或网址"
+          }
+        }
+      }
+    },
     "me.browser.downloads" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -6081,6 +6092,17 @@
         }
       }
     },
+    "me.browser.offline" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "当前无网络连接，请检查网络后重试"
+          }
+        }
+      }
+    },
     "me.browser.open_external" : {
       "localizations" : {
         "en" : {
@@ -6201,6 +6223,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分享目前網頁"
+          }
+        }
+      }
+    },
+    "me.browser.timeout" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接超时，请稍后重试"
           }
         }
       }
@@ -7974,6 +8007,17 @@
         }
       }
     },
+    "mini_program.action.lock" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "锁定"
+          }
+        }
+      }
+    },
     "mini_program.action.reenter" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -7981,6 +8025,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "重新进入小程序"
+          }
+        }
+      }
+    },
+    "mini_program.action.unlock" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不锁定"
           }
         }
       }
@@ -8216,6 +8271,39 @@
         }
       }
     },
+    "mini_program.error.builtin_locked" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "内置小程序不能修改名称和网址"
+          }
+        }
+      }
+    },
+    "mini_program.error.invalid_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网址无效，请输入以 http:// 或 https:// 开头的地址"
+          }
+        }
+      }
+    },
+    "mini_program.error.not_found" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "找不到该小程序"
+          }
+        }
+      }
+    },
     "mini_program.float.close_action" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8267,6 +8355,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "添加到小程序"
+          }
+        }
+      }
+    },
+    "mini_program.lock.off" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已取消锁定"
+          }
+        }
+      }
+    },
+    "mini_program.lock.on" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已锁定，防止左右晃动和缩放"
           }
         }
       }

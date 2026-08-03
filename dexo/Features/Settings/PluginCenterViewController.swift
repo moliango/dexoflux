@@ -366,6 +366,25 @@ final class PluginCenterViewController: UIViewController {
                 self?.moveProgram(id: program.id, from: index, by: 1)
             })
         } else {
+            // Custom URL programs: dedicated edit / re-fetch logo controls so users
+            // can change name/URL and pull website logo again without hunting the row menu.
+            if !program.isBuiltIn {
+                trailing.addArrangedSubview(makeIconButton(
+                    symbol: "arrow.triangle.2.circlepath",
+                    enabled: true,
+                    color: accent
+                ) { [weak self] in
+                    self?.fetchWebsiteLogo(for: program)
+                })
+                trailing.addArrangedSubview(makeIconButton(
+                    symbol: "pencil",
+                    enabled: true,
+                    color: accent
+                ) { [weak self] in
+                    self?.presentEditCustomProgram(program)
+                })
+            }
+
             let visibilitySwitch = UISwitch()
             visibilitySwitch.isOn = program.isVisible
             visibilitySwitch.onTintColor = accent
@@ -393,8 +412,10 @@ final class PluginCenterViewController: UIViewController {
         stack.spacing = 12
         stack.isLayoutMarginsRelativeArrangement = true
         stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
-        // Trailing controls keep their size; text compresses.
+        // Trailing controls keep their size; text absorbs leftover width.
+        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        trailing.setContentHuggingPriority(.required, for: .horizontal)
         trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         row.addSubview(stack)
@@ -500,7 +521,15 @@ final class PluginCenterViewController: UIViewController {
             let lock = UIImageView(
                 image: UIImage(systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
             )
+            lock.translatesAutoresizingMaskIntoConstraints = false
             lock.tintColor = .tertiaryLabel
+            lock.contentMode = .scaleAspectFit
+            lock.setContentHuggingPriority(.required, for: .horizontal)
+            lock.setContentCompressionResistancePriority(.required, for: .horizontal)
+            NSLayoutConstraint.activate([
+                lock.widthAnchor.constraint(equalToConstant: 14),
+                lock.heightAnchor.constraint(equalToConstant: 14),
+            ])
             trailing.addArrangedSubview(lock)
         } else {
             trailing.addArrangedSubview(makeIconButton(symbol: "pencil", enabled: true, color: accent) { [weak self] in
@@ -521,7 +550,10 @@ final class PluginCenterViewController: UIViewController {
         stack.spacing = 12
         stack.isLayoutMarginsRelativeArrangement = true
         stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        // Title/subtitle absorb leftover width; trailing stays compact so "内置" pill doesn't stretch.
+        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        trailing.setContentHuggingPriority(.required, for: .horizontal)
         trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         row.addSubview(stack)
@@ -635,11 +667,18 @@ final class PluginCenterViewController: UIViewController {
         label.text = text
         label.font = .systemFont(ofSize: 11, weight: .semibold)
         label.textColor = color
+        label.textAlignment = .center
+        label.numberOfLines = 1
         label.backgroundColor = color.withAlphaComponent(0.12)
         label.layer.cornerRadius = 10
         label.layer.cornerCurve = .continuous
         label.clipsToBounds = true
         label.contentInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        // Keep pill at intrinsic width — UILabel otherwise expands inside horizontal stacks.
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        label.setContentHuggingPriority(.required, for: .vertical)
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
         return label
     }
 
@@ -862,33 +901,55 @@ final class PluginCenterViewController: UIViewController {
     }
 
     private func presentEditCustomProgram(_ program: MiniProgramRecord) {
+        guard !program.isBuiltIn else {
+            presentError(MiniProgramStoreError.builtInCannotBeEditedAsCustom)
+            return
+        }
         let alert = UIAlertController(
             title: String(localized: "mini_program.management.edit", defaultValue: "编辑名称和网址"),
             message: nil,
             preferredStyle: .alert
         )
-        alert.addTextField { $0.text = program.displayName }
+        alert.addTextField {
+            $0.text = program.displayName
+            $0.placeholder = String(localized: "mini_program.name", defaultValue: "名称")
+            $0.clearButtonMode = .whileEditing
+        }
         alert.addTextField {
             $0.text = program.urlString
+            $0.placeholder = "https://example.com"
             $0.keyboardType = .URL
             $0.autocapitalizationType = .none
             $0.autocorrectionType = .no
+            $0.clearButtonMode = .whileEditing
         }
         alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default) { [weak self, weak alert] _ in
-            guard let self,
-                  let rawURL = alert?.textFields?.dropFirst().first?.text,
-                  let url = self.normalizedInputURL(rawURL)
-            else { return }
+            guard let self else { return }
+            let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawURL = alert?.textFields?.dropFirst().first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let name, !name.isEmpty else {
+                self.presentError(MiniProgramStoreError.invalidURL)
+                return
+            }
+            // Prefer the edited URL; fall back to the existing one so name-only edits work.
+            let urlCandidate = rawURL.flatMap { self.normalizedInputURL($0) }
+                ?? program.urlString.flatMap(URL.init(string:))
+            guard let url = urlCandidate else {
+                self.presentError(MiniProgramStoreError.invalidURL)
+                return
+            }
             do {
                 try self.store.updateCustomProgram(
                     id: program.id,
-                    name: alert?.textFields?.first?.text ?? program.displayName,
+                    name: name,
                     url: url,
                     categoryID: program.categoryID,
                     icon: program.icon,
                     isVisible: program.isVisible
                 )
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 self.rebuildContent()
             } catch {
                 self.presentError(error)
@@ -950,7 +1011,10 @@ final class PluginCenterViewController: UIViewController {
         }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            // Only wait when an action sheet / alert is still dismissing.
+            if presentedViewController != nil {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+            }
             presentFetchingLogoHUD()
             do {
                 let path = try await MiniProgramMetadataService().downloadAndSaveLogo(
@@ -966,6 +1030,7 @@ final class PluginCenterViewController: UIViewController {
                     isVisible: program.isVisible
                 )
                 await dismissFetchingLogoHUD()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 rebuildContent()
             } catch {
                 await dismissFetchingLogoHUD()

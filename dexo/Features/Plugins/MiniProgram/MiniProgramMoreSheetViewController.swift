@@ -7,12 +7,16 @@ final class MiniProgramMoreSheetViewController: UIViewController {
         case floatWindow
         case reenter
         case copyLink
+        /// Toggle page lock (anti shake / pinch zoom).
+        case toggleInteractionLock
     }
 
     var onAction: ((Action) -> Void)?
     var onSelectRecent: ((MiniProgramDescriptor) -> Void)?
 
     private let currentProgram: MiniProgramDescriptor
+    /// Whether the host currently locks bounce + zoom.
+    private let isInteractionLocked: Bool
     private var panelBottomConstraint: NSLayoutConstraint?
 
     private let dimmingView: UIView = {
@@ -43,8 +47,9 @@ final class MiniProgramMoreSheetViewController: UIViewController {
         return stack
     }()
 
-    init(currentProgram: MiniProgramDescriptor) {
+    init(currentProgram: MiniProgramDescriptor, isInteractionLocked: Bool = false) {
         self.currentProgram = currentProgram
+        self.isInteractionLocked = isInteractionLocked
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -212,6 +217,12 @@ final class MiniProgramMoreSheetViewController: UIViewController {
     }
 
     private func makeActionGrid() -> UIView {
+        // When locked, show「不锁定」; otherwise「锁定」— one tile toggles host bounce/zoom lock.
+        let lockSymbol = isInteractionLocked ? "lock.open.fill" : "lock.fill"
+        let lockTitle = isInteractionLocked
+            ? String(localized: "mini_program.action.unlock", defaultValue: "不锁定")
+            : String(localized: "mini_program.action.lock", defaultValue: "锁定")
+
         let items: [(Action, String, String)] = [
             (
                 .floatWindow,
@@ -228,6 +239,11 @@ final class MiniProgramMoreSheetViewController: UIViewController {
                 "link",
                 String(localized: "mini_program.action.copy_link", defaultValue: "复制链接")
             ),
+            (
+                .toggleInteractionLock,
+                lockSymbol,
+                lockTitle
+            ),
         ]
 
         let row = UIStackView()
@@ -239,12 +255,6 @@ final class MiniProgramMoreSheetViewController: UIViewController {
 
         for item in items {
             row.addArrangedSubview(makeActionTile(action: item.0, symbol: item.1, title: item.2))
-        }
-        // Pad to keep icons left-aligned like WeChat when fewer than a full row.
-        while row.arrangedSubviews.count < 4 {
-            let spacer = UIView()
-            spacer.isUserInteractionEnabled = false
-            row.addArrangedSubview(spacer)
         }
 
         let wrap = UIView()

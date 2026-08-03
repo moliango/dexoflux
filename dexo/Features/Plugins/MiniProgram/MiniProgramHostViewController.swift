@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 /// Full-screen mini-program shell with WeChat-style capsule (··· / close).
 @MainActor
@@ -7,6 +8,9 @@ final class MiniProgramHostViewController: UIViewController {
     private let program: MiniProgramDescriptor
     private let api: DiscourseAPI
     private let username: String?
+    /// When true, embedded web content disables edge-swipe shake and pinch zoom.
+    /// Default on so pages don't rubber-band or pinch-zoom until the user unlocks.
+    private var isInteractionLocked = true
 
     private let chromeView: UIView = {
         let view = UIView()
@@ -124,6 +128,8 @@ final class MiniProgramHostViewController: UIViewController {
         capsuleView.addSubview(closeButton)
 
         embedContent(content)
+        // Apply default lock (anti shake / pinch zoom) after the child is embedded.
+        applyInteractionLockToContent()
 
         NSLayoutConstraint.activate([
             chromeView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -220,7 +226,10 @@ final class MiniProgramHostViewController: UIViewController {
 
     /// WeChat-style bottom icon panel (not system action sheet / select).
     private func presentMoreSheet() {
-        let sheet = MiniProgramMoreSheetViewController(currentProgram: program)
+        let sheet = MiniProgramMoreSheetViewController(
+            currentProgram: program,
+            isInteractionLocked: isInteractionLocked
+        )
         sheet.onAction = { [weak self] action in
             guard let self else { return }
             switch action {
@@ -230,6 +239,8 @@ final class MiniProgramHostViewController: UIViewController {
                 self.reenterProgram()
             case .copyLink:
                 self.copyLink()
+            case .toggleInteractionLock:
+                self.toggleInteractionLock()
             }
         }
         sheet.onSelectRecent = { [weak self] recent in
@@ -265,6 +276,8 @@ final class MiniProgramHostViewController: UIViewController {
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         replaceContent(with: fresh)
+        // Keep lock across re-enter so bounce/zoom stay disabled if user locked them.
+        applyInteractionLockToContent()
         presentToast(String(localized: "mini_program.reenter.done", defaultValue: "已重新进入"))
     }
 
@@ -276,6 +289,36 @@ final class MiniProgramHostViewController: UIViewController {
         UIPasteboard.general.string = link.absoluteString
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         presentToast(String(localized: "mini_program.copy_link.done", defaultValue: "链接已复制"))
+    }
+
+    private func toggleInteractionLock() {
+        isInteractionLocked.toggle()
+        applyInteractionLockToContent()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        presentToast(
+            isInteractionLocked
+                ? String(localized: "mini_program.lock.on", defaultValue: "已锁定，防止左右晃动和缩放")
+                : String(localized: "mini_program.lock.off", defaultValue: "已取消锁定")
+        )
+    }
+
+    private func applyInteractionLockToContent() {
+        var stack: [UIViewController] = [content]
+        var visited = Set<ObjectIdentifier>()
+        while let vc = stack.popLast() {
+            let id = ObjectIdentifier(vc)
+            guard visited.insert(id).inserted else { continue }
+            if let browser = vc as? InAppBrowserViewController {
+                browser.setPageInteractionLocked(isInteractionLocked)
+            }
+            if let nav = vc as? UINavigationController {
+                stack.append(contentsOf: nav.viewControllers)
+            }
+            if let tab = vc as? UITabBarController {
+                stack.append(contentsOf: tab.viewControllers ?? [])
+            }
+            stack.append(contentsOf: vc.children)
+        }
     }
 
     // MARK: - Content lifecycle
@@ -303,19 +346,81 @@ final class MiniProgramHostViewController: UIViewController {
 
     /// Close = destroy immediately. Floating keeps the instance via MiniProgramFloatingManager.
     func destroyAndDismiss() {
+        // Stop nested web views before dismiss so offline/error navigations cannot
+        // race deallocation (WK cookie observer / KVO) and crash.
+        prepareContentForTeardown(content)
+
         let teardown = { [weak self] in
             guard let self else { return }
             self.content.willMove(toParent: nil)
             self.content.view.removeFromSuperview()
             self.content.removeFromParent()
+            // Drawer may have left the tab bar force-hidden when opening a program.
+            Self.restoreHostTabBarIfNeeded()
         }
 
         if presentingViewController != nil {
+            // Prefer a clean slide-down without concurrent child layout thrash.
             dismiss(animated: true, completion: teardown)
         } else {
             teardown()
             view.removeFromSuperview()
             removeFromParent()
+        }
+    }
+
+    private func prepareContentForTeardown(_ root: UIViewController) {
+        var stack: [UIViewController] = [root]
+        var visited = Set<ObjectIdentifier>()
+        while let vc = stack.popLast() {
+            let id = ObjectIdentifier(vc)
+            guard visited.insert(id).inserted else { continue }
+            if let nav = vc as? UINavigationController {
+                stack.append(contentsOf: nav.viewControllers)
+            }
+            if let tab = vc as? UITabBarController {
+                stack.append(contentsOf: tab.viewControllers ?? [])
+            }
+            stack.append(contentsOf: vc.children)
+            if let browser = vc as? InAppBrowserViewController {
+                browser.prepareForHostTeardown()
+            }
+        }
+    }
+
+    private static func restoreHostTabBarIfNeeded() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+            ?? scenes.flatMap(\.windows).first
+        guard let root = window?.rootViewController else { return }
+
+        var queue: [UIViewController] = [root]
+        var visited = Set<ObjectIdentifier>()
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            let id = ObjectIdentifier(current)
+            guard visited.insert(id).inserted else { continue }
+            if let forumTab = current as? ForumTabBarController {
+                forumTab.setTabBarHiddenByScroll(false, animated: false)
+                forumTab.forceRevealTabBarForRootContent()
+                return
+            }
+            if let tab = current as? UITabBarController {
+                tab.tabBar.isHidden = false
+                if let selected = tab.selectedViewController {
+                    queue.append(selected)
+                }
+                queue.append(contentsOf: tab.viewControllers ?? [])
+            }
+            if let nav = current as? UINavigationController {
+                queue.append(contentsOf: nav.viewControllers)
+            }
+            if let presented = current.presentedViewController {
+                queue.append(presented)
+            }
+            queue.append(contentsOf: current.children)
         }
     }
 

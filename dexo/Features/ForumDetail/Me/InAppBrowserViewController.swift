@@ -14,6 +14,8 @@ final class InAppBrowserViewController: UIViewController {
     let hidesHostTabBarAtRoot: Bool
     private let hidesBrowserControlBar: Bool
     private var isCookieObserverRegistered = false
+    /// Set when the mini-program host (or parent) is destroying this browser.
+    private var isTornDown = false
 
     private lazy var webView: WKWebView = {
         let configuration = WKWebViewConfiguration()
@@ -55,6 +57,8 @@ final class InAppBrowserViewController: UIViewController {
     private var titleObservation: NSKeyValueObservation?
     private var urlObservation: NSKeyValueObservation?
     private var popupWebView: WKWebView?
+    /// Mini-program host lock: disable horizontal rubber-band / swipe-back and pinch zoom.
+    private(set) var isPageInteractionLocked = false
     init(
         api: DiscourseAPI,
         username: String?,
@@ -100,6 +104,11 @@ final class InAppBrowserViewController: UIViewController {
 
         let topBarHeight = topBar.heightAnchor.constraint(equalToConstant: hidesBrowserControlBar ? 0 : 48)
         topBarHeightConstraint = topBarHeight
+        // Mini-program host already provides chrome — hide the browser progress strip.
+        progressView.isHidden = hidesBrowserControlBar
+        let progressHeight = progressView.heightAnchor.constraint(
+            equalToConstant: hidesBrowserControlBar ? 0 : 2
+        )
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -110,7 +119,7 @@ final class InAppBrowserViewController: UIViewController {
             progressView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             progressView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             progressView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            progressView.heightAnchor.constraint(equalToConstant: 2),
+            progressHeight,
 
             webView.topAnchor.constraint(equalTo: progressView.bottomAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -125,8 +134,9 @@ final class InAppBrowserViewController: UIViewController {
 
         progressObservation = webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
             Task { @MainActor [weak self] in
-                self?.progressView.progress = Float(webView.estimatedProgress)
-                self?.progressView.isHidden = webView.estimatedProgress >= 1
+                guard let self, !self.hidesBrowserControlBar, !self.isTornDown else { return }
+                self.progressView.progress = Float(webView.estimatedProgress)
+                self.progressView.isHidden = webView.estimatedProgress >= 1
             }
         }
         titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
@@ -142,12 +152,92 @@ final class InAppBrowserViewController: UIViewController {
     }
 
     deinit {
-        if isCookieObserverRegistered {
-            webView.configuration.websiteDataStore.httpCookieStore.remove(self)
-        }
+        // Observations only — cookie observer must be removed on the main thread
+        // before deallocation (see prepareForHostTeardown / viewDidDisappear).
         progressObservation?.invalidate()
         titleObservation?.invalidate()
         urlObservation?.invalidate()
+    }
+
+    /// Call before the host tears this browser down (mini-program close / float discard).
+    /// Stops network work and detaches WK observers so offline failures cannot race free.
+    func prepareForHostTeardown() {
+        isTornDown = true
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        progressObservation?.invalidate()
+        progressObservation = nil
+        titleObservation?.invalidate()
+        titleObservation = nil
+        urlObservation?.invalidate()
+        urlObservation = nil
+        unregisterCookieObserverIfNeeded()
+    }
+
+    /// Lock page interaction to prevent left/right rubber-band shake and pinch zoom.
+    func setPageInteractionLocked(_ locked: Bool) {
+        isPageInteractionLocked = locked
+        applyPageInteractionLock()
+        if locked {
+            Task { @MainActor in
+                await injectViewportZoomLockIfNeeded()
+            }
+        }
+    }
+
+    private func applyPageInteractionLock() {
+        let locked = isPageInteractionLocked
+        // Edge swipe back/forward makes the page "shake" horizontally.
+        webView.allowsBackForwardNavigationGestures = !locked
+        applyLock(to: webView.scrollView, locked: locked)
+        if let popup = popupWebView {
+            popup.allowsBackForwardNavigationGestures = !locked
+            applyLock(to: popup.scrollView, locked: locked)
+        }
+    }
+
+    private func applyLock(to scrollView: UIScrollView, locked: Bool) {
+        scrollView.bounces = !locked
+        scrollView.alwaysBounceHorizontal = false
+        scrollView.alwaysBounceVertical = !locked
+        scrollView.bouncesZoom = !locked
+        scrollView.pinchGestureRecognizer?.isEnabled = !locked
+        if locked {
+            scrollView.minimumZoomScale = 1
+            scrollView.maximumZoomScale = 1
+            if abs(scrollView.zoomScale - 1) > 0.01 {
+                scrollView.setZoomScale(1, animated: false)
+            }
+        }
+    }
+
+    private func injectViewportZoomLockIfNeeded() async {
+        guard isPageInteractionLocked, !isTornDown else { return }
+        let script = """
+        (function() {
+          var meta = document.querySelector('meta[name="viewport"]');
+          if (!meta) {
+            meta = document.createElement('meta');
+            meta.name = 'viewport';
+            document.head.appendChild(meta);
+          }
+          var content = meta.getAttribute('content') || 'width=device-width, initial-scale=1';
+          content = content
+            .replace(/user-scalable\\s*=\\s*yes/gi, 'user-scalable=no')
+            .replace(/maximum-scale\\s*=\\s*[0-9.]+/gi, 'maximum-scale=1');
+          if (!/user-scalable\\s*=/i.test(content)) content += ', user-scalable=no';
+          if (!/maximum-scale\\s*=/i.test(content)) content += ', maximum-scale=1';
+          meta.setAttribute('content', content);
+        })();
+        """
+        _ = try? await webView.evaluateJavaScript(script)
+    }
+
+    private func unregisterCookieObserverIfNeeded() {
+        guard isCookieObserverRegistered else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+        isCookieObserverRegistered = false
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -167,6 +257,8 @@ final class InAppBrowserViewController: UIViewController {
         // Flush cookies before the web view is torn down (mini-program close, pop, dismiss).
         persistCookiesForCurrentPage()
         if isMovingFromParent || isBeingDismissed {
+            // Stop loads early so offline errors don't fire after the page is gone.
+            webView.stopLoading()
             navigationController?.setNavigationBarHidden(false, animated: animated)
         }
     }
@@ -175,6 +267,7 @@ final class InAppBrowserViewController: UIViewController {
         super.viewDidDisappear(animated)
         if isMovingFromParent || isBeingDismissed {
             persistCookiesForCurrentPage()
+            unregisterCookieObserverIfNeeded()
         }
     }
 
@@ -285,6 +378,7 @@ final class InAppBrowserViewController: UIViewController {
     }
 
     private func load(_ url: URL) async {
+        guard !isTornDown else { return }
         guard let normalizedURL = BrowserHistoryStore.normalizedPageURL(url) else {
             showMessage(BrowserHistoryStoreError.unsupportedURL.localizedDescription)
             return
@@ -296,15 +390,20 @@ final class InAppBrowserViewController: UIViewController {
         // 1) 注入当前论坛登录态（linux.do 的 _t / _forum_session / cf_clearance 等），
         //    让小程序 / 内置浏览器打开 linux.do 相关页时不必二次登录。
         await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: baseURL)
+        guard !isTornDown else { return }
         // 2) 若目标站与论坛不同域，再注入该站自己的 Cookie。
         let forumHost = baseURL.host?.lowercased()
         let pageHost = normalizedURL.host?.lowercased()
         if let pageHost, pageHost != forumHost {
             await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: normalizedURL)
         }
+        // After awaits the host may have closed the mini-program (common offline).
+        guard !isTornDown, isViewLoaded else { return }
 
         errorView.isHidden = true
         var request = URLRequest(url: normalizedURL)
+        // Offline / flaky networks: fail faster instead of hanging the first paint.
+        request.timeoutInterval = 30
         // Also attach Cookie header as a belt-and-suspenders for the first navigation
         // (some WebKit builds apply httpCookieStore slightly after the first load).
         let cookieHeader = WebCookieStore.shared.cookieHeader(for: normalizedURL)
@@ -333,9 +432,33 @@ final class InAppBrowserViewController: UIViewController {
     }
 
     private func showMessage(_ message: String) {
+        guard !isTornDown, presentedViewController == nil else { return }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
         present(alert, animated: true)
+    }
+
+    private static func friendlyNetworkMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        switch nsError.code {
+        case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+            return String(
+                localized: "me.browser.offline",
+                defaultValue: "当前无网络连接，请检查网络后重试"
+            )
+        case NSURLErrorTimedOut:
+            return String(
+                localized: "me.browser.timeout",
+                defaultValue: "连接超时，请稍后重试"
+            )
+        case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
+            return String(
+                localized: "me.browser.dns_failed",
+                defaultValue: "无法解析网站地址，请检查网络或网址"
+            )
+        default:
+            return error.localizedDescription
+        }
     }
 
 
@@ -508,11 +631,18 @@ extension InAppBrowserViewController: WKNavigationDelegate {
         }
         updateTitleCapsule()
         updateControlState()
+        // Re-apply after navigation — WebKit may reset zoom/bounce on new documents.
+        if isPageInteractionLocked {
+            applyPageInteractionLock()
+        }
         try? store.recordVisit(url: url, title: webView.title)
         Task {
             await WebCookieStore.shared.syncFromWebView(webView.configuration.websiteDataStore, for: url)
             if let userAgent = try? await webView.evaluateJavaScript("navigator.userAgent") as? String {
                 WebCookieStore.shared.userAgent = userAgent
+            }
+            if isPageInteractionLocked {
+                await injectViewportZoomLockIfNeeded()
             }
         }
     }
@@ -522,18 +652,25 @@ extension InAppBrowserViewController: WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        guard !isTornDown else { return }
         let nsError = error as NSError
         guard nsError.code != NSURLErrorCancelled else { return }
-        errorView.configure(message: error.localizedDescription)
+        // Offline / DNS failures: show inline error instead of letting WK leave a blank crashy state.
+        let message = Self.friendlyNetworkMessage(for: error)
+        errorView.configure(message: message)
         errorView.isHidden = false
+        progressView.isHidden = true
         updateControlState()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard !isTornDown else { return }
         let nsError = error as NSError
         guard nsError.code != NSURLErrorCancelled else { return }
-        errorView.configure(message: error.localizedDescription)
+        let message = Self.friendlyNetworkMessage(for: error)
+        errorView.configure(message: message)
         errorView.isHidden = false
+        progressView.isHidden = true
         updateControlState()
     }
 
