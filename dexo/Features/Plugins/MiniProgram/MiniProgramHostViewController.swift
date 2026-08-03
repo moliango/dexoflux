@@ -425,42 +425,6 @@ final class MiniProgramHostViewController: UIViewController {
     }
 
     private func presentToast(_ message: String) {
-        let banner = UIView()
-        banner.translatesAutoresizingMaskIntoConstraints = false
-        banner.backgroundColor = UIColor.black.withAlphaComponent(0.78)
-        banner.layer.cornerRadius = 14
-        banner.layer.cornerCurve = .continuous
-        banner.clipsToBounds = true
-
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = message
-        label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.textColor = .white
-        label.textAlignment = .center
-
-        banner.addSubview(label)
-        view.addSubview(banner)
-        NSLayoutConstraint.activate([
-            banner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            banner.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -28),
-            banner.heightAnchor.constraint(equalToConstant: 36),
-            banner.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
-            banner.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
-
-            label.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: 16),
-            label.trailingAnchor.constraint(equalTo: banner.trailingAnchor, constant: -16),
-            label.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
-        ])
-        banner.alpha = 0
-        UIView.animate(withDuration: 0.2, animations: {
-            banner.alpha = 1
-        }, completion: { _ in
-            UIView.animate(withDuration: 0.25, delay: 1.1, options: [], animations: {
-                banner.alpha = 0
-            }, completion: { _ in
-                banner.removeFromSuperview()
-            })
-        })
+        DexoFeedback.presentToast(message, on: self)
     }
 }

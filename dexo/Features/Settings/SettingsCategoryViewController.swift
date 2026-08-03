@@ -83,7 +83,7 @@ final class SettingsCategoryViewController: ObservableViewController {
             return [.readingComfort, .contentFontSize, .hideScrollIndicators]
         case .network:
             return [.cloudflareVerify, .avatarLoadingProfile, .dohToggle, .dohProvider, .dohCustomURL, .dohStatus]
-        case .preferences, .notion:
+        case .preferences, .notion, .miniPrograms:
             return []
         case .bottomBar:
             return [.bottomBarLayout, .bottomAutoHide]

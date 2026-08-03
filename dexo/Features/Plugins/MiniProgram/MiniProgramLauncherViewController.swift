@@ -54,6 +54,8 @@ final class MiniProgramLauncherViewController: UIViewController {
         self.api = api
         self.username = username
         super.init(nibName: nil, bundle: nil)
+        // WeChat-style:「我的小程序」covers the forum chrome; no tab bar.
+        hidesBottomBarWhenPushed = true
     }
 
     @available(*, unavailable)
@@ -118,6 +120,14 @@ final class MiniProgramLauncherViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         rebuildContent()
+        // Re-assert full-screen: ForumTabBarController may re-show the bar after
+        // drawer dismiss / layout races.
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
     }
 
     private func rebuildContent() {
@@ -268,6 +278,7 @@ final class MiniProgramLauncherViewController: UIViewController {
     @objc private func manageTapped() {
         let vc = PluginCenterViewController(baseURL: api.baseURL, username: username)
         navigationController?.pushViewController(vc, animated: true)
+        (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
     }
 }
 

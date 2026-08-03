@@ -6,6 +6,7 @@ final class SettingsViewController: ObservableViewController {
         case reading
         case network
         case preferences
+        case miniPrograms
         case bottomBar
         case dataManagement
         case notion
@@ -18,6 +19,8 @@ final class SettingsViewController: ObservableViewController {
             case .network: return String(localized: "settings.network")
             case .preferences:
                 return String(localized: "settings.preferences", defaultValue: "功能设置")
+            case .miniPrograms:
+                return String(localized: "mini_program.management.title", defaultValue: "小程序管理")
             case .bottomBar: return String(localized: "settings.bottom_bar")
             case .dataManagement: return String(localized: "settings.data_management")
             case .notion:
@@ -36,6 +39,11 @@ final class SettingsViewController: ObservableViewController {
                     localized: "settings.preferences.subtitle",
                     defaultValue: "剪贴板、启动和通用行为"
                 )
+            case .miniPrograms:
+                return String(
+                    localized: "settings.mini_programs.subtitle",
+                    defaultValue: "开关、排序、编辑与 Logo"
+                )
             case .bottomBar: return String(localized: "settings.bottom_bar.subtitle")
             case .dataManagement: return String(localized: "settings.data_management.subtitle")
             case .notion:
@@ -53,6 +61,7 @@ final class SettingsViewController: ObservableViewController {
             case .reading: return "book.closed.fill"
             case .network: return "network"
             case .preferences: return "slider.horizontal.3"
+            case .miniPrograms: return "square.grid.2x2.fill"
             case .bottomBar: return "rectangle.bottomthird.inset.filled"
             case .dataManagement: return "externaldrive.fill"
             case .notion: return "cloud.fill"
@@ -66,6 +75,7 @@ final class SettingsViewController: ObservableViewController {
             case .reading: return .systemOrange
             case .network: return .systemBlue
             case .preferences: return .systemPurple
+            case .miniPrograms: return .systemGreen
             case .bottomBar: return .systemYellow
             case .dataManagement: return .systemBrown
             case .notion: return .systemPurple
@@ -152,6 +162,13 @@ extension SettingsViewController: UITableViewDelegate {
             navigationController?.pushViewController(NetworkSettingsViewController(), animated: true)
         case .preferences:
             navigationController?.pushViewController(PreferencesSettingsViewController(), animated: true)
+        case .miniPrograms:
+            let baseURL = ForumInstance.linuxDoBaseURL
+            let username = AuthManager.shared.username(for: baseURL)
+            navigationController?.pushViewController(
+                PluginCenterViewController(baseURL: baseURL, username: username),
+                animated: true
+            )
         case .bottomBar:
             navigationController?.pushViewController(BottomBarLayoutViewController(), animated: true)
         case .dataManagement:

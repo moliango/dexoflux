@@ -17,6 +17,17 @@ final class PluginCenterViewController: UIViewController {
     private var catalogObserver: NSObjectProtocol?
     private var activeTab: Tab = .programs
     private var isReorderMode = false
+    /// Skip full rebuild on `viewWillAppear` when catalog fingerprint unchanged (Phase 7).
+    private var lastContentFingerprint: String?
+    /// Snapshot for the visible list table (drag reorder).
+    private var programItems: [MiniProgramRecord] = []
+    private var categoryItems: [MiniProgramCategory] = []
+    private weak var listTableView: UITableView?
+
+    private static let programCellID = "MiniProgramManageProgramCell"
+    private static let categoryCellID = "MiniProgramManageCategoryCell"
+    private static let programRowHeight: CGFloat = 72
+    private static let categoryRowHeight: CGFloat = 68
 
     private let scrollView: UIScrollView = {
         let scroll = UIScrollView()
@@ -71,6 +82,8 @@ final class PluginCenterViewController: UIViewController {
         self.username = username
         self.store = store
         super.init(nibName: nil, bundle: nil)
+        // Pushed from「我的小程序」— keep full-screen without the forum tab bar.
+        hidesBottomBarWhenPushed = true
     }
 
     @available(*, unavailable)
@@ -105,7 +118,18 @@ final class PluginCenterViewController: UIViewController {
         super.viewWillAppear(animated)
         enableSettingsInteractiveBackSwipe()
         configureBackNavigationItem()
-        rebuildContent()
+        let fingerprint = contentFingerprint()
+        if fingerprint != lastContentFingerprint {
+            rebuildContent()
+        }
+    }
+
+    private func contentFingerprint() -> String {
+        let programs = store.allPrograms().map {
+            "\($0.id):\($0.displayName):\($0.isVisible):\($0.categoryID):\($0.order)"
+        }.joined(separator: "|")
+        let categories = store.allCategories().map { "\($0.id):\($0.name):\($0.order)" }.joined(separator: "|")
+        return "\(activeTab.rawValue)#\(isReorderMode)#\(programs)#\(categories)"
     }
 
     // MARK: - Navigation
@@ -201,9 +225,9 @@ final class PluginCenterViewController: UIViewController {
             contentStack.addArrangedSubview(makeCategoriesList())
         }
 
-        if !isReorderMode {
-            contentStack.addArrangedSubview(makeHintCard())
-        }
+        // Always show footer — reorder mode needs the drag hint.
+        contentStack.addArrangedSubview(makeHintCard())
+        lastContentFingerprint = contentFingerprint()
     }
 
     // MARK: - Header
@@ -283,19 +307,19 @@ final class PluginCenterViewController: UIViewController {
         return card
     }
 
-    // MARK: - Programs list
+    // MARK: - Programs list (UITableView + drag reorder)
 
     private func makeProgramsList() -> UIView {
-        let programs = store.allPrograms()
+        programItems = store.allPrograms()
+        categoryItems = []
         let card = makeSurfaceCard()
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(stack)
-        pin(stack, to: card)
 
-        if programs.isEmpty {
+        if programItems.isEmpty {
+            let stack = UIStackView()
+            stack.axis = .vertical
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(stack)
+            pin(stack, to: card)
             stack.addArrangedSubview(makeEmptyRow(
                 symbol: "square.grid.2x2",
                 title: String(localized: "mini_program.management.programs.empty", defaultValue: "还没有小程序"),
@@ -304,261 +328,59 @@ final class PluginCenterViewController: UIViewController {
                     defaultValue: "点右上角 + 添加网址小程序"
                 )
             ))
+            listTableView = nil
             return card
         }
 
-        for (index, program) in programs.enumerated() {
-            stack.addArrangedSubview(makeProgramRow(program: program, index: index, total: programs.count))
-            if index < programs.count - 1 {
-                stack.addArrangedSubview(makeHairline())
-            }
-        }
+        let table = makeListTableView()
+        table.register(UITableViewCell.self, forCellReuseIdentifier: Self.programCellID)
+        card.addSubview(table)
+        pin(table, to: card)
+        let height = CGFloat(programItems.count) * Self.programRowHeight
+        table.heightAnchor.constraint(equalToConstant: height).isActive = true
+        listTableView = table
+        applyReorderMode(to: table)
         return card
     }
 
-    private func makeProgramRow(program: MiniProgramRecord, index: Int, total: Int) -> UIView {
-        let accent = settings.themeStyle.accentColor
-        let row = UIControl()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.backgroundColor = .clear
-        // 44pt+ touch target (ux-pro-max touch guideline).
-        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
-
-        let iconBadge = MiniProgramIconBadge.view(for: program.id, size: 44)
-        iconBadge.isUserInteractionEnabled = false
-
-        let titleLabel = UILabel()
-        titleLabel.text = program.displayName
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        titleLabel.textColor = program.isVisible ? .label : .secondaryLabel
-        titleLabel.lineBreakMode = .byTruncatingTail
-
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = programSubtitle(program)
-        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.textColor = .tertiaryLabel
-        subtitleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.numberOfLines = 1
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 3
-        textStack.isUserInteractionEnabled = false
-
-        let trailing = UIStackView()
-        trailing.axis = .horizontal
-        trailing.alignment = .center
-        trailing.spacing = 10
-
-        if isReorderMode {
-            trailing.addArrangedSubview(makeIconButton(
-                symbol: "chevron.up",
-                enabled: index > 0,
-                color: .secondaryLabel
-            ) { [weak self] in
-                self?.moveProgram(id: program.id, from: index, by: -1)
-            })
-            trailing.addArrangedSubview(makeIconButton(
-                symbol: "chevron.down",
-                enabled: index < total - 1,
-                color: .secondaryLabel
-            ) { [weak self] in
-                self?.moveProgram(id: program.id, from: index, by: 1)
-            })
-        } else {
-            // Custom URL programs: dedicated edit / re-fetch logo controls so users
-            // can change name/URL and pull website logo again without hunting the row menu.
-            if !program.isBuiltIn {
-                trailing.addArrangedSubview(makeIconButton(
-                    symbol: "arrow.triangle.2.circlepath",
-                    enabled: true,
-                    color: accent
-                ) { [weak self] in
-                    self?.fetchWebsiteLogo(for: program)
-                })
-                trailing.addArrangedSubview(makeIconButton(
-                    symbol: "pencil",
-                    enabled: true,
-                    color: accent
-                ) { [weak self] in
-                    self?.presentEditCustomProgram(program)
-                })
-            }
-
-            let visibilitySwitch = UISwitch()
-            visibilitySwitch.isOn = program.isVisible
-            visibilitySwitch.onTintColor = accent
-            // Keep switch tappable without opening the row menu.
-            visibilitySwitch.addAction(UIAction { [weak self] _ in
-                guard let self else { return }
-                self.store.setProgram(program.id, isVisible: visibilitySwitch.isOn)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                self.rebuildContent()
-            }, for: .valueChanged)
-            trailing.addArrangedSubview(visibilitySwitch)
-
-            let chevron = UIImageView(
-                image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
-            )
-            chevron.tintColor = .tertiaryLabel
-            chevron.setContentHuggingPriority(.required, for: .horizontal)
-            trailing.addArrangedSubview(chevron)
-        }
-
-        let stack = UIStackView(arrangedSubviews: [iconBadge, textStack, trailing])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.isLayoutMarginsRelativeArrangement = true
-        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
-        // Trailing controls keep their size; text absorbs leftover width.
-        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        trailing.setContentHuggingPriority(.required, for: .horizontal)
-        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        row.addSubview(stack)
-        pin(stack, to: row)
-
-        if !isReorderMode {
-            row.addAction(UIAction { [weak self] _ in
-                self?.presentProgramActions(program)
-            }, for: .touchUpInside)
-            row.addAction(UIAction { _ in
-                UIView.animate(withDuration: 0.12) { row.alpha = 0.72 }
-            }, for: .touchDown)
-            let reset = UIAction { _ in
-                UIView.animate(withDuration: 0.15) { row.alpha = 1 }
-            }
-            row.addAction(reset, for: [.touchUpInside, .touchUpOutside, .touchCancel])
-        }
-
-        return row
-    }
-
-    // MARK: - Categories list
+    // MARK: - Categories list (UITableView + drag reorder)
 
     private func makeCategoriesList() -> UIView {
-        let categories = store.allCategories()
+        categoryItems = store.allCategories()
+        programItems = []
         let card = makeSurfaceCard()
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(stack)
-        pin(stack, to: card)
-
-        for (index, category) in categories.enumerated() {
-            stack.addArrangedSubview(makeCategoryRow(category: category, index: index, total: categories.count))
-            if index < categories.count - 1 {
-                stack.addArrangedSubview(makeHairline())
-            }
-        }
+        let table = makeListTableView()
+        table.register(UITableViewCell.self, forCellReuseIdentifier: Self.categoryCellID)
+        card.addSubview(table)
+        pin(table, to: card)
+        let height = CGFloat(max(categoryItems.count, 1)) * Self.categoryRowHeight
+        table.heightAnchor.constraint(equalToConstant: height).isActive = true
+        listTableView = table
+        applyReorderMode(to: table)
         return card
     }
 
-    private func makeCategoryRow(category: MiniProgramCategory, index: Int, total: Int) -> UIView {
-        let accent = settings.themeStyle.accentColor
-        let count = store.allPrograms().filter { $0.categoryID == category.id }.count
+    private func makeListTableView() -> UITableView {
+        let table = UITableView(frame: .zero, style: .plain)
+        table.translatesAutoresizingMaskIntoConstraints = false
+        table.backgroundColor = .clear
+        table.separatorInset = UIEdgeInsets(top: 0, left: 70, bottom: 0, right: 0)
+        table.separatorColor = UIColor.separator.withAlphaComponent(0.35)
+        table.isScrollEnabled = false
+        table.allowsSelection = !isReorderMode
+        table.dataSource = self
+        table.delegate = self
+        table.rowHeight = activeTab == .programs ? Self.programRowHeight : Self.categoryRowHeight
+        table.estimatedRowHeight = table.rowHeight
+        // Drag-only editing: no delete indents.
+        table.tableFooterView = UIView(frame: .zero)
+        return table
+    }
 
-        let row = UIView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
-
-        let iconWrap = UIView()
-        iconWrap.translatesAutoresizingMaskIntoConstraints = false
-        iconWrap.backgroundColor = accent.withAlphaComponent(0.12)
-        iconWrap.layer.cornerRadius = 22
-        iconWrap.layer.cornerCurve = .continuous
-        let folder = UIImageView(
-            image: UIImage(systemName: "folder.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
-        )
-        folder.tintColor = accent
-        folder.translatesAutoresizingMaskIntoConstraints = false
-        iconWrap.addSubview(folder)
-        NSLayoutConstraint.activate([
-            iconWrap.widthAnchor.constraint(equalToConstant: 44),
-            iconWrap.heightAnchor.constraint(equalToConstant: 44),
-            folder.centerXAnchor.constraint(equalTo: iconWrap.centerXAnchor),
-            folder.centerYAnchor.constraint(equalTo: iconWrap.centerYAnchor),
-        ])
-
-        let titleLabel = UILabel()
-        titleLabel.text = category.name
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        titleLabel.textColor = .label
-
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = String(
-            format: String(localized: "mini_program.management.category_count", defaultValue: "%d 个小程序"),
-            count
-        )
-        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.textColor = .tertiaryLabel
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 3
-
-        let trailing = UIStackView()
-        trailing.axis = .horizontal
-        trailing.alignment = .center
-        trailing.spacing = 8
-
-        if isReorderMode {
-            trailing.addArrangedSubview(makeIconButton(symbol: "chevron.up", enabled: index > 0, color: .secondaryLabel) { [weak self] in
-                self?.moveCategory(id: category.id, from: index, by: -1)
-            })
-            trailing.addArrangedSubview(makeIconButton(symbol: "chevron.down", enabled: index < total - 1, color: .secondaryLabel) { [weak self] in
-                self?.moveCategory(id: category.id, from: index, by: 1)
-            })
-        } else if category.isBuiltIn {
-            trailing.addArrangedSubview(makeTag(
-                text: String(localized: "mini_program.management.builtin", defaultValue: "内置"),
-                color: accent
-            ))
-            let lock = UIImageView(
-                image: UIImage(systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
-            )
-            lock.translatesAutoresizingMaskIntoConstraints = false
-            lock.tintColor = .tertiaryLabel
-            lock.contentMode = .scaleAspectFit
-            lock.setContentHuggingPriority(.required, for: .horizontal)
-            lock.setContentCompressionResistancePriority(.required, for: .horizontal)
-            NSLayoutConstraint.activate([
-                lock.widthAnchor.constraint(equalToConstant: 14),
-                lock.heightAnchor.constraint(equalToConstant: 14),
-            ])
-            trailing.addArrangedSubview(lock)
-        } else {
-            trailing.addArrangedSubview(makeIconButton(symbol: "pencil", enabled: true, color: accent) { [weak self] in
-                self?.presentRenameCategory(category)
-            })
-            trailing.addArrangedSubview(makeIconButton(symbol: "trash", enabled: true, color: .systemRed) { [weak self] in
-                guard let self else { return }
-                _ = self.store.deleteCategory(id: category.id)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                self.rebuildContent()
-            })
-        }
-
-        let stack = UIStackView(arrangedSubviews: [iconWrap, textStack, trailing])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.isLayoutMarginsRelativeArrangement = true
-        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
-        // Title/subtitle absorb leftover width; trailing stays compact so "内置" pill doesn't stretch.
-        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        trailing.setContentHuggingPriority(.required, for: .horizontal)
-        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        row.addSubview(stack)
-        pin(stack, to: row)
-        return row
+    private func applyReorderMode(to table: UITableView) {
+        // `isEditing` shows the system drag handles (line.3.horizontal).
+        table.setEditing(isReorderMode, animated: false)
+        table.allowsSelection = !isReorderMode
     }
 
     private func makeHintCard() -> UIView {
@@ -571,16 +393,24 @@ final class PluginCenterViewController: UIViewController {
         switch activeTab {
         case .programs:
             label.text = isReorderMode
-                ? String(localized: "mini_program.management.reorder_hint", defaultValue: "使用上下箭头调整顺序，完成后点「完成」。")
+                ? String(
+                    localized: "mini_program.management.reorder_hint",
+                    defaultValue: "按住右侧三道杠拖动调整顺序，完成后点「完成」。"
+                )
                 : String(
                     localized: "mini_program.management.programs.footer",
-                    defaultValue: "点按条目管理；开关控制是否在首页显示。需要排序时点右上角「排序」。"
+                    defaultValue: "长按条目可编辑名称、获取 Logo；开关控制是否在首页显示。需要排序时点右上角「排序」。"
                 )
         case .categories:
-            label.text = String(
-                localized: "mini_program.management.categories.footer",
-                defaultValue: "删除分类不会删除小程序，分类下内容会移动到「其他」。"
-            )
+            label.text = isReorderMode
+                ? String(
+                    localized: "mini_program.management.reorder_hint.categories",
+                    defaultValue: "按住右侧三道杠拖动分类顺序，完成后点「完成」。"
+                )
+                : String(
+                    localized: "mini_program.management.categories.footer",
+                    defaultValue: "删除分类不会删除小程序，分类下内容会移动到「其他」。"
+                )
         }
         card.addSubview(label)
         NSLayoutConstraint.activate([
@@ -731,24 +561,6 @@ final class PluginCenterViewController: UIViewController {
         return [host, categoryName].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private func moveProgram(id: String, from index: Int, by delta: Int) {
-        let target = index + delta
-        let programs = store.allPrograms()
-        guard programs.indices.contains(index), programs.indices.contains(target) else { return }
-        store.moveProgram(id: id, to: target)
-        UISelectionFeedbackGenerator().selectionChanged()
-        rebuildContent()
-    }
-
-    private func moveCategory(id: String, from index: Int, by delta: Int) {
-        let target = index + delta
-        let categories = store.allCategories()
-        guard categories.indices.contains(index), categories.indices.contains(target) else { return }
-        store.moveCategory(id: id, to: target)
-        UISelectionFeedbackGenerator().selectionChanged()
-        rebuildContent()
-    }
-
     // MARK: - Actions (behavior preserved)
 
     @objc private func addTapped() {
@@ -862,32 +674,8 @@ final class PluginCenterViewController: UIViewController {
 
     private func presentProgramActions(_ program: MiniProgramRecord) {
         let sheet = UIAlertController(title: program.displayName, message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(
-            title: String(localized: "mini_program.management.change_category", defaultValue: "修改分类"),
-            style: .default
-        ) { [weak self] _ in self?.presentCategoryPicker(for: program) })
-        if !program.isBuiltIn {
-            sheet.addAction(UIAlertAction(
-                title: String(localized: "mini_program.management.edit", defaultValue: "编辑名称和网址"),
-                style: .default
-            ) { [weak self] _ in self?.presentEditCustomProgram(program) })
-            sheet.addAction(UIAlertAction(
-                title: String(localized: "mini_program.management.fetch_logo", defaultValue: "获取网站 Logo"),
-                style: .default
-            ) { [weak self] _ in self?.fetchWebsiteLogo(for: program) })
-            sheet.addAction(UIAlertAction(
-                title: String(localized: "mini_program.management.choose_logo", defaultValue: "从相册选择 Logo"),
-                style: .default
-            ) { [weak self] _ in self?.presentLogoPicker(for: program.id) })
-            sheet.addAction(UIAlertAction(
-                title: String(localized: "common.delete", defaultValue: "删除"),
-                style: .destructive
-            ) { [weak self] _ in
-                guard let self else { return }
-                _ = self.store.deleteProgram(id: program.id)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                self.rebuildContent()
-            })
+        for action in programManagementAlertActions(for: program) {
+            sheet.addAction(action)
         }
         sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
         sheet.popoverPresentationController?.sourceView = view
@@ -898,6 +686,81 @@ final class PluginCenterViewController: UIViewController {
             height: 1
         )
         present(sheet, animated: true)
+    }
+
+    private func programManagementAlertActions(for program: MiniProgramRecord) -> [UIAlertAction] {
+        var actions: [UIAlertAction] = [
+            UIAlertAction(
+                title: String(localized: "mini_program.management.change_category", defaultValue: "修改分类"),
+                style: .default
+            ) { [weak self] _ in self?.presentCategoryPicker(for: program) },
+        ]
+        if !program.isBuiltIn {
+            actions.append(UIAlertAction(
+                title: String(localized: "mini_program.management.edit", defaultValue: "编辑名称和网址"),
+                style: .default
+            ) { [weak self] _ in self?.presentEditCustomProgram(program) })
+            actions.append(UIAlertAction(
+                title: String(localized: "mini_program.management.fetch_logo", defaultValue: "获取网站 Logo"),
+                style: .default
+            ) { [weak self] _ in self?.fetchWebsiteLogo(for: program) })
+            actions.append(UIAlertAction(
+                title: String(localized: "mini_program.management.choose_logo", defaultValue: "从本地上传图标"),
+                style: .default
+            ) { [weak self] _ in self?.presentLogoPicker(for: program.id) })
+            actions.append(UIAlertAction(
+                title: String(localized: "common.delete", defaultValue: "删除"),
+                style: .destructive
+            ) { [weak self] _ in
+                guard let self else { return }
+                _ = self.store.deleteProgram(id: program.id)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                self.rebuildContent()
+            })
+        }
+        return actions
+    }
+
+    private func programContextMenu(for program: MiniProgramRecord) -> UIMenu {
+        var children: [UIMenuElement] = [
+            UIAction(
+                title: String(localized: "mini_program.management.change_category", defaultValue: "修改分类"),
+                image: UIImage(systemName: "folder")
+            ) { [weak self] _ in
+                self?.presentCategoryPicker(for: program)
+            },
+        ]
+        if !program.isBuiltIn {
+            children.append(UIAction(
+                title: String(localized: "mini_program.management.edit", defaultValue: "编辑名称和网址"),
+                image: UIImage(systemName: "pencil")
+            ) { [weak self] _ in
+                self?.presentEditCustomProgram(program)
+            })
+            children.append(UIAction(
+                title: String(localized: "mini_program.management.fetch_logo", defaultValue: "获取网站 Logo"),
+                image: UIImage(systemName: "arrow.triangle.2.circlepath")
+            ) { [weak self] _ in
+                self?.fetchWebsiteLogo(for: program)
+            })
+            children.append(UIAction(
+                title: String(localized: "mini_program.management.choose_logo", defaultValue: "从本地上传图标"),
+                image: UIImage(systemName: "photo")
+            ) { [weak self] _ in
+                self?.presentLogoPicker(for: program.id)
+            })
+            children.append(UIAction(
+                title: String(localized: "common.delete", defaultValue: "删除"),
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                guard let self else { return }
+                _ = self.store.deleteProgram(id: program.id)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                self.rebuildContent()
+            })
+        }
+        return UIMenu(title: program.displayName, children: children)
     }
 
     private func presentEditCustomProgram(_ program: MiniProgramRecord) {
@@ -1040,25 +903,17 @@ final class PluginCenterViewController: UIViewController {
     }
 
     private func presentFetchingLogoHUD() {
-        guard presentedViewController == nil else { return }
-        let hud = UIAlertController(
-            title: nil,
-            message: String(localized: "mini_program.logo.fetching", defaultValue: "正在获取 Logo…"),
-            preferredStyle: .alert
+        DexoFeedback.presentLoadingHUD(
+            String(localized: "mini_program.logo.fetching", defaultValue: "正在获取 Logo…"),
+            on: self
         )
-        present(hud, animated: true)
     }
 
     @MainActor
     private func dismissFetchingLogoHUD() async {
-        guard let presented = presentedViewController as? UIAlertController,
-              presented.actions.isEmpty
-        else { return }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            presented.dismiss(animated: true) {
-                continuation.resume()
-            }
-        }
+        DexoFeedback.dismissLoadingHUD(on: self)
+        // Brief yield so UI can settle before the next alert.
+        try? await Task.sleep(nanoseconds: 50_000_000)
     }
 
     private func normalizedInputURL(_ raw: String) -> URL? {
@@ -1078,6 +933,291 @@ final class PluginCenterViewController: UIViewController {
         )
         alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default))
         present(alert, animated: true)
+    }
+}
+
+// MARK: - Drag reorder table
+
+extension PluginCenterViewController: UITableViewDataSource, UITableViewDelegate {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        switch activeTab {
+        case .programs: return programItems.count
+        case .categories: return categoryItems.count
+        }
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        switch activeTab {
+        case .programs:
+            return configureProgramCell(tableView, indexPath: indexPath)
+        case .categories:
+            return configureCategoryCell(tableView, indexPath: indexPath)
+        }
+    }
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        isReorderMode
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        guard sourceIndexPath.row != destinationIndexPath.row else { return }
+        switch activeTab {
+        case .programs:
+            guard programItems.indices.contains(sourceIndexPath.row) else { return }
+            let item = programItems.remove(at: sourceIndexPath.row)
+            programItems.insert(item, at: destinationIndexPath.row)
+            store.moveProgram(id: item.id, to: destinationIndexPath.row)
+            UISelectionFeedbackGenerator().selectionChanged()
+            lastContentFingerprint = contentFingerprint()
+        case .categories:
+            guard categoryItems.indices.contains(sourceIndexPath.row) else { return }
+            let item = categoryItems.remove(at: sourceIndexPath.row)
+            categoryItems.insert(item, at: destinationIndexPath.row)
+            store.moveCategory(id: item.id, to: destinationIndexPath.row)
+            UISelectionFeedbackGenerator().selectionChanged()
+            lastContentFingerprint = contentFingerprint()
+        }
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        editingStyleForRowAt indexPath: IndexPath
+    ) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        false
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
+        toProposedIndexPath proposedDestinationIndexPath: IndexPath
+    ) -> IndexPath {
+        proposedDestinationIndexPath
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard !isReorderMode, activeTab == .programs,
+              programItems.indices.contains(indexPath.row)
+        else { return nil }
+        let program = programItems[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            self?.programContextMenu(for: program)
+        }
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard !isReorderMode, activeTab == .programs,
+              programItems.indices.contains(indexPath.row)
+        else { return }
+        // Tap opens the same management sheet as long-press (discoverability).
+        presentProgramActions(programItems[indexPath.row])
+    }
+
+    private func configureProgramCell(_ tableView: UITableView, indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: Self.programCellID, for: indexPath)
+        cell.selectionStyle = isReorderMode ? .none : .default
+        cell.backgroundColor = .clear
+        cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+        cell.accessoryView = nil
+        cell.accessoryType = .none
+
+        guard programItems.indices.contains(indexPath.row) else { return cell }
+        let program = programItems[indexPath.row]
+        let accent = settings.themeStyle.accentColor
+
+        let iconBadge = MiniProgramIconBadge.view(for: program.id, size: 44)
+        iconBadge.isUserInteractionEnabled = false
+
+        let titleLabel = UILabel()
+        titleLabel.text = program.displayName
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.textColor = program.isVisible ? .label : .secondaryLabel
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = programSubtitle(program)
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        subtitleLabel.textColor = .tertiaryLabel
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 3
+        textStack.isUserInteractionEnabled = false
+
+        let trailing = UIStackView()
+        trailing.axis = .horizontal
+        trailing.alignment = .center
+        trailing.spacing = 10
+
+        if isReorderMode {
+            // System reorder control appears on the trailing edge while editing.
+            let grip = UIImageView(
+                image: UIImage(systemName: "line.3.horizontal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
+            )
+            grip.tintColor = .tertiaryLabel
+            grip.setContentHuggingPriority(.required, for: .horizontal)
+            // Visual hint only — actual drag uses the system edit control.
+            trailing.addArrangedSubview(grip)
+        } else {
+            let visibilitySwitch = UISwitch()
+            visibilitySwitch.isOn = program.isVisible
+            visibilitySwitch.onTintColor = accent
+            visibilitySwitch.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                self.store.setProgram(program.id, isVisible: visibilitySwitch.isOn)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                // Refresh subtitle/title colors without full page rebuild.
+                self.programItems = self.store.allPrograms()
+                self.listTableView?.reloadRows(at: [indexPath], with: .none)
+                self.lastContentFingerprint = self.contentFingerprint()
+            }, for: .valueChanged)
+            trailing.addArrangedSubview(visibilitySwitch)
+        }
+
+        let stack = UIStackView(arrangedSubviews: [iconBadge, textStack, trailing])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        trailing.setContentHuggingPriority(.required, for: .horizontal)
+        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        cell.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
+        ])
+
+        cell.accessibilityLabel = program.displayName
+        if !isReorderMode {
+            cell.accessibilityHint = String(
+                localized: "mini_program.management.row_hint",
+                defaultValue: "长按可编辑、获取 Logo 或删除"
+            )
+        }
+        return cell
+    }
+
+    private func configureCategoryCell(_ tableView: UITableView, indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: Self.categoryCellID, for: indexPath)
+        cell.selectionStyle = .none
+        cell.backgroundColor = .clear
+        cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+        cell.accessoryView = nil
+
+        guard categoryItems.indices.contains(indexPath.row) else { return cell }
+        let category = categoryItems[indexPath.row]
+        let accent = settings.themeStyle.accentColor
+        let count = store.allPrograms().filter { $0.categoryID == category.id }.count
+
+        let iconWrap = UIView()
+        iconWrap.translatesAutoresizingMaskIntoConstraints = false
+        iconWrap.backgroundColor = accent.withAlphaComponent(0.12)
+        iconWrap.layer.cornerRadius = 22
+        iconWrap.layer.cornerCurve = .continuous
+        let folder = UIImageView(
+            image: UIImage(
+                systemName: "folder.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+            )
+        )
+        folder.tintColor = accent
+        folder.translatesAutoresizingMaskIntoConstraints = false
+        iconWrap.addSubview(folder)
+        NSLayoutConstraint.activate([
+            iconWrap.widthAnchor.constraint(equalToConstant: 44),
+            iconWrap.heightAnchor.constraint(equalToConstant: 44),
+            folder.centerXAnchor.constraint(equalTo: iconWrap.centerXAnchor),
+            folder.centerYAnchor.constraint(equalTo: iconWrap.centerYAnchor),
+        ])
+
+        let titleLabel = UILabel()
+        titleLabel.text = category.name
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.textColor = .label
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = String(
+            format: String(localized: "mini_program.management.category_count", defaultValue: "%d 个小程序"),
+            count
+        )
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        subtitleLabel.textColor = .tertiaryLabel
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 3
+
+        let trailing = UIStackView()
+        trailing.axis = .horizontal
+        trailing.alignment = .center
+        trailing.spacing = 8
+
+        if isReorderMode {
+            let grip = UIImageView(
+                image: UIImage(systemName: "line.3.horizontal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
+            )
+            grip.tintColor = .tertiaryLabel
+            grip.setContentHuggingPriority(.required, for: .horizontal)
+            trailing.addArrangedSubview(grip)
+        } else if category.isBuiltIn {
+            trailing.addArrangedSubview(makeTag(
+                text: String(localized: "mini_program.management.builtin", defaultValue: "内置"),
+                color: accent
+            ))
+            let lock = UIImageView(
+                image: UIImage(systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
+            )
+            lock.tintColor = .tertiaryLabel
+            lock.setContentHuggingPriority(.required, for: .horizontal)
+            trailing.addArrangedSubview(lock)
+        } else {
+            trailing.addArrangedSubview(makeIconButton(symbol: "pencil", enabled: true, color: accent) { [weak self] in
+                self?.presentRenameCategory(category)
+            })
+            trailing.addArrangedSubview(makeIconButton(symbol: "trash", enabled: true, color: .systemRed) { [weak self] in
+                guard let self else { return }
+                _ = self.store.deleteCategory(id: category.id)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                self.rebuildContent()
+            })
+        }
+
+        let stack = UIStackView(arrangedSubviews: [iconWrap, textStack, trailing])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        trailing.setContentHuggingPriority(.required, for: .horizontal)
+        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        cell.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
+        ])
+        return cell
     }
 }
 
