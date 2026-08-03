@@ -113,7 +113,8 @@ final class TopicExportService {
                 "",
                 "## #\(post.postNumber) · \(author)",
                 "",
-                Self.readableText(from: post.cooked),
+                // Phase 4: cooked → blocks → markdown (never bare post.raw).
+                CookedContentPipeline.markdown(fromCooked: post.cooked, baseURL: baseURL),
             ])
         }
         return sections.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
@@ -161,24 +162,6 @@ final class TopicExportService {
         </body>
         </html>
         """
-    }
-
-    private static func readableText(from cooked: String) -> String {
-        guard let data = cooked.data(using: .utf8),
-              let attributed = try? NSAttributedString(
-                data: data,
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue,
-                ],
-                documentAttributes: nil
-              ) else {
-            return cooked.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        }
-        return attributed.string
-            .replacingOccurrences(of: "[ \\t]+\n", with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func htmlEscape(_ value: String) -> String {

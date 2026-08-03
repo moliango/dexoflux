@@ -48,7 +48,8 @@ enum AIChatService {
         var buffer = ""
         for (postNumber, username, cooked) in selected {
             buffer += "#\(postNumber) @\(username):\n"
-            buffer += stripHTML(cooked)
+            // Phase 4: shared cooked pipeline (not ad-hoc tag strip).
+            buffer += CookedContentPipeline.plainText(fromCooked: cooked)
             buffer += "\n\n"
         }
         return buffer
@@ -64,19 +65,9 @@ enum AIChatService {
         ]
     }
 
+    /// Backward-compatible alias → shared cooked plain-text pipeline.
     static func stripHTML(_ html: String) -> String {
-        html
-            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: [.regularExpression, .caseInsensitive])
-            .replacingOccurrences(of: "<p>", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: "</p>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        CookedContentPipeline.plainText(fromCooked: html)
     }
 
     // MARK: - Chat requests
