@@ -177,12 +177,12 @@ final class SearchResultCell: UITableViewCell {
             if let title = topic?.title, !title.isEmpty { return title }
             return String(localized: "search.untitled", defaultValue: "无标题")
         }()
-        let plain = Self.stripHTML(titleSource)
+        let plain = CookedContentPipeline.plainTextPreview(fromCooked: titleSource, baseURL: baseURL)
         let titleFont = UIFont.systemFont(ofSize: Metrics.titleFontSize, weight: .semibold)
         titleLabel.font = titleFont
         titleLabel.textColor = .label
         TitleEmojiRenderer.apply(
-            plain,
+            plain.isEmpty ? titleSource : plain,
             to: titleLabel,
             font: titleFont,
             textColor: .label,
@@ -200,7 +200,7 @@ final class SearchResultCell: UITableViewCell {
         }
         aiIcon.isHidden = !isAIResult
 
-        let blurb = Self.stripHTML(post.blurb ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let blurb = CookedContentPipeline.plainTextPreview(fromCooked: post.blurb ?? "", baseURL: baseURL)
         blurbLabel.text = blurb
         blurbLabel.isHidden = blurb.isEmpty
 
@@ -263,16 +263,6 @@ final class SearchResultCell: UITableViewCell {
         }
     }
 
-    private static func stripHTML(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-    }
 }
 
 // MARK: - Badges (UIView-backed so continuous corner radius actually clips)

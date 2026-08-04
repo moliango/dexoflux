@@ -16,6 +16,14 @@ enum CookedContentPipeline {
         return CookedTextExporter.plainText(fromHTML: rewritten, baseURL: baseURL)
     }
 
+    /// Single-line plain text for list cells, search blurbs, and action-sheet excerpts.
+    /// Collapses internal whitespace so previews never wrap on leftover `\n` from block export.
+    static func plainTextPreview(fromCooked cooked: String, baseURL: String? = nil) -> String {
+        plainText(fromCooked: cooked, baseURL: baseURL)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Lightweight markdown for export / Notion.
     static func markdown(fromCooked cooked: String, baseURL: String? = nil) -> String {
         let rewritten = PostImageLinkPreprocessor.rewrite(cooked)

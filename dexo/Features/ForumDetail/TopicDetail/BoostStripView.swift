@@ -390,32 +390,8 @@ final class BoostStripView: UIView {
     }
 
     private static func plainText(from html: String) -> String {
-        var text = html.replacingOccurrences(
-            of: "<img[^>]*(?:title|alt)=\"([^\"]+)\"[^>]*>",
-            with: " $1 ",
-            options: .regularExpression
-        )
-        text = text.replacingOccurrences(of: "<br\\s*/?>", with: " ", options: .regularExpression)
-        text = text.replacingOccurrences(of: "</(p|div|li|blockquote)>", with: " ", options: .regularExpression)
-        text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-
-        let decoded: String
-        if let data = text.data(using: .utf8),
-           let attributed = try? NSAttributedString(
-               data: data,
-               options: [
-                   .documentType: NSAttributedString.DocumentType.html,
-                   .characterEncoding: String.Encoding.utf8.rawValue,
-               ],
-               documentAttributes: nil
-           ) {
-            decoded = attributed.string
-        } else {
-            decoded = text
-        }
-
-        return decoded.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Shared cooked pipeline — keeps boost labels consistent with export / share / search.
+        CookedContentPipeline.plainTextPreview(fromCooked: html)
     }
 }
 

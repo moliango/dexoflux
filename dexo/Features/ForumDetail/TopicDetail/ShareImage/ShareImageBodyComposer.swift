@@ -518,19 +518,12 @@ enum ShareImageBodyComposer {
             // dump markdown/source leftovers onto the card.
             let nested = CookedContentPipeline.blocks(fromCooked: normalizeCookedInput(html), baseURL: baseURL)
             if nested.count == 1, case .rawHTML = nested[0] {
-                // Still opaque — fall back to HTML→attributed / tag strip.
-                if let rich = attributedString(fromHTML: html, config: config), rich.length > 0 {
-                    let plain = rich.string
-                    if looksLikeMarkdownSource(plain) {
-                        segments.append(.text(stripMarkdownArtifacts(plain)))
-                    } else {
-                        segments.append(.richText(rich))
-                    }
-                } else {
-                    let stripped = stripMarkdownArtifacts(stripHTMLTags(html))
-                    if !stripped.isEmpty {
-                        segments.append(.text(stripped))
-                    }
+                // Still opaque after re-parse — pipeline plain text only (never raw MD dump).
+                let plain = stripMarkdownArtifacts(
+                    CookedContentPipeline.plainTextPreview(fromCooked: html, baseURL: baseURL)
+                )
+                if !plain.isEmpty {
+                    segments.append(.text(plain))
                 }
             } else {
                 for child in nested {
@@ -604,6 +597,13 @@ enum ShareImageBodyComposer {
     }
 
     private static func plainText(fromBlocks blocks: [ContentBlock]) -> String {
+        // Shared exporter keeps table/list/rawHTML cells aligned with export & AI.
+        let exported = CookedTextExporter.plainText(from: blocks)
+        let collapsed = collapseWhitespace(
+            exported.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        )
+        if !collapsed.isEmpty { return collapsed }
+
         var parts: [String] = []
         for block in blocks {
             switch block {
@@ -612,76 +612,13 @@ enum ShareImageBodyComposer {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty { parts.append(text) }
             case .rawHTML(let html):
-                let stripped = stripHTMLTags(html)
+                let stripped = CookedContentPipeline.plainTextPreview(fromCooked: html)
                 if !stripped.isEmpty { parts.append(stripped) }
             default:
                 break
             }
         }
         return parts.joined(separator: " ")
-    }
-
-    private static func stripHTMLTags(_ html: String) -> String {
-        // Prefer attributed HTML parse for entity decoding.
-        if let rich = attributedString(
-            fromHTML: html,
-            config: AttributedStringConfig(baseFont: .systemFont(ofSize: 15), baseColor: .label)
-        ) {
-            return collapseWhitespace(rich.string)
-        }
-        return collapseWhitespace(
-            html
-                .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-                .replacingOccurrences(of: "&nbsp;", with: " ")
-                .replacingOccurrences(of: "&amp;", with: "&")
-                .replacingOccurrences(of: "&lt;", with: "<")
-                .replacingOccurrences(of: "&gt;", with: ">")
-                .replacingOccurrences(of: "&quot;", with: "\"")
-        )
-    }
-
-    private static func attributedString(
-        fromHTML html: String,
-        config: AttributedStringConfig
-    ) -> NSAttributedString? {
-        let wrapped = """
-        <div style="font-family: -apple-system; font-size: \(Int(config.baseFont.pointSize))px; color: #111;">
-        \(html)
-        </div>
-        """
-        guard let data = wrapped.data(using: .utf8) else { return nil }
-        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
-            .documentType: NSAttributedString.DocumentType.html,
-            .characterEncoding: String.Encoding.utf8.rawValue,
-        ]
-        guard let parsed = try? NSMutableAttributedString(
-            data: data,
-            options: options,
-            documentAttributes: nil
-        ) else { return nil }
-
-        // Normalize fonts/colors onto our share theme.
-        let full = NSRange(location: 0, length: parsed.length)
-        parsed.enumerateAttributes(in: full, options: []) { attrs, range, _ in
-            var next = attrs
-            let pointSize = config.baseFont.pointSize
-            if let font = attrs[.font] as? UIFont {
-                let traits = font.fontDescriptor.symbolicTraits
-                var weight: UIFont.Weight = .regular
-                if traits.contains(.traitBold) { weight = .semibold }
-                var resolved = UIFont.systemFont(ofSize: pointSize, weight: weight)
-                if traits.contains(.traitItalic),
-                   let italic = resolved.fontDescriptor.withSymbolicTraits(.traitItalic) {
-                    resolved = UIFont(descriptor: italic, size: pointSize)
-                }
-                next[.font] = resolved
-            } else {
-                next[.font] = config.baseFont
-            }
-            next[.foregroundColor] = config.baseColor
-            parsed.setAttributes(next, range: range)
-        }
-        return trimmedAttributedString(parsed)
     }
 
     private static func trimmedAttributedString(_ attr: NSAttributedString) -> NSAttributedString {

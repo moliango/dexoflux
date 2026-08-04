@@ -10,28 +10,10 @@ enum UserProfileFormatting {
 
     static func cleanBio(_ bio: String?) -> String? {
         guard let bio, !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let stripped = bio
-            .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
+        // Profile bio is Discourse cooked HTML — use shared pipeline (not ad-hoc tag strip).
+        let cleaned = CookedContentPipeline.plainText(fromCooked: bio)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let data = stripped.data(using: .utf8),
-           let decoded = try? NSAttributedString(
-            data: data,
-            options: [
-                .documentType: NSAttributedString.DocumentType.html,
-                .characterEncoding: String.Encoding.utf8.rawValue,
-            ],
-            documentAttributes: nil
-           ).string.trimmingCharacters(in: .whitespacesAndNewlines),
-           !decoded.isEmpty {
-            return decoded
-        }
-
-        return stripped.isEmpty ? nil : stripped
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     static func trustLevelText(_ level: Int?) -> String? {

@@ -162,17 +162,7 @@ final class BookmarkCell: UITableViewCell {
     }
 
     private static func cleanedExcerpt(_ html: String) -> String {
-        html
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&hellip;", with: "...")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        CookedContentPipeline.plainTextPreview(fromCooked: html)
     }
 
     private static func formatDate(_ isoString: String) -> String {

@@ -3,62 +3,62 @@ import SafariServices
 import UIKit
 
 final class TopicDetailViewController: ObservableViewController {
-    private let viewModel: TopicDetailViewModel
-    private let api: DiscourseAPI
-    private let topicId: Int
-    private let initialFloor: Int?
+    let viewModel: TopicDetailViewModel
+    let api: DiscourseAPI
+    let topicId: Int
+    let initialFloor: Int?
     /// Last read post number from list/detail — used by jump-to-unread (Phase 1).
-    private var lastReadPostNumber: Int?
-    private let baseURL: String
-    private var hasTitleHeader = false
-    private var lastCategoryPresentation: TopicCategoryBadgePresentation?
-    private var isLoadingEarlierLocally = false
-    private var pendingScrollToFloor: Int?
-    private var lastScrollOffset: CGFloat = 0
+    var lastReadPostNumber: Int?
+    let baseURL: String
+    var hasTitleHeader = false
+    var lastCategoryPresentation: TopicCategoryBadgePresentation?
+    var isLoadingEarlierLocally = false
+    var pendingScrollToFloor: Int?
+    var lastScrollOffset: CGFloat = 0
     /// Measured row heights keyed by post id — stabilizes estimatedHeight while scrolling.
-    private var postRowHeightCache: [Int: CGFloat] = [:]
+    var postRowHeightCache: [Int: CGFloat] = [:]
     /// Suppress load-earlier after a jump until user scrolls down first
-    private var suppressLoadEarlier = false
+    var suppressLoadEarlier = false
     /// Anchor info for restoring scroll position after loading earlier posts
-    private var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
-    private struct PendingPostSnapshot {
+    var earlierLoadAnchor: (postId: Int, cellTopOffset: CGFloat)?
+    struct PendingPostSnapshot {
         let itemIDs: [Int]
         let earlierAnchor: (postId: Int, cellTopOffset: CGFloat)?
     }
-    private var isApplyingPostSnapshot = false
-    private var pendingPostSnapshot: PendingPostSnapshot?
-    private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
-    private var lastContentFontSize = AppSettings.shared.contentFontSize
-    private var lastContentFontScalePercent = AppSettings.shared.contentFontScalePercent
-    private var lastContentFontFamily = AppSettings.shared.contentFontFamily
-    private var lastContentFontScope = AppSettings.shared.contentFontScope
-    private var lastInterfaceFontScalePercent = AppSettings.shared.interfaceFontScalePercent
-    private var lastThemeStyle = AppSettings.shared.themeStyle
-    private var hasPresentedInitialContent = false
-    private var isHandlingBackSwipeFallback = false
-    private weak var backSwipeFallbackHostView: UIView?
-    private lazy var readingTracker = TopicReadingTracker(api: api)
-    private var isShowingCollapsedNavigationTitle = false
-    private var lastBottomBarProgressState: (current: Int, total: Int)?
-    private var downloadedAttachmentURLs: Set<URL> = []
-    private var prefetchedImagePostIds = Set<Int>()
-    private var pendingSharedIssueTopicIds = Set<Int>()
-    private var cloudflareCompletionObservationToken: NSObjectProtocol?
+    var isApplyingPostSnapshot = false
+    var pendingPostSnapshot: PendingPostSnapshot?
+    var lastReadingComfortMode = AppSettings.shared.readingComfortMode
+    var lastContentFontSize = AppSettings.shared.contentFontSize
+    var lastContentFontScalePercent = AppSettings.shared.contentFontScalePercent
+    var lastContentFontFamily = AppSettings.shared.contentFontFamily
+    var lastContentFontScope = AppSettings.shared.contentFontScope
+    var lastInterfaceFontScalePercent = AppSettings.shared.interfaceFontScalePercent
+    var lastThemeStyle = AppSettings.shared.themeStyle
+    var hasPresentedInitialContent = false
+    var isHandlingBackSwipeFallback = false
+    weak var backSwipeFallbackHostView: UIView?
+    lazy var readingTracker = TopicReadingTracker(api: api)
+    var isShowingCollapsedNavigationTitle = false
+    var lastBottomBarProgressState: (current: Int, total: Int)?
+    var downloadedAttachmentURLs: Set<URL> = []
+    var prefetchedImagePostIds = Set<Int>()
+    var pendingSharedIssueTopicIds = Set<Int>()
+    var cloudflareCompletionObservationToken: NSObjectProtocol?
 
-    private var pluginScope: PluginScope {
+    var pluginScope: PluginScope {
         PluginScope(
             baseURL: api.baseURL,
             username: AuthManager.shared.username(for: api.baseURL)
         )
     }
 
-    private enum BackSwipeFallbackMetrics {
+    enum BackSwipeFallbackMetrics {
         static let edgeActivationWidth: CGFloat = 44
         static let minimumCompletionTranslation: CGFloat = 64
         static let minimumCompletionVelocity: CGFloat = 480
     }
 
-    private lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
+    lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
         let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleBackSwipeFallback(_:)))
         gesture.maximumNumberOfTouches = 1
         // Don't cancel child touches by default — progress-bar pans live on a
@@ -68,7 +68,7 @@ final class TopicDetailViewController: ObservableViewController {
         return gesture
     }()
 
-    private lazy var tableView: UITableView = {
+    lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(PostNativeCell.self, forCellReuseIdentifier: PostNativeCell.reuseIdentifier)
@@ -81,7 +81,7 @@ final class TopicDetailViewController: ObservableViewController {
         return tv
     }()
 
-    private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, postId in
+    lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, postId in
         guard let self,
               let post = self.viewModel.posts.first(where: { $0.id == postId })
         else {
@@ -138,7 +138,7 @@ final class TopicDetailViewController: ObservableViewController {
         return cell
     }
 
-    private func sharedIssueState(forFloorNumber floorNumber: Int) -> PostNativeCell.SharedIssueState? {
+    func sharedIssueState(forFloorNumber floorNumber: Int) -> PostNativeCell.SharedIssueState? {
         guard floorNumber == 1,
               let topic = viewModel.topic,
               topic.sharedIssueVisible
@@ -152,16 +152,16 @@ final class TopicDetailViewController: ObservableViewController {
         )
     }
 
-    private let activityIndicator: UIActivityIndicatorView = {
+    let activityIndicator: UIActivityIndicatorView = {
         let ai = UIActivityIndicatorView(style: .medium)
         ai.hidesWhenStopped = true
         ai.translatesAutoresizingMaskIntoConstraints = false
         return ai
     }()
 
-    private let loadingSkeletonView = TopicDetailSkeletonView()
+    let loadingSkeletonView = TopicDetailSkeletonView()
 
-    private let titleLabel: UILabel = {
+    let titleLabel: UILabel = {
         let label = UILabel()
         label.font = TopicDetailTypography.topicTitleFont()
         label.adjustsFontForContentSizeCategory = true
@@ -169,23 +169,23 @@ final class TopicDetailViewController: ObservableViewController {
         return label
     }()
 
-    private var renderedTopicTitle: String?
-    private var emojiUpdateObserver: NSObjectProtocol?
+    var renderedTopicTitle: String?
+    var emojiUpdateObserver: NSObjectProtocol?
 
-    private let tagsContainer: UIView = {
+    let tagsContainer: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
         return v
     }()
 
-    private let navTitleLabel: UILabel = {
+    let navTitleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 17, weight: .semibold)
         label.numberOfLines = 1
         return label
     }()
 
-    private let errorLabel: UILabel = {
+    let errorLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14)
         label.textColor = .secondaryLabel
@@ -196,14 +196,14 @@ final class TopicDetailViewController: ObservableViewController {
         return label
     }()
 
-    private let footerSpinner: UIActivityIndicatorView = {
+    let footerSpinner: UIActivityIndicatorView = {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.hidesWhenStopped = true
         spinner.frame = CGRect(x: 0, y: 0, width: 0, height: 44)
         return spinner
     }()
 
-    private lazy var topLoadingBar: UIView = {
+    lazy var topLoadingBar: UIView = {
         let bar = UIView()
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.backgroundColor = .secondarySystemBackground
@@ -230,9 +230,9 @@ final class TopicDetailViewController: ObservableViewController {
         return bar
     }()
 
-    private let bottomBar = TopicDetailBottomBar()
+    let bottomBar = TopicDetailBottomBar()
 
-    private lazy var floatingReplyButton: UIButton = {
+    lazy var floatingReplyButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         var config = UIButton.Configuration.filled()
@@ -258,7 +258,7 @@ final class TopicDetailViewController: ObservableViewController {
         return button
     }()
 
-    private lazy var jumpOverlay: UIView = {
+    lazy var jumpOverlay: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
         v.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.85)
@@ -428,7 +428,7 @@ final class TopicDetailViewController: ObservableViewController {
         readingTracker.stop()
     }
 
-    private func syncOwningTabBarVisibility() {
+    func syncOwningTabBarVisibility() {
         (tabBarController as? ForumTabBarController)?.syncTabBarVisibilityForCurrentContent()
     }
 
@@ -582,7 +582,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func applyThemeStyle() {
+    func applyThemeStyle() {
         let accentColor = AppSettings.shared.themeStyle.accentColor
         let themeStyle = AppSettings.shared.themeStyle
         view.backgroundColor = themeStyle.topicListBackgroundColor
@@ -596,20 +596,20 @@ final class TopicDetailViewController: ObservableViewController {
         floatingReplyButton.layer.shadowColor = accentColor.cgColor
     }
 
-    private func applyTypography() {
+    func applyTypography() {
         titleLabel.font = TopicDetailTypography.topicTitleFont()
         navTitleLabel.font = TopicDetailTypography.interfaceFont(ofSize: 17, weight: .semibold)
         errorLabel.font = TopicDetailTypography.interfaceFont(ofSize: 14, weight: .regular)
     }
 
-    private func prepareInitialContentTransition() {
+    func prepareInitialContentTransition() {
         tableView.alpha = 0
         tableView.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.996, y: 0.996)
         bottomBar.alpha = 0
         bottomBar.transform = CGAffineTransform(translationX: 0, y: 8)
     }
 
-    private func animateInitialContentTransition() {
+    func animateInitialContentTransition() {
         hasPresentedInitialContent = true
         let animations = {
             self.tableView.alpha = 1
@@ -624,7 +624,7 @@ final class TopicDetailViewController: ObservableViewController {
         )
     }
 
-    private func prefetchContentImages(forPostIds postIds: [Int]) {
+    func prefetchContentImages(forPostIds postIds: [Int]) {
         let newPostIds = postIds.filter { postId in
             prefetchedImagePostIds.insert(postId).inserted
         }
@@ -638,7 +638,7 @@ final class TopicDetailViewController: ObservableViewController {
         )
     }
 
-    private func avatarURLs(forPostIds postIds: [Int]) -> [URL] {
+    func avatarURLs(forPostIds postIds: [Int]) -> [URL] {
         let postIds = Set(postIds)
         return viewModel.posts.compactMap { post in
             guard postIds.contains(post.id) else { return nil }
@@ -650,7 +650,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func startObservingCloudflareVerification() {
+    func startObservingCloudflareVerification() {
         cloudflareCompletionObservationToken = NotificationCenter.default.addObserver(
             forName: DiscourseAPI.cloudflareVerificationCompletedNotification,
             object: nil,
@@ -660,7 +660,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func handleCloudflareVerificationCompleted(_ notification: Notification) {
+    func handleCloudflareVerificationCompleted(_ notification: Notification) {
         guard let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String,
               ForumInstance.normalizedBaseURL(verifiedBaseURL) == ForumInstance.normalizedBaseURL(baseURL)
         else { return }
@@ -706,7 +706,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func updateTitleHeader() {
+    func updateTitleHeader() {
         guard let topic = viewModel.topic else { return }
         let container = UIView()
         let metadataRow = makeTopicMetadataRow(topic)
@@ -737,7 +737,7 @@ final class TopicDetailViewController: ObservableViewController {
         tableView.tableHeaderView = container
     }
 
-    private func makeTopicMetadataRow(_ topic: DiscourseTopicDetail) -> UIStackView {
+    func makeTopicMetadataRow(_ topic: DiscourseTopicDetail) -> UIStackView {
         let replyCount = max(topic.replyCount, max(topic.postsCount - 1, 0))
         let row = UIStackView(arrangedSubviews: [
             makeTopicMetadataItem(
@@ -764,7 +764,7 @@ final class TopicDetailViewController: ObservableViewController {
         return row
     }
 
-    private func makeTopicMetadataItem(symbolName: String, value: String, label: String?) -> UIView {
+    func makeTopicMetadataItem(symbolName: String, value: String, label: String?) -> UIView {
         let iconView = UIImageView(image: UIImage(systemName: symbolName))
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.tintColor = .secondaryLabel
@@ -797,11 +797,11 @@ final class TopicDetailViewController: ObservableViewController {
         return stack
     }
 
-    private func formatCompactCount(_ value: Int) -> String {
+    func formatCompactCount(_ value: Int) -> String {
         return NumberFormatter.localizedString(from: NSNumber(value: value), number: .decimal)
     }
 
-    private func formatRelativeDate(_ isoString: String) -> String {
+    func formatRelativeDate(_ isoString: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = formatter.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString)
@@ -811,7 +811,7 @@ final class TopicDetailViewController: ObservableViewController {
         return relative.localizedString(for: date, relativeTo: Date())
     }
 
-    private func configureTaxonomy(
+    func configureTaxonomy(
         tags: [DiscourseTopicDetail.Tag],
         category: TopicCategoryBadgePresentation?
     ) {
@@ -882,7 +882,7 @@ final class TopicDetailViewController: ObservableViewController {
 
     // MARK: - Emoji Title
 
-    private func configureTitleLabel(_ title: String) {
+    func configureTitleLabel(_ title: String) {
         renderedTopicTitle = title
         let headerFont = titleLabel.font ?? TopicDetailTypography.topicTitleFont()
         let navFont = navTitleLabel.font ?? .systemFont(ofSize: 17, weight: .semibold)
@@ -905,7 +905,7 @@ final class TopicDetailViewController: ObservableViewController {
 
     // MARK: - Reading Tracking
 
-    private func updateVisibleReadingPosts() {
+    func updateVisibleReadingPosts() {
         guard isViewLoaded, view.window != nil, !isApplyingPostSnapshot else { return }
         let postNumbers = (tableView.indexPathsForVisibleRows ?? []).compactMap { indexPath -> Int? in
             guard let postId = dataSource.itemIdentifier(for: indexPath) else { return nil }
@@ -914,7 +914,7 @@ final class TopicDetailViewController: ObservableViewController {
         readingTracker.setVisiblePostNumbers(Set(postNumbers))
     }
 
-    private func applyPostSnapshot(
+    func applyPostSnapshot(
         itemIDs: [Int],
         earlierAnchor: (postId: Int, cellTopOffset: CGFloat)?
     ) {
@@ -980,13 +980,13 @@ final class TopicDetailViewController: ObservableViewController {
 
     // MARK: - Container Access
 
-    private func replyButtonTapped() {
+    func replyButtonTapped() {
         performAuthenticated { [weak self] in
             self?.presentReplyComposer()
         }
     }
 
-    private func performAuthenticated(_ action: @escaping () -> Void) {
+    func performAuthenticated(_ action: @escaping () -> Void) {
         if let authGate = findAuthGating() {
             authGate.requireAuth(then: action)
         } else {
@@ -994,11 +994,11 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func findAuthGating() -> AuthGating? {
+    func findAuthGating() -> AuthGating? {
         nearestAuthGating()
     }
 
-    private func showPostActionError(_ error: Error) {
+    func showPostActionError(_ error: Error) {
         let alert = UIAlertController(
             title: String(localized: "post.action.failed"),
             message: error.localizedDescription,
@@ -1008,7 +1008,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func reloadPostCell(postId: Int) {
+    func reloadPostCell(postId: Int) {
         var snapshot = dataSource.snapshot()
         guard snapshot.indexOfItem(postId) != nil else { return }
         snapshot.reloadItems([postId])
@@ -1016,7 +1016,7 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
     /// Safe refresh for DiffableDataSource-backed table (never call reloadData/reloadRows directly).
-    private func reconfigureVisiblePostCells(reloadAllIfNoneVisible: Bool = false) {
+    func reconfigureVisiblePostCells(reloadAllIfNoneVisible: Bool = false) {
         var snapshot = dataSource.snapshot()
         guard !snapshot.itemIdentifiers.isEmpty else { return }
 
@@ -1037,7 +1037,7 @@ final class TopicDetailViewController: ObservableViewController {
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
-    private func updateBottomBarProgress() {
+    func updateBottomBarProgress() {
         let current = currentVisibleFloor()
         let total = viewModel.totalFloors
         if let lastBottomBarProgressState,
@@ -1055,7 +1055,7 @@ final class TopicDetailViewController: ObservableViewController {
         )
     }
 
-    private func currentVisibleFloor() -> Int {
+    func currentVisibleFloor() -> Int {
         guard viewModel.totalFloors > 0 else { return 0 }
         let visibleIndexPath = tableView.indexPathsForVisibleRows?
             .sorted { $0.row < $1.row }
@@ -1069,7 +1069,7 @@ final class TopicDetailViewController: ObservableViewController {
         return streamIndex + 1
     }
 
-    private func shareTopicLink(sourceView: UIView?) {
+    func shareTopicLink(sourceView: UIView?) {
         let link = "\(baseURL)/t/\(topicId)"
         let activity = UIActivityViewController(activityItems: [link], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = sourceView ?? view
@@ -1077,7 +1077,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(activity, animated: true)
     }
 
-    private func makeExportMenu() -> UIMenu {
+    func makeExportMenu() -> UIMenu {
         let formatMenus = TopicExportFormat.allCases.map { format in
             UIMenu(
                 title: format.title,
@@ -1106,7 +1106,7 @@ final class TopicDetailViewController: ObservableViewController {
         )
     }
 
-    private func configureTopicActions() {
+    func configureTopicActions() {
         let searchButton = UIBarButtonItem(
             image: UIImage(systemName: "magnifyingglass"),
             style: .plain,
@@ -1203,7 +1203,7 @@ final class TopicDetailViewController: ObservableViewController {
         navigationItem.rightBarButtonItems = [moreButton, searchButton]
     }
 
-    @objc private func aiAssistantTapped() {
+    @objc func aiAssistantTapped() {
         let chat = AIChatSheetViewController(
             api: api,
             topicId: topicId,
@@ -1217,11 +1217,11 @@ final class TopicDetailViewController: ObservableViewController {
         present(chat, animated: true)
     }
 
-    @objc private func pluginStateDidChange() {
+    @objc func pluginStateDidChange() {
         configureTopicActions()
     }
 
-    @objc private func searchTopicTapped() {
+    @objc func searchTopicTapped() {
         let alert = UIAlertController(
             title: String(localized: "topic.search", defaultValue: "搜索话题"),
             message: nil,
@@ -1239,7 +1239,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func performTopicSearch(_ query: String) {
+    func performTopicSearch(_ query: String) {
         Task {
             do {
                 let result = try await api.searchTopic(topicId: topicId, term: query)
@@ -1251,7 +1251,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func presentSearchResults(_ posts: [DiscourseSearchResult.SearchPost], query: String) {
+    func presentSearchResults(_ posts: [DiscourseSearchResult.SearchPost], query: String) {
         guard !posts.isEmpty else {
             let alert = UIAlertController(
                 title: String(localized: "topic.search", defaultValue: "搜索话题"),
@@ -1264,8 +1264,9 @@ final class TopicDetailViewController: ObservableViewController {
         }
         let sheet = UIAlertController(title: query, message: nil, preferredStyle: .actionSheet)
         for post in posts.prefix(12) {
-            let excerpt = post.blurb?.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression) ?? post.username
-            let title = "#\(post.postNumber)  \(String(excerpt.prefix(70)))"
+            let excerptSource = post.blurb ?? post.username
+            let excerpt = CookedContentPipeline.plainTextPreview(fromCooked: excerptSource)
+            let title = "#\(post.postNumber)  \(String((excerpt.isEmpty ? post.username : excerpt).prefix(70)))"
             sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
                 self?.jumpToFloor(post.postNumber)
             })
@@ -1275,7 +1276,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(sheet, animated: true)
     }
 
-    private func title(for level: DiscourseTopicDetail.NotificationLevel) -> String {
+    func title(for level: DiscourseTopicDetail.NotificationLevel) -> String {
         switch level {
         case .watching: return String(localized: "topic.notifications.watching", defaultValue: "关注")
         case .tracking: return String(localized: "topic.notifications.tracking", defaultValue: "跟踪")
@@ -1284,7 +1285,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func setNotificationLevel(_ level: DiscourseTopicDetail.NotificationLevel) {
+    func setNotificationLevel(_ level: DiscourseTopicDetail.NotificationLevel) {
         performAuthenticated { [weak self] in
             guard let self else { return }
             Task {
@@ -1299,7 +1300,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func editTopic() {
+    func editTopic() {
         guard let topic = viewModel.topic, topic.canEdit else { return }
         let alert = UIAlertController(title: String(localized: "topic.edit", defaultValue: "编辑话题"), message: nil, preferredStyle: .alert)
         alert.addTextField { $0.text = topic.title }
@@ -1319,7 +1320,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func shareTopicImage(postId: Int? = nil) {
+    func shareTopicImage(postId: Int? = nil) {
         guard let topic = viewModel.topic else { return }
         let post: DiscourseTopicDetail.Post? = {
             if let postId {
@@ -1380,7 +1381,7 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
 
-    private func syncTopicToNotion(scope: NotionSyncScope, duplicate: NotionDuplicateAction = .skip) {
+    func syncTopicToNotion(scope: NotionSyncScope, duplicate: NotionDuplicateAction = .skip) {
         guard let topic = viewModel.topic else { return }
         let username = findAuthGating()?.currentUsername()
         let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
@@ -1450,7 +1451,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func maybeAutoSyncNotionAfterBookmark() {
+    func maybeAutoSyncNotionAfterBookmark() {
         let username = findAuthGating()?.currentUsername()
         let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
         let config = NotionConfigStore.shared.loadConfig(scopeKey: scopeKey)
@@ -1471,7 +1472,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func presentNotionSuccess(_ result: NotionSyncResult) {
+    func presentNotionSuccess(_ result: NotionSyncResult) {
         let alert = UIAlertController(
             title: String(localized: "notion.sync.success", defaultValue: "同步成功"),
             message: String(localized: "notion.sync.success_message", defaultValue: "已写入 Notion"),
@@ -1486,7 +1487,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func exportTopic(format: TopicExportFormat, range: TopicExportRange) {
+    func exportTopic(format: TopicExportFormat, range: TopicExportRange) {
         guard let topic = viewModel.topic else {
             showPostActionError(TopicExportError.noPosts)
             return
@@ -1532,7 +1533,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func bookmarkTopic() {
+    func bookmarkTopic() {
         performAuthenticated { [weak self] in
             guard let self else { return }
             Task {
@@ -1554,7 +1555,7 @@ final class TopicDetailViewController: ObservableViewController {
 
     // MARK: - Link Handling
 
-    private func handleLink(_ url: URL) {
+    func handleLink(_ url: URL) {
         let linkURL = ForumInternalLinkParser.normalizedURL(from: url, baseURL: baseURL)
         if ForumInternalLinkParser.isInternalURL(linkURL, baseURL: baseURL),
            let destination = ForumInternalLinkParser.destination(for: linkURL) {
@@ -1566,7 +1567,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func openInternalDestination(_ destination: ForumInternalLinkDestination) {
+    func openInternalDestination(_ destination: ForumInternalLinkDestination) {
         switch destination {
         case let .topic(topicId, postNumber):
             if topicId == self.topicId, let postNumber {
@@ -1585,7 +1586,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func downloadAndShareAttachment(_ url: URL) {
+    func downloadAndShareAttachment(_ url: URL) {
         let progressAlert = makeAttachmentDownloadAlert()
         present(progressAlert, animated: true)
         let attachmentBaseURL = baseURL
@@ -1609,7 +1610,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func makeAttachmentDownloadAlert() -> UIAlertController {
+    func makeAttachmentDownloadAlert() -> UIAlertController {
         let alert = UIAlertController(
             title: String(localized: "attachment.downloading"),
             message: "\n\n",
@@ -1626,7 +1627,7 @@ final class TopicDetailViewController: ObservableViewController {
         return alert
     }
 
-    private func presentAttachmentShareSheet(_ fileURL: URL) {
+    func presentAttachmentShareSheet(_ fileURL: URL) {
         let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = view
         activity.popoverPresentationController?.sourceRect = view.bounds
@@ -1637,7 +1638,7 @@ final class TopicDetailViewController: ObservableViewController {
         present(activity, animated: true)
     }
 
-    private func openInternalViewController(_ viewController: UIViewController) {
+    func openInternalViewController(_ viewController: UIViewController) {
         if let navigationController {
             navigationController.pushViewController(viewController, animated: true)
         } else {
@@ -1646,7 +1647,7 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func presentSafari(_ url: URL) {
+    func presentSafari(_ url: URL) {
         guard AppSettings.shared.openExternalLinksInAppBrowser else {
             UIApplication.shared.open(url)
             return
@@ -1656,748 +1657,3 @@ final class TopicDetailViewController: ObservableViewController {
     }
 }
 
-// MARK: - TopicDetailBottomBarDelegate
-
-extension TopicDetailViewController: TopicDetailBottomBarDelegate {
-    func bottomBarDidTapTimeline() {
-        showTimelineSheet()
-    }
-
-    func bottomBarDidSelectProgressAction(_ action: ProgressGestureAction) {
-        performProgressGestureAction(action)
-    }
-
-    private func performProgressGestureAction(_ action: ProgressGestureAction) {
-        switch action {
-        case .none:
-            break
-        case .openTimeline:
-            showTimelineSheet()
-        case .scrollToTop:
-            scrollToTop()
-        case .jumpToUnread:
-            jumpToUnreadOrFirst()
-        case .nextPost:
-            jumpRelativeFloor(+1)
-        case .previousPost:
-            jumpRelativeFloor(-1)
-        case .reply:
-            replyButtonTapped()
-        case .share:
-            shareTopicLink(sourceView: bottomBar)
-        case .shareImage:
-            shareTopicImage()
-        case .exportArticle:
-            presentExportMenuFromProgressBar()
-        case .openInBrowser:
-            openTopicInBrowser()
-        case .bookmark:
-            bookmarkTopic()
-        case .readLater:
-            TopicReadLaterStore.shared.toggle(
-                topicId: topicId,
-                baseURL: api.baseURL,
-                username: AuthManager.shared.username(for: api.baseURL)
-            )
-            configureTopicActions()
-        case .notification:
-            presentNotificationLevelPicker()
-        case .filter:
-            viewModel.setFilteringByOP(!viewModel.isFilteringByOP)
-            configureTopicActions()
-        case .toggleNestedView:
-            AppSettings.shared.nestedReplyViewEnabled.toggle()
-            Task { await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width) }
-        case .aiAssistant:
-            aiAssistantTapped()
-        case .readingSettings:
-            navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
-        case .search:
-            showTimelineSheet()
-        case .refresh:
-            Task { await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width) }
-        case .goBack:
-            if canNavigateBack {
-                navigationController?.popViewController(animated: true)
-            } else {
-                dismiss(animated: true)
-            }
-        }
-    }
-
-    private func scrollToTop() {
-        guard tableView.numberOfRows(inSection: 0) > 0 else { return }
-        tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: true)
-    }
-
-    private func jumpRelativeFloor(_ delta: Int) {
-        let total = viewModel.totalFloors
-        guard total > 0 else { return }
-        let target = min(max(currentVisibleFloor() + delta, 1), total)
-        jumpToFloor(target)
-    }
-
-    private func jumpToUnreadOrFirst() {
-        let total = viewModel.totalFloors
-        guard total > 0 else { return }
-        // Real unread: last_read + 1 (from list or detail). Fallback: next floor / top.
-        if let unread = resumeUnreadFloor() {
-            jumpToFloor(unread)
-            return
-        }
-        let current = currentVisibleFloor()
-        if current < total {
-            jumpToFloor(current + 1)
-        } else {
-            jumpToFloor(1)
-        }
-    }
-
-    /// First unread floor from `lastReadPostNumber`, clamped to total floors.
-    private func resumeUnreadFloor() -> Int? {
-        let total = viewModel.totalFloors
-        guard total > 0 else { return nil }
-        let lastRead = lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber ?? 0
-        guard lastRead > 0, lastRead < total else { return nil }
-        return min(lastRead + 1, total)
-    }
-
-    private func openTopicInBrowser() {
-        guard let url = URL(string: "\(baseURL)/t/\(topicId)") else { return }
-        let browser = InAppBrowserViewController(
-            api: api,
-            username: AuthManager.shared.username(for: api.baseURL),
-            initialURL: url
-        )
-        navigationController?.pushViewController(browser, animated: true)
-    }
-
-    private func presentExportMenuFromProgressBar() {
-        let sheet = UIAlertController(
-            title: String(localized: "topic.export", defaultValue: "导出话题"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        for range in TopicExportRange.allCases {
-            sheet.addAction(UIAlertAction(title: range.title, style: .default) { [weak self] _ in
-                self?.exportTopic(format: .markdown, range: range)
-            })
-        }
-        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = bottomBar
-        sheet.popoverPresentationController?.sourceRect = bottomBar.bounds
-        present(sheet, animated: true)
-    }
-
-    private func presentNotificationLevelPicker() {
-        let sheet = UIAlertController(
-            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        for level in DiscourseTopicDetail.NotificationLevel.allCases.reversed() {
-            sheet.addAction(UIAlertAction(title: title(for: level), style: .default) { [weak self] _ in
-                self?.setNotificationLevel(level)
-            })
-        }
-        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = bottomBar
-        sheet.popoverPresentationController?.sourceRect = bottomBar.bounds
-        present(sheet, animated: true)
-    }
-
-    private func showTimelineSheet() {
-        let stream = viewModel.allPostIds
-        guard !stream.isEmpty else { return }
-
-        let timeline = TopicTimelineSheetViewController(
-            currentIndex: currentVisibleFloor(),
-            stream: stream,
-            title: TitleEmojiRenderer.plainTitle(fancyTitle: viewModel.topic?.fancyTitle, title: viewModel.topic?.title ?? "")
-        )
-        timeline.onJumpToPostId = { [weak self] postId in
-            self?.jumpToPostId(postId)
-        }
-        timeline.onDismiss = { [weak self] in
-            self?.syncOwningTabBarVisibility()
-        }
-        timeline.modalPresentationStyle = .pageSheet
-        timeline.isModalInPresentation = true
-        if let sheet = timeline.sheetPresentationController {
-            sheet.detents = [.medium()]
-            sheet.prefersGrabberVisible = false
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        }
-        present(timeline, animated: true)
-    }
-
-    private func showFloorJumpPrompt() {
-        let total = viewModel.totalFloors
-        guard total > 0 else { return }
-
-        let alert = UIAlertController(
-            title: String(localized: "topic_detail.bar.jump_to_floor"),
-            message: String(localized: "topic_detail.jump.message \(total)"),
-            preferredStyle: .alert
-        )
-        alert.addTextField { textField in
-            textField.placeholder = "1-\(total)"
-            textField.keyboardType = .numberPad
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "topic_detail.jump.confirm"), style: .default) { [weak self] _ in
-            guard let self,
-                  let text = alert.textFields?.first?.text,
-                  let floor = Int(text),
-                  floor >= 1, floor <= total
-            else { return }
-
-            self.jumpToFloor(floor)
-        })
-        present(alert, animated: true)
-    }
-
-    private func jumpToPostId(_ postId: Int) {
-        guard let targetIndex = viewModel.allPostIds.firstIndex(of: postId) else { return }
-        jumpToFloor(targetIndex + 1)
-    }
-
-    private func jumpToFloor(_ floor: Int) {
-        let total = viewModel.totalFloors
-        guard floor >= 1, floor <= total else { return }
-
-        if viewModel.isFloorLoaded(floor),
-           let visibleRow = viewModel.visibleRowForFloor(floor)
-        {
-            tableView.scrollToRow(
-                at: IndexPath(row: visibleRow, section: 0),
-                at: .top,
-                animated: true
-            )
-            return
-        }
-
-        // Scroll is finalized in viewDidLayoutSubviews after the target batch has cells.
-        showJumpOverlay()
-        hasTitleHeader = false
-        suppressLoadEarlier = true
-        Task {
-            await viewModel.jumpToFloor(floor, containerWidth: view.bounds.width)
-            hideJumpOverlay()
-        }
-    }
-
-    private func showJumpOverlay() {
-        if jumpOverlay.superview == nil {
-            view.addSubview(jumpOverlay)
-            NSLayoutConstraint.activate([
-                jumpOverlay.topAnchor.constraint(equalTo: tableView.topAnchor),
-                jumpOverlay.leadingAnchor.constraint(equalTo: tableView.leadingAnchor),
-                jumpOverlay.trailingAnchor.constraint(equalTo: tableView.trailingAnchor),
-                jumpOverlay.bottomAnchor.constraint(equalTo: tableView.bottomAnchor),
-            ])
-        }
-        jumpOverlay.isHidden = false
-        // Keep progress capsule interactive above the jump dimming layer.
-        view.bringSubviewToFront(floatingReplyButton)
-        view.bringSubviewToFront(bottomBar)
-    }
-
-    private func hideJumpOverlay() {
-        jumpOverlay.isHidden = true
-    }
-
-    private var canNavigateBack: Bool {
-        guard let navigationController else { return false }
-        return navigationController.viewControllers.count > 1
-            && navigationController.viewControllers.first !== self
-    }
-
-    private func installBackSwipeFallbackGesture() {
-        guard let hostView = navigationController?.view else { return }
-        if backSwipeFallbackHostView !== hostView {
-            backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
-            hostView.addGestureRecognizer(backSwipeFallbackGesture)
-            backSwipeFallbackHostView = hostView
-        }
-        backSwipeFallbackGesture.isEnabled = canNavigateBack
-    }
-
-    private func uninstallBackSwipeFallbackGesture() {
-        backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
-        backSwipeFallbackHostView = nil
-        backSwipeFallbackGesture.isEnabled = false
-    }
-
-    private var backSwipeCoordinateView: UIView {
-        backSwipeFallbackGesture.view ?? view
-    }
-
-    private func shouldCompleteBackSwipe(translation: CGPoint, velocity: CGPoint) -> Bool {
-        guard translation.x > 0 else { return false }
-        return translation.x > BackSwipeFallbackMetrics.minimumCompletionTranslation
-            || velocity.x > BackSwipeFallbackMetrics.minimumCompletionVelocity
-    }
-
-    @objc private func handleBackSwipeFallback(_ gesture: UIPanGestureRecognizer) {
-        guard canNavigateBack, presentedViewController == nil else { return }
-
-        switch gesture.state {
-        case .began:
-            isHandlingBackSwipeFallback = false
-        case .ended:
-            let coordinateView = backSwipeCoordinateView
-            let translation = gesture.translation(in: coordinateView)
-            let velocity = gesture.velocity(in: coordinateView)
-            guard shouldCompleteBackSwipe(translation: translation, velocity: velocity),
-                  !isHandlingBackSwipeFallback
-            else { return }
-            isHandlingBackSwipeFallback = true
-            navigationController?.popViewController(animated: true)
-        case .cancelled, .failed:
-            isHandlingBackSwipeFallback = false
-        default:
-            break
-        }
-    }
-
-}
-
-// MARK: - Back Swipe Fallback
-
-extension TopicDetailViewController: UIGestureRecognizerDelegate {
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldReceive touch: UITouch
-    ) -> Bool {
-        guard gestureRecognizer === backSwipeFallbackGesture else { return true }
-        // Never steal touches that land on the progress capsule — those belong
-        // to swipe/long-press progress gestures configured in Reading settings.
-        guard !bottomBar.isHidden else { return true }
-        let point = touch.location(in: bottomBar)
-        if bottomBar.point(inside: point, with: nil) {
-            return false
-        }
-        return true
-    }
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard gestureRecognizer === backSwipeFallbackGesture else { return true }
-        guard canNavigateBack, presentedViewController == nil else { return false }
-
-        let coordinateView = backSwipeCoordinateView
-        let location = backSwipeFallbackGesture.location(in: coordinateView)
-        guard location.x <= BackSwipeFallbackMetrics.edgeActivationWidth else { return false }
-
-        // Also bail if the touch is still over the progress bar (hit slop).
-        if !bottomBar.isHidden {
-            let inBar = bottomBar.point(inside: backSwipeFallbackGesture.location(in: bottomBar), with: nil)
-            if inBar { return false }
-        }
-
-        let velocity = backSwipeFallbackGesture.velocity(in: coordinateView)
-        guard velocity.x >= 0 else { return false }
-        if abs(velocity.y) > abs(velocity.x), abs(velocity.y) > 40 {
-            return false
-        }
-        return true
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        guard gestureRecognizer === backSwipeFallbackGesture || otherGestureRecognizer === backSwipeFallbackGesture else {
-            return false
-        }
-        // Progress-bar pan must not share recognition with the back-swipe fallback.
-        if otherGestureRecognizer.view is TopicDetailBottomBar
-            || gestureRecognizer.view is TopicDetailBottomBar {
-            return false
-        }
-        return otherGestureRecognizer === tableView.panGestureRecognizer
-            || gestureRecognizer === tableView.panGestureRecognizer
-            || otherGestureRecognizer.view is UIScrollView
-            || gestureRecognizer.view is UIScrollView
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        // If the progress capsule pan is in play, back-swipe waits for it to fail.
-        guard gestureRecognizer === backSwipeFallbackGesture else { return false }
-        return otherGestureRecognizer.view is TopicDetailBottomBar
-    }
-}
-
-// MARK: - UITableViewDelegate
-
-extension TopicDetailViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        UITableView.automaticDimension
-    }
-
-    func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        if let postId = dataSource.itemIdentifier(for: indexPath),
-           let cached = postRowHeightCache[postId],
-           cached > 1 {
-            return cached
-        }
-        // Tall first posts (code blocks) need a higher estimate so the table does not
-        // park the next floor under unfinished content during the first layout pass.
-        if indexPath.row == 0 {
-            return 520
-        }
-        return 220
-    }
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        readingTracker.scrolled()
-        updateVisibleReadingPosts()
-        updateBottomBarProgress()
-
-        guard let header = tableView.tableHeaderView else { return }
-        let headerBottom = header.frame.maxY
-        let offsetY = scrollView.contentOffset.y + scrollView.safeAreaInsets.top
-        let shouldShowCollapsedTitle = offsetY >= headerBottom
-        if shouldShowCollapsedTitle != isShowingCollapsedNavigationTitle {
-            isShowingCollapsedNavigationTitle = shouldShowCollapsedTitle
-            navigationItem.titleView = shouldShowCollapsedTitle ? navTitleLabel : nil
-        }
-
-        let currentOffset = scrollView.contentOffset.y
-        let isScrollingUp = currentOffset < lastScrollOffset
-        lastScrollOffset = currentOffset
-
-        // Clear suppress flag once user scrolls down, meaning they've settled after a jump
-        if !isScrollingUp {
-            suppressLoadEarlier = false
-        }
-
-        // Only trigger load-earlier when user is actively scrolling UP
-        // and within 200pt of the top — prevents false triggers after jump
-        guard isScrollingUp,
-              !suppressLoadEarlier,
-              viewModel.canLoadEarlier,
-              !isLoadingEarlierLocally
-        else { return }
-        let contentTop = -(scrollView.adjustedContentInset.top)
-        if scrollView.contentOffset.y <= contentTop + 200 {
-            // Capture anchor synchronously before any async work
-            guard let anchorIndexPath = tableView.indexPathsForVisibleRows?.first,
-                  let anchorId = dataSource.itemIdentifier(for: anchorIndexPath)
-            else { return }
-            let cellTopOffset = tableView.rectForRow(at: anchorIndexPath).minY - tableView.contentOffset.y
-            earlierLoadAnchor = (postId: anchorId, cellTopOffset: cellTopOffset)
-            isLoadingEarlierLocally = true
-            Task {
-                let didStart = await viewModel.loadEarlierPosts(containerWidth: view.bounds.width)
-                if !didStart {
-                    earlierLoadAnchor = nil
-                    isLoadingEarlierLocally = false
-                }
-                // updateUI (triggered by DexoObservableObject) will handle position restoration
-            }
-        }
-    }
-
-    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        // Nudge self-sizing once the cell is on screen; fixes intermittent floor overlap
-        // that disappears only after the user scrolls.
-        (cell as? PostNativeCell)?.requestHeightReconciliation()
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleReadingPosts()
-        }
-
-        let totalRows = tableView.numberOfRows(inSection: 0)
-        // Load more (forward)
-        if indexPath.row >= totalRows - 3 {
-            Task {
-                await viewModel.loadMorePosts(containerWidth: view.bounds.width)
-            }
-        }
-    }
-
-    func tableView(_ tableView: UITableView, didEndDisplaying cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        if let postId = dataSource.itemIdentifier(for: indexPath) {
-            let height = cell.frame.height
-            if height > 1 {
-                postRowHeightCache[postId] = height
-            }
-        }
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleReadingPosts()
-        }
-    }
-}
-
-// MARK: - Topic Timeline Sheet
-
-// MARK: - PostCellDelegate
-
-extension TopicDetailViewController: PostCellDelegate {
-    func postCell(didTapImageURL url: URL, imageURLs: [URL]) {
-        presentTopicImageGallery(currentURL: url, imageURLs: imageURLs)
-    }
-
-    func postCell(didTapLinkURL url: URL) {
-        handleLink(url)
-    }
-
-    func postCell(didTapShowRepliesForPostId postId: Int) {
-        let repliesVC = RepliesViewController(api: api, postId: postId, topicId: topicId)
-        if let sheet = repliesVC.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        present(repliesVC, animated: true)
-    }
-
-    func postCell(didTapToggleDetails detailsIndex: Int, postId: Int) {
-        // Details toggle not supported in native rendering — no-op
-    }
-
-    func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool) {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    if isBookmarked {
-                        let response = try await self.api.createBookmark(postId: post.id)
-                        self.viewModel.updatePostBookmark(postId: post.id, bookmarked: true, bookmarkId: response.id)
-                    } else if let bookmarkId = post.bookmarkId {
-                        try await self.api.deleteBookmark(id: bookmarkId)
-                        self.viewModel.updatePostBookmark(postId: post.id, bookmarked: false, bookmarkId: nil)
-                    } else {
-                        await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
-                    }
-                    self.reloadPostCell(postId: post.id)
-                } catch {
-                    self.reloadPostCell(postId: post.id)
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post) {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    if let response = try await self.api.toggleReaction(postId: post.id, reactionId: reactionId) {
-                        self.viewModel.updatePostReaction(
-                            postId: post.id,
-                            reactions: response.reactions,
-                            reactionUsersCount: response.reactionUsersCount,
-                            currentUserReaction: response.currentUserReaction
-                        )
-                        self.reloadPostCell(postId: post.id)
-                    } else {
-                        await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
-                    }
-                } catch {
-                    self.reloadPostCell(postId: post.id)
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func postCell(didTapToggleSharedIssueForTopicId topicId: Int) {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            guard !self.pendingSharedIssueTopicIds.contains(topicId) else { return }
-            self.pendingSharedIssueTopicIds.insert(topicId)
-
-            Task { @MainActor in
-                defer { self.pendingSharedIssueTopicIds.remove(topicId) }
-                do {
-                    let response = try await self.api.toggleSharedIssue(topicId: topicId)
-                    self.viewModel.updateSharedIssue(
-                        count: response.count,
-                        userCreated: response.userCreatedSharedIssue
-                    )
-                    if let firstPostId = self.viewModel.topic?.postStream.posts.first?.id {
-                        self.reloadPostCell(postId: firstPostId)
-                    }
-                } catch {
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String]) {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    try await self.viewModel.submitPollVote(postId: postId, pollName: pollName, optionIds: optionIds)
-                    self.reloadPostCell(postId: postId)
-                } catch {
-                    self.reloadPostCell(postId: postId)
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post) {
-        performAuthenticated { [weak self] in
-            self?.presentBoostInput(for: post)
-        }
-    }
-
-    func postCell(didTapAvatarForUsername username: String) {
-        let previewVC = UserProfilePreviewViewController(api: api, username: username)
-        previewVC.onViewProfile = { [weak self] selectedUsername in
-            guard let self else { return }
-            let vc = UserProfileViewController(api: self.api, username: selectedUsername)
-            self.navigationController?.pushViewController(vc, animated: true)
-        }
-        present(previewVC, animated: true)
-    }
-
-    func postCell(didTapQuotedPostNumber postNumber: Int) {
-        jumpToFloor(postNumber)
-    }
-
-    func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post) {
-        performAuthenticated { [weak self] in
-            self?.presentReplyComposer(for: post)
-        }
-    }
-
-    func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {
-        shareTopicImage(postId: post.id)
-    }
-
-    func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post) {
-        let vc = PostRevisionViewController(api: api, postId: post.id)
-        let nav = UINavigationController(rootViewController: vc)
-        present(nav, animated: true)
-    }
-
-    func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {
-        performAuthenticated { [weak self] in
-            self?.loadAndPresentPostEditor(postId: post.id)
-        }
-    }
-
-    private func presentBoostInput(for post: DiscourseTopicDetail.Post) {
-        let input = BoostInputViewController(api: api)
-        input.onSubmit = { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case let .boost(raw):
-                Task {
-                    do {
-                        let boost = try await self.api.createBoost(postId: post.id, raw: raw)
-                        self.viewModel.appendPostBoost(postId: post.id, boost: boost)
-                        self.reloadPostCell(postId: post.id)
-                    } catch {
-                        self.reloadPostCell(postId: post.id)
-                        self.showPostActionError(error)
-                    }
-                }
-            case let .reply(raw):
-                self.presentReplyComposer(for: post, initialText: raw)
-            }
-        }
-        input.modalPresentationStyle = .pageSheet
-        if let sheet = input.sheetPresentationController {
-            sheet.detents = [.medium()]
-            sheet.prefersGrabberVisible = false
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        }
-        present(input, animated: true)
-    }
-
-    private func presentReplyComposer(for post: DiscourseTopicDetail.Post? = nil, initialText: String? = nil) {
-        let composer = ReplyComposerViewController(
-            api: api,
-            topicId: topicId,
-            replyToPost: post,
-            baseURL: baseURL,
-            initialText: initialText,
-            mentionSeedUsers: mentionSeedUsersFromLoadedPosts()
-        )
-        composer.onPostCreated = { [weak self] in
-            guard let self else { return }
-            Task {
-                await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
-            }
-        }
-        composer.modalPresentationStyle = .pageSheet
-        if let sheet = composer.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.prefersGrabberVisible = false
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        }
-        present(composer, animated: true)
-    }
-
-    /// Unique authors from currently loaded posts — instant @ list like FluxDo.
-    private func mentionSeedUsersFromLoadedPosts() -> [DiscourseMentionUser] {
-        var seen = Set<String>()
-        var users: [DiscourseMentionUser] = []
-        for post in viewModel.posts {
-            let key = post.username.lowercased()
-            guard !key.isEmpty, seen.insert(key).inserted else { continue }
-            users.append(
-                DiscourseMentionUser(
-                    username: post.username,
-                    name: post.name,
-                    avatarTemplate: post.avatarTemplate
-                )
-            )
-            if users.count >= 12 { break }
-        }
-        return users
-    }
-
-    private func loadAndPresentPostEditor(postId: Int) {
-        Task {
-            do {
-                let editablePost = try await api.fetchPost(id: postId)
-                guard editablePost.canEdit, let raw = editablePost.raw else {
-                    throw DiscourseAPIError(
-                        messages: [String(localized: "post.edit.unavailable", defaultValue: "这条评论当前无法编辑。")],
-                        errorType: "post_not_editable"
-                    )
-                }
-                let composer = ReplyComposerViewController(
-                    api: api,
-                    topicId: topicId,
-                    replyToPost: nil,
-                    baseURL: baseURL,
-                    initialText: raw,
-                    submissionMode: .edit(postId: postId),
-                    mentionSeedUsers: self.mentionSeedUsersFromLoadedPosts()
-                )
-                composer.onPostUpdated = { [weak self] updatedPostId in
-                    guard let self else { return }
-                    Task {
-                        do {
-                            try await self.viewModel.reloadPost(postId: updatedPostId)
-                            self.reloadPostCell(postId: updatedPostId)
-                        } catch {
-                            self.showPostActionError(error)
-                        }
-                    }
-                }
-                composer.modalPresentationStyle = .pageSheet
-                if let sheet = composer.sheetPresentationController {
-                    sheet.detents = [.large()]
-                    sheet.prefersGrabberVisible = false
-                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-                }
-                present(composer, animated: true)
-            } catch {
-                showPostActionError(error)
-            }
-        }
-    }
-}

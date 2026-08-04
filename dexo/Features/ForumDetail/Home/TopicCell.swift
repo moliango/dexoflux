@@ -828,12 +828,7 @@ private final class XiaohongshuTopicCardView: UIControl {
 
     private static func cleanPreviewText(_ html: String?) -> String? {
         guard let html, !html.isEmpty else { return nil }
-        let text = html
-            .replacingOccurrences(of: "<br\\s*/?>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "</(p|div|li)>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = CookedContentPipeline.plainTextPreview(fromCooked: html)
         return text.isEmpty ? nil : text
     }
 

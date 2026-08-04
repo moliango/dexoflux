@@ -98,7 +98,8 @@ final class CategoryCell: UITableViewCell {
         colorView.backgroundColor = Self.color(fromHex: category.color) ?? .systemGray
 
         if let excerpt = category.descriptionExcerpt, !excerpt.isEmpty {
-            descriptionLabel.text = excerpt.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            let plain = CookedContentPipeline.plainTextPreview(fromCooked: excerpt)
+            descriptionLabel.text = plain.isEmpty ? nil : plain
         } else {
             descriptionLabel.text = nil
         }
