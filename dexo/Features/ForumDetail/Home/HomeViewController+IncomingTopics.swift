@@ -30,6 +30,27 @@ extension HomeViewController {
         AvatarImageLoader.prefetch(urls: urls, cloudflareBaseURL: api.baseURL)
     }
 
+    /// Prefetch avatars for the visible window + a few rows ahead (FluxDo-style scroll following).
+    /// Called from `willDisplay` so deep lists don't only warm the first N topics.
+    func prefetchAvatarsAroundVisibleRows(around indexPath: IndexPath) {
+        let topics = viewModel.topics
+        guard !topics.isEmpty else { return }
+        let lookAhead = max(AppSettings.shared.avatarLoadingProfile.homeAvatarPrefetchLimit, 8)
+        let start = max(0, indexPath.row - 2)
+        let end = min(topics.count, indexPath.row + lookAhead)
+        guard start < end else { return }
+        let window = Array(topics[start..<end])
+        let urls = window.compactMap { topic in
+            AvatarImageLoader.url(
+                from: viewModel.avatarTemplate(for: topic),
+                baseURL: api.baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+        }
+        guard !urls.isEmpty else { return }
+        AvatarImageLoader.prefetch(urls: urls, cloudflareBaseURL: api.baseURL)
+    }
+
     func updateIncomingTopicsHeader() {
         let count = viewModel.incomingTopicIds.count
         guard viewModel.listMode == .latest,

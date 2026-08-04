@@ -145,9 +145,14 @@ final class TappableImageContainer: UIView {
             self.imageView.image = image
             if !hasOriginalSize, image.size.width > 0 {
                 let ratio = containerWidth / image.size.width
-                self.imageHeightConstraint.constant = image.size.height * ratio
-                self.invalidateIntrinsicContentSize()
-                self.superview?.setNeedsLayout()
+                let newHeight = image.size.height * ratio
+                // Only relayout when height actually changes — avoids thrash on cache hits.
+                if abs(newHeight - self.imageHeightConstraint.constant) > 1.5 {
+                    self.imageHeightConstraint.constant = newHeight
+                    self.invalidateIntrinsicContentSize()
+                    self.superview?.setNeedsLayout()
+                    self.notifyPostCellHeightChanged()
+                }
             }
         }
 
@@ -204,6 +209,19 @@ final class TappableImageContainer: UIView {
 
     func cancelImageLoad() {
         imageView.sd_cancelCurrentImageLoad()
+    }
+
+    /// Bubble size changes up to `PostNativeCell` so row height updates coalesce
+    /// instead of each image calling `beginUpdates` independently.
+    private func notifyPostCellHeightChanged() {
+        var view: UIView? = superview
+        while let current = view {
+            if let cell = current as? PostNativeCell {
+                cell.requestHeightReconciliation()
+                return
+            }
+            view = current.superview
+        }
     }
 
     // MARK: - GIF Animation Control

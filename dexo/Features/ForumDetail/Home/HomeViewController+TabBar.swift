@@ -46,9 +46,10 @@ extension HomeViewController {
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
         lastTopicListContentHeight = tableView.contentSize.height
         // 上滑翻页时 tab bar 本应保持隐藏；冻结窗口内禁止被 contentSize 抖动拉出来。
+        // Use non-animated hide: concurrent contentSize insert + tab bar animation = visible jitter.
         if AppSettings.shared.bottomBarAutoHideEnabled,
            tableView.contentOffset.y + tableView.contentInset.top > 40 {
-            setHomeTabBarHidden(true, animated: true)
+            setHomeTabBarHidden(true, animated: false)
         }
         // Always arm an unfreeze timer. willDisplay used to freeze without a matching
         // end call when loadMore no-ops, permanently locking tab-bar auto-hide.

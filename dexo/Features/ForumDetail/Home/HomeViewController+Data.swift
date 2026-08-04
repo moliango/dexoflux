@@ -19,10 +19,14 @@ extension HomeViewController {
         )
         let idsNeedingReconfigure = itemIdentifiers.filter { visibleExistingIds.contains($0) }
         // load more / contentSize 突变窗口禁止 diffable 动画，否则 offset 会抖并带动 tab bar。
+        // Also disable while user is near bottom with pending pagination (pre-freeze window).
         let shouldAnimateSnapshot: Bool
         if let animatingDifferences {
             shouldAnimateSnapshot = animatingDifferences
-        } else if shouldFreezeTabBarScrollControl || viewModel.isLoadingMore {
+        } else if shouldFreezeTabBarScrollControl
+            || viewModel.isLoadingMore
+            || isTabBarScrollFrozenForLoadMore
+            || topicLoadMoreTask != nil {
             shouldAnimateSnapshot = false
         } else {
             shouldAnimateSnapshot = view.window != nil

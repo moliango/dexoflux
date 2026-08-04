@@ -164,6 +164,9 @@ extension HomeViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        // Follow-scroll avatar warm-up (not only the first page of the list).
+        prefetchAvatarsAroundVisibleRows(around: indexPath)
+
         let totalRows = tableView.numberOfRows(inSection: 0)
         if indexPath.row >= totalRows - 5,
            viewModel.canLoadMore,
@@ -177,6 +180,7 @@ extension HomeViewController: UITableViewDelegate {
                 await self.viewModel.loadMoreTopics()
                 await MainActor.run {
                     self.topicLoadMoreTask = nil
+                    // Keep freeze until snapshot settles; updateUI ends freeze via syncTabBarFreezeWithLoadMoreState.
                     self.updateUI()
                 }
             }

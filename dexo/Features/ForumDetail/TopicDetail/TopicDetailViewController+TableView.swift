@@ -72,9 +72,31 @@ extension TopicDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        // Nudge self-sizing once the cell is on screen; fixes intermittent floor overlap
-        // that disappears only after the user scrolls.
-        (cell as? PostNativeCell)?.requestHeightReconciliation()
+        // Nudge self-sizing once on screen — skip when we already have a solid measured height
+        // so image/Web loads don't re-trigger beginUpdates on every reappearance.
+        if let postId = dataSource.itemIdentifier(for: indexPath),
+           let cached = postRowHeightCache[postId],
+           cached > 1,
+           abs(cell.frame.height - cached) < 3 {
+            // Height stable; still warm nearby media.
+        } else {
+            (cell as? PostNativeCell)?.requestHeightReconciliation()
+        }
+
+        // Prefetch content images for this row + a few ahead (smoother first paint).
+        if let postId = dataSource.itemIdentifier(for: indexPath) {
+            var ahead: [Int] = [postId]
+            let total = tableView.numberOfRows(inSection: 0)
+            for offset in 1...3 {
+                let next = indexPath.row + offset
+                guard next < total,
+                      let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0))
+                else { break }
+                ahead.append(id)
+            }
+            prefetchContentImages(forPostIds: ahead)
+        }
+
         DispatchQueue.main.async { [weak self] in
             self?.updateVisibleReadingPosts()
         }
@@ -94,6 +116,10 @@ extension TopicDetailViewController: UITableViewDelegate {
             if height > 1 {
                 postRowHeightCache[postId] = height
             }
+        }
+        // Cancel off-screen fallback Web renders to cut dual-path jank / CPU.
+        if let native = cell as? PostNativeCell {
+            native.cancelOffscreenMediaWork()
         }
         DispatchQueue.main.async { [weak self] in
             self?.updateVisibleReadingPosts()

@@ -25,4 +25,13 @@ final class CookedContentPipelineTests: XCTestCase {
         let blocks = CookedContentPipeline.blocks(fromCooked: cooked)
         XCTAssertFalse(blocks.isEmpty)
     }
+
+    func testPlainTextPreviewIsSingleLine() {
+        let cooked = "<p>Hello</p><p>World<br>again</p>"
+        let preview = CookedContentPipeline.plainTextPreview(fromCooked: cooked)
+        XCTAssertFalse(preview.contains("\n"), preview)
+        XCTAssertTrue(preview.contains("Hello"), preview)
+        XCTAssertTrue(preview.contains("World"), preview)
+        XCTAssertFalse(preview.contains("<p>"), preview)
+    }
 }

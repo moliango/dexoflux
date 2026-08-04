@@ -121,7 +121,12 @@ final class FallbackBlockView: UIView {
 
             if let snapshot = rendered.snapshot {
                 self.snapshotImageView.image = snapshot
-                self.heightConstraint.constant = rendered.height
+                let newHeight = max(rendered.height, 1)
+                // Skip no-op height writes (cache hit / identical re-render).
+                if abs(newHeight - self.heightConstraint.constant) > 1.5 {
+                    self.heightConstraint.constant = newHeight
+                    self.invalidateTableViewHeight()
+                }
                 self.placeholderView.isHidden = true
                 self.retryButton.isHidden = true
             } else {
@@ -129,20 +134,30 @@ final class FallbackBlockView: UIView {
                 self.snapshotImageView.image = nil
                 self.placeholderView.isHidden = false
                 self.retryButton.isHidden = false
-                self.heightConstraint.constant = max(rendered.height, 100)
+                let failedHeight = max(rendered.height, 100)
+                if abs(failedHeight - self.heightConstraint.constant) > 1.5 {
+                    self.heightConstraint.constant = failedHeight
+                    self.invalidateTableViewHeight()
+                }
             }
-
-            self.invalidateTableViewHeight()
         }
     }
 
     private func invalidateTableViewHeight() {
+        // Prefer coalesced PostNativeCell reconciliation over raw beginUpdates —
+        // multiple fallbacks finishing together used to cause visible row jumps.
         var view: UIView? = superview
         while let v = view {
+            if let cell = v as? PostNativeCell {
+                cell.requestHeightReconciliation()
+                return
+            }
             if let tableView = v as? UITableView {
-                tableView.beginUpdates()
-                tableView.endUpdates()
-                break
+                UIView.performWithoutAnimation {
+                    tableView.beginUpdates()
+                    tableView.endUpdates()
+                }
+                return
             }
             view = v.superview
         }
