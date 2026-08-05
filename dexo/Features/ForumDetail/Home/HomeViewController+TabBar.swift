@@ -173,8 +173,12 @@ extension HomeViewController {
         isHomeTabBarHidden = hidden
         // When recovering a broken bar, force a non-animated hard apply.
         tabBarController?.setTabBarHiddenByScroll(hidden, animated: animated && !tabBarVisiblyBroken)
-        if !hidden {
-            tabBarController?.forceRevealTabBarForRootContent()
+        if !hidden, tabBarVisiblyBroken {
+            // Quiet path only when actually broken. Always calling forceReveal
+            // scheduled a 0.35s reassert that pops after mini-program close on
+            // ProMotion (iPhone 17 Pro) even when the physical device looked fine.
+            tabBarController?.quietlyRestoreTabBarAfterOverlay()
+            tabBarController?.ensureTabBarOrderingAfterOverlay()
         }
         updateBottomChrome(animated: animated)
     }

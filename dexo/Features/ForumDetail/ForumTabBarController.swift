@@ -91,7 +91,9 @@ final class ForumTabBarController: UITabBarController {
         let brokenVisibleState = isTabBarHiddenByScroll == false
             && (tabBar.isHidden || isAnimatingScrollTabBar || transformStuck)
         if brokenVisibleState {
-            forceRevealTabBarForRootContent()
+            // Quiet restore: forceReveal's delayed reassert pops on ProMotion.
+            quietlyRestoreTabBarAfterOverlay()
+            ensureTabBarOrderingAfterOverlay()
         }
     }
 
@@ -376,15 +378,8 @@ final class ForumTabBarController: UITabBarController {
         tabBar.frame = tabBarFrame(hidden: false)
         tabBar.isUserInteractionEnabled = true
         view.bringSubviewToFront(tabBar)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isTabBarHiddenByScroll, !self.shouldHideTabBarForCurrentContent else { return }
-            self.fillSelectedContentUnderTabBar()
-            self.tabBar.isHidden = false
-            self.tabBar.alpha = 1
-            self.tabBar.transform = .identity
-            self.tabBar.frame = self.tabBarFrame(hidden: false)
-            self.view.bringSubviewToFront(self.tabBar)
-        }
+        // No async second pass: on ProMotion devices the delayed bring-to-front
+        // after mini-program / modal dismiss reads as a bottom pop.
     }
 
     /// Make the selected tab's container fill the tab bar controller bounds so

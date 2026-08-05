@@ -98,7 +98,8 @@ final class MiniProgramFloatingManager {
 
         host.view.isHidden = false
         if host.presentingViewController == nil {
-            host.modalPresentationStyle = .fullScreen
+            host.modalPresentationStyle = .overFullScreen
+            host.modalPresentationCapturesStatusBarAppearance = true
             presenterVC.present(host, animated: true)
         }
     }

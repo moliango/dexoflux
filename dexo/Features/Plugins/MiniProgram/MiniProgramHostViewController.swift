@@ -103,7 +103,10 @@ final class MiniProgramHostViewController: UIViewController {
         self.api = api
         self.username = username
         super.init(nibName: nil, bundle: nil)
-        modalPresentationStyle = .fullScreen
+        // overFullScreen keeps Home mounted under the cover so dismiss does not
+        // tear down / re-insert the tab stack (fullScreen pop on ProMotion / iPhone 17).
+        modalPresentationStyle = .overFullScreen
+        modalPresentationCapturesStatusBarAppearance = true
         titleLabel.text = program.displayName
         iconView.image = icon
         iconView.isHidden = icon == nil
@@ -350,9 +353,8 @@ final class MiniProgramHostViewController: UIViewController {
         // race deallocation (WK cookie observer / KVO) and crash.
         prepareContentForTeardown(content)
 
-        // Settle forum chrome under this fullScreen cover first. Restoring only in
-        // dismiss completion (or via Home.viewWillAppear mid-transition) reflows
-        // tab bar + list insets while the host is still sliding away → visible flash.
+        // Settle forum chrome under this overFullScreen cover first so Home never
+        // reflows as the host slides away (fullScreen re-insert thrash on ProMotion).
         settleUnderlyingChromeBeforeDismiss()
 
         let teardown = { [weak self] in

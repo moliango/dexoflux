@@ -99,7 +99,8 @@ enum MiniProgramFactory {
             username: username,
             icon: icon(for: program.id)
         )
-        host.modalPresentationStyle = .fullScreen
+        host.modalPresentationStyle = .overFullScreen
+        host.modalPresentationCapturesStatusBarAppearance = true
         // Present from the top-most VC so we never stack on a half-dismissed drawer
         // transition (that path used to assert / look like a crash offline).
         let anchor = topMostPresenter(from: presenter)
