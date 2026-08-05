@@ -4815,6 +4815,17 @@
         }
       }
     },
+    "me.account_actions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "账号与切换"
+          }
+        }
+      }
+    },
     "me.account_functions.all_hidden" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -7633,6 +7644,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "話題"
+          }
+        }
+      }
+    },
+    "me.switch_account.current" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "当前：@%@"
+          }
+        }
+      }
+    },
+    "me.switch_account.other" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "登录其他账号"
+          }
+        }
+      }
+    },
+    "me.switch_account.use" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "切换到 @%@"
           }
         }
       }
@@ -14244,6 +14288,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在上傳..."
+          }
+        }
+      }
+    },
+    "reply.uploading.progress" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上传中 %1$lld/%2$lld"
           }
         }
       }
@@ -24589,6 +24644,17 @@
         }
       }
     },
+    "weblogin.accounts.count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已保存 %lld 个账号"
+          }
+        }
+      }
+    },
     "weblogin.clear_credentials" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -24628,13 +24694,13 @@
         }
       }
     },
-    "weblogin.fill_credentials" : {
+    "weblogin.fill_account" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "填充账号密码"
+            "value" : "填充 @%@"
           }
         }
       }
@@ -24646,17 +24712,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "剪切板中没有有效的邮箱登录链接。"
-          }
-        }
-      }
-    },
-    "weblogin.last_account" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "上次登录：%@"
           }
         }
       }
