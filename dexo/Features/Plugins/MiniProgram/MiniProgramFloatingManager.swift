@@ -61,7 +61,9 @@ final class MiniProgramFloatingManager {
             bubble: bubble
         )
 
-        // Dismiss full-screen presentation while retaining the host in `session`.
+        // Settle forum chrome under the still-visible fullScreen host, then
+        // dismiss. Same flash class as close if tab bar pops in mid-transition.
+        host.settleUnderlyingChromeBeforeDismiss()
         if host.presentingViewController != nil {
             host.dismiss(animated: true)
         } else {

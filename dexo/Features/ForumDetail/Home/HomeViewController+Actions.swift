@@ -78,6 +78,9 @@ extension HomeViewController {
 
     /// Restore bottom tab bar after mini-program drawer/host chrome without layout bounce.
     func restoreTabBarAfterMiniProgramChrome() {
+        // Keep local scroll-hide state in sync with the forced reveal path used by
+        // the mini-program drawer (it bypasses setHomeTabBarHidden).
+        isHomeTabBarHidden = false
         if let forumTab = tabBarController as? ForumTabBarController {
             // Non-animated: animated reveal reflows home insets and reads as jitter.
             forumTab.setTabBarHiddenByScroll(false, animated: false)

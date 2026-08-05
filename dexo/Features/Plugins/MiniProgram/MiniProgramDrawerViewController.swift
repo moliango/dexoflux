@@ -367,6 +367,14 @@ final class MiniProgramDrawerViewController: UIViewController {
         animationGeneration += 1
         let generation = animationGeneration
 
+        // Restore underlying tab bar / home insets under the dimming layer *before*
+        // the panel leaves, so close does not end with a post-animation chrome pop.
+        // Keep this drawer above the re-shown tab bar for the rest of the animation.
+        if notifiesDismissed {
+            onDismissed?()
+            view.superview?.bringSubviewToFront(view)
+        }
+
         // Use the live host height so the panel fully clears the screen even if
         // bounds changed after open (keyboard / rotation / safe area).
         let height = max(view.bounds.height, panelHeightConstraint?.constant ?? 0, 1)
@@ -380,6 +388,8 @@ final class MiniProgramDrawerViewController: UIViewController {
         let animations = {
             self.dimmingView.alpha = 0
             self.view.layoutIfNeeded()
+            // Tab bar restore may bring the bar front mid-flight; stay on top.
+            self.view.superview?.bringSubviewToFront(self.view)
         }
         let finish = {
             guard generation == self.animationGeneration else { return }
@@ -387,9 +397,6 @@ final class MiniProgramDrawerViewController: UIViewController {
             self.view.isHidden = true
             // Reset panel off-screen for the next open without an intermediate flash.
             self.panelTopConstraint?.constant = -height
-            if notifiesDismissed {
-                self.onDismissed?()
-            }
             completion?()
         }
         if animated {

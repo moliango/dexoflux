@@ -350,13 +350,16 @@ final class MiniProgramHostViewController: UIViewController {
         // race deallocation (WK cookie observer / KVO) and crash.
         prepareContentForTeardown(content)
 
+        // Settle forum chrome under this fullScreen cover first. Restoring only in
+        // dismiss completion (or via Home.viewWillAppear mid-transition) reflows
+        // tab bar + list insets while the host is still sliding away → visible flash.
+        settleUnderlyingChromeBeforeDismiss()
+
         let teardown = { [weak self] in
             guard let self else { return }
             self.content.willMove(toParent: nil)
             self.content.view.removeFromSuperview()
             self.content.removeFromParent()
-            // Drawer may have left the tab bar force-hidden when opening a program.
-            Self.restoreHostTabBarIfNeeded()
         }
 
         if presentingViewController != nil {
@@ -367,6 +370,11 @@ final class MiniProgramHostViewController: UIViewController {
             view.removeFromSuperview()
             removeFromParent()
         }
+    }
+
+    /// Restore home/tab-bar chrome while still covered by the mini-program host.
+    func settleUnderlyingChromeBeforeDismiss() {
+        Self.restoreHostTabBarIfNeeded()
     }
 
     private func prepareContentForTeardown(_ root: UIViewController) {
@@ -403,8 +411,14 @@ final class MiniProgramHostViewController: UIViewController {
             let id = ObjectIdentifier(current)
             guard visited.insert(id).inserted else { continue }
             if let forumTab = current as? ForumTabBarController {
-                forumTab.setTabBarHiddenByScroll(false, animated: false)
-                forumTab.forceRevealTabBarForRootContent()
+                // Prefer Home's coordinated restore so list contentInset.bottom
+                // matches the re-shown tab bar before the host starts dismissing.
+                if let home = homeViewController(in: forumTab) {
+                    home.restoreTabBarAfterMiniProgramChrome()
+                } else {
+                    forumTab.setTabBarHiddenByScroll(false, animated: false)
+                    forumTab.forceRevealTabBarForRootContent()
+                }
                 return
             }
             if let tab = current as? UITabBarController {
@@ -422,6 +436,27 @@ final class MiniProgramHostViewController: UIViewController {
             }
             queue.append(contentsOf: current.children)
         }
+    }
+
+    private static func homeViewController(in tabBarController: ForumTabBarController) -> HomeViewController? {
+        var candidates: [UIViewController] = tabBarController.viewControllers ?? []
+        if let selected = tabBarController.selectedViewController {
+            candidates.insert(selected, at: 0)
+        }
+        for candidate in candidates {
+            if let home = candidate as? HomeViewController {
+                return home
+            }
+            if let nav = candidate as? UINavigationController {
+                if let home = nav.viewControllers.first as? HomeViewController {
+                    return home
+                }
+                if let home = nav.viewControllers.compactMap({ $0 as? HomeViewController }).first {
+                    return home
+                }
+            }
+        }
+        return nil
     }
 
     private func presentToast(_ message: String) {
