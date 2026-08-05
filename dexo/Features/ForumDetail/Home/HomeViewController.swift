@@ -44,6 +44,9 @@ final class HomeViewController: ObservableViewController {
     var filterTopToSafeAreaConstraint: NSLayoutConstraint?
     var trailingChromeCenterYToCategoryConstraint: NSLayoutConstraint?
     var trailingChromeCenterYToFilterConstraint: NSLayoutConstraint?
+    /// Chip mode: filter uses full width (chrome is on the top row).
+    var filterTrailingToHeaderConstraint: NSLayoutConstraint?
+    /// Drawer mode: filter leaves room for chrome on the same row.
     var filterTrailingToChromeConstraint: NSLayoutConstraint?
     var floatingActionButtonBottomConstraint: NSLayoutConstraint?
     var isSearchRowCollapsed = false
@@ -895,11 +898,21 @@ final class HomeViewController: ObservableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+        // Never animate nav-bar hide on appear: modal dismiss of mini-programs
+        // otherwise flashes the system bar while the host is still sliding away.
+        navigationController?.setNavigationBarHidden(true, animated: false)
         // Always surface tab bar when home becomes visible; passive offset checks
         // previously could leave it hidden after first-launch layout jumps.
         setHomeTabBarHidden(false, animated: false)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+        // Near top: always show the full search bar (never leave it collapsed
+        // from a previous scroll session / inset jump).
+        let y = tableView.contentOffset.y + tableView.contentInset.top
+        if y < 24 {
+            setSearchRowCollapsed(false, animated: false)
+        } else if searchChromeNeedsHeal() {
+            applySearchRowChromeFinalState()
+        }
         updateTabBarVisibilityForCurrentScroll(animated: false)
         viewModel.restoreBackgroundTopicUpdates()
         updateIncomingTopicsHeader()
@@ -909,9 +922,17 @@ final class HomeViewController: ObservableViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        navigationController?.setNavigationBarHidden(false, animated: animated)
-        if !isNavigatingToControllerThatOwnsBottomBarVisibility {
-            setHomeTabBarHidden(false, animated: animated)
+        // fullScreen mini-program / modal cover: keep home chrome as-is under the
+        // presenter. Unhiding nav/tab bar here is invisible while covered, then
+        // flashes during dismiss when viewWillAppear tries to hide them again.
+        let coveredByModal = presentedViewController != nil
+            || navigationController?.presentedViewController != nil
+            || tabBarController?.presentedViewController != nil
+        if !coveredByModal {
+            navigationController?.setNavigationBarHidden(false, animated: animated)
+            if !isNavigatingToControllerThatOwnsBottomBarVisibility {
+                setHomeTabBarHidden(false, animated: animated)
+            }
         }
         stopIncomingTopicsPolling()
     }
