@@ -289,7 +289,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             TopicDetailViewController(
                 api: api,
                 topicId: topicId,
-                initialFloor: route.postNumber
+                initialFloor: route.postNumber,
+                initialPostId: route.postId
             ),
             animated: true
         )
@@ -569,24 +570,50 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     @objc private func menuButtonTapped() {
         let baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        let store = AccountCredentialStore.forBaseURL(forum.baseURL)
 
         if authManager.isAuthenticated(for: baseURL) {
             if let username = authManager.username(for: baseURL) {
                 alert.title = "@\(username)"
             }
-            alert.addAction(UIAlertAction(title: "Log Out", style: .destructive) { [weak self] _ in
+            for account in store.accounts {
+                let isCurrent = authManager.username(for: baseURL)?
+                    .caseInsensitiveCompare(account.username) == .orderedSame
+                guard !isCurrent else { continue }
+                alert.addAction(UIAlertAction(
+                    title: String(localized: "me.switch_account.use", defaultValue: "切换到 @\(account.username)"),
+                    style: .default
+                ) { [weak self] _ in
+                    self?.switchAccount(preferredUsername: account.username)
+                })
+            }
+            alert.addAction(UIAlertAction(
+                title: String(localized: "me.switch_account.other", defaultValue: "登录其他账号"),
+                style: .default
+            ) { [weak self] _ in
+                self?.switchAccount(preferredUsername: nil)
+            })
+            alert.addAction(UIAlertAction(title: String(localized: "me.logout"), style: .destructive) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     await self?.performLogout()
                 }
             })
         } else {
-            alert.addAction(UIAlertAction(title: "Log In", style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: String(localized: "me.login"), style: .default) { [weak self] _ in
                 self?.performLogin()
             })
         }
 
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
         present(alert, animated: true)
+    }
+
+    private func switchAccount(preferredUsername: String?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performLogout()
+            self.requireAuth(preferredUsername: preferredUsername) {}
+        }
     }
 
     @objc private func dismissButtonTapped() {
@@ -892,7 +919,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     // MARK: - Auth Actions
 
     private func performLogin() {
-        presentWebLogin {}
+        presentWebLogin(preferredUsername: nil, then: {})
     }
 
     func performLogout() async {
@@ -904,14 +931,15 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     // MARK: - AuthGating
 
-    func requireAuth(then action: @escaping () -> Void) {
+    func requireAuth(preferredUsername: String?, then action: @escaping () -> Void) {
         let baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if authManager.isAuthenticated(for: baseURL) {
+        if preferredUsername == nil, authManager.isAuthenticated(for: baseURL) {
             action()
             return
         }
 
-        if authManager.hasWebSession(for: baseURL) {
+        // Switching accounts always forces a fresh login sheet.
+        if preferredUsername == nil, authManager.hasWebSession(for: baseURL) {
             Task { [weak self] in
                 guard let self else { return }
                 await MainActor.run {
@@ -929,23 +957,26 @@ final class ForumContainerViewController: UIViewController, AuthGating {
                         }
                     } else {
                         self.hideAuthSyncOverlay()
-                        self.presentWebLogin(then: action)
+                        self.presentWebLogin(preferredUsername: nil, then: action)
                     }
                 }
             }
             return
         }
 
-        presentWebLogin(then: action)
+        presentWebLogin(preferredUsername: preferredUsername, then: action)
     }
 
-    private func presentWebLogin(then action: @escaping () -> Void) {
+    private func presentWebLogin(preferredUsername: String?, then action: @escaping () -> Void) {
         let baseURL = forum.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(baseURL)/login") ?? URL(string: forum.baseURL) else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             await WebCookieStore.shared.clearWebViewAuthCookies(for: baseURL)
-            let vc = WebLoginViewController(targetURL: url) { [weak self] cookies, userAgent in
+            let vc = WebLoginViewController(
+                targetURL: url,
+                preferredUsername: preferredUsername
+            ) { [weak self] cookies, userAgent in
                 guard let self else { return }
                 self.showAuthSyncOverlay(
                     title: String(localized: "weblogin.success.title"),

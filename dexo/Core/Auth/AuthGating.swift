@@ -2,10 +2,17 @@ import UIKit
 
 @MainActor
 protocol AuthGating: AnyObject {
-    func requireAuth(then action: @escaping () -> Void)
+    /// Prefer filling a saved account when presenting web login (account switch).
+    func requireAuth(preferredUsername: String?, then action: @escaping () -> Void)
     func isAuthenticated() -> Bool
     func currentUsername() -> String?
     func performLogout() async
+}
+
+extension AuthGating {
+    func requireAuth(then action: @escaping () -> Void) {
+        requireAuth(preferredUsername: nil, then: action)
+    }
 }
 
 extension UIViewController {

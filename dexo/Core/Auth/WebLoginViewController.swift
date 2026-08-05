@@ -6,7 +6,9 @@ import WebKit
 final class WebLoginViewController: UIViewController {
     private let targetURL: URL
     private let onSuccess: ([HTTPCookie], String?) -> Void
-    private let credentialStore: WebLoginCredentialStore
+    private let credentialStore: AccountCredentialStore
+    /// When set, auto-fill this saved account after the login form appears.
+    private let preferredUsername: String?
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
@@ -41,10 +43,15 @@ final class WebLoginViewController: UIViewController {
 
     private var progressObservation: NSKeyValueObservation?
 
-    init(targetURL: URL, onSuccess: @escaping ([HTTPCookie], String?) -> Void) {
+    init(
+        targetURL: URL,
+        preferredUsername: String? = nil,
+        onSuccess: @escaping ([HTTPCookie], String?) -> Void
+    ) {
         self.targetURL = targetURL
+        self.preferredUsername = preferredUsername
         self.onSuccess = onSuccess
-        credentialStore = WebLoginCredentialStore(host: targetURL.host ?? "forum")
+        credentialStore = AccountCredentialStore(host: targetURL.host ?? "forum")
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -114,29 +121,54 @@ final class WebLoginViewController: UIViewController {
     }
 
     @objc private func credentialsTapped() {
+        let accounts = credentialStore.accounts
         let sheet = UIAlertController(
             title: String(localized: "weblogin.saved_password", defaultValue: "已保存的账号密码"),
-            message: credentialStore.username.map { String(localized: "weblogin.last_account", defaultValue: "上次登录：\($0)") },
+            message: accounts.isEmpty
+                ? String(localized: "weblogin.no_credentials", defaultValue: "登录时输入的账号密码会安全保存在 Keychain。")
+                : String(localized: "weblogin.accounts.count", defaultValue: "已保存 \(accounts.count) 个账号"),
             preferredStyle: .actionSheet
         )
-        if credentialStore.hasCredentials {
-            sheet.addAction(UIAlertAction(title: String(localized: "weblogin.fill_credentials", defaultValue: "填充账号密码"), style: .default) { [weak self] _ in
-                self?.injectCredentialHelpers(fillSavedCredentials: true)
+        for account in accounts {
+            sheet.addAction(UIAlertAction(
+                title: String(localized: "weblogin.fill_account", defaultValue: "填充 @\(account.username)"),
+                style: .default
+            ) { [weak self] _ in
+                self?.injectCredentialHelpers(username: account.username, password: account.password)
             })
-            sheet.addAction(UIAlertAction(title: String(localized: "weblogin.clear_credentials", defaultValue: "清除保存的账号密码"), style: .destructive) { [weak self] _ in
+        }
+        if !accounts.isEmpty {
+            sheet.addAction(UIAlertAction(
+                title: String(localized: "weblogin.clear_credentials", defaultValue: "清除保存的账号密码"),
+                style: .destructive
+            ) { [weak self] _ in
                 self?.credentialStore.clear()
             })
-        } else {
-            sheet.message = String(localized: "weblogin.no_credentials", defaultValue: "登录时输入的账号密码会安全保存在 Keychain。")
         }
         sheet.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
         sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?[1]
         present(sheet, animated: true)
     }
 
-    private func injectCredentialHelpers(fillSavedCredentials: Bool = true) {
-        let username = fillSavedCredentials ? credentialStore.username : nil
-        let password = fillSavedCredentials ? credentialStore.password : nil
+    /// Called after page load to auto-fill preferred / last-used credentials.
+    func injectCredentialHelpers(fillSavedCredentials: Bool = true) {
+        guard fillSavedCredentials else {
+            injectCredentialHelpers(username: nil, password: nil)
+            return
+        }
+        let account: AccountCredentialStore.Account? = {
+            if let preferred = preferredUsername,
+               let match = credentialStore.accounts.first(where: {
+                   $0.username.caseInsensitiveCompare(preferred) == .orderedSame
+               }) {
+                return match
+            }
+            return credentialStore.lastUsedAccount
+        }()
+        injectCredentialHelpers(username: account?.username, password: account?.password)
+    }
+
+    private func injectCredentialHelpers(username: String?, password: String?) {
         let usernameLiteral = Self.javascriptLiteral(username)
         let passwordLiteral = Self.javascriptLiteral(password)
         let script = """
@@ -202,8 +234,13 @@ final class WebLoginViewController: UIViewController {
         private let onCookiesReady: ([HTTPCookie]) -> Void
         private let onCredentialsCaptured: (String, String) -> Void
         private(set) var didCallback = false
+        weak var owner: WebLoginViewController?
 
-        init(targetURL: URL, onCookiesReady: @escaping ([HTTPCookie]) -> Void, onCredentialsCaptured: @escaping (String, String) -> Void) {
+        init(
+            targetURL: URL,
+            onCookiesReady: @escaping ([HTTPCookie]) -> Void,
+            onCredentialsCaptured: @escaping (String, String) -> Void
+        ) {
             self.targetHost = targetURL.host ?? ""
             self.onCookiesReady = onCookiesReady
             self.onCredentialsCaptured = onCredentialsCaptured
@@ -213,9 +250,11 @@ final class WebLoginViewController: UIViewController {
             dataStore.httpCookieStore.add(self)
         }
 
-        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
-                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void)
-        {
+        func webView(
+            _ webView: WKWebView,
+            didReceive challenge: URLAuthenticationChallenge,
+            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        ) {
             completionHandler(.performDefaultHandling, nil)
         }
 
@@ -247,10 +286,8 @@ final class WebLoginViewController: UIViewController {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             collectAndFireIfPossible(from: webView)
-            (webView.navigationDelegate as? Coordinator)?.owner?.injectCredentialHelpers()
+            owner?.injectCredentialHelpers()
         }
-
-        weak var owner: WebLoginViewController?
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "dexoLoginCredentials",
@@ -260,37 +297,16 @@ final class WebLoginViewController: UIViewController {
             onCredentialsCaptured(username, password)
         }
 
-        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
-                     for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView?
-        {
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
             }
             return nil
         }
-    }
-}
-
-private final class WebLoginCredentialStore {
-    private let service: String
-    private let usernameAccount = "username"
-    private let passwordAccount = "password"
-
-    init(host: String) {
-        service = "com.naine.dexoflux.web-login.\(host.lowercased())"
-    }
-
-    var username: String? { KeychainHelper.string(service: service, account: usernameAccount) }
-    var password: String? { KeychainHelper.string(service: service, account: passwordAccount) }
-    var hasCredentials: Bool { username?.isEmpty == false && password?.isEmpty == false }
-
-    func save(username: String, password: String) {
-        try? KeychainHelper.setString(username, service: service, account: usernameAccount)
-        try? KeychainHelper.setString(password, service: service, account: passwordAccount)
-    }
-
-    func clear() {
-        KeychainHelper.deleteString(service: service, account: usernameAccount)
-        KeychainHelper.deleteString(service: service, account: passwordAccount)
     }
 }

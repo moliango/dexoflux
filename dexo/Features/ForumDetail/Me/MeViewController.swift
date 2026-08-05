@@ -111,11 +111,8 @@ final class MeViewController: ObservableViewController {
         if let error = viewModel.errorMessage {
             loadingSkeletonView.setSkeletonActive(false, animated: view.window != nil)
             scrollView.isHidden = false
-            let alert = UIAlertController(title: nil, message: error, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
-            present(alert, animated: true)
+            DexoFeedback.presentToast(error, on: self)
             viewModel.errorMessage = nil
-            return
         }
 
         if isLoggedIn {
@@ -311,7 +308,9 @@ final class MeViewController: ObservableViewController {
         actionsCard.configure(title: String(localized: "me.actions.title"), rows: rows)
 
         if let authButton = (contentStackView.arrangedSubviews.last?.subviews.first as? UIButton) {
-            let title = isLoggedIn ? String(localized: "me.logout") : String(localized: "me.login")
+            let title = isLoggedIn
+                ? String(localized: "me.account_actions", defaultValue: "账号与切换")
+                : String(localized: "me.login")
             authButton.setTitle(title, for: .normal)
             authButton.setTitleColor(isLoggedIn ? .systemRed : .tintColor, for: .normal)
         }
@@ -343,7 +342,7 @@ final class MeViewController: ObservableViewController {
 
     @objc private func authButtonTapped() {
         if authGate?.isAuthenticated() == true {
-            logoutTapped()
+            presentAccountActions()
         } else {
             loginTapped()
         }
@@ -354,6 +353,75 @@ final class MeViewController: ObservableViewController {
             guard let self else { return }
             Task {
                 await self.viewModel.reload()
+            }
+        }
+    }
+
+    /// Logged-in auth button opens Switch Account / Log Out instead of only logout.
+    private func presentAccountActions() {
+        let store = AccountCredentialStore.forBaseURL(api.baseURL)
+        let sheet = UIAlertController(
+            title: authGate?.currentUsername().map { "@\($0)" },
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+
+        for account in store.accounts {
+            let isCurrent = authGate?.currentUsername()?.caseInsensitiveCompare(account.username) == .orderedSame
+            let title = isCurrent
+                ? String(localized: "me.switch_account.current", defaultValue: "当前：@\(account.username)")
+                : String(localized: "me.switch_account.use", defaultValue: "切换到 @\(account.username)")
+            sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                guard let self, !isCurrent else { return }
+                self.switchToSavedAccount(username: account.username)
+            })
+        }
+
+        sheet.addAction(UIAlertAction(
+            title: String(localized: "me.switch_account.other", defaultValue: "登录其他账号"),
+            style: .default
+        ) { [weak self] _ in
+            self?.switchToOtherAccount()
+        })
+
+        sheet.addAction(UIAlertAction(
+            title: String(localized: "me.logout"),
+            style: .destructive
+        ) { [weak self] _ in
+            self?.logoutTapped()
+        })
+        sheet.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+
+        if let pop = sheet.popoverPresentationController,
+           let button = contentStackView.arrangedSubviews.last?.subviews.first {
+            pop.sourceView = button
+            pop.sourceRect = button.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func switchToSavedAccount(username: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.authGate?.performLogout()
+            self.viewModel.clearSessionState(requiresLogin: true)
+            self.updateUI()
+            self.authGate?.requireAuth(preferredUsername: username) { [weak self] in
+                guard let self else { return }
+                Task { await self.viewModel.reload() }
+            }
+        }
+    }
+
+    private func switchToOtherAccount() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.authGate?.performLogout()
+            self.viewModel.clearSessionState(requiresLogin: true)
+            self.updateUI()
+            self.authGate?.requireAuth(preferredUsername: nil) { [weak self] in
+                guard let self else { return }
+                Task { await self.viewModel.reload() }
             }
         }
     }
