@@ -901,19 +901,37 @@ final class HomeViewController: ObservableViewController {
         // Never animate nav-bar hide on appear: modal dismiss of mini-programs
         // otherwise flashes the system bar while the host is still sliding away.
         navigationController?.setNavigationBarHidden(true, animated: false)
-        // Always surface tab bar when home becomes visible; passive offset checks
-        // previously could leave it hidden after first-launch layout jumps.
-        setHomeTabBarHidden(false, animated: false)
-        lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-        // Near top: always show the full search bar (never leave it collapsed
-        // from a previous scroll session / inset jump).
-        let y = tableView.contentOffset.y + tableView.contentInset.top
-        if y < 24 {
-            setSearchRowCollapsed(false, animated: false)
-        } else if searchChromeNeedsHeal() {
-            applySearchRowChromeFinalState()
+
+        let applyVisibleChrome = { [weak self] in
+            guard let self else { return }
+            // Always surface tab bar when home becomes visible; passive offset checks
+            // previously could leave it hidden after first-launch layout jumps.
+            self.setHomeTabBarHidden(false, animated: false)
+            self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
+            // Near top: always show the full search bar (never leave it collapsed
+            // from a previous scroll session / inset jump).
+            let y = self.tableView.contentOffset.y + self.tableView.contentInset.top
+            if y < 24 {
+                self.setSearchRowCollapsed(false, animated: false)
+            } else if self.searchChromeNeedsHeal() {
+                self.applySearchRowChromeFinalState()
+            }
+            self.updateTabBarVisibilityForCurrentScroll(animated: false)
         }
-        updateTabBarVisibilityForCurrentScroll(animated: false)
+
+        // Mini-program host dismiss: chrome was already settled under the cover.
+        // Defer search/tab heal until the transition ends so we don't reflow the
+        // list under a half-dismissed modal (reads as a bounce at the end).
+        if let coordinator = transitionCoordinator,
+           presentedViewController == nil,
+           coordinator.viewController(forKey: .from) !== self {
+            coordinator.animate(alongsideTransition: nil) { _ in
+                applyVisibleChrome()
+            }
+        } else {
+            applyVisibleChrome()
+        }
+
         viewModel.restoreBackgroundTopicUpdates()
         updateIncomingTopicsHeader()
         startIncomingTopicsPolling()

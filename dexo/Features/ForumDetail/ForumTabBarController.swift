@@ -271,6 +271,37 @@ final class ForumTabBarController: UITabBarController {
         }
     }
 
+    /// Mini-program drawer/host dismiss path: restore bar geometry without the
+    /// delayed async reassert / bring-to-front thrash that reads as a post-close pop.
+    func quietlyRestoreTabBarAfterOverlay() {
+        guard !shouldHideTabBarForCurrentContent else {
+            scrollTabBarAnimationID += 1
+            isAnimatingScrollTabBar = false
+            applyCurrentTabBarLayout()
+            return
+        }
+        scrollTabBarAnimationID += 1
+        isAnimatingScrollTabBar = false
+        isTabBarHiddenByScroll = false
+        tabBar.layer.removeAllAnimations()
+        tabBar.transform = .identity
+        tabBar.alpha = 1
+        tabBar.isHidden = false
+        tabBar.isUserInteractionEnabled = true
+        // Full-bleed content under bar; skip applyVisibleTabBarLayout's async
+        // bringSubviewToFront pass (it pops the bar over an animating drawer).
+        fillSelectedContentUnderTabBar()
+        tabBar.frame = tabBarFrame(hidden: false)
+        configureTabBarSurface()
+    }
+
+    /// After an overlay (drawer) is fully hidden, put the bar above content once.
+    func ensureTabBarOrderingAfterOverlay() {
+        guard !isTabBarHiddenByScroll, !shouldHideTabBarForCurrentContent else { return }
+        guard !tabBar.isHidden else { return }
+        view.bringSubviewToFront(tabBar)
+    }
+
     private func reassertVisibleTabBarIfNeeded() {
         guard !isTabBarHiddenByScroll, !shouldHideTabBarForCurrentContent else { return }
         tabBar.layer.removeAllAnimations()

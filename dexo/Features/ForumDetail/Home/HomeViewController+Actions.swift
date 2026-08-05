@@ -82,13 +82,17 @@ extension HomeViewController {
         // the mini-program drawer (it bypasses setHomeTabBarHidden).
         isHomeTabBarHidden = false
         if let forumTab = tabBarController as? ForumTabBarController {
-            // Non-animated: animated reveal reflows home insets and reads as jitter.
-            forumTab.setTabBarHiddenByScroll(false, animated: false)
-            forumTab.forceRevealTabBarForRootContent()
+            // Quiet path: no delayed reassert / async bring-to-front (post-close pop).
+            forumTab.quietlyRestoreTabBarAfterOverlay()
         } else {
             tabBarController?.tabBar.isHidden = false
         }
         updateBottomChrome(animated: false)
+    }
+
+    /// Once the mini-program drawer is gone, ensure tab bar sits above content.
+    func finalizeTabBarOrderingAfterMiniProgramChrome() {
+        (tabBarController as? ForumTabBarController)?.ensureTabBarOrderingAfterOverlay()
     }
 
     @objc func categoryManagerLongPressed(_ gesture: UILongPressGestureRecognizer) {

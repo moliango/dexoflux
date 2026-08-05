@@ -369,7 +369,7 @@ final class MiniProgramDrawerViewController: UIViewController {
 
         // Restore underlying tab bar / home insets under the dimming layer *before*
         // the panel leaves, so close does not end with a post-animation chrome pop.
-        // Keep this drawer above the re-shown tab bar for the rest of the animation.
+        // Quiet restore intentionally does not bring the tab bar front mid-flight.
         if notifiesDismissed {
             onDismissed?()
             view.superview?.bringSubviewToFront(view)
@@ -388,7 +388,8 @@ final class MiniProgramDrawerViewController: UIViewController {
         let animations = {
             self.dimmingView.alpha = 0
             self.view.layoutIfNeeded()
-            // Tab bar restore may bring the bar front mid-flight; stay on top.
+            // Stay above content for the whole close; tab bar ordering is finalized
+            // only after this view is hidden.
             self.view.superview?.bringSubviewToFront(self.view)
         }
         let finish = {
@@ -397,6 +398,9 @@ final class MiniProgramDrawerViewController: UIViewController {
             self.view.isHidden = true
             // Reset panel off-screen for the next open without an intermediate flash.
             self.panelTopConstraint?.constant = -height
+            if notifiesDismissed {
+                Self.finalizeHostTabBarOrdering()
+            }
             completion?()
         }
         if animated {
@@ -411,6 +415,38 @@ final class MiniProgramDrawerViewController: UIViewController {
         } else {
             animations()
             finish()
+        }
+    }
+
+
+    private static func finalizeHostTabBarOrdering() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+            ?? scenes.flatMap(\.windows).first
+        guard let root = window?.rootViewController else { return }
+        var queue: [UIViewController] = [root]
+        var visited = Set<ObjectIdentifier>()
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            let id = ObjectIdentifier(current)
+            guard visited.insert(id).inserted else { continue }
+            if let forumTab = current as? ForumTabBarController {
+                forumTab.ensureTabBarOrderingAfterOverlay()
+                return
+            }
+            if let tab = current as? UITabBarController {
+                if let selected = tab.selectedViewController { queue.append(selected) }
+                queue.append(contentsOf: tab.viewControllers ?? [])
+            }
+            if let nav = current as? UINavigationController {
+                queue.append(contentsOf: nav.viewControllers)
+            }
+            queue.append(contentsOf: current.children)
+            if let presented = current.presentedViewController {
+                queue.append(presented)
+            }
         }
     }
 

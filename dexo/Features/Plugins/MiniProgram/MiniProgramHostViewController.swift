@@ -360,6 +360,10 @@ final class MiniProgramHostViewController: UIViewController {
             self.content.willMove(toParent: nil)
             self.content.view.removeFromSuperview()
             self.content.removeFromParent()
+            // One-shot z-order after cover is gone; no delayed reassert thrash.
+            if let home = Self.homeViewControllerFromKeyWindow() {
+                home.finalizeTabBarOrderingAfterMiniProgramChrome()
+            }
         }
 
         if presentingViewController != nil {
@@ -416,8 +420,7 @@ final class MiniProgramHostViewController: UIViewController {
                 if let home = homeViewController(in: forumTab) {
                     home.restoreTabBarAfterMiniProgramChrome()
                 } else {
-                    forumTab.setTabBarHiddenByScroll(false, animated: false)
-                    forumTab.forceRevealTabBarForRootContent()
+                    forumTab.quietlyRestoreTabBarAfterOverlay()
                 }
                 return
             }
@@ -436,6 +439,37 @@ final class MiniProgramHostViewController: UIViewController {
             }
             queue.append(contentsOf: current.children)
         }
+    }
+
+    private static func homeViewControllerFromKeyWindow() -> HomeViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+            ?? scenes.flatMap(\.windows).first
+        guard let root = window?.rootViewController else { return nil }
+        var queue: [UIViewController] = [root]
+        var visited = Set<ObjectIdentifier>()
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            let id = ObjectIdentifier(current)
+            guard visited.insert(id).inserted else { continue }
+            if let forumTab = current as? ForumTabBarController {
+                return homeViewController(in: forumTab)
+            }
+            if let tab = current as? UITabBarController {
+                if let selected = tab.selectedViewController { queue.append(selected) }
+                queue.append(contentsOf: tab.viewControllers ?? [])
+            }
+            if let nav = current as? UINavigationController {
+                queue.append(contentsOf: nav.viewControllers)
+            }
+            queue.append(contentsOf: current.children)
+            if let presented = current.presentedViewController {
+                queue.append(presented)
+            }
+        }
+        return nil
     }
 
     private static func homeViewController(in tabBarController: ForumTabBarController) -> HomeViewController? {
