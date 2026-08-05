@@ -79,6 +79,44 @@ enum ComposerLocalDraftStore {
         defaults.removeObject(forKey: newTopicKey(baseURL: baseURL))
     }
 
+    // MARK: - Private message
+
+    static func privateMessageKey(baseURL: String, recipient: String) -> String {
+        "\(prefix)pm.\(normalizedHost(baseURL)).\(recipient.lowercased())"
+    }
+
+    struct PrivateMessageDraft: Codable, Equatable {
+        var title: String
+        var raw: String
+    }
+
+    static func loadPrivateMessage(baseURL: String, recipient: String) -> PrivateMessageDraft? {
+        guard let data = defaults.data(forKey: privateMessageKey(baseURL: baseURL, recipient: recipient)),
+              let draft = try? JSONDecoder().decode(PrivateMessageDraft.self, from: data)
+        else { return nil }
+        let hasContent = !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !draft.raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasContent ? draft : nil
+    }
+
+    static func savePrivateMessage(baseURL: String, recipient: String, title: String, raw: String) {
+        let draft = PrivateMessageDraft(title: title, raw: raw)
+        let hasContent = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let key = privateMessageKey(baseURL: baseURL, recipient: recipient)
+        if !hasContent {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        if let data = try? JSONEncoder().encode(draft) {
+            defaults.set(data, forKey: key)
+        }
+    }
+
+    static func clearPrivateMessage(baseURL: String, recipient: String) {
+        defaults.removeObject(forKey: privateMessageKey(baseURL: baseURL, recipient: recipient))
+    }
+
     // MARK: - Helpers
 
     private static func normalizedHost(_ baseURL: String) -> String {

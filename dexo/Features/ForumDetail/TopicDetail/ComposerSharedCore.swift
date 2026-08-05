@@ -641,14 +641,24 @@ final class ComposerMarkdownCoordinator: NSObject {
 
     // MARK: Upload
 
+    private var pendingFailedUploads: [(url: URL, filename: String)] = []
+    private var pendingMediaForRetry: (url: URL, kind: MediaPickKind)?
+
     func uploadPickedFiles(_ files: [(url: URL, filename: String)]) async {
         guard let surface, !files.isEmpty else { return }
         surface.composerSetUploading(true, statusText: String(localized: "reply.uploading"))
         defer { surface.composerSetUploading(false, statusText: nil) }
 
+        let total = files.count
         for (index, file) in files.enumerated() {
-            if files.count > 1 {
-                surface.composerSetUploading(true, statusText: "\(index + 1)/\(files.count)")
+            if total > 1 {
+                surface.composerSetUploading(
+                    true,
+                    statusText: String(
+                        localized: "reply.uploading.progress",
+                        defaultValue: "上传中 \(index + 1)/\(total)"
+                    )
+                )
             }
             do {
                 let upload = try await surface.composerAPI.uploadComposerFile(
@@ -657,10 +667,13 @@ final class ComposerMarkdownCoordinator: NSObject {
                 )
                 insertUploadMarkdown(upload.markdown, on: surface)
             } catch {
-                presentUploadError(error)
+                // Keep failed file + remaining queue so Retry can continue.
+                pendingFailedUploads = Array(files[index...])
+                presentUploadError(error, canRetry: true)
                 return
             }
         }
+        pendingFailedUploads = []
     }
 
     func uploadMediaFile(url: URL, kind: MediaPickKind) async {
@@ -697,8 +710,10 @@ final class ComposerMarkdownCoordinator: NSObject {
                 tag = "<video width=\"640\" height=\"360\" controls>\n  <source src=\"\(src)\" type=\"\(mime)\">\n</video>"
             }
             insertUploadMarkdown(tag, on: surface)
+            pendingMediaForRetry = nil
         } catch {
-            presentUploadError(error)
+            pendingMediaForRetry = (url, kind)
+            presentUploadError(error, canRetry: true)
         }
     }
 
@@ -738,15 +753,38 @@ final class ComposerMarkdownCoordinator: NSObject {
         surface.composerHostViewController.present(alert, animated: true)
     }
 
-    private func presentUploadError(_ error: Error) {
+    private func presentUploadError(_ error: Error, canRetry: Bool = false) {
         guard let surface else { return }
         let alert = UIAlertController(
             title: String(localized: "reply.upload.failed"),
             message: error.localizedDescription,
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+        if canRetry, !pendingFailedUploads.isEmpty || pendingMediaForRetry != nil {
+            alert.addAction(UIAlertAction(
+                title: String(localized: "common.retry", defaultValue: "重试"),
+                style: .default
+            ) { [weak self] _ in
+                self?.retryPendingUploads()
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .cancel) { [weak self] _ in
+            self?.pendingFailedUploads = []
+            self?.pendingMediaForRetry = nil
+        })
         surface.composerHostViewController.present(alert, animated: true)
+    }
+
+    private func retryPendingUploads() {
+        if let media = pendingMediaForRetry {
+            pendingMediaForRetry = nil
+            Task { await uploadMediaFile(url: media.url, kind: media.kind) }
+            return
+        }
+        let files = pendingFailedUploads
+        pendingFailedUploads = []
+        guard !files.isEmpty else { return }
+        Task { await uploadPickedFiles(files) }
     }
 
     private func temporaryImageFile(from result: PHPickerResult) async throws -> (url: URL, filename: String) {

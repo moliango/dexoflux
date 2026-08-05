@@ -5,6 +5,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
 
     private let api: DiscourseAPI
     private let recipient: String
+    private var draftSaveTask: Task<Void, Never>?
 
     private let recipientLabel = UILabel()
     private let titleField = UITextField()
@@ -32,7 +33,15 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         view.backgroundColor = AppSettings.shared.themeStyle.contentBackgroundColor
         setupNavigation()
         setupUI()
+        restoreDraftIfNeeded()
         updateSendState()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if !isSending {
+            persistDraft()
+        }
     }
 
     private func setupNavigation() {
@@ -59,6 +68,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         )
         recipientLabel.textColor = .secondaryLabel
         recipientLabel.text = "@\(recipient)"
+        recipientLabel.adjustsFontForContentSizeCategory = true
 
         titleField.translatesAutoresizingMaskIntoConstraints = false
         titleField.borderStyle = .roundedRect
@@ -66,6 +76,8 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         titleField.returnKeyType = .next
         titleField.delegate = self
         titleField.addTarget(self, action: #selector(inputChanged), for: .editingChanged)
+        titleField.font = .preferredFont(forTextStyle: .body)
+        titleField.adjustsFontForContentSizeCategory = true
 
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.font = AppSettings.shared.contentFont(ofSize: 17)
@@ -82,6 +94,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         placeholderLabel.textColor = .placeholderText
         placeholderLabel.text = String(localized: "reply.placeholder")
         placeholderLabel.isHidden = !textView.text.isEmpty
+        placeholderLabel.adjustsFontForContentSizeCategory = true
 
         view.addSubview(recipientLabel)
         view.addSubview(titleField)
@@ -109,6 +122,35 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         ])
     }
 
+    private func restoreDraftIfNeeded() {
+        let hasInitial = !(titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !textView.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !hasInitial,
+              let draft = ComposerLocalDraftStore.loadPrivateMessage(baseURL: api.baseURL, recipient: recipient)
+        else { return }
+        titleField.text = draft.title
+        textView.text = draft.raw
+        placeholderLabel.isHidden = !draft.raw.isEmpty
+    }
+
+    private func scheduleDraftSave() {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistDraft()
+        }
+    }
+
+    private func persistDraft() {
+        ComposerLocalDraftStore.savePrivateMessage(
+            baseURL: api.baseURL,
+            recipient: recipient,
+            title: titleField.text ?? "",
+            raw: textView.text
+        )
+    }
+
     private func updateSendState() {
         let title = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let raw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -131,6 +173,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     }
 
     @objc private func cancelTapped() {
+        persistDraft()
         dismiss(animated: true)
     }
 
@@ -145,6 +188,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             guard let self else { return }
             do {
                 let response = try await api.sendPrivateMessage(to: recipient, title: messageTitle, raw: raw)
+                ComposerLocalDraftStore.clearPrivateMessage(baseURL: api.baseURL, recipient: recipient)
                 dismiss(animated: true) { [onMessageSent] in
                     onMessageSent?(response)
                 }
@@ -158,11 +202,13 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
 
     @objc private func inputChanged() {
         updateSendState()
+        scheduleDraftSave()
     }
 
     func textViewDidChange(_ textView: UITextView) {
         placeholderLabel.isHidden = !textView.text.isEmpty
         updateSendState()
+        scheduleDraftSave()
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
