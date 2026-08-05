@@ -156,6 +156,10 @@ final class TopicTimelineSheetViewController: UIViewController {
         view.addSubview(contentRow)
         view.addSubview(buttonRow)
 
+        // Keep cancel/jump directly under the floor controls.
+        // Pinning only to safeArea.bottom fails on newer sheet containers where the
+        // VC view can be taller than the visible medium detent — buttons fall below
+        // the fold and look "missing".
         NSLayoutConstraint.activate([
             grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             grabberView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -169,7 +173,6 @@ final class TopicTimelineSheetViewController: UIViewController {
             contentRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: titleText == nil ? 8 : 24),
             contentRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             contentRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            contentRow.bottomAnchor.constraint(lessThanOrEqualTo: buttonRow.topAnchor, constant: -20),
 
             floorTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
             floorTextField.heightAnchor.constraint(greaterThanOrEqualToConstant: 62),
@@ -178,12 +181,16 @@ final class TopicTimelineSheetViewController: UIViewController {
             statusLabel.heightAnchor.constraint(equalToConstant: 28),
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
             trackView.widthAnchor.constraint(equalToConstant: 64),
-            trackView.heightAnchor.constraint(equalToConstant: 228),
+            trackView.heightAnchor.constraint(equalToConstant: 200),
 
+            buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 28),
             buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            buttonRow.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
             buttonRow.heightAnchor.constraint(equalToConstant: 52),
+            buttonRow.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -16
+            ),
         ])
 
         if titleText == nil {
