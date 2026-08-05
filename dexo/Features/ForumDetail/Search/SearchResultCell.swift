@@ -177,17 +177,28 @@ final class SearchResultCell: UITableViewCell {
             if let title = topic?.title, !title.isEmpty { return title }
             return String(localized: "search.untitled", defaultValue: "无标题")
         }()
-        let plain = CookedContentPipeline.plainTextPreview(fromCooked: titleSource, baseURL: baseURL)
         let titleFont = UIFont.systemFont(ofSize: Metrics.titleFontSize, weight: .semibold)
         titleLabel.font = titleFont
         titleLabel.textColor = .label
-        TitleEmojiRenderer.apply(
-            plain.isEmpty ? titleSource : plain,
-            to: titleLabel,
-            font: titleFont,
-            textColor: .label,
-            baseURL: baseURL
-        )
+
+        // FluxDo parity: prefer `topic_title_headline` HTML and keep search-highlight spans.
+        if let rawTitle, !rawTitle.isEmpty {
+            titleLabel.attributedText = CookedContentPipeline.highlightedPreview(
+                fromCooked: rawTitle,
+                baseURL: baseURL,
+                font: titleFont,
+                textColor: .label
+            )
+        } else {
+            let plain = CookedContentPipeline.plainTextPreview(fromCooked: titleSource, baseURL: baseURL)
+            TitleEmojiRenderer.apply(
+                plain.isEmpty ? titleSource : plain,
+                to: titleLabel,
+                font: titleFont,
+                textColor: .label,
+                baseURL: baseURL
+            )
+        }
 
         let replies = max((topic?.postsCount ?? 1) - 1, 0)
         replyBadge.configure(count: replies)
@@ -200,9 +211,23 @@ final class SearchResultCell: UITableViewCell {
         }
         aiIcon.isHidden = !isAIResult
 
-        let blurb = CookedContentPipeline.plainTextPreview(fromCooked: post.blurb ?? "", baseURL: baseURL)
-        blurbLabel.text = blurb
-        blurbLabel.isHidden = blurb.isEmpty
+        // Blurb also carries Discourse search-highlight markup (FluxDo `_buildBlurb`).
+        let rawBlurb = post.blurb ?? ""
+        if rawBlurb.contains("<") {
+            let blurbFont = UIFont.systemFont(ofSize: 13, weight: .regular)
+            blurbLabel.attributedText = CookedContentPipeline.highlightedPreview(
+                fromCooked: rawBlurb,
+                baseURL: baseURL,
+                font: blurbFont,
+                textColor: .secondaryLabel
+            )
+            blurbLabel.isHidden = blurbLabel.attributedText?.length == 0
+        } else {
+            let blurb = CookedContentPipeline.plainTextPreview(fromCooked: rawBlurb, baseURL: baseURL)
+            blurbLabel.attributedText = nil
+            blurbLabel.text = blurb
+            blurbLabel.isHidden = blurb.isEmpty
+        }
 
         badgesStackView.arrangedSubviews.forEach {
             badgesStackView.removeArrangedSubview($0)
@@ -250,6 +275,7 @@ final class SearchResultCell: UITableViewCell {
         titleLabel.text = nil
         titleLabel.attributedText = nil
         blurbLabel.text = nil
+        blurbLabel.attributedText = nil
         timeLabel.text = nil
         floorBadge.isHidden = true
         aiIcon.isHidden = true

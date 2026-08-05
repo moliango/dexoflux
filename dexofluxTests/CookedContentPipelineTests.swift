@@ -34,4 +34,34 @@ final class CookedContentPipelineTests: XCTestCase {
         XCTAssertTrue(preview.contains("World"), preview)
         XCTAssertFalse(preview.contains("<p>"), preview)
     }
+
+    func testHighlightedPreviewKeepsSearchHighlightClean() {
+        let headline = #"Hello <span class="search-highlight">world</span> and <em>flux</em>"#
+        let attr = CookedContentPipeline.highlightedPreview(
+            fromCooked: headline,
+            font: .systemFont(ofSize: 15, weight: .semibold),
+            textColor: .label
+        )
+        let plain = attr.string
+        XCTAssertEqual(plain, "Hello world and flux")
+        XCTAssertFalse(plain.contains("<"))
+        XCTAssertFalse(plain.contains("span"))
+
+        var sawHighlight = false
+        attr.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: attr.length)) { value, _, _ in
+            if value != nil { sawHighlight = true }
+        }
+        XCTAssertTrue(sawHighlight, "expected highlighted ranges for search-highlight / em")
+    }
+
+    func testHighlightedPreviewStripsTagsWhenNoHighlight() {
+        let headline = "Plain <b>title</b> only"
+        let attr = CookedContentPipeline.highlightedPreview(
+            fromCooked: headline,
+            font: .systemFont(ofSize: 15, weight: .semibold),
+            textColor: .label
+        )
+        XCTAssertEqual(attr.string, "Plain title only")
+        XCTAssertFalse(attr.string.contains("<"))
+    }
 }
