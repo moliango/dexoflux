@@ -216,7 +216,12 @@ final class TopicTimelineSheetViewController: UIViewController {
     @objc private func jumpTapped() {
         view.endEditing(true)
         normalizeInputFloor()
-        let selectedPostId = stream[selectedIndex - 1]
+        let index = selectedIndex - 1
+        guard stream.indices.contains(index) else {
+            dismiss(animated: true)
+            return
+        }
+        let selectedPostId = stream[index]
         dismiss(animated: true) { [onJumpToPostId] in
             onJumpToPostId?(selectedPostId)
         }

@@ -111,9 +111,12 @@ final class SignatureImageView: UIView {
     private func notifyTableViewHeightChange() {
         var view: UIView? = superview
         while let current = view {
+            if let cell = current as? PostNativeCell {
+                cell.requestHeightReconciliation()
+                return
+            }
             if let tableView = current as? UITableView {
-                tableView.beginUpdates()
-                tableView.endUpdates()
+                tableView.dexo_invalidateSelfSizingRows()
                 return
             }
             view = current.superview

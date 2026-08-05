@@ -59,14 +59,16 @@ final class LinkTextView: UITextView {
             guard let self else { return }
             var view: UIView? = self.superview
             while let current = view {
-                if let tableView = current as? UITableView {
-                    UIView.performWithoutAnimation {
-                        tableView.beginUpdates()
-                        tableView.endUpdates()
-                    }
+                // Prefer cell-level coalesced reconciliation when inside a PostNativeCell.
+                if let cell = current as? PostNativeCell {
+                    cell.requestHeightReconciliation()
                     return
                 }
-                // PostNativeCell may already be reconciling; stop at cell boundary.
+                if let tableView = current as? UITableView {
+                    tableView.dexo_invalidateSelfSizingRows()
+                    return
+                }
+                // Generic cell: request layout only.
                 if current is UITableViewCell {
                     current.setNeedsLayout()
                     return

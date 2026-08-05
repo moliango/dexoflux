@@ -67,6 +67,93 @@ enum BlockquoteRenderer: BlockRenderer {
     }
 }
 
+// MARK: - Promote flat Obsidian markers into blockquotes
+
+/// Turns paragraph sequences that start with `[!kind]` into `.blockquote` blocks so
+/// `BlockquoteRenderer` can paint them as Obsidian callout cards (including inside quotes).
+enum ObsidianCalloutSupport {
+    static func promoteCalloutMarkers(in blocks: [ContentBlock]) -> [ContentBlock] {
+        var result: [ContentBlock] = []
+        var index = 0
+        while index < blocks.count {
+            let block = blocks[index]
+            if case .paragraph(let inlines) = block, startsWithCalloutMarker(inlines) {
+                var calloutBlocks: [ContentBlock] = [block]
+                index += 1
+                while index < blocks.count {
+                    let next = blocks[index]
+                    // Next callout marker or a structural block ends this callout body.
+                    if case .paragraph(let nextInlines) = next, startsWithCalloutMarker(nextInlines) {
+                        break
+                    }
+                    if isCalloutBodyTerminator(next) {
+                        break
+                    }
+                    calloutBlocks.append(next)
+                    index += 1
+                }
+                result.append(.blockquote(blocks: calloutBlocks))
+                continue
+            }
+
+            if case .blockquote(let inner) = block {
+                // Nested plain blockquotes may themselves contain flat markers.
+                result.append(.blockquote(blocks: promoteCalloutMarkers(in: inner)))
+                index += 1
+                continue
+            }
+
+            result.append(block)
+            index += 1
+        }
+        return result
+    }
+
+    private static func startsWithCalloutMarker(_ inlines: [InlineNode]) -> Bool {
+        let text = plainText(from: inlines)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("[!"),
+              let close = text.firstIndex(of: "]"),
+              close > text.index(text.startIndex, offsetBy: 2)
+        else { return false }
+        let kind = String(text[text.index(text.startIndex, offsetBy: 2)..<close])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !kind.isEmpty
+    }
+
+    private static func isCalloutBodyTerminator(_ block: ContentBlock) -> Bool {
+        switch block {
+        case .heading, .blockquote, .discourseQuote, .divider, .codeBlock, .table,
+             .list, .details, .spoiler, .onebox, .video, .poll, .rawHTML:
+            return true
+        case .paragraph, .image:
+            return false
+        }
+    }
+
+    private static func plainText(from inlines: [InlineNode]) -> String {
+        inlines.map { inline in
+            switch inline {
+            case .text(let text), .styledText(let text, _), .code(let text):
+                return text
+            case .link(_, let children), .spoiler(let children):
+                return plainText(from: children)
+            case .mention(let username, _):
+                return "@\(username)"
+            case .mentionGroup(let name, _):
+                return "@\(name)"
+            case .hashtag(let text, _, _):
+                return "#\(text)"
+            case .image(_, let alt, _, _, _):
+                return alt ?? ""
+            case .lineBreak:
+                return "\n"
+            }
+        }
+        .joined()
+    }
+}
+
 // MARK: - Obsidian Callout
 
 private struct ObsidianCallout {
@@ -347,9 +434,21 @@ private final class ObsidianCalloutView: UIView {
         headerView.accessibilityValue = expanded && hasContent ? String(localized: "已展开") : String(localized: "已折叠")
 
         invalidateIntrinsicContentSize()
-        guard updateTable, let tableView = findTableView() else { return }
-        tableView.beginUpdates()
-        tableView.endUpdates()
+        guard updateTable else { return }
+        if let cell = findPostNativeCell() {
+            cell.requestHeightReconciliation()
+        } else {
+            findTableView()?.dexo_invalidateSelfSizingRows()
+        }
+    }
+
+    private func findPostNativeCell() -> PostNativeCell? {
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let cell = next as? PostNativeCell { return cell }
+            responder = next
+        }
+        return nil
     }
 
     private func findTableView() -> UITableView? {

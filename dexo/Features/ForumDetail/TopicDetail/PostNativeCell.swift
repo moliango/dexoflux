@@ -721,10 +721,9 @@ final class PostNativeCell: UITableViewCell {
         }
         lastReconciledHeight = fitted
         guard let tableView = enclosingTableView() else { return }
-        UIView.performWithoutAnimation {
-            tableView.beginUpdates()
-            tableView.endUpdates()
-        }
+        // Never call beginUpdates directly — races with Diffable snapshot apply /
+        // scrollToRow and triggers `_visibleRows` vs `_visibleCells` length traps.
+        tableView.dexo_invalidateSelfSizingRows()
     }
 
     func enclosingTableView() -> UITableView? {
@@ -1159,12 +1158,15 @@ final class PostNativeCell: UITableViewCell {
             backgroundColor: .clear,
             accessibilityLabel: String(localized: "post.boost")
         )
-        boostButton.isHidden = false
-        boostButton.alpha = 1
-        boostButton.isUserInteractionEnabled = true
-        boostButton.isEnabled = true
-        boostButton.isAccessibilityElement = true
-        boostButton.accessibilityElementsHidden = false
+        // Hidden until configure() decides based on yours / canBoost.
+        boostButton.isHidden = true
+        boostButton.alpha = 0
+        boostButton.isUserInteractionEnabled = false
+        boostButton.isEnabled = false
+        boostButton.isAccessibilityElement = false
+        boostButton.accessibilityElementsHidden = true
+        reactionPillControl.isHidden = false
+        reactionPillWidthConstraint?.constant = Metrics.reactionSlotWidth
         configureBookmarkButton(isBookmarked: false)
         configureReplyButton()
         configureMoreMenu(isBookmarked: false)

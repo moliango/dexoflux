@@ -204,22 +204,55 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
     }
 
     func jumpToPostId(_ postId: Int) {
+        if scrollToPostIdIfVisible(postId, animated: true) {
+            return
+        }
         guard let targetIndex = viewModel.allPostIds.firstIndex(of: postId) else { return }
         jumpToFloor(targetIndex + 1)
     }
 
+    /// Jump using Discourse `post_number` (as in `/t/:id/:post_number` and notifications).
+    /// Resolves to stream position so deleted-post gaps do not land on the wrong reply.
+    func jumpToPostNumber(_ postNumber: Int) async {
+        guard postNumber > 0 else { return }
+
+        if let post = viewModel.posts.first(where: { $0.postNumber == postNumber }) {
+            jumpToPostId(post.id)
+            return
+        }
+
+        do {
+            let post = try await api.fetchPostByNumber(topicId: topicId, postNumber: postNumber)
+            if viewModel.allPostIds.contains(post.id) {
+                jumpToPostId(post.id)
+                return
+            }
+        } catch {
+            #if DEBUG
+            print("[TopicDetail] resolve post_number=\(postNumber) failed: \(error)")
+            #endif
+        }
+
+        // Last resort: historical behavior treated post_number ≈ stream floor.
+        jumpToFloor(postNumber)
+    }
+
+    /// Stream floor is 1-based index into `allPostIds` (not Discourse `post_number`).
     func jumpToFloor(_ floor: Int) {
         let total = viewModel.totalFloors
         guard floor >= 1, floor <= total else { return }
 
-        if viewModel.isFloorLoaded(floor),
-           let visibleRow = viewModel.visibleRowForFloor(floor)
-        {
-            tableView.scrollToRow(
-                at: IndexPath(row: visibleRow, section: 0),
-                at: .top,
-                animated: true
-            )
+        let postId = viewModel.allPostIds[floor - 1]
+        if scrollToPostIdIfVisible(postId, animated: true) {
+            return
+        }
+
+        // Loaded posts may still be parsing — only the Diffable snapshot is safe to scroll.
+        // Defer until the target id appears in the table rather than using visiblePosts indices
+        // (those can exceed table row count when some cells lack parsed blocks).
+        if viewModel.isFloorLoaded(floor) {
+            pendingScrollToFloor = floor
+            view.setNeedsLayout()
             return
         }
 
@@ -231,6 +264,23 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             await viewModel.jumpToFloor(floor, containerWidth: view.bounds.width)
             hideJumpOverlay()
         }
+    }
+
+    /// Scroll using Diffable item identity + live table row count.
+    /// Never trust `visiblePosts` indices — the snapshot only lists parsed-ready posts
+    /// (and may reorder under nested-reply mode), so raw indices can be out of bounds.
+    @discardableResult
+    func scrollToPostIdIfVisible(_ postId: Int, animated: Bool) -> Bool {
+        // scrollToRow during Diffable apply / self-sizing beginUpdates desyncs
+        // _visibleRows vs _visibleCells.
+        guard !isApplyingPostSnapshot, !tableView.dexo_isMutatingData else { return false }
+        guard tableView.numberOfSections > 0,
+              let indexPath = dataSource.indexPath(for: postId)
+        else { return false }
+        let rowCount = tableView.numberOfRows(inSection: indexPath.section)
+        guard rowCount > 0, indexPath.row >= 0, indexPath.row < rowCount else { return false }
+        tableView.scrollToRow(at: indexPath, at: .top, animated: animated)
+        return true
     }
 
     func showJumpOverlay() {

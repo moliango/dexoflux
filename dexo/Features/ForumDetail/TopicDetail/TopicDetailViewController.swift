@@ -3,10 +3,14 @@ import SafariServices
 import UIKit
 
 final class TopicDetailViewController: ObservableViewController {
+    let coordinator: TopicDetailCoordinator
     let viewModel: TopicDetailViewModel
     let api: DiscourseAPI
     let topicId: Int
+    /// Discourse `post_number` to open (notification / deep link / profile). Not stream index.
     let initialFloor: Int?
+    /// Preferred target when the caller already knows the post id (e.g. notification `original_post_id`).
+    let initialPostId: Int?
     /// Last read post number from list/detail — used by jump-to-unread (Phase 1).
     var lastReadPostNumber: Int?
     let baseURL: String
@@ -253,7 +257,7 @@ final class TopicDetailViewController: ObservableViewController {
         button.isHidden = true
         button.accessibilityLabel = String(localized: "topic_detail.action.reply")
         button.addAction(UIAction { [weak self] _ in
-            self?.replyButtonTapped()
+            self?.coordinator.replyButtonTapped()
         }, for: .touchUpInside)
         return button
     }()
@@ -277,14 +281,25 @@ final class TopicDetailViewController: ObservableViewController {
         api: DiscourseAPI,
         topicId: Int,
         initialFloor: Int? = nil,
-        lastReadPostNumber: Int? = nil
+        initialPostId: Int? = nil,
+        lastReadPostNumber: Int? = nil,
+        forum: ForumInstance? = nil
     ) {
         self.api = api
         self.viewModel = TopicDetailViewModel(api: api)
         self.topicId = topicId
         self.initialFloor = initialFloor
+        self.initialPostId = initialPostId
         self.lastReadPostNumber = lastReadPostNumber
         self.baseURL = api.baseURL
+        self.coordinator = TopicDetailCoordinator(
+            viewModel: self.viewModel,
+            api: api,
+            forum: forum ?? ForumInstance.new(title: "", baseURL: api.baseURL),
+            topicId: topicId,
+            initialFloor: initialFloor,
+            initialPostId: initialPostId
+        )
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
     }
@@ -296,17 +311,9 @@ final class TopicDetailViewController: ObservableViewController {
 
     @MainActor
     deinit {
-        if let cloudflareCompletionObservationToken {
-            NotificationCenter.default.removeObserver(cloudflareCompletionObservationToken)
-        }
         if let emojiUpdateObserver {
             NotificationCenter.default.removeObserver(emojiUpdateObserver)
         }
-        NotificationCenter.default.removeObserver(
-            self,
-            name: PluginStateStore.stateDidChangeNotification,
-            object: nil
-        )
         readingTracker.stop()
     }
 
@@ -325,13 +332,7 @@ final class TopicDetailViewController: ObservableViewController {
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
         title = String(localized: "topic_detail.default_title")
-        startObservingCloudflareVerification()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(pluginStateDidChange),
-            name: PluginStateStore.stateDidChangeNotification,
-            object: nil
-        )
+        // Cloudflare + plugin observers owned by TopicDetailCoordinator.start
         configureTopicActions()
         applyTypography()
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
@@ -385,8 +386,12 @@ final class TopicDetailViewController: ObservableViewController {
             if let detailLastRead = viewModel.topic?.lastReadPostNumber {
                 lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLastRead)
             }
-            if let initialFloor {
-                jumpToFloor(initialFloor)
+            // Notification / deep-link targets are Discourse post_number or post id —
+            // never treat them as raw stream indices (deleted posts create gaps).
+            if let initialPostId {
+                jumpToPostId(initialPostId)
+            } else if let initialFloor {
+                await jumpToPostNumber(initialFloor)
             } else if let resume = resumeUnreadFloor() {
                 jumpToFloor(resume)
             }
@@ -398,6 +403,7 @@ final class TopicDetailViewController: ObservableViewController {
             // Diffable data source forbids direct reloadRows/reloadData.
             reconfigureVisiblePostCells()
         }
+        coordinator.start(in: self)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -446,18 +452,26 @@ final class TopicDetailViewController: ObservableViewController {
             tableView.verticalScrollIndicatorInsets.bottom = bottomInset
         }
 
-        // Execute deferred jump scroll after layout is complete
-        if !isApplyingPostSnapshot, let floor = pendingScrollToFloor {
-            pendingScrollToFloor = nil
-            let targetRow = viewModel.visibleRowForFloor(floor) ?? 0
-            let rowCount = tableView.numberOfRows(inSection: 0)
-            guard rowCount > 0 else { return }
-            let safeRow = min(targetRow, rowCount - 1)
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            tableView.scrollToRow(at: IndexPath(row: safeRow, section: 0), at: .top, animated: false)
-            CATransaction.commit()
-            lastScrollOffset = tableView.contentOffset.y
+        // Execute deferred jump scroll after layout is complete.
+        // Resolve via post id in the Diffable snapshot — never via visiblePosts row index
+        // (parsed-only rows / nested order can make that index larger than table rows).
+        // Also wait out Diffable mutation / self-sizing beginUpdates to avoid
+        // `_visibleRows` vs `_visibleCells` length traps.
+        if !isApplyingPostSnapshot, !tableView.dexo_isMutatingData, let floor = pendingScrollToFloor {
+            let streamIndex = floor - 1
+            guard streamIndex >= 0, streamIndex < viewModel.allPostIds.count else {
+                pendingScrollToFloor = nil
+                return
+            }
+            let postId = viewModel.allPostIds[streamIndex]
+            if scrollToPostIdIfVisible(postId, animated: false) {
+                pendingScrollToFloor = nil
+                lastScrollOffset = tableView.contentOffset.y
+            } else if viewModel.unsupportedPostIds.contains(postId) {
+                // Target will never appear as a rendered row — drop the pending jump.
+                pendingScrollToFloor = nil
+            }
+            // Otherwise keep pending until the next snapshot/layout brings the cell in.
         }
     }
 
@@ -937,6 +951,7 @@ final class TopicDetailViewController: ObservableViewController {
             )
         case .apply:
             isApplyingPostSnapshot = true
+            tableView.dexo_beginDataMutation()
             if earlierAnchor != nil {
                 earlierLoadAnchor = nil
             }
@@ -962,6 +977,8 @@ final class TopicDetailViewController: ObservableViewController {
                     }
 
                     self.isApplyingPostSnapshot = false
+                    // Ends mutation and flushes any height passes that queued mid-apply.
+                    self.tableView.dexo_endDataMutation()
                     if let pending = self.pendingPostSnapshot {
                         self.pendingPostSnapshot = nil
                         self.applyPostSnapshot(
@@ -978,682 +995,5 @@ final class TopicDetailViewController: ObservableViewController {
         }
     }
 
-    // MARK: - Container Access
-
-    func replyButtonTapped() {
-        performAuthenticated { [weak self] in
-            self?.presentReplyComposer()
-        }
-    }
-
-    func performAuthenticated(_ action: @escaping () -> Void) {
-        if let authGate = findAuthGating() {
-            authGate.requireAuth(then: action)
-        } else {
-            action()
-        }
-    }
-
-    func findAuthGating() -> AuthGating? {
-        nearestAuthGating()
-    }
-
-    func showPostActionError(_ error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "post.action.failed"),
-            message: error.localizedDescription,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
-    }
-
-    func reloadPostCell(postId: Int) {
-        var snapshot = dataSource.snapshot()
-        guard snapshot.indexOfItem(postId) != nil else { return }
-        snapshot.reloadItems([postId])
-        dataSource.apply(snapshot, animatingDifferences: false)
-    }
-
-    /// Safe refresh for DiffableDataSource-backed table (never call reloadData/reloadRows directly).
-    func reconfigureVisiblePostCells(reloadAllIfNoneVisible: Bool = false) {
-        var snapshot = dataSource.snapshot()
-        guard !snapshot.itemIdentifiers.isEmpty else { return }
-
-        let visibleIds = (tableView.indexPathsForVisibleRows ?? []).compactMap {
-            dataSource.itemIdentifier(for: $0)
-        }.filter { snapshot.indexOfItem($0) != nil }
-
-        let ids: [Int]
-        if !visibleIds.isEmpty {
-            ids = visibleIds
-        } else if reloadAllIfNoneVisible {
-            ids = snapshot.itemIdentifiers
-        } else {
-            return
-        }
-
-        snapshot.reloadItems(ids)
-        dataSource.apply(snapshot, animatingDifferences: false)
-    }
-
-    func updateBottomBarProgress() {
-        let current = currentVisibleFloor()
-        let total = viewModel.totalFloors
-        if let lastBottomBarProgressState,
-           lastBottomBarProgressState.current == current,
-           lastBottomBarProgressState.total == total {
-            // Numbers unchanged, but still re-apply gesture enablement in case
-            // the user toggled Reading → 进度条手势 while this page stayed alive.
-            bottomBar.refreshGestureRecognizers()
-            return
-        }
-        lastBottomBarProgressState = (current: current, total: total)
-        bottomBar.configure(
-            currentFloor: current,
-            totalFloors: total
-        )
-    }
-
-    func currentVisibleFloor() -> Int {
-        guard viewModel.totalFloors > 0 else { return 0 }
-        let visibleIndexPath = tableView.indexPathsForVisibleRows?
-            .sorted { $0.row < $1.row }
-            .first
-        guard let visibleIndexPath,
-              let postId = dataSource.itemIdentifier(for: visibleIndexPath),
-              let streamIndex = viewModel.allPostIds.firstIndex(of: postId)
-        else {
-            return max(1, min(viewModel.loadedRangeStart + 1, viewModel.totalFloors))
-        }
-        return streamIndex + 1
-    }
-
-    func shareTopicLink(sourceView: UIView?) {
-        let link = "\(baseURL)/t/\(topicId)"
-        let activity = UIActivityViewController(activityItems: [link], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView ?? view
-        activity.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
-        present(activity, animated: true)
-    }
-
-    func makeExportMenu() -> UIMenu {
-        let formatMenus = TopicExportFormat.allCases.map { format in
-            UIMenu(
-                title: format.title,
-                image: UIImage(systemName: format == .markdown ? "doc.plaintext" : "chevron.left.forwardslash.chevron.right"),
-                children: TopicExportRange.allCases.map { range in
-                    UIAction(title: range.title) { [weak self] _ in
-                        self?.exportTopic(format: format, range: range)
-                    }
-                }
-            )
-        }
-        let notionMenus = NotionSyncScope.allCases.map { scope in
-            UIAction(title: scope.title) { [weak self] _ in
-                self?.syncTopicToNotion(scope: scope)
-            }
-        }
-        let notionMenu = UIMenu(
-            title: String(localized: "notion.sync", defaultValue: "同步到 Notion"),
-            image: UIImage(systemName: "tray.and.arrow.up"),
-            children: notionMenus
-        )
-        return UIMenu(
-            title: String(localized: "topic.export", defaultValue: "导出话题"),
-            image: UIImage(systemName: "square.and.arrow.up"),
-            children: formatMenus + [notionMenu]
-        )
-    }
-
-    func configureTopicActions() {
-        let searchButton = UIBarButtonItem(
-            image: UIImage(systemName: "magnifyingglass"),
-            style: .plain,
-            target: self,
-            action: #selector(searchTopicTapped)
-        )
-        searchButton.accessibilityLabel = String(localized: "topic.search", defaultValue: "搜索话题")
-
-        let topic = viewModel.topic
-        let bookmarkTitle = topic?.bookmarked == true
-            ? String(localized: "topic.bookmark.remove", defaultValue: "取消书签")
-            : String(localized: "topic.bookmark.add", defaultValue: "添加书签")
-        let bookmark = UIAction(title: bookmarkTitle, image: UIImage(systemName: topic?.bookmarked == true ? "bookmark.slash" : "bookmark")) { [weak self] _ in
-            self?.bookmarkTopic()
-        }
-        let share = UIAction(title: String(localized: "topic.share", defaultValue: "分享链接"), image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
-            self?.shareTopicLink(sourceView: nil)
-        }
-        let username = AuthManager.shared.username(for: api.baseURL)
-        let isReadLater = TopicReadLaterStore.shared.contains(
-            topicId: topicId,
-            baseURL: api.baseURL,
-            username: username
-        )
-        let readLater = UIAction(
-            title: isReadLater
-                ? String(localized: "topic.read_later.remove", defaultValue: "移出稍后阅读")
-                : String(localized: "topic.read_later.add", defaultValue: "稍后阅读"),
-            image: UIImage(systemName: "square.stack.3d.up"),
-            state: isReadLater ? .on : .off
-        ) { [weak self] _ in
-            guard let self else { return }
-            TopicReadLaterStore.shared.toggle(
-                topicId: self.topicId,
-                baseURL: self.api.baseURL,
-                username: AuthManager.shared.username(for: self.api.baseURL)
-            )
-            self.configureTopicActions()
-        }
-        let shareImage = UIAction(title: String(localized: "topic.share_image", defaultValue: "生成分享图片"), image: UIImage(systemName: "photo")) { [weak self] _ in
-            self?.shareTopicImage()
-        }
-        let opFilter = UIAction(
-            title: viewModel.isFilteringByOP
-                ? String(localized: "topic.filter_all", defaultValue: "显示全部回复")
-                : String(localized: "topic.filter_op", defaultValue: "只看楼主"),
-            image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
-            state: viewModel.isFilteringByOP ? .on : .off
-        ) { [weak self] _ in
-            guard let self else { return }
-            self.viewModel.setFilteringByOP(!self.viewModel.isFilteringByOP)
-        }
-        let notificationMenu = UIMenu(
-            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
-            image: UIImage(systemName: "bell"),
-            children: DiscourseTopicDetail.NotificationLevel.allCases.reversed().map { level in
-                UIAction(
-                    title: self.title(for: level),
-                    state: topic?.notificationLevel == level ? .on : .off
-                ) { [weak self] _ in
-                    self?.setNotificationLevel(level)
-                }
-            }
-        )
-        let openBrowser = UIAction(title: String(localized: "topic.open_browser", defaultValue: "在浏览器打开"), image: UIImage(systemName: "globe")) { [weak self] _ in
-            guard let self, let url = URL(string: "\(self.baseURL)/t/\(self.topicId)") else { return }
-            let browser = InAppBrowserViewController(
-                api: self.api,
-                username: AuthManager.shared.username(for: self.api.baseURL),
-                initialURL: url
-            )
-            self.navigationController?.pushViewController(browser, animated: true)
-        }
-        let readingSettings = UIAction(title: String(localized: "topic.reading_settings", defaultValue: "阅读设置"), image: UIImage(systemName: "book")) { [weak self] _ in
-            self?.navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
-        }
-        var actions: [UIMenuElement] = [bookmark, readLater, notificationMenu, share, shareImage, opFilter]
-        if topic?.canEdit == true {
-            actions.append(UIAction(title: String(localized: "topic.edit", defaultValue: "编辑话题"), image: UIImage(systemName: "pencil")) { [weak self] _ in
-                self?.editTopic()
-            })
-        }
-        if DexoPluginRuntime.shared.registry.isPluginEnabled(BuiltInPluginID.topicExport, for: pluginScope) {
-            actions.append(makeExportMenu())
-        }
-        actions.append(contentsOf: [openBrowser, readingSettings])
-
-        let moreButton = UIBarButtonItem(
-            image: UIImage(systemName: "ellipsis.circle"),
-            menu: UIMenu(children: actions)
-        )
-        moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
-        // AI 助手只保留在进度条长按弧形菜单里，避免顶栏重复入口。
-        navigationItem.rightBarButtonItems = [moreButton, searchButton]
-    }
-
-    @objc func aiAssistantTapped() {
-        let chat = AIChatSheetViewController(
-            api: api,
-            topicId: topicId,
-            topicTitle: viewModel.topic?.title
-        )
-        if let sheet = chat.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-            sheet.largestUndimmedDetentIdentifier = .medium
-        }
-        present(chat, animated: true)
-    }
-
-    @objc func pluginStateDidChange() {
-        configureTopicActions()
-    }
-
-    @objc func searchTopicTapped() {
-        let alert = UIAlertController(
-            title: String(localized: "topic.search", defaultValue: "搜索话题"),
-            message: nil,
-            preferredStyle: .alert
-        )
-        alert.addTextField { field in
-            field.placeholder = String(localized: "topic.search.placeholder", defaultValue: "输入关键词")
-            field.returnKeyType = .search
-        }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "topic.search", defaultValue: "搜索话题"), style: .default) { [weak self, weak alert] _ in
-            guard let self, let query = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return }
-            self.performTopicSearch(query)
-        })
-        present(alert, animated: true)
-    }
-
-    func performTopicSearch(_ query: String) {
-        Task {
-            do {
-                let result = try await api.searchTopic(topicId: topicId, term: query)
-                let posts = (result.posts ?? []).filter { $0.topicId == topicId }
-                presentSearchResults(posts, query: query)
-            } catch {
-                showPostActionError(error)
-            }
-        }
-    }
-
-    func presentSearchResults(_ posts: [DiscourseSearchResult.SearchPost], query: String) {
-        guard !posts.isEmpty else {
-            let alert = UIAlertController(
-                title: String(localized: "topic.search", defaultValue: "搜索话题"),
-                message: String(localized: "topic.search.empty", defaultValue: "没有找到匹配内容"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-        let sheet = UIAlertController(title: query, message: nil, preferredStyle: .actionSheet)
-        for post in posts.prefix(12) {
-            let excerptSource = post.blurb ?? post.username
-            let excerpt = CookedContentPipeline.plainTextPreview(fromCooked: excerptSource)
-            let title = "#\(post.postNumber)  \(String((excerpt.isEmpty ? post.username : excerpt).prefix(70)))"
-            sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
-                self?.jumpToFloor(post.postNumber)
-            })
-        }
-        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        sheet.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.last
-        present(sheet, animated: true)
-    }
-
-    func title(for level: DiscourseTopicDetail.NotificationLevel) -> String {
-        switch level {
-        case .watching: return String(localized: "topic.notifications.watching", defaultValue: "关注")
-        case .tracking: return String(localized: "topic.notifications.tracking", defaultValue: "跟踪")
-        case .regular: return String(localized: "topic.notifications.regular", defaultValue: "常规")
-        case .muted: return String(localized: "topic.notifications.muted", defaultValue: "静音")
-        }
-    }
-
-    func setNotificationLevel(_ level: DiscourseTopicDetail.NotificationLevel) {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    try await self.api.updateTopicNotificationLevel(topicId: self.topicId, level: level)
-                    self.viewModel.topic?.notificationLevel = level
-                    self.configureTopicActions()
-                } catch {
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func editTopic() {
-        guard let topic = viewModel.topic, topic.canEdit else { return }
-        let alert = UIAlertController(title: String(localized: "topic.edit", defaultValue: "编辑话题"), message: nil, preferredStyle: .alert)
-        alert.addTextField { $0.text = topic.title }
-        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default) { [weak self, weak alert] _ in
-            guard let self, let title = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return }
-            Task {
-                do {
-                    try await self.api.updateTopic(topicId: self.topicId, title: title)
-                    self.hasTitleHeader = false
-                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
-                } catch {
-                    self.showPostActionError(error)
-                }
-            }
-        })
-        present(alert, animated: true)
-    }
-
-    func shareTopicImage(postId: Int? = nil) {
-        guard let topic = viewModel.topic else { return }
-        let post: DiscourseTopicDetail.Post? = {
-            if let postId {
-                return viewModel.posts.first(where: { $0.id == postId })
-            }
-            return viewModel.posts.first(where: { $0.postNumber == 1 && $0.actionCode == nil })
-                ?? viewModel.posts.first(where: { $0.actionCode == nil })
-        }()
-        guard let post else {
-            showPostActionError(NSError(domain: "ShareImage", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "share.image.no_content", defaultValue: "暂无可分享内容")]))
-            return
-        }
-
-        let displayTitle = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
-        let authorName = (post.name?.isEmpty == false ? post.name! : post.username)
-        let createdAtText: String? = {
-            let createdAt = post.createdAt
-            guard !createdAt.isEmpty else { return nil }
-            return TopicCell.formatDate(createdAt)
-        }()
-        let avatarURL = AvatarImageLoader.url(from: post.avatarTemplate, baseURL: baseURL, size: 120)
-        let host = URL(string: baseURL)?.host?.lowercased() ?? ""
-        let brandName = host.contains("linux.do") ? "LINUX DO" : "DexoFlux"
-        let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let shareURL = "\(trimmedBase)/t/\(topicId)/\(post.postNumber)"
-
-        // Always share **readable cooked HTML**. Never paint markdown `raw` as-is.
-        // If cooked is missing, convert raw → simple HTML first.
-        let cookedTrimmed = post.cooked.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shareHTML: String = {
-            if !cookedTrimmed.isEmpty {
-                return PostImageLinkPreprocessor.rewrite(cookedTrimmed)
-            }
-            if let raw = post.raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-                return ShareImageBodyComposer.normalizeCookedInput(raw)
-            }
-            return ""
-        }()
-        let contentBlocks = (viewModel.parsedBlocks[post.id] ?? []).map(\.block)
-
-        let preview = ShareImagePreviewViewController(
-            model: .init(
-                topicId: topicId,
-                baseURL: baseURL,
-                title: displayTitle,
-                brandName: brandName,
-                authorName: authorName,
-                username: post.username,
-                createdAtText: createdAtText,
-                avatarURL: avatarURL,
-                cookedHTML: shareHTML,
-                contentBlocks: contentBlocks,
-                shareURL: shareURL,
-                postNumber: post.postNumber
-            )
-        )
-        present(preview, animated: true)
-    }
-
-
-    func syncTopicToNotion(scope: NotionSyncScope, duplicate: NotionDuplicateAction = .skip) {
-        guard let topic = viewModel.topic else { return }
-        let username = findAuthGating()?.currentUsername()
-        let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
-        guard let token = NotionConfigStore.shared.token(scopeKey: scopeKey), !token.isEmpty,
-              NotionConfigStore.shared.isComplete(scopeKey: scopeKey) else {
-            let alert = UIAlertController(
-                title: String(localized: "notion.not_configured", defaultValue: "请先配置 Notion"),
-                message: String(localized: "notion.not_configured.message", defaultValue: "在「我的」里打开 Notion 同步并填写 Token 与 Database ID"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
-            present(alert, animated: true)
-            return
-        }
-
-        let config = NotionConfigStore.shared.loadConfig(scopeKey: scopeKey)
-        let title = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
-        let posts = viewModel.posts
-        let hud = UIAlertController(
-            title: String(localized: "notion.syncing", defaultValue: "正在同步到 Notion…"),
-            message: nil,
-            preferredStyle: .alert
-        )
-        present(hud, animated: true)
-
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let service = NotionSyncService(config: config, token: token, baseURL: self.baseURL)
-                let result = try await service.syncTopic(
-                    topicId: self.topicId,
-                    title: title,
-                    posts: posts,
-                    scope: scope,
-                    onDuplicate: duplicate
-                )
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        if result.duplicated && duplicate == .skip {
-                            let ask = UIAlertController(
-                                title: String(localized: "notion.duplicate.title", defaultValue: "Notion 中已存在"),
-                                message: String(localized: "notion.duplicate.message", defaultValue: "该话题已同步过，选择跳过或覆盖"),
-                                preferredStyle: .alert
-                            )
-                            ask.addAction(UIAlertAction(title: String(localized: "notion.duplicate.skip", defaultValue: "跳过"), style: .cancel))
-                            ask.addAction(UIAlertAction(title: String(localized: "notion.open_page", defaultValue: "打开已有页面"), style: .default) { _ in
-                                if let url = URL(string: result.pageURL) {
-                                    UIApplication.shared.open(url)
-                                }
-                            })
-                            ask.addAction(UIAlertAction(title: String(localized: "notion.duplicate.overwrite", defaultValue: "覆盖"), style: .destructive) { [weak self] _ in
-                                self?.syncTopicToNotion(scope: scope, duplicate: .overwrite)
-                            })
-                            self.present(ask, animated: true)
-                        } else {
-                            self.presentNotionSuccess(result)
-                        }
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    hud.dismiss(animated: true) {
-                        self.showPostActionError(error)
-                    }
-                }
-            }
-        }
-    }
-
-    func maybeAutoSyncNotionAfterBookmark() {
-        let username = findAuthGating()?.currentUsername()
-        let scopeKey = NotionConfigStore.shared.scopeKey(baseURL: baseURL, username: username)
-        let config = NotionConfigStore.shared.loadConfig(scopeKey: scopeKey)
-        guard config.autoSyncOnBookmark,
-              let token = NotionConfigStore.shared.token(scopeKey: scopeKey),
-              NotionConfigStore.shared.isComplete(scopeKey: scopeKey),
-              let topic = viewModel.topic
-        else { return }
-        Task {
-            let service = NotionSyncService(config: config, token: token, baseURL: baseURL)
-            _ = try? await service.syncTopic(
-                topicId: topicId,
-                title: TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title),
-                posts: viewModel.posts,
-                scope: config.syncScope,
-                onDuplicate: .skip
-            )
-        }
-    }
-
-    func presentNotionSuccess(_ result: NotionSyncResult) {
-        let alert = UIAlertController(
-            title: String(localized: "notion.sync.success", defaultValue: "同步成功"),
-            message: String(localized: "notion.sync.success_message", defaultValue: "已写入 Notion"),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localized: "notion.open_page", defaultValue: "打开页面"), style: .default) { _ in
-            if let url = URL(string: result.pageURL) {
-                UIApplication.shared.open(url)
-            }
-        })
-        present(alert, animated: true)
-    }
-
-    func exportTopic(format: TopicExportFormat, range: TopicExportRange) {
-        guard let topic = viewModel.topic else {
-            showPostActionError(TopicExportError.noPosts)
-            return
-        }
-        let title = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
-        let posts = viewModel.posts
-        let username = findAuthGating()?.currentUsername()
-        let service = TopicExportService(baseURL: baseURL, username: username)
-        let history = ExportHistoryStore(baseURL: baseURL, username: username)
-        let selectedPostCount = range == .firstPost ? min(posts.count, 1) : posts.filter { $0.actionCode == nil }.count
-
-        do {
-            let fileURL = try service.export(
-                topicId: topicId,
-                title: title,
-                posts: posts,
-                format: format,
-                range: range
-            )
-            let record = TopicExportRecord(
-                topicId: topicId,
-                title: title,
-                format: format,
-                filePath: fileURL.path,
-                postCount: selectedPostCount,
-                errorMessage: nil
-            )
-            try history.add(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
-            present(activity, animated: true)
-        } catch {
-            let failedRecord = TopicExportRecord(
-                topicId: topicId,
-                title: title,
-                format: format,
-                filePath: nil,
-                postCount: selectedPostCount,
-                errorMessage: error.localizedDescription
-            )
-            try? history.add(failedRecord)
-            showPostActionError(error)
-        }
-    }
-
-    func bookmarkTopic() {
-        performAuthenticated { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    if self.viewModel.topic?.bookmarked == true,
-                       let bookmarkId = self.viewModel.topic?.bookmarkId {
-                        try await self.api.deleteBookmark(id: bookmarkId)
-                    } else {
-                        _ = try await self.api.createBookmark(topicId: self.topicId)
-                        await MainActor.run { self.maybeAutoSyncNotionAfterBookmark() }
-                    }
-                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
-                } catch {
-                    self.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    // MARK: - Link Handling
-
-    func handleLink(_ url: URL) {
-        let linkURL = ForumInternalLinkParser.normalizedURL(from: url, baseURL: baseURL)
-        if ForumInternalLinkParser.isInternalURL(linkURL, baseURL: baseURL),
-           let destination = ForumInternalLinkParser.destination(for: linkURL) {
-            openInternalDestination(destination)
-        } else if ForumAttachmentLinkParser.isAttachmentURL(linkURL) {
-            downloadAndShareAttachment(linkURL)
-        } else {
-            presentSafari(linkURL)
-        }
-    }
-
-    func openInternalDestination(_ destination: ForumInternalLinkDestination) {
-        switch destination {
-        case let .topic(topicId, postNumber):
-            if topicId == self.topicId, let postNumber {
-                jumpToFloor(postNumber)
-                return
-            }
-            let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
-            openInternalViewController(detailVC)
-        case let .category(slug, categoryId):
-            let category = DiscourseCategory(id: categoryId, name: slug, slug: slug)
-            let vc = CategoryTopicsViewController(api: api, category: category)
-            openInternalViewController(vc)
-        case let .tag(tagName):
-            let vc = TagTopicsViewController(api: api, tagName: tagName)
-            openInternalViewController(vc)
-        }
-    }
-
-    func downloadAndShareAttachment(_ url: URL) {
-        let progressAlert = makeAttachmentDownloadAlert()
-        present(progressAlert, animated: true)
-        let attachmentBaseURL = baseURL
-
-        Task { @MainActor [weak self, weak progressAlert] in
-            do {
-                let fileURL = try await ForumAttachmentDownloader.download(url: url, baseURL: attachmentBaseURL)
-                guard let self else {
-                    ForumAttachmentDownloader.cleanupDownloadedFile(fileURL)
-                    return
-                }
-                self.downloadedAttachmentURLs.insert(fileURL)
-                progressAlert?.dismiss(animated: true) {
-                    self.presentAttachmentShareSheet(fileURL)
-                }
-            } catch {
-                progressAlert?.dismiss(animated: true) { [weak self] in
-                    self?.showPostActionError(error)
-                }
-            }
-        }
-    }
-
-    func makeAttachmentDownloadAlert() -> UIAlertController {
-        let alert = UIAlertController(
-            title: String(localized: "attachment.downloading"),
-            message: "\n\n",
-            preferredStyle: .alert
-        )
-        let indicator = UIActivityIndicatorView(style: .medium)
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        indicator.startAnimating()
-        alert.view.addSubview(indicator)
-        NSLayoutConstraint.activate([
-            indicator.centerXAnchor.constraint(equalTo: alert.view.centerXAnchor),
-            indicator.bottomAnchor.constraint(equalTo: alert.view.bottomAnchor, constant: -22),
-        ])
-        return alert
-    }
-
-    func presentAttachmentShareSheet(_ fileURL: URL) {
-        let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = view
-        activity.popoverPresentationController?.sourceRect = view.bounds
-        activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
-            self?.downloadedAttachmentURLs.remove(fileURL)
-            ForumAttachmentDownloader.cleanupDownloadedFile(fileURL)
-        }
-        present(activity, animated: true)
-    }
-
-    func openInternalViewController(_ viewController: UIViewController) {
-        if let navigationController {
-            navigationController.pushViewController(viewController, animated: true)
-        } else {
-            let nav = UINavigationController(rootViewController: viewController)
-            present(nav, animated: true)
-        }
-    }
-
-    func presentSafari(_ url: URL) {
-        guard AppSettings.shared.openExternalLinksInAppBrowser else {
-            UIApplication.shared.open(url)
-            return
-        }
-        let safari = SFSafariViewController(url: url)
-        present(safari, animated: true)
-    }
+    // MARK: - Actions moved to TopicDetailViewController+Actions.swift
 }
-

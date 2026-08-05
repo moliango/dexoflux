@@ -187,8 +187,8 @@ final class PostContentRenderer: NSObject {
             """
         }
 
-        let darkLinkHex = webStyle.accentHex == WebRenderStyle.default.accentHex ? "#4db8ff" : webStyle.accentHex
-        let darkQuoteBorderHex = webStyle.quoteBorderHex == WebRenderStyle.default.quoteBorderHex ? "#555" : webStyle.quoteBorderHex
+        let darkLinkHex = "#4db8ff"
+        let darkQuoteBorderHex = "#555"
         let darkCSS = """
             body.dark { color: #e0e0e0; background: \(webStyle.backgroundHex); }
             body.dark blockquote { border-left-color: \(darkQuoteBorderHex); color: #aaa; background: \(webStyle.blockquoteBackgroundHex); }
@@ -240,19 +240,79 @@ final class PostContentRenderer: NSObject {
         a { color: \(webStyle.accentHex); text-decoration: none; }
         blockquote {
             border-left: 3px solid \(webStyle.quoteBorderHex);
-            margin: 7px 0;
-            padding: 6px 12px;
+            margin: 12px 0;
+            padding: 0 0 0 16px;
             color: #666;
-            background: \(webStyle.blockquoteBackgroundHex);
+            background: transparent;
+            font-style: italic;
+            line-height: 1.5;
+            border-radius: 0;
         }
-        /* Quote blocks — left border line style */
+
+        /* Obsidian-style reference for quoted posts */
         aside.quote {
             border: none;
-            border-left: 3px solid \(webStyle.quoteBorderHex);
-            border-radius: 0;
-            margin: 7px 0;
-            padding: 0 0 0 12px;
+            border-left: 4px solid \(webStyle.quoteBorderHex);
+            border-radius: 8px;
+            margin: 16px 0;
+            padding: 0 0 0 20px;
+            background: \(webStyle.blockquoteBackgroundHex);
             overflow: visible;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        aside.quote .title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0 4px;
+            background: none;
+            font-weight: 600;
+            font-size: \(webStyle.quoteFontSize)px;
+            color: #888;
+            border-bottom: 1px solid \(webStyle.quoteBorderHex);
+        }
+
+        aside.quote .title img.avatar {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #ddd;
+        }
+
+        aside.quote .title .quote-controls { display: none; }
+        aside.quote blockquote {
+            border-left: none;
+            padding: 0;
+            margin: 4px 0 0;
+            color: #555;
+            font-size: \(webStyle.quoteFontSize)px;
+            line-height: 1.5;
+        }
+
+        aside.quote .title img.avatar {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #ddd;
+        }
+
+        aside.quote .title .quote-controls { display: none; }
+        aside.quote blockquote {
+            border-left: none;
+            padding: 0;
+            margin: 4px 0 0;
+            color: #555;
+            font-size: \(webStyle.quoteFontSize)px;
+            line-height: 1.5;
+        }
+
+        /* Onebox / link preview cards */
+        aside.onebox {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin: 7px 0;
+            overflow: hidden;
         }
         aside.quote .title {
             display: flex;

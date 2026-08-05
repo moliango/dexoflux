@@ -246,8 +246,7 @@ final class RelatedLinksCardView: UIView {
         var view: UIView? = superview
         while let current = view {
             if let tableView = current as? UITableView {
-                tableView.beginUpdates()
-                tableView.endUpdates()
+                tableView.dexo_invalidateSelfSizingRows()
                 return
             }
             view = current.superview

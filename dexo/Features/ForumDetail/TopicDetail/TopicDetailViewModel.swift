@@ -499,7 +499,10 @@ final class TopicDetailViewModel: DexoObservableObject {
         return posts.firstIndex(where: { $0.id == targetId })
     }
 
-    /// Find the row index in `visiblePosts` for a given floor (1-based)
+    /// Find the row index in `visiblePosts` for a given floor (1-based).
+    /// Note: this is NOT safe for `UITableView.scrollToRow` — the table snapshot only
+    /// includes posts with parsed blocks (and may use nested ordering). Prefer
+    /// Diffable `dataSource.indexPath(for: postId)` at the call site.
     func visibleRowForFloor(_ floor: Int) -> Int? {
         let index = floor - 1
         guard index >= 0, index < allPostIds.count else { return nil }

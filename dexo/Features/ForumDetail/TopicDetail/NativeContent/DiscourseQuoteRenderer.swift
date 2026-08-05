@@ -126,7 +126,11 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             topicCategoryPresentation: config.topicCategoryPresentation
         )
 
-        let normalizedContent = normalizedQuoteContent(content)
+        // Promote flat `[!question]` / `[!warning]` paragraphs into blockquotes so
+        // BlockquoteRenderer can render Obsidian callout cards inside quoted posts.
+        let normalizedContent = ObsidianCalloutSupport.promoteCalloutMarkers(
+            in: normalizedQuoteContent(content)
+        )
         let views = NativeContentRenderer.renderBlocks(normalizedContent, config: quoteConfig, delegate: delegate)
         for view in views {
             contentStack.addArrangedSubview(view)
@@ -265,26 +269,29 @@ private class CategoryBadgeView: UIView {
     init(name: String, font: UIFont) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        let color = TopicTagVisualStyle.categoryColor(for: name, fallback: .secondaryLabel)
+        let color = TopicTagVisualStyle.categoryColor(for: name, fallback: AppSettings.shared.themeStyle.accentColor)
 
         let label = UILabel()
         label.text = name
         label.font = font
-        label.textColor = AppSettings.shared.themeStyle == .systemDefault ? .secondaryLabel : color
+        // Always use the category/accent color so the chip stays readable on muted quote backgrounds.
+        label.textColor = color
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSubview(label)
 
-        backgroundColor = color.withAlphaComponent(0.10)
+        backgroundColor = color.withAlphaComponent(0.14)
         layer.cornerRadius = 6
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
-        layer.borderColor = color.withAlphaComponent(0.20).cgColor
+        layer.borderColor = color.withAlphaComponent(0.32).cgColor
 
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
         ])
     }
 

@@ -174,10 +174,20 @@ private class DetailsCardView: UIView {
         chevron.transform = isExpanded ? CGAffineTransform(rotationAngle: .pi / 2) : .identity
 
         invalidateIntrinsicContentSize()
-        if let tableView = findTableView() {
-            tableView.beginUpdates()
-            tableView.endUpdates()
+        if let cell = findPostNativeCell() {
+            cell.requestHeightReconciliation()
+        } else {
+            findTableView()?.dexo_invalidateSelfSizingRows()
         }
+    }
+
+    private func findPostNativeCell() -> PostNativeCell? {
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let cell = next as? PostNativeCell { return cell }
+            responder = next
+        }
+        return nil
     }
 
     private func findTableView() -> UITableView? {

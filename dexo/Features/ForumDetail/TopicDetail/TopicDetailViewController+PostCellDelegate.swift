@@ -131,7 +131,7 @@ extension TopicDetailViewController: PostCellDelegate {
     }
 
     func postCell(didTapQuotedPostNumber postNumber: Int) {
-        jumpToFloor(postNumber)
+        Task { await jumpToPostNumber(postNumber) }
     }
 
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post) {
