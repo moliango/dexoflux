@@ -250,6 +250,55 @@ final class ForumNotificationStateTests: XCTestCase {
         ))
     }
 
+    func testNotificationRouteParsesNSNumberUserInfoAndPostId() {
+        let userInfo: [AnyHashable: Any] = [
+            ForumNotificationRoute.UserInfoKey.baseURL: "https://linux.do",
+            ForumNotificationRoute.UserInfoKey.notificationId: NSNumber(value: 88),
+            ForumNotificationRoute.UserInfoKey.topicId: NSNumber(value: 12345),
+            ForumNotificationRoute.UserInfoKey.postNumber: NSNumber(value: 17),
+            ForumNotificationRoute.UserInfoKey.postId: NSNumber(value: 999001),
+        ]
+
+        let route = ForumNotificationRoute.from(userInfo: userInfo)
+
+        XCTAssertEqual(route?.baseURL, "https://linux.do")
+        XCTAssertEqual(route?.notificationId, 88)
+        XCTAssertEqual(route?.topicId, 12345)
+        XCTAssertEqual(route?.postNumber, 17)
+        XCTAssertEqual(route?.postId, 999001)
+    }
+
+    func testNotificationDecodesActingPostIdAndPostNumber() throws {
+        let json = """
+        {
+          "notifications": [{
+            "id": 9,
+            "notification_type": 2,
+            "read": false,
+            "high_priority": true,
+            "created_at": "2026-07-19T00:00:00.000Z",
+            "post_number": 42,
+            "topic_id": 1001,
+            "data": {
+              "topic_title": "Reply target",
+              "display_username": "bob",
+              "original_post_id": 556677,
+              "original_username": "bob"
+            }
+          }]
+        }
+        """
+        let list = try JSONDecoder().decode(
+            DiscourseNotificationList.self,
+            from: Data(json.utf8)
+        )
+        let notification = try XCTUnwrap(list.notifications.first)
+
+        XCTAssertEqual(notification.topicId, 1001)
+        XCTAssertEqual(notification.postNumber, 42)
+        XCTAssertEqual(notification.actingPostId, 556677)
+    }
+
     private func decodeNotifications(idsAndReadState: [(Int, Bool)]) throws -> [DiscourseNotification] {
         let entries = idsAndReadState.map { id, read in
             """

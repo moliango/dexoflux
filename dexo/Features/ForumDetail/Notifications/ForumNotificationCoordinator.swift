@@ -243,6 +243,9 @@ final class ForumLocalNotificationPresenter: ForumLocalNotificationPresenting {
             if let postNumber = notification.postNumber {
                 userInfo[ForumNotificationRoute.UserInfoKey.postNumber] = postNumber
             }
+            if let postId = notification.actingPostId {
+                userInfo[ForumNotificationRoute.UserInfoKey.postId] = postId
+            }
             content.userInfo = userInfo
             let request = UNNotificationRequest(
                 identifier: "dexoflux.\(normalizedBaseURL(baseURL)).\(notification.id)",
@@ -297,12 +300,39 @@ struct ForumNotificationRoute: Equatable {
         static let notificationId = "dexoflux.notification.notificationId"
         static let topicId = "dexoflux.notification.topicId"
         static let postNumber = "dexoflux.notification.postNumber"
+        static let postId = "dexoflux.notification.postId"
     }
 
     let baseURL: String
     let notificationId: Int?
     let topicId: Int?
     let postNumber: Int?
+    let postId: Int?
+
+    /// UNNotification userInfo round-trips ints as NSNumber; cast carefully.
+    static func intValue(from userInfo: [AnyHashable: Any], key: String) -> Int? {
+        if let value = userInfo[key] as? Int {
+            return value
+        }
+        if let value = userInfo[key] as? NSNumber {
+            return value.intValue
+        }
+        if let value = userInfo[key] as? String {
+            return Int(value)
+        }
+        return nil
+    }
+
+    static func from(userInfo: [AnyHashable: Any]) -> ForumNotificationRoute? {
+        guard let baseURL = userInfo[UserInfoKey.baseURL] as? String else { return nil }
+        return ForumNotificationRoute(
+            baseURL: baseURL,
+            notificationId: intValue(from: userInfo, key: UserInfoKey.notificationId),
+            topicId: intValue(from: userInfo, key: UserInfoKey.topicId),
+            postNumber: intValue(from: userInfo, key: UserInfoKey.postNumber),
+            postId: intValue(from: userInfo, key: UserInfoKey.postId)
+        )
+    }
 }
 
 @MainActor

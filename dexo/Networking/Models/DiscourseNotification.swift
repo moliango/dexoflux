@@ -146,6 +146,16 @@ struct DiscourseNotification: Decodable, Identifiable {
         }
     }
 
+    /// Post id of the acting post (reply / mention / like target), when Discourse includes it.
+    var actingPostId: Int? {
+        guard let raw = data.originalPostId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let value = Int(raw),
+              value > 0
+        else { return nil }
+        return value
+    }
+
     var displayDescription: String {
         let actor = data.displayUsername ?? data.originalUsername ?? data.username ?? ""
         let displayActor = actor.isEmpty ? String(localized: "notifications.someone") : actor

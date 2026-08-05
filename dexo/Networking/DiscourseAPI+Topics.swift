@@ -115,7 +115,15 @@ extension DiscourseAPI {
     }
 
     func fetchPost(id: Int) async throws -> DiscourseTopicDetail.Post {
-        let route = DiscourseRouter.post(id: id)
+        try await fetchPostResponse(route: .post(id: id))
+    }
+
+    /// Resolves a Discourse `post_number` (URL/notification floor) to the post payload.
+    func fetchPostByNumber(topicId: Int, postNumber: Int) async throws -> DiscourseTopicDetail.Post {
+        try await fetchPostResponse(route: .postByNumber(topicId: topicId, postNumber: postNumber))
+    }
+
+    private func fetchPostResponse(route: DiscourseRouter) async throws -> DiscourseTopicDetail.Post {
         let response = try await performRequest(route: route)
         let decoder = JSONDecoder()
         if let wrapped = try? decoder.decode(DiscoursePostResponse.self, from: response.data) {

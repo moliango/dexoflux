@@ -28,13 +28,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func enqueueNotificationRoute(from userInfo: [AnyHashable: Any]) {
-        guard let baseURL = userInfo[ForumNotificationRoute.UserInfoKey.baseURL] as? String else { return }
-        let route = ForumNotificationRoute(
-            baseURL: baseURL,
-            notificationId: userInfo[ForumNotificationRoute.UserInfoKey.notificationId] as? Int,
-            topicId: userInfo[ForumNotificationRoute.UserInfoKey.topicId] as? Int,
-            postNumber: userInfo[ForumNotificationRoute.UserInfoKey.postNumber] as? Int
-        )
+        guard let route = ForumNotificationRoute.from(userInfo: userInfo) else { return }
         ForumNotificationRouteStore.shared.enqueue(route)
     }
 

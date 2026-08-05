@@ -60,17 +60,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        guard let baseURL = userInfo[ForumNotificationRoute.UserInfoKey.baseURL] as? String else { return }
-        let notificationId = userInfo[ForumNotificationRoute.UserInfoKey.notificationId] as? Int
-        let topicId = userInfo[ForumNotificationRoute.UserInfoKey.topicId] as? Int
-        let postNumber = userInfo[ForumNotificationRoute.UserInfoKey.postNumber] as? Int
+        guard let route = ForumNotificationRoute.from(userInfo: userInfo) else { return }
         await MainActor.run {
-            let route = ForumNotificationRoute(
-                baseURL: baseURL,
-                notificationId: notificationId,
-                topicId: topicId,
-                postNumber: postNumber
-            )
             ForumNotificationRouteStore.shared.enqueue(route)
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded()
         }

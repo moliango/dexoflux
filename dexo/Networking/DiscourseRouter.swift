@@ -13,6 +13,7 @@ enum DiscourseRouter {
     case topic(id: Int, trackVisit: Bool)
     case topicPosts(topicId: Int, postIds: [Int])
     case post(id: Int)
+    case postByNumber(topicId: Int, postNumber: Int)
     case updatePost(id: Int)
     case topicNotificationLevel(topicId: Int)
     case updateTopic(topicId: Int)
@@ -109,6 +110,8 @@ enum DiscourseRouter {
             return "/t/\(topicId)/posts.json?\(ids)"
         case .post(let id), .updatePost(let id):
             return "/posts/\(id).json"
+        case .postByNumber(let topicId, let postNumber):
+            return "/posts/by_number/\(topicId)/\(postNumber).json"
         case .topicNotificationLevel(let topicId):
             return "/t/\(topicId)/notifications"
         case .updateTopic(let topicId):
