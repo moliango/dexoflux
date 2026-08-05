@@ -59,16 +59,23 @@ extension HomeViewController: UITableViewDelegate {
         let nearBottomPagination = isNearTopicListBottomForPagination
             && (viewModel.canLoadMore || viewModel.isLoadingMore || isTabBarScrollFrozenForLoadMore)
 
-        // Drive search morph while scrolling. Hysteresis avoids flicker at the
-        // threshold; generation-guarded animators avoid the "icon vanished" race.
-        if userDriven, !isTopRefreshGeometryLocked {
-            if isSearchRowCollapsed {
-                // Expand only when clearly near top.
-                if y < 8 {
-                    setSearchRowCollapsed(false, animated: true)
+        // Drive search morph while scrolling.
+        // - Hysteresis (8 / 24) avoids flicker at the threshold.
+        // - Skip while a morph animator is running so inset changes mid-animation
+        //   cannot immediately bounce expand↔collapse and eat the search icon.
+        // - Also react while decelerating (inertia after 上滑).
+        if !isTopRefreshGeometryLocked, searchRowMorphAnimator == nil {
+            let allowSearchMorph = userDriven
+                || scrollView.isDecelerating
+                || scrollView.isDragging
+            if allowSearchMorph {
+                if isSearchRowCollapsed {
+                    if y < 8 {
+                        setSearchRowCollapsed(false, animated: true)
+                    }
+                } else if y > 24 {
+                    setSearchRowCollapsed(true, animated: true)
                 }
-            } else if y > 24 {
-                setSearchRowCollapsed(true, animated: true)
             }
         }
 
@@ -139,8 +146,10 @@ extension HomeViewController: UITableViewDelegate {
             normalizeTopRefreshGeometry(animated: false)
             return
         }
+        // Let an in-flight morph finish; its completion applies final chrome.
+        guard searchRowMorphAnimator == nil else { return }
+
         let y = tableView.contentOffset.y + tableView.contentInset.top
-        // Settle with the same hysteresis band as live scroll.
         let shouldCollapse: Bool
         if isSearchRowCollapsed {
             shouldCollapse = y >= 8
@@ -148,8 +157,7 @@ extension HomeViewController: UITableViewDelegate {
             shouldCollapse = y > 24
         }
         setSearchRowCollapsed(shouldCollapse, animated: animated)
-        // Even if state unchanged, heal icon visibility after interrupted morphs.
-        if searchChromeNeedsHeal() {
+        if searchRowMorphAnimator == nil, searchChromeNeedsHeal() {
             applySearchRowChromeFinalState()
         }
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top

@@ -5,45 +5,50 @@ import UIKit
 // MARK: - Header
 extension HomeViewController {
     func setupHeader() {
-        // Full search bar alone on its row; bell moves into trailing chrome next to mini-program.
-        searchRowStackView.addArrangedSubview(searchButton)
+        // Full search bar under filter; collapses on scroll → 🔍 in top chrome.
+        searchRowStackView.addSubview(searchButton)
 
+        // TOP-row trailing chrome, fixed order: 搜索 | 分类 | 小程序 | 铃铛
         trailingChromeStack.addArrangedSubview(compactSearchButton)
+        trailingChromeStack.addArrangedSubview(categoryManagerButton)
         trailingChromeStack.addArrangedSubview(miniProgramButton)
         trailingChromeStack.addArrangedSubview(notificationButton)
         notificationButton.addSubview(notificationBadgeView)
 
         categoryScrollView.addSubview(categoryStackView)
-        headerContainer.addSubview(searchRowStackView)
         headerContainer.addSubview(categoryScrollView)
-        headerContainer.addSubview(categoryManagerButton)
         headerContainer.addSubview(trailingChromeStack)
         headerContainer.addSubview(filterStackView)
+        headerContainer.addSubview(searchRowStackView)
 
         // Header order (top → bottom):
-        // 1) category chips + 三线
-        // 2) filter「最新」+ trailing chrome [search icon | mini-program | bell]
-        // 3) full search bar (collapses on scroll → icon in trailing chrome)
+        // 1) category chips + trailing chrome [搜索 | 分类三线 | 小程序 | 铃铛]
+        // 2) filter「最新」/分类 dropdown only (no action icons)
+        // 3) full search bar「搜索话题…」(scroll → 🔍 stays in top chrome)
+        //
+        // Drawer mode: chips + 三线 hidden; chrome (搜索/小程序/铃铛) stays on top
+        // with the filter row (centerY to filter).
         NSLayoutConstraint.activate([
             categoryScrollView.topAnchor.constraint(
                 equalTo: headerContainer.safeAreaLayoutGuide.topAnchor,
                 constant: 2
             ),
             categoryScrollView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
-            categoryScrollView.trailingAnchor.constraint(equalTo: categoryManagerButton.leadingAnchor, constant: -4),
+            categoryScrollView.trailingAnchor.constraint(
+                equalTo: trailingChromeStack.leadingAnchor,
+                constant: -4
+            ),
 
             trailingChromeStack.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -10),
 
-            miniProgramButton.widthAnchor.constraint(equalToConstant: 36),
-            miniProgramButton.heightAnchor.constraint(equalToConstant: 36),
             compactSearchButton.widthAnchor.constraint(equalToConstant: 36),
             compactSearchButton.heightAnchor.constraint(equalToConstant: 36),
-            notificationButton.widthAnchor.constraint(equalToConstant: 36),
-            notificationButton.heightAnchor.constraint(equalToConstant: 36),
-
-            categoryManagerButton.centerYAnchor.constraint(equalTo: categoryScrollView.centerYAnchor),
             categoryManagerButton.widthAnchor.constraint(equalToConstant: 36),
             categoryManagerButton.heightAnchor.constraint(equalToConstant: 36),
+            miniProgramButton.widthAnchor.constraint(equalToConstant: 36),
+            miniProgramButton.heightAnchor.constraint(equalToConstant: 36),
+            notificationButton.widthAnchor.constraint(equalToConstant: 36),
+            notificationButton.heightAnchor.constraint(equalToConstant: 36),
 
             categoryStackView.topAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.topAnchor),
             categoryStackView.leadingAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
@@ -61,7 +66,11 @@ extension HomeViewController {
             searchRowStackView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 16),
             searchRowStackView.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -16),
 
-            searchButton.heightAnchor.constraint(equalToConstant: 40),
+            searchButton.topAnchor.constraint(equalTo: searchRowStackView.topAnchor),
+            searchButton.bottomAnchor.constraint(equalTo: searchRowStackView.bottomAnchor),
+            searchButton.leadingAnchor.constraint(equalTo: searchRowStackView.leadingAnchor),
+            searchButton.trailingAnchor.constraint(equalTo: searchRowStackView.trailingAnchor),
+
             notificationBadgeView.topAnchor.constraint(equalTo: notificationButton.topAnchor, constant: 5),
             notificationBadgeView.trailingAnchor.constraint(equalTo: notificationButton.trailingAnchor, constant: -5),
             notificationBadgeView.widthAnchor.constraint(equalToConstant: 9),
@@ -77,11 +86,16 @@ extension HomeViewController {
             equalTo: headerContainer.safeAreaLayoutGuide.topAnchor,
             constant: Self.filterTopInDrawerSpacing
         )
+        // Chip mode: chrome is on the top row → filter uses full width.
+        filterTrailingToHeaderConstraint = filterStackView.trailingAnchor.constraint(
+            lessThanOrEqualTo: headerContainer.trailingAnchor,
+            constant: -12
+        )
+        // Drawer mode: chrome sits with filter (chips gone) → leave room for icons.
         filterTrailingToChromeConstraint = filterStackView.trailingAnchor.constraint(
             lessThanOrEqualTo: trailingChromeStack.leadingAnchor,
             constant: -8
         )
-        filterTrailingToChromeConstraint?.isActive = true
         trailingChromeCenterYToCategoryConstraint = trailingChromeStack.centerYAnchor.constraint(
             equalTo: categoryScrollView.centerYAnchor
         )
@@ -89,16 +103,12 @@ extension HomeViewController {
             equalTo: filterStackView.centerYAnchor
         )
         filterTopToCategoryConstraint?.isActive = true
+        // Default (chip mode): four icons on the top category row.
         trailingChromeCenterYToCategoryConstraint?.isActive = true
-        categoryManagerTrailingToChromeConstraint = categoryManagerButton.trailingAnchor.constraint(
-            equalTo: trailingChromeStack.leadingAnchor,
-            constant: -2
-        )
-        categoryManagerTrailingToHeaderConstraint = categoryManagerButton.trailingAnchor.constraint(
-            equalTo: headerContainer.trailingAnchor,
-            constant: -10
-        )
-        categoryManagerTrailingToChromeConstraint?.isActive = true
+        trailingChromeCenterYToFilterConstraint?.isActive = false
+        filterTrailingToHeaderConstraint?.isActive = true
+        filterTrailingToChromeConstraint?.isActive = false
+
         searchRowHeightConstraint = searchRowStackView.heightAnchor.constraint(equalToConstant: Self.searchRowExpandedHeight)
         searchRowHeightConstraint?.isActive = true
 
@@ -130,7 +140,11 @@ extension HomeViewController {
             tableView.estimatedRowHeight = TopicCell.estimatedHeight
         }
         headerContainer.backgroundColor = pageBackground
-        searchButton.backgroundColor = themeStyle.topicChipBackgroundColor
+        if var config = searchButton.configuration {
+            config.background.backgroundColor = themeStyle.topicChipBackgroundColor
+                ?? .secondarySystemGroupedBackground
+            searchButton.configuration = config
+        }
         floatingActionButton.backgroundColor = themeStyle.accentColor
         floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
         createMenuContainer.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor

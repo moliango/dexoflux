@@ -28,11 +28,6 @@ extension HomeViewController {
         let enabled = AppSettings.shared.miniProgramsEnabled
         miniProgramButton.isHidden = !enabled
         miniProgramButton.isUserInteractionEnabled = enabled
-        // Trailing chrome (search icon / mini / bell) always occupies the trailing edge;
-        // category manager only falls back to the header edge when the whole chrome is empty,
-        // which never happens because the bell stays visible.
-        categoryManagerTrailingToChromeConstraint?.isActive = true
-        categoryManagerTrailingToHeaderConstraint?.isActive = false
     }
 
 
@@ -92,9 +87,12 @@ extension HomeViewController {
         // Drawer: pin「最新」to the top (category chips hidden). Normal: under chips.
         filterTopToCategoryConstraint?.isActive = !enabled
         filterTopToSafeAreaConstraint?.isActive = enabled
-        // Trailing chrome rides with the visible top action row.
+        // Chip mode: 搜索/分类/小程序/铃铛 on the top row with category chips.
+        // Drawer mode: chips + 三线 hidden → remaining chrome aligns with filter.
         trailingChromeCenterYToCategoryConstraint?.isActive = !enabled
         trailingChromeCenterYToFilterConstraint?.isActive = enabled
+        filterTrailingToHeaderConstraint?.isActive = !enabled
+        filterTrailingToChromeConstraint?.isActive = enabled
 
         if enabled {
             refreshCategoryDrawerContent()
