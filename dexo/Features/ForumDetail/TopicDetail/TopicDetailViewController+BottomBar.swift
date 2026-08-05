@@ -170,18 +170,19 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
         timeline.modalPresentationStyle = .pageSheet
         timeline.isModalInPresentation = true
         if let sheet = timeline.sheetPresentationController {
-            // Custom height keeps cancel/jump on-screen; plain `.medium()` on
-            // tall ProMotion phones left the action row below the visible fold.
+            // Fit the compact timeline content; avoid a tall empty band under buttons.
             if #available(iOS 16.0, *) {
                 let timelineDetent = UISheetPresentationController.Detent.custom(
                     identifier: .init("topic.timeline")
                 ) { context in
-                    min(460, context.maximumDetentValue)
+                    // preferred content + home-indicator reserve.
+                    let fitted = TopicTimelineSheetViewController.preferredSheetHeight + 34
+                    return min(fitted, context.maximumDetentValue)
                 }
-                sheet.detents = [timelineDetent, .large()]
+                sheet.detents = [timelineDetent]
                 sheet.selectedDetentIdentifier = timelineDetent.identifier
             } else {
-                sheet.detents = [.medium(), .large()]
+                sheet.detents = [.medium()]
             }
             sheet.prefersGrabberVisible = false
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false

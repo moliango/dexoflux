@@ -91,7 +91,12 @@ final class TopicTimelineSheetViewController: UIViewController {
         return view
     }()
 
+    /// Content-fitted sheet height used by the presenter detent (excludes home indicator).
+    /// grabber+title+track+actions+paddings; keep in sync with viewDidLoad constraints.
+    static let preferredSheetHeight: CGFloat = 320
+
     init(currentIndex: Int, stream: [Int], title: String?) {
+
         self.stream = stream
         let safeTotal = max(stream.count, 1)
         self.initialIndex = min(max(currentIndex, 1), safeTotal)
@@ -156,40 +161,40 @@ final class TopicTimelineSheetViewController: UIViewController {
         view.addSubview(contentRow)
         view.addSubview(buttonRow)
 
-        // Keep cancel/jump directly under the floor controls.
-        // Pinning only to safeArea.bottom fails on newer sheet containers where the
-        // VC view can be taller than the visible medium detent — buttons fall below
-        // the fold and look "missing".
+        // Compact vertical chain: grabber → title → floor controls → actions.
+        // Buttons sit under content with a fixed 10pt gap to the sheet bottom inset
+        // so a tall detent cannot leave a large empty band under the action row.
         NSLayoutConstraint.activate([
-            grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             grabberView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             grabberView.widthAnchor.constraint(equalToConstant: 36),
             grabberView.heightAnchor.constraint(equalToConstant: 4),
 
-            titleLabel.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 18),
+            titleLabel.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 12),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
 
-            contentRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: titleText == nil ? 8 : 24),
-            contentRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            contentRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            contentRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: titleText == nil ? 6 : 14),
+            contentRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            contentRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
 
             floorTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
-            floorTextField.heightAnchor.constraint(greaterThanOrEqualToConstant: 62),
+            floorTextField.heightAnchor.constraint(greaterThanOrEqualToConstant: 56),
             editIconView.widthAnchor.constraint(equalToConstant: 16),
             editIconView.heightAnchor.constraint(equalToConstant: 16),
             statusLabel.heightAnchor.constraint(equalToConstant: 28),
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
-            trackView.widthAnchor.constraint(equalToConstant: 64),
-            trackView.heightAnchor.constraint(equalToConstant: 200),
+            trackView.widthAnchor.constraint(equalToConstant: 56),
+            trackView.heightAnchor.constraint(equalToConstant: 168),
 
-            buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 28),
+            buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 18),
             buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            buttonRow.heightAnchor.constraint(equalToConstant: 52),
+            buttonRow.heightAnchor.constraint(equalToConstant: 48),
+            // Exactly 10pt under the action row (plus home-indicator safe area).
             buttonRow.bottomAnchor.constraint(
-                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -16
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -10
             ),
         ])
 
