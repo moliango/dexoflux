@@ -12,6 +12,9 @@ import UserNotifications
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Repair Library/Caches if a file occupies a directory path (ENOTDIR / Code=512),
+        // and pin SDWebImage disk root before any shared cache access.
+        AppStorageBootstrap.prepareAtLaunch()
         AppSettings.shared.applyLanguage()
         AppSettings.shared.installGlobalFontSupport()
         BackgroundNotificationRefreshService.shared.register()

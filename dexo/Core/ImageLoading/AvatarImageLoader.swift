@@ -50,6 +50,9 @@ enum AvatarImageLoader {
     ]
 
     static func configureGlobalImageLoading() {
+        // Ensure Caches is a real directory and SD disk root is pinned before shared init.
+        AppStorageBootstrap.prepareAtLaunch()
+
         let profile = AppSettings.shared.avatarLoadingProfile
         let cacheLimit = AppSettings.shared.avatarCacheSizeLimit
         let memoryBytes = cacheLimit.byteCount

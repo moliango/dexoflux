@@ -111,7 +111,7 @@ enum MeProfileCacheStore {
     private static let expirationInterval: TimeInterval = 20 * 60
 
     private static let cacheDirectory: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let appSupport = AppStorageBootstrap.applicationSupportDirectoryURL()
         let dir = appSupport.appendingPathComponent("MeProfileCacheV1", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
