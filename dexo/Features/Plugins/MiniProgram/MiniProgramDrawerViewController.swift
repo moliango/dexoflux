@@ -3,7 +3,9 @@ import UIKit
 /// WeChat-like full-screen mini-program drawer.
 /// - Fixed 2×4 grids (max 8)
 /// - No vertical scrolling; upward pan / fling closes
-/// - 「常用」only shows favorites (我的小程序)
+/// - 「最近 / 常用」sections always visible (even when empty) so first-run
+///   users can still open 我的小程序 management via section actions
+/// - 「常用」lists favorites (我的小程序)
 /// - Long-press drag: left = add to favorites, right = remove
 @MainActor
 final class MiniProgramDrawerViewController: UIViewController {
@@ -655,41 +657,35 @@ final class MiniProgramDrawerViewController: UIViewController {
 
         let query = filteredQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        // 最近：最多 8 个
+        // 最近：最多 8 个。空列表也保留分区 +「更多 >」，否则首启无法进管理页。
         var recent = MiniProgramRecentStore.recentPrograms()
         if !query.isEmpty {
             recent = recent.filter { $0.displayName.lowercased().contains(query) }
         }
         recent = Array(recent.prefix(Self.maxGridItems))
-        let hasRecent = !recent.isEmpty
-        recentSectionHeader.isHidden = !hasRecent
-        recentGrid.isHidden = !hasRecent
-        if hasRecent {
-            recentGrid.configure(
-                programs: recent,
-                columns: Self.gridColumns,
-                maxRows: Self.maxGridRows,
-                allowsLongPressDrag: true
-            )
-        }
+        recentSectionHeader.isHidden = false
+        recentGrid.isHidden = false
+        recentGrid.configure(
+            programs: recent,
+            columns: Self.gridColumns,
+            maxRows: Self.maxGridRows,
+            allowsLongPressDrag: true
+        )
 
-        // 常用 / 我的小程序：只显示收藏（未添加则整区隐藏）
+        // 常用 / 我的小程序：收藏列表。空也保留分区 +「我的小程序 >」。
         var favorites = MiniProgramStore.shared.favoritePrograms().map(MiniProgramDescriptor.init(record:))
         if !query.isEmpty {
             favorites = favorites.filter { $0.displayName.lowercased().contains(query) }
         }
         favorites = Array(favorites.prefix(Self.maxGridItems))
-        let hasFavorites = !favorites.isEmpty
-        frequentSectionHeader.isHidden = !hasFavorites
-        frequentGrid.isHidden = !hasFavorites
-        if hasFavorites {
-            frequentGrid.configure(
-                programs: favorites,
-                columns: Self.gridColumns,
-                maxRows: Self.maxGridRows,
-                allowsLongPressDrag: true
-            )
-        }
+        frequentSectionHeader.isHidden = false
+        frequentGrid.isHidden = false
+        frequentGrid.configure(
+            programs: favorites,
+            columns: Self.gridColumns,
+            maxRows: Self.maxGridRows,
+            allowsLongPressDrag: true
+        )
     }
 
     // MARK: - Long-press dual drop
