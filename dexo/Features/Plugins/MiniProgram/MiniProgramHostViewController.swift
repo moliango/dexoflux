@@ -128,12 +128,12 @@ final class MiniProgramHostViewController: UIViewController {
         chromeView.addSubview(capsuleView)
         capsuleView.addSubview(moreButton)
 
-        // Left swipe on host to go back to previous page (drawer / launcher).
-        // Only enable if not the very first host in stack (prevents accidental close on level 1).
-        let swipe = UISwipeGestureRecognizer()
-        swipe.direction = .left
-        swipe.addTarget(self, action: #selector(handleSwipeBack))
-        view.addGestureRecognizer(swipe)
+        // Right swipe: go back in mini-program history (web / nav). Never dismiss host here.
+        // Left swipe: ignored (close only via capsule ◎).
+        let swipeRight = UISwipeGestureRecognizer()
+        swipeRight.direction = .right
+        swipeRight.addTarget(self, action: #selector(handleSwipeBack))
+        view.addGestureRecognizer(swipeRight)
         capsuleView.addSubview(capsuleDivider)
         capsuleView.addSubview(closeButton)
 
@@ -189,16 +189,8 @@ final class MiniProgramHostViewController: UIViewController {
     }
 
     @objc private func handleSwipeBack() {
-        // Prefer goBack / nav pop first; only close host if no history remains.
-        if tryGoBackInContent() {
-            return
-        }
-        // No history — close host.
-        if let presenter = presentingViewController {
-            presenter.dismiss(animated: true)
-        } else if let nav = navigationController {
-            nav.popViewController(animated: true)
-        }
+        // History only — if nothing to go back to, do nothing (do not close mini-program).
+        _ = tryGoBackInContent()
     }
 
     /// Try to go back in embedded content (web history / nav stack).
