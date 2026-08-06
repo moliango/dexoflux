@@ -10,7 +10,7 @@ final class MiniProgramHostViewController: UIViewController {
     private let username: String?
     /// When true, embedded web content disables edge-swipe shake and pinch zoom.
     /// Default on so pages don't rubber-band or pinch-zoom until the user unlocks.
-    private var isInteractionLocked = true
+    private var isInteractionLocked = false
 
     private let chromeView: UIView = {
         let view = UIView()
@@ -138,8 +138,6 @@ final class MiniProgramHostViewController: UIViewController {
         capsuleView.addSubview(closeButton)
 
         embedContent(content)
-        // Apply default lock (anti shake / pinch zoom) after the child is embedded.
-        applyInteractionLockToContent()
 
         NSLayoutConstraint.activate([
             chromeView.topAnchor.constraint(equalTo: view.topAnchor),
