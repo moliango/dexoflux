@@ -136,6 +136,8 @@ extension HomeViewController {
             tableView.estimatedRowHeight = AppSettings.shared.xiaohongshuCardsStaggered
                 ? XiaohongshuTopicGridCell.staggeredEstimatedHeight
                 : XiaohongshuTopicGridCell.estimatedHeight
+        } else if usesWeChatListLayout {
+            tableView.estimatedRowHeight = WeChatTopicListCell.estimatedHeight
         } else {
             tableView.estimatedRowHeight = TopicCell.estimatedHeight
         }

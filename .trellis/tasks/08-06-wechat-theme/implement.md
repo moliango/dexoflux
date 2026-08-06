@@ -16,3 +16,8 @@
 - `dexo/Core/Settings/AppSettings+Appearance.swift`
 - `dexo/Features/ForumDetail/ForumTabBarController.swift`
 - `dexo/Features/Settings/AppearanceSettingsViewController.swift`
+
+
+## Follow-up (list layout)
+8. [x] Add `WeChatTopicListCell` (separate from TopicCell, Xiaohongshu-style integration)
+9. [x] Home dataSource switches cell by `usesWeChatListLayout`

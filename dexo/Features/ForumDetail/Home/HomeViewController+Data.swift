@@ -34,17 +34,24 @@ extension HomeViewController {
                 && !tableView.isDecelerating
         }
 
-        if !needsInitialSnapshot, currentIds == itemIdentifiers {
+        let layoutKind = homeListLayoutKind
+        let layoutChanged = lastAppliedHomeListLayoutKind != layoutKind
+        lastAppliedHomeListLayoutKind = layoutKind
+
+        if !needsInitialSnapshot, currentIds == itemIdentifiers, !layoutChanged {
             if !idsNeedingReconfigure.isEmpty {
                 var updatedSnapshot = currentSnapshot
                 updatedSnapshot.reconfigureItems(idsNeedingReconfigure)
                 dataSource.apply(updatedSnapshot, animatingDifferences: false)
             }
         } else {
-            if !idsNeedingReconfigure.isEmpty {
+            if layoutChanged, !itemIdentifiers.isEmpty, currentIds == itemIdentifiers {
+                // Same topic ids but different cell class (TopicCell ↔ WeChat list).
+                snapshot.reloadItems(itemIdentifiers)
+            } else if !idsNeedingReconfigure.isEmpty {
                 snapshot.reconfigureItems(idsNeedingReconfigure)
             }
-            dataSource.apply(snapshot, animatingDifferences: shouldAnimateSnapshot)
+            dataSource.apply(snapshot, animatingDifferences: layoutChanged ? false : shouldAnimateSnapshot)
         }
     }
 

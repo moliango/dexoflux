@@ -1,0 +1,258 @@
+import SDWebImage
+import UIKit
+
+/// WeChat-style full-bleed list row for Home when `ThemeStyle.weChat` is active.
+/// Separate from `TopicCell` / Xiaohongshu grid — same integration pattern as grid layout.
+final class WeChatTopicListCell: UITableViewCell {
+    static let reuseIdentifier = "WeChatTopicListCell"
+    static let estimatedHeight: CGFloat = 72
+
+    private var currentAvatarURL: URL?
+    private var renderedTitle: String?
+    private var emojiBaseURL: String?
+    private var emojiUpdateObserver: NSObjectProtocol?
+
+    private let avatarImageView: UIImageView = {
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        iv.layer.cornerRadius = 4 // WeChat chat-list style square-ish avatar
+        iv.layer.cornerCurve = .continuous
+        iv.backgroundColor = .secondarySystemFill
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        return iv
+    }()
+
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }()
+
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }()
+
+    private let timeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .regular)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .right
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }()
+
+    private let replyLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .regular)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .right
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        return label
+    }()
+
+    private let separator: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.separator.withAlphaComponent(0.35)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    private let textColumn: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        setupUI()
+        emojiUpdateObserver = NotificationCenter.default.addObserver(
+            forName: EmojiStore.didUpdateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let title = self.renderedTitle else { return }
+            self.applyTitle(title)
+        }
+    }
+
+    deinit {
+        if let emojiUpdateObserver {
+            NotificationCenter.default.removeObserver(emojiUpdateObserver)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        selectionStyle = .default
+        backgroundColor = .clear
+        contentView.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+
+        textColumn.addArrangedSubview(titleLabel)
+        textColumn.addArrangedSubview(subtitleLabel)
+
+        contentView.addSubview(avatarImageView)
+        contentView.addSubview(textColumn)
+        contentView.addSubview(timeLabel)
+        contentView.addSubview(replyLabel)
+        contentView.addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            avatarImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            avatarImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            avatarImageView.widthAnchor.constraint(equalToConstant: 48),
+            avatarImageView.heightAnchor.constraint(equalToConstant: 48),
+
+            textColumn.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 12),
+            textColumn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            textColumn.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -10),
+            textColumn.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+
+            timeLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+
+            replyLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            replyLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+
+            separator.leadingAnchor.constraint(equalTo: textColumn.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+
+            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 68),
+        ])
+    }
+
+    func configure(
+        with topic: DiscourseTopicList.Topic,
+        avatarURL: URL?,
+        avatarUserId: Int? = nil,
+        categoryName: String?,
+        categoryColor: UIColor?,
+        tags: [String] = [],
+        categoryPresentation: TopicCategoryBadgePresentation? = nil,
+        categoryBaseURL: String? = nil
+    ) {
+        let theme = AppSettings.shared.themeStyle
+        contentView.backgroundColor = theme.topicCardBackgroundColor
+        backgroundColor = theme.topicListBackgroundColor
+        separator.backgroundColor = UIColor.separator.withAlphaComponent(theme == .weChat ? 0.28 : 0.35)
+
+        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
+        let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: titlePoint, weight: .medium)
+        )
+        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: subPoint, weight: .regular)
+        )
+        timeLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 12, weight: .regular)
+        )
+        replyLabel.font = timeLabel.font
+
+        titleLabel.textColor = topic.isUnreadForDisplay ? .label : .secondaryLabel
+        emojiBaseURL = categoryBaseURL
+        let plain = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
+        renderedTitle = plain
+        applyTitle(plain)
+
+        // Subtitle: category · first tag · or excerpt snippet
+        var parts: [String] = []
+        if let categoryName, !categoryName.isEmpty {
+            parts.append(categoryName)
+        }
+        if let tag = tags.first, !tag.isEmpty {
+            parts.append(tag)
+        }
+        if parts.isEmpty, let excerpt = topic.excerpt?.trimmingCharacters(in: .whitespacesAndNewlines), !excerpt.isEmpty {
+            parts.append(excerpt)
+        }
+        subtitleLabel.text = parts.isEmpty ? " " : parts.joined(separator: " · ")
+        subtitleLabel.textColor = .secondaryLabel
+
+        timeLabel.text = TopicCell.formatDate(topic.lastPostedAt ?? topic.createdAt)
+        let replies = max(topic.postsCount - 1, 0)
+        if AppSettings.shared.showTopicCardCounts, replies > 0 {
+            replyLabel.text = replies > 99 ? "99+" : "\(replies)"
+            replyLabel.isHidden = false
+        } else {
+            replyLabel.text = nil
+            replyLabel.isHidden = true
+        }
+
+        currentAvatarURL = avatarURL
+        // Slightly rounded square like WeChat session list
+        avatarImageView.layer.cornerRadius = 6
+        AvatarImageLoader.setImage(
+            on: avatarImageView,
+            url: avatarURL,
+            cloudflareBaseURL: categoryBaseURL,
+            avatarBaseURL: categoryBaseURL,
+            userId: avatarUserId
+        )
+    }
+
+    private func applyTitle(_ title: String) {
+        TitleEmojiRenderer.apply(
+            title,
+            to: titleLabel,
+            font: titleLabel.font ?? .systemFont(ofSize: 16, weight: .medium),
+            textColor: titleLabel.textColor ?? .label,
+            baseURL: emojiBaseURL
+        )
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        renderedTitle = nil
+        emojiBaseURL = nil
+        currentAvatarURL = nil
+        titleLabel.text = nil
+        subtitleLabel.text = nil
+        timeLabel.text = nil
+        replyLabel.text = nil
+        avatarImageView.sd_cancelCurrentImageLoad()
+        avatarImageView.image = nil
+    }
+
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        let theme = AppSettings.shared.themeStyle
+        let base = theme.topicCardBackgroundColor
+        UIView.animate(withDuration: animated ? 0.12 : 0) {
+            self.contentView.backgroundColor = highlighted
+                ? theme.mutedContentBackgroundColor
+                : base
+        }
+    }
+
+    override func setSelected(_ selected: Bool, animated: Bool) {
+        super.setSelected(selected, animated: animated)
+        if !selected {
+            contentView.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        }
+    }
+}

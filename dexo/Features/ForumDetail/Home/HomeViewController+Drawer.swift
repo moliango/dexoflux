@@ -18,7 +18,7 @@ extension HomeViewController {
         updateIncomingTopicsHeader()
         updateTableInsets()
         applyTopicSnapshot(animatingDifferences: false)
-        if usesXiaohongshuCardLayout {
+        if usesXiaohongshuCardLayout || usesWeChatListLayout {
             tableView.beginUpdates()
             tableView.endUpdates()
         }

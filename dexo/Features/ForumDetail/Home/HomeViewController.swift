@@ -304,6 +304,7 @@ final class HomeViewController: ObservableViewController {
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
         tv.register(XiaohongshuTopicGridCell.self, forCellReuseIdentifier: XiaohongshuTopicGridCell.reuseIdentifier)
+        tv.register(WeChatTopicListCell.self, forCellReuseIdentifier: WeChatTopicListCell.reuseIdentifier)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -338,6 +339,33 @@ final class HomeViewController: ObservableViewController {
             return cell
         }
 
+        if self.usesWeChatListLayout,
+           let cell = tableView.dequeueReusableCell(
+                withIdentifier: WeChatTopicListCell.reuseIdentifier,
+                for: indexPath
+           ) as? WeChatTopicListCell,
+           let topic = self.viewModel.topics.first(where: { $0.id == topicId }) {
+            let baseURL = self.api.baseURL
+            let avatarURL = AvatarImageLoader.url(
+                from: self.viewModel.avatarTemplate(for: topic),
+                baseURL: baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+            let category = self.viewModel.category(for: topic)
+            let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
+            cell.configure(
+                with: topic,
+                avatarURL: avatarURL,
+                avatarUserId: self.viewModel.avatarUserId(for: topic),
+                categoryName: self.viewModel.categoryDisplayName(for: category),
+                categoryColor: categoryColor,
+                tags: topic.tags ?? [],
+                categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
+                categoryBaseURL: baseURL
+            )
+            return cell
+        }
+
         guard let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
               let topic = self.viewModel.topics.first(where: { $0.id == topicId }) else {
             return UITableViewCell()
@@ -366,6 +394,26 @@ final class HomeViewController: ObservableViewController {
     var usesXiaohongshuCardLayout: Bool {
         AppSettings.shared.themeStyle == .xiaohongshu
     }
+
+    /// WeChat list layout: full-bleed rows via `WeChatTopicListCell` (not TopicCell cards).
+    var usesWeChatListLayout: Bool {
+        AppSettings.shared.themeStyle == .weChat
+    }
+
+    enum HomeListLayoutKind: Equatable {
+        case standard
+        case xiaohongshu
+        case weChat
+    }
+
+    var homeListLayoutKind: HomeListLayoutKind {
+        if usesXiaohongshuCardLayout { return .xiaohongshu }
+        if usesWeChatListLayout { return .weChat }
+        return .standard
+    }
+
+    /// Last applied list layout — when this changes, force cell-class swap.
+    var lastAppliedHomeListLayoutKind: HomeListLayoutKind?
 
     static func xiaohongshuRowIdentifier(for rowIndex: Int) -> Int {
         -(rowIndex + 1)
