@@ -391,6 +391,10 @@ enum TopicDetailPaginationPolicy {
     static let jumpLookback = 5
     /// Table `willDisplay` backup trigger: rows from the end of the current snapshot.
     static let displayPrefetchRowThreshold = 8
+    /// Live stream poll while TopicDetail is visible.
+    static let liveSyncInterval: TimeInterval = 12
+    /// Consider "at bottom" when within this many table rows of the end.
+    static let liveSyncNearBottomRows = 4
 
     static func canStartEarlier(
         isLoadingEarlier: Bool,
@@ -472,6 +476,10 @@ final class TopicDetailViewModel: DexoObservableObject {
     var isJumping = false
     var jumpTargetFloor: Int?
     var errorMessage: String?
+    /// New replies discovered by live sync that are not yet on screen / not consumed.
+    private(set) var pendingNewReplyCount = 0
+    /// True while a background stream sync is in flight (not a full reload).
+    private(set) var isSyncingStream = false
 
     private let api: DiscourseAPI
     private(set) var allPostIds: [Int] = []
@@ -483,6 +491,8 @@ final class TopicDetailViewModel: DexoObservableObject {
     private var parseGeneration = 0
     /// Soft forward prefetch so the next window is ready before the user hits the end.
     private var forwardPrefetchTask: Task<Void, Never>?
+    /// Stream length last time the user "saw" the tail (load/consume/scroll-catchup).
+    private var acknowledgedStreamCount = 0
     private var categoryMetadataTask: Task<Void, Never>?
     private var categoryMetadataCategoryId: Int?
     private var loadedCategoryMetadataId: Int?
@@ -610,6 +620,8 @@ final class TopicDetailViewModel: DexoObservableObject {
                 isReady = true
                 isLoading = false
                 errorMessage = nil
+                acknowledgedStreamCount = allPostIds.count
+                pendingNewReplyCount = 0
                 notifyChanged()
                 scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
                 return
@@ -682,6 +694,8 @@ final class TopicDetailViewModel: DexoObservableObject {
             guard await parseAndStore(posts: postsToRender, generation: generation) else { return }
 
             isReady = true
+            acknowledgedStreamCount = allPostIds.count
+            pendingNewReplyCount = 0
             scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
         } catch {
             #if DEBUG
@@ -949,6 +963,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         cancelForwardWindowPrefetch()
         isJumping = true
         jumpTargetFloor = floor
+        pendingNewReplyCount = 0
         notifyChanged()
 
         // Clear current posts
@@ -980,6 +995,9 @@ final class TopicDetailViewModel: DexoObservableObject {
 
             loadedRangeStart = startIndex
             loadedRangeEnd = endIndex
+            // User landed mid-thread; only ack up to what they can see in this window.
+            acknowledgedStreamCount = max(acknowledgedStreamCount, endIndex)
+            pendingNewReplyCount = max(0, allPostIds.count - max(acknowledgedStreamCount, endIndex))
         } catch {
             #if DEBUG
             print("[TopicDetail] Jump failed: \(error)")
@@ -1103,6 +1121,152 @@ final class TopicDetailViewModel: DexoObservableObject {
               !actionCode.isEmpty
         else { return nil }
         return actionCode
+    }
+
+    /// Lightweight live sync: refresh `post_stream.stream` without wiping the page.
+    /// - When `autoAppend` and the user is near the bottom, pull new posts in.
+    /// - Otherwise surface `pendingNewReplyCount` so the UI can show a banner.
+    @discardableResult
+    func syncLiveTopicStream(autoAppend: Bool, containerWidth: CGFloat) async -> Int {
+        guard isReady,
+              !isLoading,
+              !isJumping,
+              !isSyncingStream,
+              !isLoadingMore,
+              !isLoadingEarlier,
+              let topicId = topic?.id
+        else { return pendingNewReplyCount }
+
+        isSyncingStream = true
+        defer {
+            isSyncingStream = false
+        }
+
+        do {
+            let detail = try await api.fetchTopic(id: topicId, trackVisit: false)
+            let newStream = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
+            guard !newStream.isEmpty else {
+                notifyChanged()
+                return pendingNewReplyCount
+            }
+
+            let oldStream = allPostIds
+            let oldCount = oldStream.count
+            allPostIds = newStream
+
+            // Preserve already-loaded post bodies; only extend the id stream.
+            let growth = max(0, newStream.count - max(acknowledgedStreamCount, oldCount))
+            let pureAppend = oldCount == 0
+                || (oldCount <= newStream.count && Array(newStream.prefix(oldCount)) == oldStream)
+
+            if pureAppend {
+                // loadedRange* indices stay valid for the shared prefix.
+                if loadedRangeEnd > newStream.count {
+                    loadedRangeEnd = newStream.count
+                }
+            } else {
+                // Stream reshuffled (rare). Keep loaded posts; remap range best-effort.
+                if let firstLoaded = posts.first?.id,
+                   let start = newStream.firstIndex(of: firstLoaded) {
+                    loadedRangeStart = start
+                } else {
+                    loadedRangeStart = min(loadedRangeStart, max(newStream.count - 1, 0))
+                }
+                if let lastLoaded = posts.last?.id,
+                   let end = newStream.firstIndex(of: lastLoaded) {
+                    loadedRangeEnd = end + 1
+                } else {
+                    loadedRangeEnd = min(max(loadedRangeEnd, loadedRangeStart), newStream.count)
+                }
+            }
+
+            if growth <= 0 && newStream.count <= acknowledgedStreamCount {
+                // No newly acknowledged tail growth.
+                if pendingNewReplyCount != 0 && newStream.count <= acknowledgedStreamCount {
+                    pendingNewReplyCount = 0
+                    notifyChanged()
+                }
+                return pendingNewReplyCount
+            }
+
+            let unacked = max(0, newStream.count - acknowledgedStreamCount)
+            if unacked == 0 {
+                notifyChanged()
+                return 0
+            }
+
+            if autoAppend {
+                // User is following the tail — pull windows until we catch the stream end
+                // or one page (avoid multi-page hoarding on a huge burst).
+                var guardPages = 0
+                while canLoadMore,
+                      loadedRangeEnd < newStream.count,
+                      guardPages < 2 {
+                    let before = loadedRangeEnd
+                    await loadMorePosts(containerWidth: containerWidth)
+                    guardPages += 1
+                    if loadedRangeEnd <= before { break }
+                }
+                acknowledgedStreamCount = allPostIds.count
+                pendingNewReplyCount = max(0, allPostIds.count - loadedRangeEnd)
+                // If fully caught up on loaded tail:
+                if loadedRangeEnd >= allPostIds.count {
+                    pendingNewReplyCount = 0
+                }
+                notifyChanged()
+                return pendingNewReplyCount
+            }
+
+            pendingNewReplyCount = unacked
+            notifyChanged()
+            return pendingNewReplyCount
+        } catch {
+            #if DEBUG
+            print("[TopicDetail] live sync failed: \(error)")
+            #endif
+            notifyChanged()
+            return pendingNewReplyCount
+        }
+    }
+
+    /// Load pending tail posts and return the 1-based floor of the first unacked post.
+    @discardableResult
+    func consumePendingNewReplies(containerWidth: CGFloat) async -> Int? {
+        let startFloor: Int?
+        if acknowledgedStreamCount < allPostIds.count {
+            startFloor = acknowledgedStreamCount + 1
+        } else if canLoadMore {
+            startFloor = loadedRangeEnd + 1
+        } else {
+            startFloor = totalFloors > 0 ? totalFloors : nil
+        }
+
+        var guardPages = 0
+        while canLoadMore, guardPages < 3 {
+            let before = loadedRangeEnd
+            await loadMorePosts(containerWidth: containerWidth)
+            guardPages += 1
+            if loadedRangeEnd <= before { break }
+            if loadedRangeEnd >= allPostIds.count { break }
+        }
+
+        acknowledgedStreamCount = allPostIds.count
+        pendingNewReplyCount = 0
+        notifyChanged()
+        return startFloor.map { min(max($0, 1), max(totalFloors, 1)) }
+    }
+
+    func acknowledgeVisibleTailIfNeeded(visibleStreamIndex: Int) {
+        // When the user scrolls into the real tail, clear the banner.
+        guard !allPostIds.isEmpty else { return }
+        let tailStart = max(0, allPostIds.count - TopicDetailPaginationPolicy.liveSyncNearBottomRows)
+        guard visibleStreamIndex >= tailStart else { return }
+        guard loadedRangeEnd >= allPostIds.count else { return }
+        if pendingNewReplyCount != 0 || acknowledgedStreamCount != allPostIds.count {
+            pendingNewReplyCount = 0
+            acknowledgedStreamCount = allPostIds.count
+            notifyChanged()
+        }
     }
 
     /// Keep about one page ahead of the visible stream index loaded+parsed.

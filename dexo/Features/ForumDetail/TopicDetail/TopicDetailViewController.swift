@@ -48,6 +48,8 @@ final class TopicDetailViewController: ObservableViewController {
     var prefetchedImagePostIds = Set<Int>()
     var pendingSharedIssueTopicIds = Set<Int>()
     var cloudflareCompletionObservationToken: NSObjectProtocol?
+    var liveSyncTimer: Timer?
+    var appForegroundObserver: NSObjectProtocol?
 
     var pluginScope: PluginScope {
         PluginScope(
@@ -262,6 +264,34 @@ final class TopicDetailViewController: ObservableViewController {
         return button
     }()
 
+    lazy var newRepliesBanner: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "arrow.down")
+        config.imagePlacement = .leading
+        config.imagePadding = 8
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 14, weight: .semibold)
+            return outgoing
+        }
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isHidden = true
+        button.alpha = 0
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.18
+        button.layer.shadowOffset = CGSize(width: 0, height: 6)
+        button.layer.shadowRadius = 12
+        button.addAction(UIAction { [weak self] _ in
+            self?.handleNewRepliesBannerTapped()
+        }, for: .touchUpInside)
+        return button
+    }()
+
     lazy var jumpOverlay: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
@@ -343,6 +373,7 @@ final class TopicDetailViewController: ObservableViewController {
         view.addSubview(errorLabel)
         view.addSubview(bottomBar)
         view.addSubview(floatingReplyButton)
+        view.addSubview(newRepliesBanner)
         view.addSubview(topLoadingBar)
 
         bottomBar.delegate = self
@@ -374,6 +405,9 @@ final class TopicDetailViewController: ObservableViewController {
             floatingReplyButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
             floatingReplyButton.widthAnchor.constraint(equalToConstant: 56),
             floatingReplyButton.heightAnchor.constraint(equalToConstant: 56),
+
+            newRepliesBanner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            newRepliesBanner.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -12),
 
             topLoadingBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             topLoadingBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -414,6 +448,10 @@ final class TopicDetailViewController: ObservableViewController {
         isHandlingBackSwipeFallback = false
         syncOwningTabBarVisibility()
         bottomBar.refreshGestureRecognizers()
+        // Soft live sync when returning to an already-open topic (no full reload wipe).
+        if viewModel.isReady {
+            Task { await performLiveTopicSync(reason: "willAppear") }
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -426,12 +464,14 @@ final class TopicDetailViewController: ObservableViewController {
         updateVisibleReadingPosts()
         updateBottomBarProgress()
         syncOwningTabBarVisibility()
+        startLiveTopicSync()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         uninstallBackSwipeFallbackGesture()
         readingTracker.stop()
+        stopLiveTopicSync()
     }
 
     func syncOwningTabBarVisibility() {
@@ -445,6 +485,7 @@ final class TopicDetailViewController: ObservableViewController {
         // and must not cover the centered capsule — bring bar last.
         view.bringSubviewToFront(floatingReplyButton)
         view.bringSubviewToFront(bottomBar)
+        view.bringSubviewToFront(newRepliesBanner)
         // Reserve bottom space for the centered floor control and the floating reply affordance.
         let bottomInset: CGFloat = 56 + 12 + 32
         if tableView.contentInset.bottom != bottomInset {
@@ -553,6 +594,7 @@ final class TopicDetailViewController: ObservableViewController {
         // Settings observe → updateUI; keep swipe/long-press enablement in sync.
         bottomBar.refreshGestureRecognizers()
         updateBottomBarProgress()
+        updateNewRepliesBanner()
 
         // Show posts — all visible posts that have parsed blocks
         if viewModel.isReady {

@@ -319,4 +319,124 @@ extension TopicDetailViewController {
     func syncTopicToNotion(scope: NotionSyncScope, duplicate: NotionDuplicateAction = .skip) {
         coordinator.syncTopicToNotion(scope: scope, duplicate: duplicate)
     }
+
+    // MARK: - Live topic stream sync
+
+    func startLiveTopicSync() {
+        stopLiveTopicSync()
+        let timer = Timer(timeInterval: TopicDetailPaginationPolicy.liveSyncInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.performLiveTopicSync(reason: "timer")
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        liveSyncTimer = timer
+
+        if appForegroundObserver == nil {
+            appForegroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.performLiveTopicSync(reason: "foreground")
+                }
+            }
+        }
+
+        Task { await performLiveTopicSync(reason: "start") }
+    }
+
+    func stopLiveTopicSync() {
+        liveSyncTimer?.invalidate()
+        liveSyncTimer = nil
+        if let appForegroundObserver {
+            NotificationCenter.default.removeObserver(appForegroundObserver)
+            self.appForegroundObserver = nil
+        }
+    }
+
+    func isReadingNearBottomForLiveSync() -> Bool {
+        let total = tableView.numberOfRows(inSection: 0)
+        guard total > 0 else { return true }
+        let threshold = TopicDetailPaginationPolicy.liveSyncNearBottomRows
+        let maxVisible = tableView.indexPathsForVisibleRows?.map(\.row).max() ?? 0
+        return maxVisible >= total - threshold
+    }
+
+    @MainActor
+    func performLiveTopicSync(reason: String) async {
+        guard viewModel.isReady, !viewModel.isJumping else { return }
+        let autoAppend = isReadingNearBottomForLiveSync()
+        let pending = await viewModel.syncLiveTopicStream(
+            autoAppend: autoAppend,
+            containerWidth: view.bounds.width
+        )
+        updateNewRepliesBanner(forcePending: pending)
+        #if DEBUG
+        if pending > 0 {
+            print("[TopicDetail] live sync reason=\(reason) pending=\(pending) autoAppend=\(autoAppend)")
+        }
+        #endif
+    }
+
+    func updateNewRepliesBanner(forcePending: Int? = nil) {
+        let count = forcePending ?? viewModel.pendingNewReplyCount
+        let shouldShow = viewModel.isReady && count > 0
+        let title: String
+        if count <= 0 {
+            title = ""
+        } else if count == 1 {
+            title = String(localized: "topic_detail.new_replies.one", defaultValue: "1 条新回复")
+        } else {
+            title = String(
+                format: String(localized: "topic_detail.new_replies.many", defaultValue: "%lld 条新回复"),
+                locale: .current,
+                count
+            )
+        }
+
+        var config = newRepliesBanner.configuration ?? .filled()
+        config.title = title
+        config.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
+        newRepliesBanner.configuration = config
+
+        let currentlyVisible = !newRepliesBanner.isHidden && newRepliesBanner.alpha > 0.01
+        guard shouldShow != currentlyVisible else {
+            if shouldShow {
+                newRepliesBanner.isHidden = false
+                newRepliesBanner.alpha = 1
+            }
+            return
+        }
+
+        if shouldShow {
+            newRepliesBanner.isHidden = false
+            view.bringSubviewToFront(newRepliesBanner)
+            UIView.animate(withDuration: 0.22) {
+                self.newRepliesBanner.alpha = 1
+                self.newRepliesBanner.transform = .identity
+            }
+        } else {
+            UIView.animate(withDuration: 0.18, animations: {
+                self.newRepliesBanner.alpha = 0
+                self.newRepliesBanner.transform = CGAffineTransform(translationX: 0, y: 8)
+            }, completion: { _ in
+                self.newRepliesBanner.isHidden = true
+                self.newRepliesBanner.transform = .identity
+            })
+        }
+    }
+
+    func handleNewRepliesBannerTapped() {
+        Task { @MainActor in
+            let floor = await viewModel.consumePendingNewReplies(containerWidth: view.bounds.width)
+            updateNewRepliesBanner()
+            if let floor {
+                jumpToFloor(floor)
+            } else if viewModel.totalFloors > 0 {
+                jumpToFloor(viewModel.totalFloors)
+            }
+        }
+    }
 }
