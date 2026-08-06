@@ -10,6 +10,28 @@ enum DexoAppFontOverrideState {
     static var didExchangeItalicSystemFont = false
 }
 
+/// Thread-local guard: UIFont system APIs can re-enter our swizzle while resolving
+/// an app font (e.g. weight variant → size variant). Without this, the call chain
+/// `systemFont → AppSettings → systemFont` blows the stack (EXC_BAD_ACCESS code=2).
+private enum DexoFontResolveGuard {
+    private static let key = "dexo.font.resolve.depth"
+
+    static var isResolving: Bool {
+        currentDepth > 0
+    }
+
+    private static var currentDepth: Int {
+        get { Thread.current.threadDictionary[key] as? Int ?? 0 }
+        set { Thread.current.threadDictionary[key] = newValue }
+    }
+
+    static func withResolving<T>(_ body: () -> T) -> T {
+        currentDepth += 1
+        defer { currentDepth -= 1 }
+        return body()
+    }
+}
+
 enum DexoAppFontAssociatedKeys {
     static var sourcePointSize: UInt8 = 0
     static var baseInterfaceFont: UInt8 = 0
@@ -75,6 +97,8 @@ extension UIFont {
     }
 
     static func dexoOriginalSystemFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
+        // After install, ONLY call through swapped `dexo_*` selectors (originals).
+        // Calling `UIFont.systemFont` here re-enters our override and recurses.
         if DexoAppFontOverrideState.didExchangeWeightedSystemFont {
             return UIFont.dexo_systemFont(ofSize: pointSize, weight: weight.rawValue)
         }
@@ -86,6 +110,12 @@ extension UIFont {
             return UIFont.dexo_systemFont(ofSize: pointSize)
         }
         return UIFont.systemFont(ofSize: pointSize, weight: weight)
+    }
+
+    private static func shouldApplyAppInterfaceFontOverride() -> Bool {
+        DexoAppFontOverrideState.didInstall
+            && !DexoFontResolveGuard.isResolving
+            && AppSettings.isSharedAvailable
     }
 
     var dexoDetectedWeight: UIFont.Weight {
@@ -109,42 +139,62 @@ extension UIFont {
     }
 
     @objc class func dexo_systemFont(ofSize pointSize: CGFloat) -> UIFont {
+        // Swapped: this body runs for UIFont.systemFont(ofSize:).
+        // `dexo_systemFont` selector now points at the real UIKit implementation.
         let original = UIFont.dexo_systemFont(ofSize: pointSize)
-        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+        }
     }
 
     @objc(dexo_systemFontOfSize:weight:)
     class func dexo_systemFont(ofSize pointSize: CGFloat, weight rawWeight: CGFloat) -> UIFont {
         let weight = UIFont.Weight(rawValue: rawWeight)
         let original = UIFont.dexo_systemFont(ofSize: pointSize, weight: rawWeight)
-        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: weight, fallback: original)
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: weight, fallback: original)
+        }
     }
 
     @objc class func dexo_boldSystemFont(ofSize pointSize: CGFloat) -> UIFont {
         let original = UIFont.dexo_boldSystemFont(ofSize: pointSize)
-        return AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .bold, fallback: original)
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .bold, fallback: original)
+        }
     }
 
     @objc class func dexo_italicSystemFont(ofSize pointSize: CGFloat) -> UIFont {
         let original = UIFont.dexo_italicSystemFont(ofSize: pointSize)
-        let font = AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
-        guard let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) else {
-            return font
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            let font = AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+            guard let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) else {
+                return font
+            }
+            return UIFont(descriptor: descriptor, size: font.pointSize)
+                .dexoMarkAppFontSourcePointSize(pointSize)
         }
-        return UIFont(descriptor: descriptor, size: font.pointSize)
-            .dexoMarkAppFontSourcePointSize(pointSize)
     }
 
     @objc(dexo_preferredFontForTextStyle:)
     class func dexo_preferredFont(forTextStyle style: String) -> UIFont {
         let original = UIFont.dexo_preferredFont(forTextStyle: style)
-        return AppSettings.shared.appInterfaceFont(matching: original)
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            AppSettings.shared.appInterfaceFont(matching: original)
+        }
     }
 
     @objc(dexo_preferredFontForTextStyle:compatibleWithTraitCollection:)
     class func dexo_preferredFont(forTextStyle style: String, compatibleWith traitCollection: UITraitCollection?) -> UIFont {
         let original = UIFont.dexo_preferredFont(forTextStyle: style, compatibleWith: traitCollection)
-        return AppSettings.shared.appInterfaceFont(matching: original)
+        guard shouldApplyAppInterfaceFontOverride() else { return original }
+        return DexoFontResolveGuard.withResolving {
+            AppSettings.shared.appInterfaceFont(matching: original)
+        }
     }
 
     func applying(weight: UIFont.Weight) -> UIFont {

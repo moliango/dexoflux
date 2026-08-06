@@ -3,7 +3,20 @@ import CoreText
 import UIKit
 
 final class AppSettings: DexoObservableObject {
-    static let shared = AppSettings()
+    /// Font swizzles read this without touching `shared` during singleton creation.
+    nonisolated(unsafe) private static var isCreatingShared = false
+    nonisolated(unsafe) private static var sharedInstanceHint: AppSettings?
+
+    /// True only after `shared` finished initializing.
+    nonisolated static var isSharedAvailable: Bool {
+        !isCreatingShared && sharedInstanceHint != nil
+    }
+
+    static let shared: AppSettings = {
+        isCreatingShared = true
+        defer { isCreatingShared = false }
+        return AppSettings()
+    }()
     static let topicTitleReferencePointSize: CGFloat = 15
     static let minimumFontScalePercent = 30
     static let maximumFontScalePercent = 150
@@ -25,6 +38,9 @@ final class AppSettings: DexoObservableObject {
         migrateLegacyCustomContentFontIfNeeded()
         registerStoredContentFonts()
         applyLanguage()
+        // Publish only after init side-effects finish so UIFont overrides never
+        // re-enter a half-built singleton (stack overflow / EXC_BAD_ACCESS).
+        Self.sharedInstanceHint = self
     }
 
     static func normalizedFontScalePercent(_ value: Int) -> Int {
