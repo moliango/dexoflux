@@ -366,9 +366,14 @@ extension AppSettings {
     }
 
     var themeStyle: ThemeStyle {
-        get { ThemeStyle(rawValue: defaults.integer(forKey: "themeStyle")) ?? .systemDefault }
+        // Read from cross-thread cache. DiffableDataSource applies on
+        // `com.apple.uikit.datasource.diffing` and used to call
+        // defaults.integer(forKey:) via MainActor AppSettings — recursive
+        // executor/settings re-entry → EXC_BAD_ACCESS code=2.
+        get { AppSettingsRuntimeCache.themeStyle }
         set {
             defaults.set(newValue.rawValue, forKey: "themeStyle")
+            AppSettingsRuntimeCache.update { $0.themeStyleRaw = newValue.rawValue }
             applyAppearance()
             notifyChanged()
         }

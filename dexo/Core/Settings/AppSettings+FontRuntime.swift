@@ -115,7 +115,7 @@ extension UIFont {
     private static func shouldApplyAppInterfaceFontOverride() -> Bool {
         DexoAppFontOverrideState.didInstall
             && !DexoFontResolveGuard.isResolving
-            && AppSettings.isSharedAvailable
+            && AppSettingsRuntimeCache.hasSeed
     }
 
     var dexoDetectedWeight: UIFont.Weight {
@@ -144,7 +144,7 @@ extension UIFont {
         let original = UIFont.dexo_systemFont(ofSize: pointSize)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+            AppSettingsRuntimeCache.interfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
         }
     }
 
@@ -154,7 +154,7 @@ extension UIFont {
         let original = UIFont.dexo_systemFont(ofSize: pointSize, weight: rawWeight)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: weight, fallback: original)
+            AppSettingsRuntimeCache.interfaceFont(ofSize: pointSize, weight: weight, fallback: original)
         }
     }
 
@@ -162,7 +162,7 @@ extension UIFont {
         let original = UIFont.dexo_boldSystemFont(ofSize: pointSize)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .bold, fallback: original)
+            AppSettingsRuntimeCache.interfaceFont(ofSize: pointSize, weight: .bold, fallback: original)
         }
     }
 
@@ -170,7 +170,7 @@ extension UIFont {
         let original = UIFont.dexo_italicSystemFont(ofSize: pointSize)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            let font = AppSettings.shared.appInterfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
+            let font = AppSettingsRuntimeCache.interfaceFont(ofSize: pointSize, weight: .regular, fallback: original)
             guard let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) else {
                 return font
             }
@@ -184,7 +184,7 @@ extension UIFont {
         let original = UIFont.dexo_preferredFont(forTextStyle: style)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            AppSettings.shared.appInterfaceFont(matching: original)
+            AppSettingsRuntimeCache.interfaceFont(matching: original)
         }
     }
 
@@ -193,7 +193,7 @@ extension UIFont {
         let original = UIFont.dexo_preferredFont(forTextStyle: style, compatibleWith: traitCollection)
         guard shouldApplyAppInterfaceFontOverride() else { return original }
         return DexoFontResolveGuard.withResolving {
-            AppSettings.shared.appInterfaceFont(matching: original)
+            AppSettingsRuntimeCache.interfaceFont(matching: original)
         }
     }
 
