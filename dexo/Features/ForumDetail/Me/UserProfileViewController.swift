@@ -917,7 +917,7 @@ final class UserProfileViewController: ObservableViewController {
 
     private func openTopic(id: Int, floor: Int?) {
         guard id > 0 else { return }
-        let detail = TopicDetailViewController(api: api, topicId: id, initialFloor: floor)
+        let detail = TopicDetailFactory.make(api: api, topicId: id, initialFloor: floor)
         navigationController?.pushViewController(detail, animated: true)
     }
 
@@ -933,7 +933,7 @@ final class UserProfileViewController: ObservableViewController {
 
     @objc private func openSummaryTopic(_ sender: UIControl) {
         guard sender.tag > 0 else { return }
-        let detailVC = TopicDetailViewController(api: api, topicId: sender.tag)
+        let detailVC = TopicDetailFactory.make(api: api, topicId: sender.tag)
         navigationController?.pushViewController(detailVC, animated: true)
     }
 

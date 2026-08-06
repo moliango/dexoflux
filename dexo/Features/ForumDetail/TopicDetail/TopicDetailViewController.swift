@@ -48,6 +48,7 @@ final class TopicDetailViewController: ObservableViewController {
     var prefetchedImagePostIds = Set<Int>()
     var pendingSharedIssueTopicIds = Set<Int>()
     var cloudflareCompletionObservationToken: NSObjectProtocol?
+    var isRecoveringAfterCloudflare = false
     var liveSyncTimer: Timer?
     var appForegroundObserver: NSObjectProtocol?
 
@@ -720,6 +721,14 @@ final class TopicDetailViewController: ObservableViewController {
         guard let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String,
               ForumInstance.normalizedBaseURL(verifiedBaseURL) == ForumInstance.normalizedBaseURL(baseURL)
         else { return }
+        guard !isRecoveringAfterCloudflare else { return }
+        isRecoveringAfterCloudflare = true
+
+        // Unstick immediately (CF sheet / jump overlay can leave the page non-interactive).
+        view.isUserInteractionEnabled = true
+        tableView.isUserInteractionEnabled = true
+        tableView.isScrollEnabled = true
+        jumpOverlay.isHidden = true
 
         // Flip CF error copy immediately so dismiss doesn't leave "still need to verify".
         viewModel.errorMessage = String(
@@ -751,7 +760,12 @@ final class TopicDetailViewController: ObservableViewController {
             )
 
             await MainActor.run {
+                self.isRecoveringAfterCloudflare = false
                 self.loadingSkeletonView.setSkeletonActive(false, animated: true)
+                self.view.isUserInteractionEnabled = true
+                self.tableView.isUserInteractionEnabled = true
+                self.tableView.isScrollEnabled = true
+                self.jumpOverlay.isHidden = true
                 if self.viewModel.isReady {
                     let ids = self.viewModel.posts.compactMap {
                         self.viewModel.parsedBlocks[$0.id] == nil ? nil : $0.id

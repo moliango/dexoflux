@@ -616,7 +616,12 @@ final class TopicDetailViewModel: DexoObservableObject {
                     notifyChanged()
                     return
                 }
-                guard await parseAndStore(posts: postsToRender, generation: generation) else { return }
+                guard await parseAndStore(posts: postsToRender, generation: generation) else {
+                    // Generation raced (e.g. user left/re-entered). Never leave isLoading stuck.
+                    isLoading = false
+                    notifyChanged()
+                    return
+                }
                 isReady = true
                 isLoading = false
                 errorMessage = nil

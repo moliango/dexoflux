@@ -477,7 +477,7 @@ extension SettingsCategoryViewController {
             else { return }
             let scheme = url.scheme ?? "https"
             let api = DiscourseAPI(baseURL: "\(scheme)://\(host)")
-            let vc = TopicDetailViewController(api: api, topicId: topicId)
+            let vc = TopicDetailFactory.make(api: api, topicId: topicId)
             self.navigationController?.pushViewController(vc, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))

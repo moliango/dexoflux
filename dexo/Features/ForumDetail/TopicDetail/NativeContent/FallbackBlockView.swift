@@ -152,6 +152,10 @@ final class FallbackBlockView: UIView {
                 cell.requestHeightReconciliation()
                 return
             }
+            if let cell = v as? WeChatChatPostCell {
+                cell.requestHeightReconciliation()
+                return
+            }
             if let tableView = v as? UITableView {
                 tableView.dexo_invalidateSelfSizingRows()
                 return

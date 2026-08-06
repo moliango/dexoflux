@@ -230,7 +230,7 @@ extension MessagesViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let topic = viewModel.messages[indexPath.row]
-        let detail = TopicDetailViewController(api: api, topicId: topic.id)
+        let detail = TopicDetailFactory.make(api: api, topicId: topic.id)
         navigationController?.pushViewController(detail, animated: true)
     }
 }

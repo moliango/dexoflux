@@ -5,7 +5,7 @@ import UIKit
 /// Separate from `TopicCell` / Xiaohongshu grid — same integration pattern as grid layout.
 final class WeChatTopicListCell: UITableViewCell {
     static let reuseIdentifier = "WeChatTopicListCell"
-    static let estimatedHeight: CGFloat = 72
+    static let estimatedHeight: CGFloat = 90
 
     private var currentAvatarURL: URL?
     private var renderedTitle: String?
@@ -26,7 +26,8 @@ final class WeChatTopicListCell: UITableViewCell {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16, weight: .medium)
-        label.numberOfLines = 1
+        // Forum titles are long; 2 lines keeps WeChat density while showing more text.
+        label.numberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -81,6 +82,27 @@ final class WeChatTopicListCell: UITableViewCell {
         return stack
     }()
 
+    /// Time + reply count on the trailing edge; keeps title column as wide as possible.
+    private let metaColumn: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .trailing
+        stack.distribution = .fill
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentHuggingPriority(.required, for: .horizontal)
+        stack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return stack
+    }()
+
+    private let metaSpacer: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return view
+    }()
+
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupUI()
@@ -112,11 +134,13 @@ final class WeChatTopicListCell: UITableViewCell {
 
         textColumn.addArrangedSubview(titleLabel)
         textColumn.addArrangedSubview(subtitleLabel)
+        metaColumn.addArrangedSubview(timeLabel)
+        metaColumn.addArrangedSubview(metaSpacer)
+        metaColumn.addArrangedSubview(replyLabel)
 
         contentView.addSubview(avatarImageView)
         contentView.addSubview(textColumn)
-        contentView.addSubview(timeLabel)
-        contentView.addSubview(replyLabel)
+        contentView.addSubview(metaColumn)
         contentView.addSubview(separator)
 
         NSLayoutConstraint.activate([
@@ -127,21 +151,19 @@ final class WeChatTopicListCell: UITableViewCell {
 
             textColumn.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 12),
             textColumn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            textColumn.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -10),
+            textColumn.trailingAnchor.constraint(equalTo: metaColumn.leadingAnchor, constant: -10),
             textColumn.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
 
-            timeLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-
-            replyLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
-            replyLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            metaColumn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            metaColumn.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            metaColumn.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
 
             separator.leadingAnchor.constraint(equalTo: textColumn.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             separator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             separator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
 
-            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 68),
+            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 76),
         ])
     }
 

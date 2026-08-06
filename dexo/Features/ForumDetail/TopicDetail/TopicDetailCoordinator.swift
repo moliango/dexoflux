@@ -535,7 +535,7 @@ final class TopicDetailCoordinator {
                 }
                 return
             }
-            let detailVC = TopicDetailViewController(
+            let detailVC = TopicDetailFactory.make(
                 api: api,
                 topicId: topicId,
                 initialFloor: postNumber,

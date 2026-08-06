@@ -286,7 +286,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
         tabBarViewController.selectedIndex = 0
         navigationController.pushViewController(
-            TopicDetailViewController(
+            TopicDetailFactory.make(
                 api: api,
                 topicId: topicId,
                 initialFloor: route.postNumber,
@@ -306,7 +306,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             // still push a fresh VC for simplicity and correct floor
         }
         navigationController.pushViewController(
-            TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber),
+            TopicDetailFactory.make(api: api, topicId: topicId, initialFloor: postNumber),
             animated: true
         )
     }
@@ -701,10 +701,50 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         suppressCloudflareShieldTemporarily()
         setCloudflareShieldButtonVisible(false, animated: true)
         api.resetSession()
+        // Always clear presentation latch + dismiss leftover CF sheet so UI is not touch-blocked.
+        dismissCloudflareSheetIfNeeded(animated: true)
+        isPresentingCloudflareVerification = false
         // CF sheet is presented by this container, so Home never gets viewWillAppear
         // and a scroll-hidden / animation-stuck tab bar can stay gone after 出盾.
         restoreTabBarAfterCloudflareInteraction()
+        // Unstick interaction on the whole container tree (transparent blockers / stuck flags).
+        reenableInteractionAfterCloudflare()
         refreshVisiblePageAfterCloudflareVerification()
+    }
+
+    private func dismissCloudflareSheetIfNeeded(animated: Bool) {
+        var presenter: UIViewController = self
+        while let presented = presenter.presentedViewController {
+            if let nav = presented as? UINavigationController,
+               nav.viewControllers.contains(where: { $0 is CloudflareVerificationViewController }) {
+                presented.dismiss(animated: animated)
+                return
+            }
+            if presented is CloudflareVerificationViewController {
+                presented.dismiss(animated: animated)
+                return
+            }
+            presenter = presented
+        }
+    }
+
+    private func reenableInteractionAfterCloudflare() {
+        view.isUserInteractionEnabled = true
+        children.forEach { child in
+            child.view.isUserInteractionEnabled = true
+            if let nav = child as? UINavigationController {
+                nav.visibleViewController?.view.isUserInteractionEnabled = true
+            }
+            if let tab = child as? ForumTabBarController {
+                tab.view.isUserInteractionEnabled = true
+                tab.tabBar.isUserInteractionEnabled = true
+                (tab.selectedViewController as? UINavigationController)?.visibleViewController?.view.isUserInteractionEnabled = true
+            }
+        }
+        // Auth sync overlay must never stay up after CF (full-screen touch sink).
+        if !authSyncOverlayView.isHidden {
+            hideAuthSyncOverlay(animated: false)
+        }
     }
 
     private func refreshVisiblePageAfterCloudflareVerification() {
@@ -715,9 +755,23 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         switch visible {
         case is HomeViewController:
             break
-        case is TopicDetailViewController:
-            // Topic Detail observes the completion notification directly.
-            break
+        case let topic as TopicDetailViewController:
+            // Backup path: observer may miss if VC was mid-transition during sheet dismiss.
+            topic.handleCloudflareVerificationCompleted(
+                Notification(
+                    name: DiscourseAPI.cloudflareVerificationCompletedNotification,
+                    object: nil,
+                    userInfo: [DiscourseAPI.cloudflareBaseURLUserInfoKey: forum.baseURL]
+                )
+            )
+        case let wechat as WeChatTopicDetailViewController:
+            wechat.handleCloudflareVerificationCompleted(
+                Notification(
+                    name: DiscourseAPI.cloudflareVerificationCompletedNotification,
+                    object: nil,
+                    userInfo: [DiscourseAPI.cloudflareBaseURLUserInfoKey: forum.baseURL]
+                )
+            )
         case let me as MeViewController:
             me.refreshAfterCloudflareVerification()
         case let search as SearchViewController:

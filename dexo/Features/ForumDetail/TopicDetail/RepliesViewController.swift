@@ -284,7 +284,7 @@ extension RepliesViewController: PostCellDelegate {
     }
 
     func postCell(didTapQuotedPostNumber postNumber: Int) {
-        let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
+        let detailVC = TopicDetailFactory.make(api: api, topicId: topicId, initialFloor: postNumber)
         openInternalViewController(detailVC)
     }
 
@@ -358,7 +358,7 @@ extension RepliesViewController: PostCellDelegate {
     private func openInternalDestination(_ destination: ForumInternalLinkDestination) {
         switch destination {
         case let .topic(topicId, postNumber):
-            let detailVC = TopicDetailViewController(api: api, topicId: topicId, initialFloor: postNumber)
+            let detailVC = TopicDetailFactory.make(api: api, topicId: topicId, initialFloor: postNumber)
             openInternalViewController(detailVC)
         case let .category(slug, categoryId):
             let category = DiscourseCategory(id: categoryId, name: slug, slug: slug)

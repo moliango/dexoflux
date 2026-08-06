@@ -531,6 +531,8 @@ private final class ObsidianCalloutView: UIView {
         guard updateTable else { return }
         if let cell = findPostNativeCell() {
             cell.requestHeightReconciliation()
+        } else if let cell = findWeChatChatPostCell() {
+            cell.requestHeightReconciliation()
         } else {
             findTableView()?.dexo_invalidateSelfSizingRows()
         }
@@ -540,6 +542,15 @@ private final class ObsidianCalloutView: UIView {
         var responder: UIResponder? = self
         while let next = responder?.next {
             if let cell = next as? PostNativeCell { return cell }
+            responder = next
+        }
+        return nil
+    }
+
+    private func findWeChatChatPostCell() -> WeChatChatPostCell? {
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let cell = next as? WeChatChatPostCell { return cell }
             responder = next
         }
         return nil

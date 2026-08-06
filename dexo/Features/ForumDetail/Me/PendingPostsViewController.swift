@@ -74,7 +74,7 @@ final class PendingPostsViewController: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         let item = items[indexPath.row]
         if let topicId = item.topicId {
-            let detail = TopicDetailViewController(api: api, topicId: topicId)
+            let detail = TopicDetailFactory.make(api: api, topicId: topicId)
             navigationController?.pushViewController(detail, animated: true)
         } else {
             let alert = UIAlertController(

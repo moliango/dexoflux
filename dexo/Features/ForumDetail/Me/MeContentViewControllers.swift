@@ -423,7 +423,7 @@ extension PagedTopicListViewController: UITableViewDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         let topic = viewModel.topics[indexPath.row]
         navigationController?.pushViewController(
-            TopicDetailViewController(api: api, topicId: topic.id),
+            TopicDetailFactory.make(api: api, topicId: topic.id),
             animated: true
         )
     }

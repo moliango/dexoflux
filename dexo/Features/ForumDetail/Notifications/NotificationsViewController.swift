@@ -251,7 +251,7 @@ final class NotificationsViewController: ObservableViewController {
                 onTopicSelected(topicId, postNumber, postId)
             }
         } else {
-            let detailVC = TopicDetailViewController(
+            let detailVC = TopicDetailFactory.make(
                 api: api,
                 topicId: topicId,
                 initialFloor: postNumber,

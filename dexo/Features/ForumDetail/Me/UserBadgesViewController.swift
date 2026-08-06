@@ -153,7 +153,7 @@ extension UserBadgesViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard let topicId = sections[indexPath.section].1[indexPath.row].topicId else { return }
-        let detail = TopicDetailViewController(api: api, topicId: topicId)
+        let detail = TopicDetailFactory.make(api: api, topicId: topicId)
         navigationController?.pushViewController(detail, animated: true)
     }
 }

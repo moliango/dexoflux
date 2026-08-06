@@ -257,7 +257,13 @@ extension HomeViewController {
     func shouldReloadTopicsAfterCloudflareVerification() -> Bool {
         // Full-list CF block (empty or error banner). Pagination is handled separately.
         if viewModel.isBlockedByCloudflare { return true }
-        if viewModel.topics.isEmpty, viewModel.errorMessage != nil { return true }
+        if viewModel.topics.isEmpty { return true }
+        if let message = viewModel.errorMessage?.lowercased(),
+           message.contains("cloudflare") || message.contains("验证") {
+            return true
+        }
+        // Still loading when CF finished — force a clean reload so the list unsticks.
+        if viewModel.isLoading { return true }
         return false
     }
 
@@ -316,7 +322,7 @@ extension HomeViewController {
             composer.onTopicCreated = { [weak self] topicId in
                 guard let self else { return }
                 self.reloadTopics()
-                let detailVC = TopicDetailViewController(api: self.api, topicId: topicId)
+                let detailVC = TopicDetailFactory.make(api: self.api, topicId: topicId)
                 self.navigationController?.pushViewController(detailVC, animated: true)
             }
             let nav = UINavigationController(rootViewController: composer)

@@ -172,7 +172,7 @@ extension HomeViewController {
         let topic = viewModel.topics.first(where: { $0.id == topicId })
         // Resume at first unread floor when list has last_read (Phase 1).
         let resumeFloor = Self.resumeReadingFloor(for: topic)
-        let detailVC = TopicDetailViewController(
+        let detailVC = TopicDetailFactory.make(
             api: api,
             topicId: topicId,
             initialFloor: resumeFloor,

@@ -20452,6 +20452,17 @@
         }
       }
     },
+    "settings.theme.wechat" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "微信风格"
+          }
+        }
+      }
+    },
     "settings.theme.xiaohongshu" : {
       "localizations" : {
         "en" : {
@@ -22035,6 +22046,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽"
+          }
+        }
+      }
+    },
+    "topic_detail.new_replies.many" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld 条新回复"
+          }
+        }
+      }
+    },
+    "topic_detail.new_replies.one" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1 条新回复"
           }
         }
       }
@@ -24914,6 +24947,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待登錄…"
+          }
+        }
+      }
+    },
+    "wechat_chat.bookmark" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收藏"
+          }
+        }
+      }
+    },
+    "wechat_chat.empty_post" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "（无文本内容）"
+          }
+        }
+      }
+    },
+    "wechat_chat.input_placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复…"
+          }
+        }
+      }
+    },
+    "wechat_chat.like" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点赞"
+          }
+        }
+      }
+    },
+    "wechat_chat.reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复"
+          }
+        }
+      }
+    },
+    "wechat_chat.unbookmark" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消收藏"
+          }
+        }
+      }
+    },
+    "wechat_chat.unlike" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消点赞"
           }
         }
       }

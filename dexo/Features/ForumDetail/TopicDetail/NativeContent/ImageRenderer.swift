@@ -220,6 +220,14 @@ final class TappableImageContainer: UIView {
                 cell.requestHeightReconciliation()
                 return
             }
+            if let cell = current as? WeChatChatPostCell {
+                cell.requestHeightReconciliation()
+                return
+            }
+            if let tableView = current as? UITableView {
+                tableView.dexo_invalidateSelfSizingRows()
+                return
+            }
             view = current.superview
         }
     }

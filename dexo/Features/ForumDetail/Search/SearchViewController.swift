@@ -936,7 +936,7 @@ extension SearchViewController: UITableViewDelegate {
         guard let postId = dataSource.itemIdentifier(for: indexPath),
               let post = viewModel.searchResults.first(where: { $0.id == postId })
         else { return }
-        let detailVC = TopicDetailViewController(api: api, topicId: post.topicId)
+        let detailVC = TopicDetailFactory.make(api: api, topicId: post.topicId)
         navigationController?.pushViewController(detailVC, animated: true)
     }
 

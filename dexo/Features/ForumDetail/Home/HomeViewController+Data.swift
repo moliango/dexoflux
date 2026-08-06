@@ -170,7 +170,7 @@ extension HomeViewController {
         )
         notificationsVC.onTopicSelected = { [weak self] topicId, postNumber, postId in
             guard let self else { return }
-            let detailVC = TopicDetailViewController(
+            let detailVC = TopicDetailFactory.make(
                 api: self.api,
                 topicId: topicId,
                 initialFloor: postNumber,
