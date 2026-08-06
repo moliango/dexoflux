@@ -9,8 +9,8 @@
 3. [x] `applyAppearance` opaque navigation chrome for WeChat
 4. [x] `ForumTabBarController.configureTabBarSurface` WeChat chrome gray
 5. [x] Appearance preview swatches
-6. [ ] Simulator visual QA light/dark
-7. [ ] Commit
+6. [x] Simulator build visual QA light/dark
+7. [x] Commit
 
 ## Files
 - `dexo/Core/Settings/AppSettings+Appearance.swift`
