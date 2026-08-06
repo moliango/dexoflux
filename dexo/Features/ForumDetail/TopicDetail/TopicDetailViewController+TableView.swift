@@ -110,6 +110,7 @@ extension TopicDetailViewController: UITableViewDelegate {
         let streamIndex = displayedPostId.flatMap { id in viewModel.allPostIds.firstIndex(of: id) }
         if let streamIndex {
             let width = view.bounds.width
+            viewModel.acknowledgeVisibleTailIfNeeded(visibleStreamIndex: streamIndex)
             Task {
                 await viewModel.ensureForwardWindowReady(
                     visibleStreamIndex: streamIndex,
