@@ -191,12 +191,44 @@ final class MiniProgramHostViewController: UIViewController {
     }
 
     @objc private func handleSwipeBack() {
-        // Dismiss host — safe because it's a modal.
+        // Prefer goBack / nav pop first; only close host if no history remains.
+        if tryGoBackInContent() {
+            return
+        }
+        // No history — close host.
         if let presenter = presentingViewController {
             presenter.dismiss(animated: true)
         } else if let nav = navigationController {
             nav.popViewController(animated: true)
         }
+    }
+
+    /// Try to go back in embedded content (web history / nav stack).
+    /// Returns true if a back action was performed.
+    private func tryGoBackInContent() -> Bool {
+        var stack: [UIViewController] = [content]
+        var visited = Set<ObjectIdentifier>()
+        while let vc = stack.popLast() {
+            let id = ObjectIdentifier(vc)
+            guard visited.insert(id).inserted else { continue }
+            if let browser = vc as? InAppBrowserViewController {
+                if browser.goBackIfPossible() {
+                    return true
+                }
+            }
+            if let nav = vc as? UINavigationController {
+                if nav.viewControllers.count > 1 {
+                    nav.popViewController(animated: true)
+                    return true
+                }
+                stack.append(contentsOf: nav.viewControllers)
+            }
+            if let tab = vc as? UITabBarController {
+                stack.append(contentsOf: tab.viewControllers ?? [])
+            }
+            stack.append(contentsOf: vc.children)
+        }
+        return false
     }
 
     // MARK: - Capsule icon

@@ -487,6 +487,14 @@ final class InAppBrowserViewController: UIViewController {
     }
 
     @objc private func backTapped() { webView.goBack() }
+
+    /// Go back in web history if possible; return true if a back was performed.
+    @discardableResult
+    func goBackIfPossible() -> Bool {
+        guard webView.canGoBack else { return false }
+        webView.goBack()
+        return true
+    }
     @objc private func forwardTapped() { webView.goForward() }
     @objc private func reloadTapped() {
         if webView.isLoading {
