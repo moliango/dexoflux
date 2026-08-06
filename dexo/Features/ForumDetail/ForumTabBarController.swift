@@ -180,8 +180,17 @@ final class ForumTabBarController: UITabBarController {
         view.backgroundColor = themeStyle.topicListBackgroundColor
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = themeStyle == .systemDefault ? .systemBackground : themeStyle.contentBackgroundColor
-        appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
+        // WeChat: solid gray chrome; other themed styles use content surface; default uses system.
+        if themeStyle.prefersOpaqueChrome {
+            appearance.backgroundColor = themeStyle.chromeBackgroundColor
+            appearance.shadowColor = UIColor.separator.withAlphaComponent(0.45)
+        } else if themeStyle == .systemDefault {
+            appearance.backgroundColor = .systemBackground
+            appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
+        } else {
+            appearance.backgroundColor = themeStyle.contentBackgroundColor
+            appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
+        }
         let normalTitleAttributes: [NSAttributedString.Key: Any] = [
             .font: settings.tabBarItemFont(selected: false),
             .foregroundColor: UIColor.secondaryLabel,

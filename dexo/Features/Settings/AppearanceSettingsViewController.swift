@@ -1122,6 +1122,7 @@ extension AppSettings.ThemeStyle {
         case .eyeCare: return UIColor(red: 0.24, green: 0.52, blue: 0.32, alpha: 1)
         case .xiaohongshu: return UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1)
         case .telegram: return UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1)
+        case .weChat: return UIColor(red: 0.027, green: 0.757, blue: 0.376, alpha: 1)
         }
     }
 
@@ -1131,6 +1132,7 @@ extension AppSettings.ThemeStyle {
         case .eyeCare: return UIColor(red: 0.93, green: 0.98, blue: 0.88, alpha: 1)
         case .xiaohongshu: return UIColor(red: 1.0, green: 0.94, blue: 0.95, alpha: 1)
         case .telegram: return UIColor(red: 0.91, green: 0.97, blue: 1.0, alpha: 1)
+        case .weChat: return UIColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1)
         }
     }
 
@@ -1159,6 +1161,12 @@ extension AppSettings.ThemeStyle {
                 UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1),
                 UIColor(red: 0.0, green: 0.64, blue: 0.88, alpha: 1),
                 UIColor(red: 0.22, green: 0.44, blue: 0.76, alpha: 1),
+            ]
+        case .weChat:
+            return [
+                UIColor(red: 0.027, green: 0.757, blue: 0.376, alpha: 1),
+                UIColor(red: 0.10, green: 0.64, blue: 0.62, alpha: 1),
+                UIColor(red: 0.98, green: 0.62, blue: 0.15, alpha: 1),
             ]
         }
     }

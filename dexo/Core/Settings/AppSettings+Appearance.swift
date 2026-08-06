@@ -77,6 +77,8 @@ extension AppSettings {
         case eyeCare = 1
         case xiaohongshu = 2
         case telegram = 3
+        /// WeChat-inspired green system: colors + denser opaque chrome (option B).
+        case weChat = 4
 
         var title: String {
             switch self {
@@ -84,6 +86,24 @@ extension AppSettings {
             case .eyeCare: return String(localized: "settings.theme.eye_care")
             case .xiaohongshu: return String(localized: "settings.theme.xiaohongshu")
             case .telegram: return String(localized: "settings.theme.telegram")
+            case .weChat: return String(localized: "settings.theme.wechat", defaultValue: "微信风格")
+            }
+        }
+
+        /// Preferred continuous corner radius for cards/chips under this theme.
+        var chromeCornerRadius: CGFloat {
+            switch self {
+            case .weChat: return 10
+            case .xiaohongshu: return 14
+            case .systemDefault, .eyeCare, .telegram: return 12
+            }
+        }
+
+        /// WeChat uses fully opaque tab/nav bars (less iOS blur glass).
+        var prefersOpaqueChrome: Bool {
+            switch self {
+            case .weChat: return true
+            case .systemDefault, .eyeCare, .xiaohongshu, .telegram: return false
             }
         }
 
@@ -93,6 +113,8 @@ extension AppSettings {
             case .eyeCare: return UIColor(red: 0.24, green: 0.55, blue: 0.34, alpha: 1)
             case .xiaohongshu: return UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1)
             case .telegram: return UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1)
+            // Official-ish WeChat green #07C160
+            case .weChat: return UIColor(red: 0.027, green: 0.757, blue: 0.376, alpha: 1)
             }
         }
 
@@ -108,6 +130,12 @@ extension AppSettings {
                 }
             case .eyeCare, .telegram:
                 return contentBackgroundColor
+            case .weChat:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+                        : UIColor.white
+                }
             }
         }
 
@@ -117,6 +145,9 @@ extension AppSettings {
                 return .systemGroupedBackground
             case .eyeCare, .xiaohongshu, .telegram:
                 return mutedContentBackgroundColor
+            case .weChat:
+                // WeChat list is slightly gray behind white cells.
+                return mutedContentBackgroundColor
             }
         }
 
@@ -124,7 +155,7 @@ extension AppSettings {
             switch self {
             case .systemDefault:
                 return .secondarySystemGroupedBackground
-            case .eyeCare, .xiaohongshu, .telegram:
+            case .eyeCare, .xiaohongshu, .telegram, .weChat:
                 return mutedContentBackgroundColor
             }
         }
@@ -132,14 +163,14 @@ extension AppSettings {
         var topicCountForegroundColor: UIColor {
             switch self {
             case .systemDefault: return .secondaryLabel
-            case .eyeCare, .xiaohongshu, .telegram: return accentColor
+            case .eyeCare, .xiaohongshu, .telegram, .weChat: return accentColor
             }
         }
 
         var topicCountBackgroundColor: UIColor {
             switch self {
             case .systemDefault: return .tertiarySystemFill
-            case .eyeCare, .xiaohongshu, .telegram: return accentColor.withAlphaComponent(0.12)
+            case .eyeCare, .xiaohongshu, .telegram, .weChat: return accentColor.withAlphaComponent(0.12)
             }
         }
 
@@ -149,6 +180,7 @@ extension AppSettings {
             case .eyeCare: return UIColor(red: 0.72, green: 0.47, blue: 0.18, alpha: 1)
             case .xiaohongshu: return UIColor(red: 1.0, green: 0.34, blue: 0.40, alpha: 1)
             case .telegram: return UIColor(red: 0.0, green: 0.56, blue: 0.86, alpha: 1)
+            case .weChat: return UIColor(red: 0.98, green: 0.62, blue: 0.15, alpha: 1) // warm amber accent
             }
         }
 
@@ -190,6 +222,12 @@ extension AppSettings {
                         ? UIColor(red: 0.08, green: 0.13, blue: 0.18, alpha: 1)
                         : UIColor(red: 0.93, green: 0.97, blue: 1.0, alpha: 1)
                 }
+            case .weChat:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1) // near pure black
+                        : UIColor.white
+                }
             }
         }
 
@@ -199,26 +237,46 @@ extension AppSettings {
                 return UIColor { trait in
                     trait.userInterfaceStyle == .dark
                         ? UIColor.tertiarySystemGroupedBackground
-                        : UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 1)
+                        : UIColor.systemGroupedBackground
                 }
             case .eyeCare:
                 return UIColor { trait in
                     trait.userInterfaceStyle == .dark
-                        ? UIColor(red: 0.16, green: 0.20, blue: 0.15, alpha: 1)
-                        : UIColor(red: 0.89, green: 0.94, blue: 0.84, alpha: 1)
+                        ? UIColor(red: 0.09, green: 0.12, blue: 0.09, alpha: 1)
+                        : UIColor(red: 0.90, green: 0.94, blue: 0.85, alpha: 1)
                 }
             case .xiaohongshu:
                 return UIColor { trait in
                     trait.userInterfaceStyle == .dark
-                        ? UIColor(red: 0.23, green: 0.12, blue: 0.15, alpha: 1)
-                        : UIColor(red: 1.0, green: 0.91, blue: 0.92, alpha: 1)
+                        ? UIColor(red: 0.12, green: 0.08, blue: 0.09, alpha: 1)
+                        : UIColor(red: 0.97, green: 0.94, blue: 0.94, alpha: 1)
                 }
             case .telegram:
                 return UIColor { trait in
                     trait.userInterfaceStyle == .dark
-                        ? UIColor(red: 0.10, green: 0.17, blue: 0.23, alpha: 1)
-                        : UIColor(red: 0.86, green: 0.94, blue: 1.0, alpha: 1)
+                        ? UIColor(red: 0.06, green: 0.10, blue: 0.14, alpha: 1)
+                        : UIColor(red: 0.88, green: 0.94, blue: 0.98, alpha: 1)
                 }
+            case .weChat:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1)
+                        : UIColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1) // #EDEDED-ish
+                }
+            }
+        }
+
+        /// Tab / navigation bar surface for themes that prefer opaque chrome.
+        var chromeBackgroundColor: UIColor {
+            switch self {
+            case .weChat:
+                return UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1)
+                        : UIColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1) // WeChat light chrome gray
+                }
+            case .systemDefault, .eyeCare, .xiaohongshu, .telegram:
+                return contentBackgroundColor
             }
         }
 
@@ -227,7 +285,8 @@ extension AppSettings {
             case .systemDefault: return "#0079d3"
             case .eyeCare: return "#3d8c56"
             case .xiaohongshu: return "#eb3349"
-            case .telegram: return "#229ed9"
+            case .telegram: return "#2196d3"
+            case .weChat: return "#07C160"
             }
         }
 
@@ -236,7 +295,8 @@ extension AppSettings {
             case .systemDefault: return "transparent"
             case .eyeCare: return "#f0f7e7"
             case .xiaohongshu: return "#fff5f5"
-            case .telegram: return "#edf8ff"
+            case .telegram: return "#edf7ff"
+            case .weChat: return "#ffffff"
             }
         }
 
@@ -246,20 +306,21 @@ extension AppSettings {
             case .eyeCare: return "#e3efd7"
             case .xiaohongshu: return "#ffe8eb"
             case .telegram: return "#dff1ff"
+            case .weChat: return "#ededed"
             }
         }
 
         var webQuoteBorderHex: String {
             switch self {
             case .systemDefault: return "#cccccc"
-            case .eyeCare, .xiaohongshu, .telegram: return webAccentHex
+            case .eyeCare, .xiaohongshu, .telegram, .weChat: return webAccentHex
             }
         }
 
         var webBlockquoteBackgroundHex: String {
             switch self {
             case .systemDefault: return "transparent"
-            case .eyeCare, .xiaohongshu, .telegram: return webMutedBackgroundHex
+            case .eyeCare, .xiaohongshu, .telegram, .weChat: return webMutedBackgroundHex
             }
         }
 
@@ -269,29 +330,31 @@ extension AppSettings {
                 return [.systemBlue, .systemGreen, .systemOrange, .systemPink, .systemPurple, .systemTeal, .systemIndigo]
             case .eyeCare:
                 return [
-                    UIColor(red: 0.24, green: 0.55, blue: 0.34, alpha: 1),
-                    UIColor(red: 0.38, green: 0.62, blue: 0.31, alpha: 1),
-                    UIColor(red: 0.57, green: 0.52, blue: 0.25, alpha: 1),
-                    UIColor(red: 0.31, green: 0.61, blue: 0.53, alpha: 1),
-                    UIColor(red: 0.63, green: 0.45, blue: 0.24, alpha: 1),
+                    UIColor(red: 0.19, green: 0.48, blue: 0.29, alpha: 1),
+                    UIColor(red: 0.45, green: 0.60, blue: 0.25, alpha: 1),
+                    UIColor(red: 0.33, green: 0.55, blue: 0.42, alpha: 1),
                 ]
             case .xiaohongshu:
                 return [
                     UIColor(red: 0.92, green: 0.13, blue: 0.22, alpha: 1),
-                    UIColor(red: 1.0, green: 0.54, blue: 0.42, alpha: 1),
-                    UIColor(red: 0.96, green: 0.67, blue: 0.18, alpha: 1),
-                    UIColor(red: 0.26, green: 0.71, blue: 0.50, alpha: 1),
-                    UIColor(red: 0.18, green: 0.66, blue: 0.78, alpha: 1),
-                    UIColor(red: 0.63, green: 0.42, blue: 0.95, alpha: 1),
-                    UIColor(red: 0.98, green: 0.38, blue: 0.61, alpha: 1),
+                    UIColor(red: 1.0, green: 0.50, blue: 0.36, alpha: 1),
+                    UIColor(red: 0.25, green: 0.68, blue: 0.46, alpha: 1),
+                    UIColor(red: 0.21, green: 0.62, blue: 0.82, alpha: 1),
+                    UIColor(red: 0.92, green: 0.58, blue: 0.17, alpha: 1),
                 ]
             case .telegram:
                 return [
                     UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1),
-                    UIColor(red: 0.0, green: 0.64, blue: 0.88, alpha: 1),
-                    UIColor(red: 0.26, green: 0.70, blue: 0.93, alpha: 1),
-                    UIColor(red: 0.08, green: 0.45, blue: 0.69, alpha: 1),
-                    UIColor(red: 0.30, green: 0.62, blue: 0.95, alpha: 1),
+                    UIColor(red: 0.0, green: 0.47, blue: 0.74, alpha: 1),
+                    UIColor(red: 0.27, green: 0.66, blue: 0.90, alpha: 1),
+                ]
+            case .weChat:
+                return [
+                    UIColor(red: 0.027, green: 0.757, blue: 0.376, alpha: 1), // green
+                    UIColor(red: 0.10, green: 0.64, blue: 0.62, alpha: 1), // teal
+                    UIColor(red: 0.20, green: 0.55, blue: 0.90, alpha: 1), // blue
+                    UIColor(red: 0.98, green: 0.62, blue: 0.15, alpha: 1), // amber
+                    UIColor(red: 0.45, green: 0.50, blue: 0.55, alpha: 1), // blue-gray
                 ]
             }
         }
@@ -319,6 +382,13 @@ extension AppSettings {
                     UIColor(red: 0.13, green: 0.55, blue: 0.82, alpha: 1),
                     UIColor(red: 0.0, green: 0.47, blue: 0.74, alpha: 1),
                     UIColor(red: 0.27, green: 0.66, blue: 0.90, alpha: 1),
+                ]
+            case .weChat:
+                return [
+                    UIColor(red: 0.027, green: 0.757, blue: 0.376, alpha: 1),
+                    UIColor(red: 0.05, green: 0.62, blue: 0.32, alpha: 1),
+                    UIColor(red: 0.15, green: 0.70, blue: 0.55, alpha: 1),
+                    UIColor(red: 0.30, green: 0.55, blue: 0.85, alpha: 1),
                 ]
             }
         }
@@ -520,18 +590,71 @@ extension AppSettings {
 
     func applyAppearance() {
         let style = appearanceMode.userInterfaceStyle
-        let tintColor = themeStyle.accentColor
+        let theme = themeStyle
+        let tintColor = theme.accentColor
         UINavigationBar.appearance().tintColor = tintColor
         UITabBar.appearance().tintColor = tintColor
+
+        // Option B: WeChat prefers opaque gray chrome instead of iOS blur glass.
+        let navAppearance = UINavigationBarAppearance()
+        if theme.prefersOpaqueChrome {
+            navAppearance.configureWithOpaqueBackground()
+            navAppearance.backgroundColor = theme.chromeBackgroundColor
+            navAppearance.shadowColor = UIColor.separator.withAlphaComponent(0.28)
+        } else {
+            navAppearance.configureWithDefaultBackground()
+        }
+        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.label]
+        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.label]
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        UINavigationBar.appearance().compactAppearance = navAppearance
+        UINavigationBar.appearance().isTranslucent = !theme.prefersOpaqueChrome
+
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows {
                 window.overrideUserInterfaceStyle = style
                 window.tintColor = tintColor
+                // Re-apply live nav bars already on screen.
+                if let nav = window.rootViewController as? UINavigationController {
+                    applyNavigationChrome(nav.navigationBar, theme: theme)
+                }
+                window.rootViewController?.children.forEach { child in
+                    if let nav = child as? UINavigationController {
+                        applyNavigationChrome(nav.navigationBar, theme: theme)
+                    }
+                    if let tab = child as? UITabBarController {
+                        (tab as? ForumTabBarController)?.configureTabBarSurface()
+                        tab.viewControllers?.forEach { vc in
+                            if let nav = vc as? UINavigationController {
+                                applyNavigationChrome(nav.navigationBar, theme: theme)
+                            }
+                        }
+                    }
+                }
             }
         }
         refreshVisibleAppFonts()
         resetUnsupportedAlternateAppIconIfNeeded()
+    }
+
+    private func applyNavigationChrome(_ navigationBar: UINavigationBar, theme: ThemeStyle) {
+        let appearance = UINavigationBarAppearance()
+        if theme.prefersOpaqueChrome {
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = theme.chromeBackgroundColor
+            appearance.shadowColor = UIColor.separator.withAlphaComponent(0.28)
+        } else {
+            appearance.configureWithDefaultBackground()
+        }
+        appearance.titleTextAttributes = [.foregroundColor: UIColor.label]
+        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.label]
+        navigationBar.standardAppearance = appearance
+        navigationBar.scrollEdgeAppearance = appearance
+        navigationBar.compactAppearance = appearance
+        navigationBar.tintColor = theme.accentColor
+        navigationBar.isTranslucent = !theme.prefersOpaqueChrome
     }
 
     /// Alternate icons were removed; force primary if an old alternate is still active.
