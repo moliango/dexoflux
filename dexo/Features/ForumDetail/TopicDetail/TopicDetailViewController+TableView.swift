@@ -84,7 +84,9 @@ extension TopicDetailViewController: UITableViewDelegate {
         }
 
         // Prefetch content images for this row + a few ahead (smoother first paint).
+        var displayedPostId: Int?
         if let postId = dataSource.itemIdentifier(for: indexPath) {
+            displayedPostId = postId
             var ahead: [Int] = [postId]
             let total = tableView.numberOfRows(inSection: 0)
             for offset in 1...3 {
@@ -101,11 +103,23 @@ extension TopicDetailViewController: UITableViewDelegate {
             self?.updateVisibleReadingPosts()
         }
 
+        // Next-window readiness: keep ~one page ahead of the visible stream index.
+        // Backup: also fire near the end of the current table snapshot.
         let totalRows = tableView.numberOfRows(inSection: 0)
-        // Load more (forward)
-        if indexPath.row >= totalRows - 3 {
+        let nearSnapshotEnd = indexPath.row >= max(0, totalRows - TopicDetailPaginationPolicy.displayPrefetchRowThreshold)
+        let streamIndex = displayedPostId.flatMap { id in viewModel.allPostIds.firstIndex(of: id) }
+        if let streamIndex {
+            let width = view.bounds.width
             Task {
-                await viewModel.loadMorePosts(containerWidth: view.bounds.width)
+                await viewModel.ensureForwardWindowReady(
+                    visibleStreamIndex: streamIndex,
+                    containerWidth: width
+                )
+            }
+        } else if nearSnapshotEnd {
+            let width = view.bounds.width
+            Task {
+                await viewModel.loadMorePosts(containerWidth: width)
             }
         }
     }

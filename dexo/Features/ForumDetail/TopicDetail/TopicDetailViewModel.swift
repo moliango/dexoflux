@@ -383,6 +383,15 @@ enum TopicDetailPollResultMerger {
 }
 
 enum TopicDetailPaginationPolicy {
+    /// Posts fetched per network window (Discourse post_ids batch).
+    static let pageSize = 20
+    /// Keep about one page ahead of the visible stream index ready (parsed).
+    static let forwardReadyBuffer = pageSize
+    /// When jumping, also fetch a few floors before the target for upward scroll.
+    static let jumpLookback = 5
+    /// Table `willDisplay` backup trigger: rows from the end of the current snapshot.
+    static let displayPrefetchRowThreshold = 8
+
     static func canStartEarlier(
         isLoadingEarlier: Bool,
         isLoadingMore: Bool,
@@ -397,6 +406,30 @@ enum TopicDetailPaginationPolicy {
         isJumping: Bool
     ) -> Bool {
         !isLoadingEarlier && !isLoadingMore && !isJumping
+    }
+
+    /// Desired exclusive end index in `allPostIds` so one window stays ready past `visibleStreamIndex`.
+    static func desiredLoadedEnd(
+        visibleStreamIndex: Int,
+        totalCount: Int,
+        buffer: Int = forwardReadyBuffer
+    ) -> Int {
+        guard totalCount > 0 else { return 0 }
+        let visible = min(max(visibleStreamIndex, 0), totalCount - 1)
+        return min(totalCount, visible + 1 + buffer)
+    }
+
+    static func jumpWindow(
+        targetIndex: Int,
+        totalCount: Int,
+        lookback: Int = jumpLookback,
+        pageSize: Int = pageSize
+    ) -> Range<Int> {
+        guard totalCount > 0 else { return 0..<0 }
+        let target = min(max(targetIndex, 0), totalCount - 1)
+        let start = max(0, target - lookback)
+        let end = min(totalCount, max(target + 1, start + pageSize))
+        return start..<end
     }
 
     static func shouldRestoreEarlierAnchor(
@@ -448,6 +481,8 @@ final class TopicDetailViewModel: DexoObservableObject {
     /// Cached first post (OP) to preserve across jumpToFloor
     private var firstPost: DiscourseTopicDetail.Post?
     private var parseGeneration = 0
+    /// Soft forward prefetch so the next window is ready before the user hits the end.
+    private var forwardPrefetchTask: Task<Void, Never>?
     private var categoryMetadataTask: Task<Void, Never>?
     private var categoryMetadataCategoryId: Int?
     private var loadedCategoryMetadataId: Int?
@@ -576,6 +611,7 @@ final class TopicDetailViewModel: DexoObservableObject {
                 isLoading = false
                 errorMessage = nil
                 notifyChanged()
+                scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
                 return
             } catch {
                 lastError = error.localizedDescription
@@ -603,6 +639,7 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     private func loadTopic(id: Int, containerWidth: CGFloat, retryingExplicitCancellation: Bool) async {
+        cancelForwardWindowPrefetch()
         isLoading = true
         isReady = false
         errorMessage = nil
@@ -645,6 +682,7 @@ final class TopicDetailViewModel: DexoObservableObject {
             guard await parseAndStore(posts: postsToRender, generation: generation) else { return }
 
             isReady = true
+            scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
         } catch {
             #if DEBUG
             print("[TopicDetail] Load failed: \(error)")
@@ -783,7 +821,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         isLoadingMore = true
         notifyChanged()
 
-        let newEnd = min(loadedRangeEnd + 20, allPostIds.count)
+        let newEnd = min(loadedRangeEnd + TopicDetailPaginationPolicy.pageSize, allPostIds.count)
         let batch = Array(allPostIds[loadedRangeEnd..<newEnd])
 
         guard !batch.isEmpty else {
@@ -841,7 +879,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         isLoadingEarlier = true
         notifyChanged()
 
-        let newStart = max(0, loadedRangeStart - 20)
+        let newStart = max(0, loadedRangeStart - TopicDetailPaginationPolicy.pageSize)
         let batch = Array(allPostIds[newStart..<loadedRangeStart])
 
         guard !batch.isEmpty else {
@@ -898,12 +936,17 @@ final class TopicDetailViewModel: DexoObservableObject {
         guard !allPostIds.isEmpty, let topicId = topic?.id else { return }
 
         let targetIndex = max(0, min(floor - 1, allPostIds.count - 1))
-        let startIndex = targetIndex
-        let endIndex = min(startIndex + 20, allPostIds.count)
-        let batch = Array(allPostIds[startIndex..<endIndex])
+        let window = TopicDetailPaginationPolicy.jumpWindow(
+            targetIndex: targetIndex,
+            totalCount: allPostIds.count
+        )
+        let startIndex = window.lowerBound
+        let endIndex = window.upperBound
+        let batch = Array(allPostIds[window])
 
         guard !batch.isEmpty else { return }
 
+        cancelForwardWindowPrefetch()
         isJumping = true
         jumpTargetFloor = floor
         notifyChanged()
@@ -954,6 +997,12 @@ final class TopicDetailViewModel: DexoObservableObject {
             isReady = true
         }
         notifyChanged()
+        if errorMessage == nil {
+            scheduleForwardWindowPrefetch(
+                containerWidth: containerWidth,
+                visibleStreamIndex: targetIndex
+            )
+        }
     }
 
     func updatePostReaction(
@@ -1054,6 +1103,44 @@ final class TopicDetailViewModel: DexoObservableObject {
               !actionCode.isEmpty
         else { return nil }
         return actionCode
+    }
+
+    /// Keep about one page ahead of the visible stream index loaded+parsed.
+    /// Does not chain through the whole topic — only fills up to `desiredLoadedEnd`.
+    func ensureForwardWindowReady(visibleStreamIndex: Int, containerWidth: CGFloat) async {
+        let desiredEnd = TopicDetailPaginationPolicy.desiredLoadedEnd(
+            visibleStreamIndex: visibleStreamIndex,
+            totalCount: allPostIds.count
+        )
+        guard loadedRangeEnd < desiredEnd else { return }
+        await loadMorePosts(containerWidth: containerWidth)
+    }
+
+    func scheduleForwardWindowPrefetch(containerWidth: CGFloat, visibleStreamIndex: Int) {
+        cancelForwardWindowPrefetch()
+        guard canLoadMore else { return }
+        let desiredEnd = TopicDetailPaginationPolicy.desiredLoadedEnd(
+            visibleStreamIndex: visibleStreamIndex,
+            totalCount: allPostIds.count
+        )
+        guard loadedRangeEnd < desiredEnd else { return }
+
+        let width = containerWidth
+        let index = visibleStreamIndex
+        forwardPrefetchTask = Task { [weak self] in
+            // Let first paint / snapshot apply win the run loop.
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard !Task.isCancelled, let self else { return }
+            await self.ensureForwardWindowReady(
+                visibleStreamIndex: index,
+                containerWidth: width
+            )
+        }
+    }
+
+    func cancelForwardWindowPrefetch() {
+        forwardPrefetchTask?.cancel()
+        forwardPrefetchTask = nil
     }
 
     private func parseAndStore(posts: [DiscourseTopicDetail.Post], generation: Int) async -> Bool {

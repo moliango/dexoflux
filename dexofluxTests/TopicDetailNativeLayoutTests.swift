@@ -28,6 +28,38 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         XCTAssertTrue(TopicDetailPaginationPolicy.canStartEarlier(isLoadingEarlier: false, isLoadingMore: false, isJumping: false))
     }
 
+    func testForwardWindowKeepsOnePageReadyPastViewport() {
+        // visible at 0 → want end 21 (index 0 + 1 + 20)
+        XCTAssertEqual(
+            TopicDetailPaginationPolicy.desiredLoadedEnd(visibleStreamIndex: 0, totalCount: 100),
+            21
+        )
+        // near end clamps to total
+        XCTAssertEqual(
+            TopicDetailPaginationPolicy.desiredLoadedEnd(visibleStreamIndex: 95, totalCount: 100),
+            100
+        )
+        // empty topic
+        XCTAssertEqual(
+            TopicDetailPaginationPolicy.desiredLoadedEnd(visibleStreamIndex: 0, totalCount: 0),
+            0
+        )
+    }
+
+    func testJumpWindowIncludesLookbackWithoutExceedingBounds() {
+        let mid = TopicDetailPaginationPolicy.jumpWindow(targetIndex: 50, totalCount: 200)
+        XCTAssertEqual(mid.lowerBound, 45)
+        XCTAssertEqual(mid.upperBound, 65)
+
+        let head = TopicDetailPaginationPolicy.jumpWindow(targetIndex: 2, totalCount: 200)
+        XCTAssertEqual(head.lowerBound, 0)
+        XCTAssertGreaterThan(head.upperBound, 2)
+
+        let tail = TopicDetailPaginationPolicy.jumpWindow(targetIndex: 198, totalCount: 200)
+        XCTAssertLessThanOrEqual(tail.upperBound, 200)
+        XCTAssertTrue(tail.contains(198))
+    }
+
     func testEarlierLoadAnchorIsConsumedOnlyAfterLoadingFinishes() {
         XCTAssertFalse(TopicDetailPaginationPolicy.shouldRestoreEarlierAnchor(
             hasAnchor: true,
