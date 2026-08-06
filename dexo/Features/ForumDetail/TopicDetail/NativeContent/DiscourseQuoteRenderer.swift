@@ -126,12 +126,13 @@ enum DiscourseQuoteRenderer: BlockRenderer {
             topicCategoryPresentation: config.topicCategoryPresentation
         )
 
-        // Promote flat `[!question]` / `[!warning]` paragraphs into blockquotes so
-        // BlockquoteRenderer can render Obsidian callout cards inside quoted posts.
-        let normalizedContent = ObsidianCalloutSupport.promoteCalloutMarkers(
-            in: normalizedQuoteContent(content)
+        // renderBlocks promotes flat `[!question]` markers once; do not pre-promote
+        // here or nested blockquotes re-enter promote/render until the stack dies.
+        let views = NativeContentRenderer.renderBlocks(
+            normalizedQuoteContent(content),
+            config: quoteConfig,
+            delegate: delegate
         )
-        let views = NativeContentRenderer.renderBlocks(normalizedContent, config: quoteConfig, delegate: delegate)
         for view in views {
             contentStack.addArrangedSubview(view)
         }

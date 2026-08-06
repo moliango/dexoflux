@@ -14,6 +14,19 @@ enum BlockquoteRenderer: BlockRenderer {
             return ObsidianCalloutView(callout: callout, config: config, delegate: delegate)
         }
 
+        // Promote nested flat markers once. Do NOT call renderBlocks with default
+        // promoteCallouts=true on the result — that re-entered promote+blockquote
+        // render and stack-overflowed (EXC_BAD_ACCESS code=2).
+        let promotedInner = ObsidianCalloutSupport.promoteCalloutMarkers(in: inner)
+        if let callout = ObsidianCallout.parse(from: promotedInner) {
+            return ObsidianCalloutView(callout: callout, config: config, delegate: delegate)
+        }
+        if promotedInner.count == 1,
+           case .blockquote(let only) = promotedInner[0],
+           let callout = ObsidianCallout.parse(from: only) {
+            return ObsidianCalloutView(callout: callout, config: config, delegate: delegate)
+        }
+
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.backgroundColor = TopicDetailContentStyle.warmMutedBackground.withAlphaComponent(0.42)
@@ -46,7 +59,12 @@ enum BlockquoteRenderer: BlockRenderer {
             topicCategoryPresentation: config.topicCategoryPresentation
         )
 
-        let views = NativeContentRenderer.renderBlocks(inner, config: quoteConfig, delegate: delegate)
+        let views = NativeContentRenderer.renderBlocks(
+            promotedInner,
+            config: quoteConfig,
+            delegate: delegate,
+            promoteCallouts: false
+        )
         for view in views {
             stack.addArrangedSubview(view)
         }
@@ -92,13 +110,35 @@ enum ObsidianCalloutSupport {
                     calloutBlocks.append(next)
                     index += 1
                 }
-                result.append(.blockquote(blocks: calloutBlocks))
+                // Only wrap when parse will accept it — otherwise BlockquoteRenderer
+                // re-promotes forever (bq → renderBlocks → bq → …).
+                if ObsidianCallout.parse(from: calloutBlocks) != nil {
+                    result.append(.blockquote(blocks: calloutBlocks))
+                } else {
+                    result.append(contentsOf: calloutBlocks)
+                }
                 continue
             }
 
             if case .blockquote(let inner) = block {
-                // Nested plain blockquotes may themselves contain flat markers.
-                result.append(.blockquote(blocks: promoteCalloutMarkers(in: inner)))
+                // Already a callout-shaped blockquote: keep one level (idempotent).
+                if ObsidianCallout.parse(from: inner) != nil {
+                    result.append(block)
+                    index += 1
+                    continue
+                }
+                // Nested plain blockquotes may contain flat markers deeper down.
+                let promotedInner = promoteCalloutMarkers(in: inner)
+                if ObsidianCallout.parse(from: promotedInner) != nil {
+                    result.append(.blockquote(blocks: promotedInner))
+                } else if promotedInner.count == 1,
+                          case .blockquote(let only) = promotedInner[0],
+                          ObsidianCallout.parse(from: only) != nil {
+                    // promote turned the whole inner into one callout bq — don't nest.
+                    result.append(promotedInner[0])
+                } else {
+                    result.append(.blockquote(blocks: promotedInner))
+                }
                 index += 1
                 continue
             }
@@ -109,8 +149,11 @@ enum ObsidianCalloutSupport {
         return result
     }
 
+    /// Must match `ObsidianCallout.parse` first-line rules (ignore leading line breaks).
     private static func startsWithCalloutMarker(_ inlines: [InlineNode]) -> Bool {
-        let text = plainText(from: inlines)
+        let trimmed = droppingLeadingLineBreaks(inlines)
+        guard let firstLine = firstLineInlines(trimmed) else { return false }
+        let text = plainText(from: firstLine)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("[!"),
               let close = text.firstIndex(of: "]"),
@@ -119,6 +162,34 @@ enum ObsidianCalloutSupport {
         let kind = String(text[text.index(text.startIndex, offsetBy: 2)..<close])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return !kind.isEmpty
+    }
+
+    private static func droppingLeadingLineBreaks(_ inlines: [InlineNode]) -> [InlineNode] {
+        var result = inlines
+        while let first = result.first, case .lineBreak = first {
+            result.removeFirst()
+        }
+        // Also drop leading whitespace-only text nodes.
+        while let first = result.first {
+            if case .text(let text) = first,
+               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.removeFirst()
+                continue
+            }
+            break
+        }
+        return result
+    }
+
+    private static func firstLineInlines(_ inlines: [InlineNode]) -> [InlineNode]? {
+        guard !inlines.isEmpty else { return nil }
+        if let lineBreakIndex = inlines.firstIndex(where: {
+            if case .lineBreak = $0 { return true }
+            return false
+        }) {
+            return Array(inlines[..<lineBreakIndex])
+        }
+        return inlines
     }
 
     private static func isCalloutBodyTerminator(_ block: ContentBlock) -> Bool {
@@ -165,7 +236,9 @@ private struct ObsidianCallout {
     static func parse(from blocks: [ContentBlock]) -> ObsidianCallout? {
         guard let first = blocks.first, case .paragraph(let inlines) = first else { return nil }
 
-        let split = splitFirstLine(inlines)
+        // Align with promoteCalloutMarkers: ignore leading line breaks / blank text.
+        let normalized = Self.droppingLeadingLineBreaksForParse(inlines)
+        let split = splitFirstLine(normalized)
         let markerLine = plainText(from: split.firstLine).trimmingCharacters(in: .whitespacesAndNewlines)
         guard markerLine.hasPrefix("[!") else { return nil }
         guard let closeIndex = markerLine.firstIndex(of: "]") else { return nil }
@@ -237,6 +310,22 @@ private struct ObsidianCallout {
         case "quote", "cite": return .secondaryLabel
         default: return AppSettings.shared.themeStyle.hotTopicColor
         }
+    }
+
+    private static func droppingLeadingLineBreaksForParse(_ inlines: [InlineNode]) -> [InlineNode] {
+        var result = inlines
+        while let first = result.first, case .lineBreak = first {
+            result.removeFirst()
+        }
+        while let first = result.first {
+            if case .text(let text) = first,
+               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.removeFirst()
+                continue
+            }
+            break
+        }
+        return result
     }
 
     private static func splitFirstLine(_ inlines: [InlineNode]) -> (firstLine: [InlineNode], remainingLines: [InlineNode]) {
@@ -409,7 +498,12 @@ private final class ObsidianCalloutView: UIView {
             stack.translatesAutoresizingMaskIntoConstraints = false
             addSubview(stack)
 
-            let views = NativeContentRenderer.renderBlocks(callout.content, config: innerConfig, delegate: delegate)
+            let views = NativeContentRenderer.renderBlocks(
+                callout.content,
+                config: innerConfig,
+                delegate: delegate,
+                promoteCallouts: false
+            )
             for view in views {
                 stack.addArrangedSubview(view)
             }

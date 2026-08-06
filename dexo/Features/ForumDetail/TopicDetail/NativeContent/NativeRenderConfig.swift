@@ -331,10 +331,14 @@ enum NativeContentRenderer {
     static func renderBlocks(
         _ blocks: [ContentBlock],
         config: NativeRenderConfig,
-        delegate: PostCellDelegate?
+        delegate: PostCellDelegate?,
+        promoteCallouts: Bool = true
     ) -> [UIView] {
         // Promote top-level `[!question]` / `[!warning]` paragraphs into callout cards.
-        let prepared = ObsidianCalloutSupport.promoteCalloutMarkers(in: blocks)
+        // Nested renderers pass promoteCallouts=false to avoid bq→promote→bq recursion.
+        let prepared = promoteCallouts
+            ? ObsidianCalloutSupport.promoteCalloutMarkers(in: blocks)
+            : blocks
         return prepared.compactMap { block in
             for renderer in renderers where renderer.canRender(block) {
                 return renderer.render(block, config: config, delegate: delegate)
