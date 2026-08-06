@@ -386,7 +386,7 @@ final class AppearanceSettingsViewController: ObservableViewController {
         card.axis = .vertical
         card.spacing = 0
         card.backgroundColor = settings.themeStyle.topicCardBackgroundColor
-        card.layer.cornerRadius = 18
+        card.layer.cornerRadius = max(settings.themeStyle.chromeCornerRadius + 6, 14)
         card.layer.cornerCurve = .continuous
         card.layer.borderWidth = 1.0 / UIScreen.main.scale
         card.layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
@@ -847,7 +847,7 @@ final class ThemeStyleCardView: UIControl {
 
     private func setupUI() {
         backgroundColor = .secondarySystemGroupedBackground
-        layer.cornerRadius = 16
+        layer.cornerRadius = style.chromeCornerRadius + 4
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
         layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor

@@ -229,6 +229,7 @@ final class TopicCell: UITableViewCell {
     ) {
         let themeStyle = AppSettings.shared.themeStyle
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
+        cardView.layer.cornerRadius = themeStyle.chromeCornerRadius
         applyTypography()
         titleLabel.textColor = topic.isUnreadForDisplay ? .label : .secondaryLabel
         emojiBaseURL = categoryBaseURL
@@ -725,7 +726,11 @@ private final class XiaohongshuTopicCardView: UIControl {
 
         let seed = model.tags.first ?? model.categoryName ?? model.title
         let accentColor = TopicTagVisualStyle.color(for: seed)
-        backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+        let themeStyle = AppSettings.shared.themeStyle
+        let radius = themeStyle.chromeCornerRadius + 4
+        backgroundColor = themeStyle.topicCardBackgroundColor
+        layer.cornerRadius = radius
+        topPanel.layer.cornerRadius = radius
         topPanel.backgroundColor = accentColor.withAlphaComponent(0.13)
         previewLabel.textColor = readableTextColor(for: accentColor)
         previewLabel.text = Self.cleanPreviewText(model.excerpt) ?? model.title
@@ -937,6 +942,7 @@ private final class TopicCountBadgeView: UIView {
         countLabel.text = displayText
         widthConstraint?.constant = Self.width(forDisplayText: displayText)
         let themeStyle = AppSettings.shared.themeStyle
+        layer.cornerRadius = max(themeStyle.chromeCornerRadius - 1, 8)
         let isHot = count >= Self.hotCountThreshold
         let hotColor = themeStyle.hotTopicColor
         let foreground: UIColor = isHot ? hotColor : themeStyle.topicCountForegroundColor
