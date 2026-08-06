@@ -127,6 +127,13 @@ final class MiniProgramHostViewController: UIViewController {
         chromeView.addSubview(titleLabel)
         chromeView.addSubview(capsuleView)
         capsuleView.addSubview(moreButton)
+
+        // Left swipe on host to go back to previous page (drawer / launcher).
+        // Only enable if not the very first host in stack (prevents accidental close on level 1).
+        let swipe = UISwipeGestureRecognizer()
+        swipe.direction = .left
+        swipe.addTarget(self, action: #selector(handleSwipeBack))
+        view.addGestureRecognizer(swipe)
         capsuleView.addSubview(capsuleDivider)
         capsuleView.addSubview(closeButton)
 
@@ -180,6 +187,15 @@ final class MiniProgramHostViewController: UIViewController {
 
         if iconView.isHidden {
             titleLabel.leadingAnchor.constraint(equalTo: chromeView.leadingAnchor, constant: 16).isActive = true
+        }
+    }
+
+    @objc private func handleSwipeBack() {
+        // Dismiss host — safe because it's a modal.
+        if let presenter = presentingViewController {
+            presenter.dismiss(animated: true)
+        } else if let nav = navigationController {
+            nav.popViewController(animated: true)
         }
     }
 
