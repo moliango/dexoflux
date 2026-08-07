@@ -241,9 +241,13 @@ final class ComposerMarkdownPreviewView: UIView {
         tv.isEditable = false
         tv.isScrollEnabled = true
         tv.backgroundColor = .systemBackground
-        tv.textContainerInset = UIEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        tv.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 24, right: 20)
         tv.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: .regular))
         tv.adjustsFontForContentSizeCategory = true
+        tv.linkTextAttributes = [
+            .foregroundColor: UIColor.systemBlue,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+        ]
         return tv
     }()
 
@@ -264,55 +268,75 @@ final class ComposerMarkdownPreviewView: UIView {
     }
 
     func update(markdown: String) {
-        textView.attributedText = Self.render(markdown)
+        textView.attributedText = ComposerMarkdownRenderer.renderPreview(markdown)
     }
+}
 
-    private static func render(_ markdown: String) -> NSAttributedString {
+// MARK: - Shared markdown renderer (preview + source chrome)
+
+/// Local Discourse-ish markdown approximation for composer preview / source tinting.
+/// FluxDo ships a full cook JS bundle; Dexo stays native UIKit without that dependency.
+enum ComposerMarkdownRenderer {
+    private static let bodyPointSize: CGFloat = 23
+    private static let monoPointSize: CGFloat = 18
+
+    static func renderPreview(_ markdown: String) -> NSAttributedString {
+        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .regular))
+        let paragraph = baseParagraphStyle(lineSpacing: 5, paragraphSpacing: 10)
+
+        guard !trimmed.isEmpty else {
+            return NSAttributedString(
+                string: String(localized: "reply.preview.empty"),
+                attributes: [
+                    .font: bodyFont,
+                    .foregroundColor: UIColor.placeholderText,
+                    .paragraphStyle: paragraph,
+                ]
+            )
+        }
+
         let result = NSMutableAttributedString()
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 6
-        paragraph.paragraphSpacing = 12
-
-        let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: .regular))
-        let headingFont = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 30, weight: .bold))
-        let monoFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 20, weight: .regular))
-
+        let lines = markdown.components(separatedBy: "\n")
+        var index = 0
         var inCodeBlock = false
-        for rawLine in markdown.components(separatedBy: .newlines) {
-            var line = rawLine
-            var attributes: [NSAttributedString.Key: Any] = [
-                .font: bodyFont,
-                .foregroundColor: UIColor.label,
-                .paragraphStyle: paragraph,
-            ]
+        var codeLanguage = ""
+        var codeLines: [String] = []
 
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                inCodeBlock.toggle()
+        func flushCodeBlock() {
+            result.append(makeCodeBlock(language: codeLanguage, lines: codeLines))
+            codeLanguage = ""
+            codeLines = []
+        }
+
+        while index < lines.count {
+            let rawLine = lines[index]
+            if let language = fenceLanguage(rawLine) {
+                if inCodeBlock {
+                    flushCodeBlock()
+                    inCodeBlock = false
+                } else {
+                    inCodeBlock = true
+                    codeLanguage = language
+                    codeLines = []
+                }
+                index += 1
                 continue
             }
 
             if inCodeBlock {
-                attributes[.font] = monoFont
-                attributes[.foregroundColor] = UIColor.secondaryLabel
-                attributes[.backgroundColor] = UIColor.secondarySystemGroupedBackground
-            } else if line.hasPrefix("### ") {
-                line.removeFirst(4)
-                attributes[.font] = headingFont.withSize(24)
-            } else if line.hasPrefix("## ") {
-                line.removeFirst(3)
-                attributes[.font] = headingFont.withSize(27)
-            } else if line.hasPrefix("# ") {
-                line.removeFirst(2)
-                attributes[.font] = headingFont
-            } else if line.hasPrefix("> ") {
-                line.removeFirst(2)
-                attributes[.foregroundColor] = UIColor.secondaryLabel
-            } else if line.hasPrefix("- ") {
-                line = "• " + String(line.dropFirst(2))
+                codeLines.append(rawLine)
+                index += 1
+                continue
             }
 
-            result.append(renderInline(line, attributes: attributes))
-            result.append(NSAttributedString(string: "\n", attributes: attributes))
+            result.append(renderPreviewLine(rawLine, bodyFont: bodyFont))
+            index += 1
+        }
+
+        if inCodeBlock {
+            // Unclosed fence — still show as code so authors see the raw content.
+            flushCodeBlock()
         }
 
         if result.length == 0 {
@@ -328,41 +352,356 @@ final class ComposerMarkdownPreviewView: UIView {
         return result
     }
 
-    private static func renderInline(_ line: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        let attributed = NSMutableAttributedString(string: line, attributes: attributes)
-        applyInline(regex: "\\*\\*(.+?)\\*\\*", in: attributed, fontWeight: .bold, markerLength: 2)
-        applyInline(regex: "~~(.+?)~~", in: attributed, strikethrough: true, markerLength: 2)
-        applyInline(regex: "`(.+?)`", in: attributed, monospace: true, markerLength: 1)
+    /// Soft syntax chrome for the raw source editor (keeps full markdown text editable).
+    static func styleSource(_ raw: String, baseAttributes: [NSAttributedString.Key: Any]) -> NSMutableAttributedString {
+        let attributed = NSMutableAttributedString(string: raw, attributes: baseAttributes)
+        guard !raw.isEmpty else { return attributed }
+
+        let ns = raw as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        let mono = UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
+        )
+        let markerColor = UIColor.tertiaryLabel
+        let codeFill = UIColor.secondarySystemFill
+
+        // Fenced code blocks first so inline rules skip them less painfully.
+        if let fenceRegex = try? NSRegularExpression(
+            pattern: #"```([^\n`]*)\n([\s\S]*?)```"#,
+            options: []
+        ) {
+            let matches = fenceRegex.matches(in: raw, range: full)
+            for match in matches.reversed() {
+                guard match.numberOfRanges >= 3 else { continue }
+                let whole = match.range(at: 0)
+                let lang = match.range(at: 1)
+                let body = match.range(at: 2)
+                attributed.addAttributes([
+                    .font: mono,
+                    .backgroundColor: codeFill,
+                    .foregroundColor: UIColor.label,
+                ], range: whole)
+                if lang.length > 0 {
+                    attributed.addAttributes([
+                        .foregroundColor: UIColor.secondaryLabel,
+                        .font: UIFontMetrics(forTextStyle: .caption1).scaledFont(
+                            for: .monospacedSystemFont(ofSize: 13, weight: .semibold)
+                        ),
+                    ], range: lang)
+                }
+                // Dim the opening/closing fences.
+                let openLen = 3 + lang.length + (ns.substring(with: whole).contains("\n") ? 1 : 0)
+                if openLen > 0, openLen < whole.length {
+                    attributed.addAttribute(.foregroundColor, value: markerColor, range: NSRange(location: whole.location, length: min(openLen, whole.length)))
+                }
+                let closeStart = whole.location + whole.length - 3
+                if closeStart >= whole.location {
+                    attributed.addAttribute(
+                        .foregroundColor,
+                        value: markerColor,
+                        range: NSRange(location: closeStart, length: 3)
+                    )
+                }
+                _ = body
+            }
+        }
+
+        applySourceInline(
+            pattern: #"`([^`\n]+)`"#,
+            in: attributed,
+            attributes: [
+                .font: mono,
+                .backgroundColor: codeFill,
+                .foregroundColor: UIColor.label,
+            ],
+            markerColor: markerColor,
+            markerLength: 1
+        )
+        applySourceInline(
+            pattern: #"\*\*([^*\n]+)\*\*"#,
+            in: attributed,
+            attributes: [
+                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .bold)),
+            ],
+            markerColor: markerColor,
+            markerLength: 2
+        )
+        applySourceInline(
+            pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#,
+            in: attributed,
+            attributes: [
+                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .regular).withItalicTrait()),
+            ],
+            markerColor: markerColor,
+            markerLength: 1
+        )
+        applySourceInline(
+            pattern: #"~~([^~\n]+)~~"#,
+            in: attributed,
+            attributes: [
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            ],
+            markerColor: markerColor,
+            markerLength: 2
+        )
+
+        // Heading markers at line start.
+        if let headingRegex = try? NSRegularExpression(pattern: #"(?m)^(#{1,5})\s+"#, options: []) {
+            for match in headingRegex.matches(in: attributed.string, range: NSRange(location: 0, length: attributed.length)) {
+                attributed.addAttribute(.foregroundColor, value: markerColor, range: match.range(at: 1))
+                let lineRange = (attributed.string as NSString).lineRange(for: match.range)
+                let level = match.range(at: 1).length
+                let size: CGFloat = max(bodyPointSize + CGFloat(6 - level) * 2, bodyPointSize)
+                attributed.addAttribute(
+                    .font,
+                    value: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: .bold)),
+                    range: lineRange
+                )
+            }
+        }
+
         return attributed
     }
 
-    private static func applyInline(
-        regex pattern: String,
+    // MARK: Preview helpers
+
+    private static func renderPreviewLine(_ rawLine: String, bodyFont: UIFont) -> NSAttributedString {
+        var line = rawLine
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: baseParagraphStyle(lineSpacing: 5, paragraphSpacing: 10),
+        ]
+
+        if line.trimmingCharacters(in: .whitespaces) == "---"
+            || line.trimmingCharacters(in: .whitespaces) == "***"
+            || line.trimmingCharacters(in: .whitespaces) == "___" {
+            let rule = NSMutableParagraphStyle()
+            rule.paragraphSpacing = 14
+            return NSAttributedString(
+                string: "────────────\n",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: UIColor.tertiaryLabel,
+                    .paragraphStyle: rule,
+                ]
+            )
+        }
+
+        if line.hasPrefix("###### ") {
+            line.removeFirst(7)
+            attributes[.font] = UIFontMetrics(forTextStyle: .headline).scaledFont(for: .systemFont(ofSize: 20, weight: .semibold))
+        } else if line.hasPrefix("##### ") {
+            line.removeFirst(6)
+            attributes[.font] = UIFontMetrics(forTextStyle: .headline).scaledFont(for: .systemFont(ofSize: 22, weight: .semibold))
+        } else if line.hasPrefix("#### ") {
+            line.removeFirst(5)
+            attributes[.font] = UIFontMetrics(forTextStyle: .title3).scaledFont(for: .systemFont(ofSize: 24, weight: .semibold))
+        } else if line.hasPrefix("### ") {
+            line.removeFirst(4)
+            attributes[.font] = UIFontMetrics(forTextStyle: .title3).scaledFont(for: .systemFont(ofSize: 26, weight: .bold))
+        } else if line.hasPrefix("## ") {
+            line.removeFirst(3)
+            attributes[.font] = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 28, weight: .bold))
+        } else if line.hasPrefix("# ") {
+            line.removeFirst(2)
+            attributes[.font] = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 30, weight: .bold))
+        } else if line.hasPrefix("> ") {
+            line.removeFirst(2)
+            attributes[.foregroundColor] = UIColor.secondaryLabel
+            let quote = baseParagraphStyle(lineSpacing: 4, paragraphSpacing: 8)
+            quote.headIndent = 12
+            quote.firstLineHeadIndent = 12
+            attributes[.paragraphStyle] = quote
+        } else if let match = line.range(of: #"^\s*([-*+])\s+"#, options: .regularExpression) {
+            let bulletBody = String(line[match.upperBound...])
+            line = "• " + bulletBody
+            let list = baseParagraphStyle(lineSpacing: 4, paragraphSpacing: 6)
+            list.headIndent = 18
+            list.firstLineHeadIndent = 4
+            attributes[.paragraphStyle] = list
+        } else if let match = line.range(of: #"^\s*(\d+)\.\s+"#, options: .regularExpression) {
+            // Keep original number prefix for ordered lists.
+            let list = baseParagraphStyle(lineSpacing: 4, paragraphSpacing: 6)
+            list.headIndent = 22
+            list.firstLineHeadIndent = 4
+            attributes[.paragraphStyle] = list
+            _ = match
+        }
+
+        let inline = renderInline(line, attributes: attributes)
+        let ending = NSMutableAttributedString(attributedString: inline)
+        ending.append(NSAttributedString(string: "\n", attributes: attributes))
+        return ending
+    }
+
+    private static func makeCodeBlock(language: String, lines: [String]) -> NSAttributedString {
+        let mono = UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
+        )
+        let headerFont = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+            for: .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        )
+        let fill = UIColor.secondarySystemFill
+        let block = NSMutableAttributedString()
+
+        let headerStyle = baseParagraphStyle(lineSpacing: 2, paragraphSpacing: 2)
+        let lang = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headerText = (lang.isEmpty ? "TEXT" : lang).uppercased() + "\n"
+        block.append(NSAttributedString(string: headerText, attributes: [
+            .font: headerFont,
+            .foregroundColor: UIColor.secondaryLabel,
+            .backgroundColor: fill,
+            .paragraphStyle: headerStyle,
+        ]))
+
+        let bodyStyle = baseParagraphStyle(lineSpacing: 3, paragraphSpacing: 0)
+        bodyStyle.paragraphSpacingBefore = 0
+        let body = (lines.isEmpty ? [""] : lines).joined(separator: "\n") + "\n\n"
+        block.append(NSAttributedString(string: body, attributes: [
+            .font: mono,
+            .foregroundColor: UIColor.label,
+            .backgroundColor: fill,
+            .paragraphStyle: bodyStyle,
+        ]))
+        return block
+    }
+
+    private static func renderInline(_ line: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        let attributed = NSMutableAttributedString(string: line, attributes: attributes)
+        // Order: code first so emphasis inside code is not restyled after markers stripped.
+        applyPreviewInline(
+            pattern: #"`([^`]+)`"#,
+            in: attributed,
+            transform: { content, _ in
+                var attrs = attributes
+                attrs[.font] = UIFontMetrics(forTextStyle: .body).scaledFont(
+                    for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
+                )
+                attrs[.backgroundColor] = UIColor.secondarySystemFill
+                return NSAttributedString(string: content, attributes: attrs)
+            }
+        )
+        applyPreviewInline(
+            pattern: #"\*\*([^*\n]+)\*\*"#,
+            in: attributed,
+            transform: { content, base in
+                var attrs = base
+                let size = (base[.font] as? UIFont)?.pointSize ?? bodyPointSize
+                attrs[.font] = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: .bold))
+                return NSAttributedString(string: content, attributes: attrs)
+            }
+        )
+        applyPreviewInline(
+            pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#,
+            in: attributed,
+            transform: { content, base in
+                var attrs = base
+                let font = (base[.font] as? UIFont) ?? .systemFont(ofSize: bodyPointSize)
+                attrs[.font] = font.withItalicTrait()
+                return NSAttributedString(string: content, attributes: attrs)
+            }
+        )
+        applyPreviewInline(
+            pattern: #"~~([^~\n]+)~~"#,
+            in: attributed,
+            transform: { content, base in
+                var attrs = base
+                attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                return NSAttributedString(string: content, attributes: attrs)
+            }
+        )
+        applyPreviewInline(
+            pattern: #"\[([^\]]+)\]\((https?://[^\s)]+)\)"#,
+            in: attributed,
+            transform: { content, base in
+                // content here is only group 1; recover URL from original match via side channel below.
+                return NSAttributedString(string: content, attributes: base)
+            },
+            linkAware: true
+        )
+        return attributed
+    }
+
+    private static func applyPreviewInline(
+        pattern: String,
         in attributed: NSMutableAttributedString,
-        fontWeight: UIFont.Weight? = nil,
-        strikethrough: Bool = false,
-        monospace: Bool = false,
+        transform: (_ content: String, _ base: [NSAttributedString.Key: Any]) -> NSAttributedString,
+        linkAware: Bool = false
+    ) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        let matches = regex.matches(in: attributed.string, range: NSRange(location: 0, length: attributed.length)).reversed()
+        for match in matches {
+            guard match.numberOfRanges > 1 else { continue }
+            let fullRange = match.range(at: 0)
+            let contentRange = match.range(at: 1)
+            guard fullRange.location != NSNotFound, contentRange.location != NSNotFound else { continue }
+
+            var base: [NSAttributedString.Key: Any] = [:]
+            if attributed.length > 0 {
+                base = attributed.attributes(at: min(contentRange.location, attributed.length - 1), effectiveRange: nil)
+            }
+            let content = (attributed.string as NSString).substring(with: contentRange)
+            let replacement = NSMutableAttributedString(attributedString: transform(content, base))
+            if linkAware, match.numberOfRanges > 2 {
+                let urlString = (attributed.string as NSString).substring(with: match.range(at: 2))
+                if let url = URL(string: urlString) {
+                    replacement.addAttribute(.link, value: url, range: NSRange(location: 0, length: replacement.length))
+                    replacement.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: NSRange(location: 0, length: replacement.length))
+                }
+            }
+            attributed.replaceCharacters(in: fullRange, with: replacement)
+        }
+    }
+
+    private static func applySourceInline(
+        pattern: String,
+        in attributed: NSMutableAttributedString,
+        attributes: [NSAttributedString.Key: Any],
+        markerColor: UIColor,
         markerLength: Int
     ) {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
         let matches = regex.matches(in: attributed.string, range: NSRange(location: 0, length: attributed.length)).reversed()
         for match in matches {
             guard match.numberOfRanges > 1 else { continue }
-            let contentRange = match.range(at: 1)
-            let fullRange = match.range(at: 0)
-            if let fontWeight {
-                let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: fontWeight))
-                attributed.addAttribute(.font, value: font, range: contentRange)
+            let full = match.range(at: 0)
+            let content = match.range(at: 1)
+            attributed.addAttributes(attributes, range: content)
+            if markerLength > 0, full.length >= markerLength * 2 {
+                attributed.addAttribute(
+                    .foregroundColor,
+                    value: markerColor,
+                    range: NSRange(location: full.location, length: markerLength)
+                )
+                attributed.addAttribute(
+                    .foregroundColor,
+                    value: markerColor,
+                    range: NSRange(location: full.location + full.length - markerLength, length: markerLength)
+                )
             }
-            if strikethrough {
-                attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: contentRange)
-            }
-            if monospace {
-                let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 20, weight: .regular))
-                attributed.addAttribute(.font, value: font, range: contentRange)
-            }
-            attributed.deleteCharacters(in: NSRange(location: fullRange.location + fullRange.length - markerLength, length: markerLength))
-            attributed.deleteCharacters(in: NSRange(location: fullRange.location, length: markerLength))
         }
+    }
+
+    /// - Returns: `nil` when the line is not a fence; otherwise the language tag (may be empty).
+    private static func fenceLanguage(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("```") else { return nil }
+        return String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func baseParagraphStyle(lineSpacing: CGFloat, paragraphSpacing: CGFloat) -> NSMutableParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = lineSpacing
+        style.paragraphSpacing = paragraphSpacing
+        style.lineBreakMode = .byWordWrapping
+        return style
+    }
+}
+
+private extension UIFont {
+    func withItalicTrait() -> UIFont {
+        let descriptor = fontDescriptor.withSymbolicTraits(.traitItalic) ?? fontDescriptor
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }

@@ -41,6 +41,7 @@ final class NewTopicComposerViewController: UIViewController {
     private var isUploading = false
     private var isSubmitting = false
     private var draftSaveTask: Task<Void, Never>?
+    private var serverDraftSaveTask: Task<Void, Never>?
     private var panelHeightConstraint: NSLayoutConstraint?
     private let markdownCoordinator = ComposerMarkdownCoordinator()
     
@@ -308,6 +309,49 @@ final class NewTopicComposerViewController: UIViewController {
         updateCategoryButton()
         rebuildTags()
         updateEditorState()
+
+        if !hasExplicitInitial {
+            Task { await hydrateServerDraftIfNeeded() }
+        }
+    }
+
+    /// FluxDo parity: pull `new_topic` server draft when local composer is empty.
+    private func hydrateServerDraftIfNeeded() async {
+        let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let localRaw = (textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Local draft already restored — still refresh sequence from server.
+        do {
+            guard let server = try await api.fetchDraft(key: "new_topic") else { return }
+            ComposerLocalDraftStore.saveSequence(
+                baseURL: api.baseURL,
+                draftKey: "new_topic",
+                sequence: server.sequence
+            )
+            let serverTitle = server.data.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let serverRaw = server.data.reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard localTitle.isEmpty, localRaw.isEmpty else { return }
+            guard !serverTitle.isEmpty || !serverRaw.isEmpty else { return }
+            titleField.text = server.data.title ?? ""
+            textView.text = server.data.reply ?? ""
+            if let categoryId = server.data.categoryId {
+                selectedCategoryId = categoryId
+            }
+            if !server.data.tags.isEmpty {
+                selectedTags = Self.normalizedTags(server.data.tags)
+            }
+            ComposerLocalDraftStore.saveNewTopic(
+                baseURL: api.baseURL,
+                title: server.data.title ?? "",
+                raw: server.data.reply ?? "",
+                categoryId: server.data.categoryId,
+                tags: server.data.tags
+            )
+            updateCategoryButton()
+            rebuildTags()
+            updateEditorState()
+        } catch {
+            // Offline / CF — local draft remains.
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -322,19 +366,33 @@ final class NewTopicComposerViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
         persistLocalDraftImmediately()
     }
 
     private func scheduleLocalDraftSave() {
         draftSaveTask?.cancel()
         draftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.persistLocalDraftImmediately()
+            self.persistLocalDraftOnly()
+        }
+        serverDraftSaveTask?.cancel()
+        serverDraftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistServerDraft()
         }
     }
 
     private func persistLocalDraftImmediately() {
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        persistLocalDraftOnly()
+        persistServerDraft()
+    }
+
+    private func persistLocalDraftOnly() {
         ComposerLocalDraftStore.saveNewTopic(
             baseURL: api.baseURL,
             title: titleField.text ?? "",
@@ -342,6 +400,23 @@ final class NewTopicComposerViewController: UIViewController {
             categoryId: selectedCategoryId,
             tags: selectedTags
         )
+    }
+
+    private func persistServerDraft() {
+        let title = titleField.text ?? ""
+        let raw = textView.text ?? ""
+        let categoryId = selectedCategoryId
+        let tags = selectedTags
+        let api = self.api
+        Task {
+            await ComposerServerDraftSync.syncNewTopic(
+                api: api,
+                title: title,
+                raw: raw,
+                categoryId: categoryId,
+                tags: tags
+            )
+        }
     }
 
     private func setupHierarchy() {
@@ -702,6 +777,8 @@ final class NewTopicComposerViewController: UIViewController {
                     )
                 }
                 ComposerLocalDraftStore.clearNewTopic(baseURL: api.baseURL)
+                let api = self.api
+                Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_topic") }
                 dismiss(animated: true) { [weak self] in self?.onTopicCreated?(topicId) }
             } catch {
                 isSubmitting = false

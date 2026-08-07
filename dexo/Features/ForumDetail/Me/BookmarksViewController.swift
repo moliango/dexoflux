@@ -278,4 +278,68 @@ extension BookmarksViewController: UITableViewDelegate {
             navigationController?.pushViewController(detailVC, animated: true)
         }
     }
+
+    func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        let bookmark = viewModel.bookmarks[indexPath.row]
+        guard let topicId = bookmark.topicId else { return nil }
+        let titleText = bookmark.title ?? bookmark.name ?? "#\(topicId)"
+        let remind = UIContextualAction(
+            style: .normal,
+            title: String(localized: "reminder.action", defaultValue: "提醒")
+        ) { [weak self] _, _, completion in
+            self?.presentBookmarkReminder(topicId: topicId, title: titleText)
+            completion(true)
+        }
+        remind.image = UIImage(systemName: "alarm")
+        remind.backgroundColor = .systemPurple
+        return UISwipeActionsConfiguration(actions: [remind])
+    }
+
+    private func presentBookmarkReminder(topicId: Int, title: String) {
+        let sheet = UIAlertController(
+            title: String(localized: "reminder.pick", defaultValue: "设置提醒"),
+            message: title,
+            preferredStyle: .actionSheet
+        )
+        for preset in LocalReminderScheduler.presetDates() {
+            sheet.addAction(UIAlertAction(title: preset.title, style: .default) { [weak self] _ in
+                guard let self else { return }
+                Task {
+                    let ok = await LocalReminderScheduler.schedule(
+                        .init(
+                            kind: .bookmark,
+                            topicId: topicId,
+                            baseURL: self.api.baseURL,
+                            title: title,
+                            fireAt: preset.date
+                        )
+                    )
+                    await MainActor.run {
+                        let msg = ok
+                            ? String(localized: "reminder.scheduled", defaultValue: "已设置本地提醒")
+                            : String(localized: "reminder.denied", defaultValue: "未获得通知权限")
+                        let alert = UIAlertController(title: msg, message: nil, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(
+            title: String(localized: "reminder.cancel_existing", defaultValue: "取消已有提醒"),
+            style: .destructive
+        ) { [weak self] _ in
+            guard let self else { return }
+            LocalReminderScheduler.cancel(kind: .bookmark, topicId: topicId, baseURL: self.api.baseURL)
+        })
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(sheet, animated: true)
+    }
 }

@@ -40,10 +40,15 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
         case .bookmark:
             bookmarkTopic()
         case .readLater:
+            let title = viewModel.topic?.title
+                ?? viewModel.topic?.fancyTitle
+                ?? "#\(topicId)"
             TopicReadLaterStore.shared.toggle(
                 topicId: topicId,
                 baseURL: api.baseURL,
-                username: AuthManager.shared.username(for: api.baseURL)
+                username: AuthManager.shared.username(for: api.baseURL),
+                title: title,
+                lastReadPostNumber: lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber
             )
             configureTopicActions()
         case .notification:

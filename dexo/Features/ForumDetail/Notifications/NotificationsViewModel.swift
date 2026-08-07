@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class NotificationsViewModel: DexoObservableObject {
     var notifications: [DiscourseNotification] { coordinator.notifications }
+    var unreadCount: Int { coordinator.unreadCount }
     var isLoading: Bool { coordinator.isLoading }
     var errorMessage: String? { coordinator.errorMessage }
     var requiresLogin: Bool { coordinator.requiresLogin }

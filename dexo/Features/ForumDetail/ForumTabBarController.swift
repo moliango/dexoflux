@@ -960,6 +960,7 @@ extension ForumTabBarController: UINavigationControllerDelegate {
         TopicDetailTransitionGeometry.normalize(viewController.view)
         navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
+            && !(viewController is WeChatTopicDetailViewController)
         if navigationController.viewControllers.count > 1 {
             isTabBarHiddenByScroll = false
         }

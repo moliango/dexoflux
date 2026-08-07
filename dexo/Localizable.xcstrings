@@ -2197,7 +2197,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "错误"
+            "value" : "失败"
           }
         }
       }
@@ -6400,6 +6400,17 @@
         }
       }
     },
+    "me.drafts.delete.local_message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅删除本机草稿，云端副本不受影响。"
+          }
+        }
+      }
+    },
     "me.drafts.delete.message" : {
       "localizations" : {
         "en" : {
@@ -6480,6 +6491,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有已儲存的草稿"
+          }
+        }
+      }
+    },
+    "me.drafts.local" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "本地草稿"
           }
         }
       }
@@ -6620,6 +6642,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回覆草稿"
+          }
+        }
+      }
+    },
+    "me.drafts.section.cloud" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "云端草稿（与网页 / FluxDo 同步）"
+          }
+        }
+      }
+    },
+    "me.drafts.section.local" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "本机草稿"
           }
         }
       }
@@ -7189,6 +7233,17 @@
         }
       }
     },
+    "me.quick.read_later" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "稍后阅读"
+          }
+        }
+      }
+    },
     "me.quick.topics" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -7196,6 +7251,39 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "我的话题"
+          }
+        }
+      }
+    },
+    "me.read_later" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "稍后阅读"
+          }
+        }
+      }
+    },
+    "me.read_later.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还没有稍后阅读\n在话题菜单或列表右滑可加入"
+          }
+        }
+      }
+    },
+    "me.read_later.remove" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "移除"
           }
         }
       }
@@ -9489,6 +9577,83 @@
         }
       }
     },
+    "notifications.filter.all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部"
+          }
+        }
+      }
+    },
+    "notifications.filter.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "当前筛选下没有通知"
+          }
+        }
+      }
+    },
+    "notifications.filter.mentions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "@我"
+          }
+        }
+      }
+    },
+    "notifications.filter.messages" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "私信"
+          }
+        }
+      }
+    },
+    "notifications.filter.replies" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复"
+          }
+        }
+      }
+    },
+    "notifications.filter.system" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "系统"
+          }
+        }
+      }
+    },
+    "notifications.filter.unread" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未读"
+          }
+        }
+      }
+    },
     "notifications.loading" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9570,6 +9735,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部標為已讀"
+          }
+        }
+      }
+    },
+    "notifications.mark_read" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标为已读"
           }
         }
       }
@@ -13011,6 +13187,116 @@
         }
       }
     },
+    "reminder.action" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "提醒"
+          }
+        }
+      }
+    },
+    "reminder.bookmark.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "书签提醒"
+          }
+        }
+      }
+    },
+    "reminder.cancel_existing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消已有提醒"
+          }
+        }
+      }
+    },
+    "reminder.denied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未获得通知权限"
+          }
+        }
+      }
+    },
+    "reminder.pick" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "设置提醒"
+          }
+        }
+      }
+    },
+    "reminder.preset.1h" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1 小时后"
+          }
+        }
+      }
+    },
+    "reminder.preset.tomorrow" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "明天 9:00"
+          }
+        }
+      }
+    },
+    "reminder.preset.tonight" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "今晚 21:00"
+          }
+        }
+      }
+    },
+    "reminder.read_later.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "稍后阅读提醒"
+          }
+        }
+      }
+    },
+    "reminder.scheduled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已设置本地提醒"
+          }
+        }
+      }
+    },
     "reply.customize" : {
       "localizations" : {
         "en" : {
@@ -14648,6 +14934,17 @@
         }
       }
     },
+    "search.hot.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "热门标签"
+          }
+        }
+      }
+    },
     "search.no_results" : {
       "localizations" : {
         "en" : {
@@ -14733,6 +15030,39 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "条结果"
+          }
+        }
+      }
+    },
+    "search.scope.tags" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标签"
+          }
+        }
+      }
+    },
+    "search.scope.topics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "帖子"
+          }
+        }
+      }
+    },
+    "search.scope.users" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "用户"
           }
         }
       }
@@ -19295,6 +19625,138 @@
         }
       }
     },
+    "settings.notifications.filter.all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全部"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.all.sub" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步到的未读都可能弹出"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.high" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅高优"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.high.sub" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅 high_priority 通知"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.mentions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仅 @我"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.mentions_messages" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "@我与私信"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.mentions_messages.sub" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "减少刷屏，保留关键互动"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.mentions.sub" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "只保留被提及"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "控制后台同步后的本地横幅；角标仍会更新"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.none" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不推送横幅"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.none.sub" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "仍更新角标，不发横幅"
+          }
+        }
+      }
+    },
+    "settings.notifications.filter.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "横幅推送范围"
+          }
+        }
+      }
+    },
     "settings.notion.subtitle" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -19352,6 +19814,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "基础"
+          }
+        }
+      }
+    },
+    "settings.preferences.section.notifications" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "本地通知"
           }
         }
       }
@@ -22451,7 +22924,18 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "添加书签"
+            "value" : "书签"
+          }
+        }
+      }
+    },
+    "topic.bookmark.added" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已添加书签"
           }
         }
       }
@@ -22830,6 +23314,17 @@
         }
       }
     },
+    "topic.mark_read" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已读"
+          }
+        }
+      }
+    },
     "topic.more" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -22847,7 +23342,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "通知级别"
+            "value" : "通知"
           }
         }
       }
@@ -22924,7 +23419,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "移出稍后阅读"
+            "value" : "移出稍后"
           }
         }
       }

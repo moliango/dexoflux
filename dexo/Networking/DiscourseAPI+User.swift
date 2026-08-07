@@ -111,6 +111,60 @@ extension DiscourseAPI {
         try await request(route: .drafts(offset: offset, limit: limit))
     }
 
+    /// Single draft by key (FluxDo `GET /drafts/:key.json`). Returns nil when absent.
+    func fetchDraft(key: String) async throws -> (data: DiscourseDraftData, sequence: Int)? {
+        struct Envelope: Decodable {
+            let draft: DiscourseDraftData?
+            let draftSequence: Int?
+            enum CodingKeys: String, CodingKey {
+                case draft
+                case draftSequence = "draft_sequence"
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                draftSequence = try container.decodeIfPresent(Int.self, forKey: .draftSequence)
+                if let object = try? container.decodeIfPresent(DiscourseDraftData.self, forKey: .draft) {
+                    draft = object
+                } else if let raw = try? container.decodeIfPresent(String.self, forKey: .draft),
+                          let rawData = raw.data(using: .utf8),
+                          let decoded = try? JSONDecoder().decode(DiscourseDraftData.self, from: rawData) {
+                    draft = decoded
+                } else {
+                    draft = nil
+                }
+            }
+        }
+
+        do {
+            let envelope: Envelope = try await request(route: .draft(key: key))
+            guard let data = envelope.draft else { return nil }
+            return (data, envelope.draftSequence ?? 0)
+        } catch let error as DiscourseAPIError where error.errorType == "http_404" {
+            return nil
+        }
+    }
+
+    /// Upsert a Discourse server draft (same API web / FluxDo use).
+    /// - Returns the next `draft_sequence` to send on subsequent saves.
+    @discardableResult
+    func saveDraft(key: String, sequence: Int, dataJSON: String, forceSave: Bool = false) async throws -> Int {
+        var parameters: [String: Any] = [
+            "draft_key": key,
+            "sequence": sequence,
+            "data": dataJSON,
+        ]
+        if forceSave {
+            // Discourse / FluxDo: bypass optimistic sequence check after 409.
+            parameters["force_save"] = true
+        }
+        let response: DiscourseSaveDraftResponse = try await request(
+            route: .saveDraft,
+            parameters: parameters
+        )
+        return response.draftSequence ?? (sequence + 1)
+    }
+
     func deleteDraft(key: String, sequence: Int) async throws {
         do {
             try await requestVoid(route: .deleteDraft(key: key, sequence: sequence))

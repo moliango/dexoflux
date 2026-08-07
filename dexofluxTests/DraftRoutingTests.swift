@@ -24,6 +24,20 @@ final class DraftRoutingTests: XCTestCase {
         XCTAssertEqual(draft.destination, .privateMessage(recipient: "sam"))
     }
 
+
+    func testFluxDoActionCreateTopicIsNewTopic() async throws {
+        let draft = try decodeDraft(key: "new_topic", data: #"{"title":"Hello","reply":"Body","action":"create_topic"}"#)
+        XCTAssertEqual(draft.destination, .newTopic)
+    }
+
+    func testFluxDoRecipientsArrayRoutesPrivateMessage() async throws {
+        let draft = try decodeDraft(
+            key: "new_private_message",
+            data: #"{"title":"Hi","reply":"Body","action":"private_message","recipients":["sam","alex"]}"#
+        )
+        XCTAssertEqual(draft.destination, .privateMessage(recipient: "sam"))
+    }
+
     func testUnknownDraftIsUnsupported() async throws {
         let draft = try decodeDraft(key: "mystery", data: #"{"reply":"Body"}"#)
 

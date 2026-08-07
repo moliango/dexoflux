@@ -8,6 +8,17 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     private let fixedQueryQualifier: String?
 
     private var searchTask: Task<Void, Never>?
+    private var selectedScope: SearchResultScope = .topics
+    private var scopeButtons: [SearchResultScope: UIButton] = [:]
+
+    private var currentScopeIsEmpty: Bool {
+        switch selectedScope {
+        case .topics: return viewModel.searchResults.isEmpty
+        case .users: return viewModel.userResults.isEmpty
+        case .tags: return viewModel.tagResults.isEmpty
+        }
+    }
+    
 
     // MARK: - FluxDO capsule header
 
@@ -148,6 +159,23 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
 
     // MARK: - Active filter chips (FluxDo ActiveSearchFiltersBar)
 
+
+    private let scopeScrollView: UIScrollView = {
+        let sv = UIScrollView()
+        sv.showsHorizontalScrollIndicator = false
+        sv.translatesAutoresizingMaskIntoConstraints = false
+        return sv
+    }()
+
+    private let scopeStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 8
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
     private let chipsScrollView: UIScrollView = {
         let sv = UIScrollView()
         sv.showsHorizontalScrollIndicator = false
@@ -172,6 +200,8 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(SearchResultCell.self, forCellReuseIdentifier: SearchResultCell.reuseIdentifier)
+        tv.register(UITableViewCell.self, forCellReuseIdentifier: "SearchUserCell")
+        tv.register(UITableViewCell.self, forCellReuseIdentifier: "SearchTagCell")
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -180,24 +210,64 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         return tv
     }()
 
-    private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, postId in
-        guard let self,
-              let cell = tableView.dequeueReusableCell(withIdentifier: SearchResultCell.reuseIdentifier, for: indexPath) as? SearchResultCell,
-              let post = self.viewModel.searchResults.first(where: { $0.id == postId })
-        else {
-            return UITableViewCell()
+    private lazy var dataSource: UITableViewDiffableDataSource<Int, String> = .init(tableView: tableView) { [weak self] tableView, indexPath, itemId in
+        guard let self else { return UITableViewCell() }
+
+        if itemId.hasPrefix("post:"),
+           let postId = Int(itemId.dropFirst(5)),
+           let cell = tableView.dequeueReusableCell(withIdentifier: SearchResultCell.reuseIdentifier, for: indexPath) as? SearchResultCell,
+           let post = self.viewModel.searchResults.first(where: { $0.id == postId }) {
+            let topic = self.viewModel.topic(for: post.topicId)
+            let category = topic?.categoryId.flatMap { self.viewModel.categoriesById[$0] }
+            cell.configure(
+                with: post,
+                topic: topic,
+                baseURL: self.api.baseURL,
+                categoryName: self.viewModel.categoryDisplayName(for: category),
+                categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
+                isAIResult: self.viewModel.aiTopicIds.contains(post.topicId)
+            )
+            return cell
         }
-        let topic = self.viewModel.topic(for: post.topicId)
-        let category = topic?.categoryId.flatMap { self.viewModel.categoriesById[$0] }
-        cell.configure(
-            with: post,
-            topic: topic,
-            baseURL: self.api.baseURL,
-            categoryName: self.viewModel.categoryDisplayName(for: category),
-            categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
-            isAIResult: self.viewModel.aiTopicIds.contains(post.topicId)
-        )
-        return cell
+
+        if itemId.hasPrefix("user:"),
+           let userId = Int(itemId.dropFirst(5)),
+           let user = self.viewModel.userResults.first(where: { $0.id == userId }) {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SearchUserCell")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "SearchUserCell")
+            var content = cell.defaultContentConfiguration()
+            content.image = UIImage(systemName: "person.crop.circle.fill")
+            content.imageProperties.tintColor = AppSettings.shared.themeStyle.accentColor
+            content.text = user.name?.isEmpty == false ? "\(user.name!) (@\(user.username))" : "@\(user.username)"
+            content.secondaryText = "@\(user.username)"
+            content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
+            cell.backgroundColor = .clear
+            return cell
+        }
+
+        if itemId.hasPrefix("tag:") {
+            let name = String(itemId.dropFirst(4))
+            let tag = self.viewModel.tagResults.first(where: { $0.name == name || $0.text == name })
+                ?? self.viewModel.hotTags.first(where: { $0.name == name || $0.text == name })
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SearchTagCell")
+                ?? UITableViewCell(style: .value1, reuseIdentifier: "SearchTagCell")
+            var content = cell.defaultContentConfiguration()
+            content.image = UIImage(systemName: "tag.fill")
+            content.imageProperties.tintColor = .systemOrange
+            content.text = "#\(tag?.text ?? name)"
+            if let count = tag?.count, count > 0 {
+                content.secondaryText = "\(count)"
+            }
+            content.textProperties.font = .systemFont(ofSize: 16, weight: .semibold)
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
+            cell.backgroundColor = .clear
+            return cell
+        }
+
+        return UITableViewCell()
     }
 
     private let activityIndicator: UIActivityIndicatorView = {
@@ -269,6 +339,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
 
         setupHeader()
         setupFilterBar()
+        setupScopeBar()
         aiSearchSwitch.transform = CGAffineTransform(scaleX: 0.80, y: 0.80)
         updateFilterButtons()
 
@@ -278,7 +349,18 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         view.addSubview(listStateView)
 
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: chipsScrollView.bottomAnchor),
+            scopeScrollView.topAnchor.constraint(equalTo: chipsScrollView.bottomAnchor),
+            scopeScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scopeScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scopeScrollView.heightAnchor.constraint(equalToConstant: 44),
+
+            scopeStack.topAnchor.constraint(equalTo: scopeScrollView.contentLayoutGuide.topAnchor, constant: 6),
+            scopeStack.bottomAnchor.constraint(equalTo: scopeScrollView.contentLayoutGuide.bottomAnchor, constant: -6),
+            scopeStack.leadingAnchor.constraint(equalTo: scopeScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+            scopeStack.trailingAnchor.constraint(equalTo: scopeScrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+            scopeStack.heightAnchor.constraint(equalTo: scopeScrollView.frameLayoutGuide.heightAnchor, constant: -12),
+
+            tableView.topAnchor.constraint(equalTo: scopeScrollView.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -301,6 +383,9 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         }
         Task {
             await viewModel.loadRecentSearches()
+        }
+        Task {
+            await viewModel.loadHotTags()
         }
         if let initialQuery, !initialQuery.isEmpty {
             searchField.text = initialQuery
@@ -365,6 +450,8 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         filterBar.addSubview(resultCountLabel)
         view.addSubview(chipsScrollView)
         chipsScrollView.addSubview(chipsStack)
+        view.addSubview(scopeScrollView)
+        scopeScrollView.addSubview(scopeStack)
 
         let chipsHeightConstraint = chipsScrollView.heightAnchor.constraint(equalToConstant: 0)
         self.chipsHeightConstraint = chipsHeightConstraint
@@ -406,6 +493,58 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
     }
 
     // MARK: - Filter Button Appearance
+
+
+    private func setupScopeBar() {
+        scopeStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        scopeButtons.removeAll()
+        for scope in SearchResultScope.allCases {
+            var config = UIButton.Configuration.plain()
+            config.cornerStyle = .capsule
+            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var out = incoming
+                out.font = .systemFont(ofSize: 13, weight: .semibold)
+                return out
+            }
+            let button = UIButton(configuration: config)
+            button.tag = scope.rawValue
+            button.addTarget(self, action: #selector(scopeChipTapped(_:)), for: .touchUpInside)
+            scopeButtons[scope] = button
+            scopeStack.addArrangedSubview(button)
+        }
+        refreshScopeChipStyles()
+        scopeScrollView.isHidden = true
+    }
+
+    private func refreshScopeChipStyles() {
+        let accent = AppSettings.shared.themeStyle.accentColor
+        for scope in SearchResultScope.allCases {
+            guard let button = scopeButtons[scope] else { continue }
+            let count: Int = {
+                switch scope {
+                case .topics: return viewModel.searchResults.count
+                case .users: return viewModel.userResults.count
+                case .tags: return viewModel.tagResults.count
+                }
+            }()
+            var config = button.configuration ?? .plain()
+            config.title = count > 0 ? "\(scope.title) \(count)" : scope.title
+            let selected = scope == selectedScope
+            config.baseForegroundColor = selected ? .white : .secondaryLabel
+            config.background.backgroundColor = selected ? accent : UIColor.secondarySystemFill
+            button.configuration = config
+        }
+    }
+
+    @objc private func scopeChipTapped(_ sender: UIButton) {
+        guard let scope = SearchResultScope(rawValue: sender.tag) else { return }
+        guard scope != selectedScope else { return }
+        selectedScope = scope
+        viewModel.selectedScope = scope
+        refreshScopeChipStyles()
+        applyResultSnapshot()
+    }
 
     private func updateFilterButtons() {
         aiSearchSwitch.isOn = viewModel.aiSearchEnabled
@@ -691,7 +830,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
 
     // MARK: - Recent searches (empty state)
 
-    private func makeRecentSearchesView() -> UIView {
+    private func makeIdleDiscoveryView() -> UIView {
         let container = UIView()
         let stack = UIStackView()
         stack.axis = .vertical
@@ -752,6 +891,50 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
                 self.triggerSearch()
             }, for: .touchUpInside)
             stack.addArrangedSubview(button)
+        }
+
+        if !viewModel.hotTags.isEmpty {
+            let hotTitle = UILabel()
+            hotTitle.text = String(localized: "search.hot.title", defaultValue: "热门标签")
+            hotTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+            hotTitle.textColor = .secondaryLabel
+            stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
+            stack.addArrangedSubview(hotTitle)
+            stack.setCustomSpacing(8, after: hotTitle)
+
+            let wrap = UIView()
+            wrap.translatesAutoresizingMaskIntoConstraints = false
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            let maxW = UIScreen.main.bounds.width - 40
+            let hPad: CGFloat = 8
+            let vPad: CGFloat = 8
+            for tag in viewModel.hotTags.prefix(16) {
+                var config = UIButton.Configuration.gray()
+                config.title = "#\(tag.text)"
+                config.cornerStyle = .capsule
+                config.buttonSize = .small
+                config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
+                let button = UIButton(configuration: config)
+                button.sizeToFit()
+                let w = max(button.bounds.width, 44)
+                let h: CGFloat = 32
+                if x + w > maxW, x > 0 {
+                    x = 0
+                    y += h + vPad
+                }
+                button.frame = CGRect(x: x, y: y, width: w + 8, height: h)
+                let term = tag.text
+                button.addAction(UIAction { [weak self] _ in
+                    self?.searchField.text = term
+                    self?.selectedScope = .topics
+                    self?.triggerSearch()
+                }, for: .touchUpInside)
+                wrap.addSubview(button)
+                x += w + 8 + hPad
+            }
+            wrap.heightAnchor.constraint(equalToConstant: y + 32).isActive = true
+            stack.addArrangedSubview(wrap)
         }
 
         container.addSubview(stack)
@@ -835,7 +1018,7 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
             listStateView.configure(.error(error)) { [weak self] in
                 self?.triggerSearch()
             }
-        } else if viewModel.hasSearched, viewModel.searchResults.isEmpty, !viewModel.isSearching {
+        } else if viewModel.hasSearched, currentScopeIsEmpty, !viewModel.isSearching {
             listStateView.isHidden = false
             listStateView.configure(.empty) { [weak self] in
                 self?.triggerSearch()
@@ -845,25 +1028,53 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
         }
 
         updateFilterButtons()
+        refreshScopeChipStyles()
+        scopeScrollView.isHidden = !viewModel.hasSearched
 
-        // FluxDo：未搜索时展示服务端「最近搜索」
-        if !viewModel.hasSearched, !viewModel.recentSearches.isEmpty {
-            tableView.backgroundView = makeRecentSearchesView()
+        // Idle: recent history + hot tags. After search: result list by scope.
+        if !viewModel.hasSearched {
+            tableView.backgroundView = makeIdleDiscoveryView()
+            tableView.tableHeaderView = nil
         } else {
             tableView.backgroundView = nil
+            tableView.tableHeaderView = nil
         }
-        tableView.tableHeaderView = viewModel.hasSearched ? makeUsersHeaderView() : nil
 
-        var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
+        applyResultSnapshot()
+    }
+
+    private func applyResultSnapshot() {
+        var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0])
-        var seen = Set<Int>()
-        let uniqueIds = viewModel.searchResults.compactMap { post -> Int? in
-            guard seen.insert(post.id).inserted else { return nil }
-            return post.id
+        guard viewModel.hasSearched else {
+            dataSource.apply(snapshot, animatingDifferences: false)
+            return
         }
-        snapshot.appendItems(uniqueIds, toSection: 0)
-        snapshot.reconfigureItems(uniqueIds)
+
+        let items: [String]
+        switch selectedScope {
+        case .topics:
+            var seen = Set<Int>()
+            items = viewModel.searchResults.compactMap { post -> String? in
+                guard seen.insert(post.id).inserted else { return nil }
+                return "post:\(post.id)"
+            }
+        case .users:
+            items = viewModel.userResults.map { "user:\($0.id)" }
+        case .tags:
+            items = viewModel.tagResults.map { "tag:\($0.name)" }
+        }
+        snapshot.appendItems(items, toSection: 0)
         dataSource.apply(snapshot, animatingDifferences: false)
+
+        // Empty state for current scope
+        let emptyForScope = items.isEmpty && !viewModel.isSearching && viewModel.errorMessage == nil
+        if emptyForScope {
+            listStateView.isHidden = false
+            listStateView.configure(.empty) { [weak self] in
+                self?.triggerSearch()
+            }
+        }
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -933,14 +1144,42 @@ final class SearchViewController: ObservableViewController, UITextFieldDelegate 
 extension SearchViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard let postId = dataSource.itemIdentifier(for: indexPath),
-              let post = viewModel.searchResults.first(where: { $0.id == postId })
-        else { return }
-        let detailVC = TopicDetailFactory.make(api: api, topicId: post.topicId)
-        navigationController?.pushViewController(detailVC, animated: true)
+        guard let itemId = dataSource.itemIdentifier(for: indexPath) else { return }
+
+        if itemId.hasPrefix("post:"),
+           let postId = Int(itemId.dropFirst(5)),
+           let post = viewModel.searchResults.first(where: { $0.id == postId }) {
+            // Jump to the matched floor / post — the whole point of search hit navigation.
+            let detailVC = TopicDetailFactory.make(
+                api: api,
+                topicId: post.topicId,
+                initialFloor: post.postNumber,
+                initialPostId: post.id
+            )
+            navigationController?.pushViewController(detailVC, animated: true)
+            return
+        }
+
+        if itemId.hasPrefix("user:"),
+           let userId = Int(itemId.dropFirst(5)),
+           let user = viewModel.userResults.first(where: { $0.id == userId }) {
+            let profile = UserProfileViewController(api: api, username: user.username)
+            navigationController?.pushViewController(profile, animated: true)
+            return
+        }
+
+        if itemId.hasPrefix("tag:") {
+            let name = String(itemId.dropFirst(4))
+            let tagName = viewModel.tagResults.first(where: { $0.name == name })?.text
+                ?? viewModel.hotTags.first(where: { $0.name == name })?.text
+                ?? name
+            let tagsVC = TagTopicsViewController(api: api, tagName: tagName)
+            navigationController?.pushViewController(tagsVC, animated: true)
+        }
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        guard selectedScope == .topics else { return }
         let totalRows = tableView.numberOfRows(inSection: 0)
         if indexPath.row >= totalRows - 5 {
             Task {

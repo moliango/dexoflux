@@ -824,7 +824,7 @@ final class PostNativeCell: UITableViewCell {
         contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let views = NativeContentRenderer.renderBlocks(annotatedBlocks, config: config, delegate: delegate)
         for view in views {
-            setupTextViews(in: view)
+            setupTextViews(in: view, cloudflareBaseURL: baseURL)
             contentStackView.addArrangedSubview(view)
         }
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
@@ -1046,7 +1046,7 @@ final class PostNativeCell: UITableViewCell {
             let stack = UIStackView(arrangedSubviews: views)
             stack.axis = .vertical
             stack.spacing = 6
-            views.forEach { setupTextViews(in: $0) }
+            views.forEach { setupTextViews(in: $0, cloudflareBaseURL: config.baseURL) }
             content = stack
         } else if let url = Self.signatureImageURL(from: signature) {
             // FluxDo: image-mode signatures must not reserve a gray 9:16 slot.

@@ -44,6 +44,31 @@ final class TopicReadingTracker {
 
     func setVisiblePostNumbers(_ postNumbers: Set<Int>) {
         visiblePostNumbers = postNumbers.filter { $0 > 0 }
+        guard let topicId, let highest = visiblePostNumbers.max() else { return }
+        let username = AuthManager.shared.username(for: api.baseURL)
+        let before = TopicReadProgressStore.shared.highestSeen(
+            topicId: topicId,
+            baseURL: api.baseURL,
+            username: username
+        )
+        TopicReadProgressStore.shared.record(
+            topicId: topicId,
+            highestSeen: highest,
+            baseURL: api.baseURL,
+            username: username
+        )
+        // Push list styling as the user scrolls, not only on 60s timings flush.
+        if highest > before {
+            NotificationCenter.default.post(
+                name: .topicReadProgressDidChange,
+                object: nil,
+                userInfo: [
+                    TopicReadProgressUserInfoKey.baseURL: api.baseURL,
+                    TopicReadProgressUserInfoKey.topicId: topicId,
+                    TopicReadProgressUserInfoKey.highestSeen: highest,
+                ]
+            )
+        }
     }
 
     func scrolled() {
@@ -97,6 +122,29 @@ final class TopicReadingTracker {
                 if let statusCode,
                    (200 ..< 300).contains(statusCode),
                    let highestSeen = timings.keys.max() {
+                    TopicReadProgressStore.shared.record(
+                        topicId: topicId,
+                        highestSeen: highestSeen,
+                        baseURL: api.baseURL,
+                        username: AuthManager.shared.username(for: api.baseURL)
+                    )
+                    NotificationCenter.default.post(
+                        name: .topicReadProgressDidChange,
+                        object: nil,
+                        userInfo: [
+                            TopicReadProgressUserInfoKey.baseURL: api.baseURL,
+                            TopicReadProgressUserInfoKey.topicId: topicId,
+                            TopicReadProgressUserInfoKey.highestSeen: highestSeen,
+                        ]
+                    )
+                } else if let highestSeen = timings.keys.max() {
+                    // Even if timings upload fails, keep local progress so list/resume stay honest.
+                    TopicReadProgressStore.shared.record(
+                        topicId: topicId,
+                        highestSeen: highestSeen,
+                        baseURL: api.baseURL,
+                        username: AuthManager.shared.username(for: api.baseURL)
+                    )
                     NotificationCenter.default.post(
                         name: .topicReadProgressDidChange,
                         object: nil,

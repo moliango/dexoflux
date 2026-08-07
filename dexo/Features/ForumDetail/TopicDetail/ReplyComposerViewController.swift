@@ -23,6 +23,8 @@ final class ReplyComposerViewController: UIViewController {
     private var isSubmitting = false
     private var isApplyingAttributedText = false
     private var draftSaveTask: Task<Void, Never>?
+    private var serverDraftSaveTask: Task<Void, Never>?
+    private var sourceRestyleTask: Task<Void, Never>?
     private var panelHeightConstraint: NSLayoutConstraint?
     private let markdownCoordinator = ComposerMarkdownCoordinator()
     /// UTF-16 range of the active `@term` token in the display string (includes `@`).
@@ -344,7 +346,7 @@ final class ReplyComposerViewController: UIViewController {
         textView.delegate = self
         markdownCoordinator.surface = self
 
-        // Prefer explicit initial text (server draft / quote); else restore local autosave.
+        // Prefer explicit initial text (quote / Me→Drafts); else local, then server.
         if let initialText, !initialText.isEmpty {
             setRawComposerText(initialText)
         } else if case .reply = submissionMode,
@@ -357,6 +359,43 @@ final class ReplyComposerViewController: UIViewController {
         }
         updatePlaceholder()
         updateSendButton()
+
+        if case .reply = submissionMode, initialText == nil || initialText?.isEmpty == true {
+            Task { await self.hydrateServerDraftIfNeeded() }
+        }
+    }
+
+    /// FluxDo: merge server draft when local is empty / older sequence is unknown.
+    private func hydrateServerDraftIfNeeded() async {
+        guard case .reply = submissionMode else { return }
+        let draftKey = ComposerLocalDraftStore.discourseReplyDraftKey(
+            topicId: topicId,
+            replyToPostNumber: replyToPost?.postNumber
+        )
+        do {
+            guard let server = try await api.fetchDraft(key: draftKey) else { return }
+            ComposerLocalDraftStore.saveSequence(
+                baseURL: baseURL,
+                draftKey: draftKey,
+                sequence: server.sequence
+            )
+            let serverRaw = server.data.reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !serverRaw.isEmpty else { return }
+            let localRaw = composerRawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only fill when the composer is still empty — never clobber in-progress typing.
+            guard localRaw.isEmpty else { return }
+            setRawComposerText(server.data.reply ?? "")
+            ComposerLocalDraftStore.saveReply(
+                baseURL: baseURL,
+                topicId: topicId,
+                replyToPostNumber: replyToPost?.postNumber,
+                raw: server.data.reply ?? ""
+            )
+            updatePlaceholder()
+            updateSendButton()
+        } catch {
+            // Offline / CF — local draft remains authoritative.
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -369,20 +408,37 @@ final class ReplyComposerViewController: UIViewController {
         super.viewWillDisappear(animated)
         PresenceService.shared.leave()
         draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        sourceRestyleTask?.cancel()
         persistLocalDraftImmediately()
     }
 
     private func scheduleLocalDraftSave() {
         guard case .reply = submissionMode else { return }
+        // FluxDo: local ~400ms, server ~2s. Keep typing snappy and avoid 409 storms.
         draftSaveTask?.cancel()
         draftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.persistLocalDraftImmediately()
+            self.persistLocalDraftOnly()
+        }
+        serverDraftSaveTask?.cancel()
+        serverDraftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistServerDraft()
         }
     }
 
     private func persistLocalDraftImmediately() {
+        guard case .reply = submissionMode else { return }
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        persistLocalDraftOnly()
+        persistServerDraft()
+    }
+
+    private func persistLocalDraftOnly() {
         guard case .reply = submissionMode else { return }
         ComposerLocalDraftStore.saveReply(
             baseURL: baseURL,
@@ -390,6 +446,22 @@ final class ReplyComposerViewController: UIViewController {
             replyToPostNumber: replyToPost?.postNumber,
             raw: composerRawText
         )
+    }
+
+    private func persistServerDraft() {
+        guard case .reply = submissionMode else { return }
+        let raw = composerRawText
+        let topicId = self.topicId
+        let postNumber = replyToPost?.postNumber
+        let api = self.api
+        Task {
+            await ComposerServerDraftSync.syncReply(
+                api: api,
+                topicId: topicId,
+                replyToPostNumber: postNumber,
+                raw: raw
+            )
+        }
     }
 
     private func setupToolbar() {
@@ -550,23 +622,21 @@ final class ReplyComposerViewController: UIViewController {
     }
 
     private func makeComposerAttributedString(_ raw: String) -> NSMutableAttributedString {
-        let result = NSMutableAttributedString()
+        // 1) Soft markdown chrome on the full raw source (FluxDo source mode feel).
+        let styled = ComposerMarkdownRenderer.styleSource(raw, baseAttributes: composerTextAttributes)
+        // 2) Replace emoji shortcodes with attachments without losing surrounding styles.
         let font = textView.font ?? UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 25))
-        let attrs = composerTextAttributes
-        let matches = Self.emojiShortcodeRegex.matches(in: raw, range: NSRange(raw.startIndex..., in: raw))
-        var lastEnd = raw.startIndex
-
+        let matches = Self.emojiShortcodeRegex.matches(in: styled.string, range: NSRange(location: 0, length: styled.length))
+        let result = NSMutableAttributedString()
+        var cursor = 0
         for match in matches {
-            guard let fullRange = Range(match.range, in: raw),
-                  let codeRange = Range(match.range(at: 1), in: raw)
-            else { continue }
-
-            if lastEnd < fullRange.lowerBound {
-                result.append(NSAttributedString(string: String(raw[lastEnd..<fullRange.lowerBound]), attributes: attrs))
+            let fullRange = match.range(at: 0)
+            let codeRange = match.range(at: 1)
+            if fullRange.location > cursor {
+                result.append(styled.attributedSubstring(from: NSRange(location: cursor, length: fullRange.location - cursor)))
             }
-
-            let code = String(raw[codeRange])
-            let shortcode = String(raw[fullRange])
+            let code = (styled.string as NSString).substring(with: codeRange)
+            let shortcode = (styled.string as NSString).substring(with: fullRange)
             if let urlString = EmojiStore.url(for: code), let url = URL(string: urlString) {
                 let attachment = EmojiTextAttachment()
                 attachment.emojiURL = url
@@ -579,16 +649,38 @@ final class ReplyComposerViewController: UIViewController {
                 )
                 result.append(NSAttributedString(attachment: attachment))
             } else {
-                result.append(NSAttributedString(string: shortcode, attributes: attrs))
+                result.append(styled.attributedSubstring(from: fullRange))
             }
-
-            lastEnd = fullRange.upperBound
+            cursor = fullRange.location + fullRange.length
         }
-
-        if lastEnd < raw.endIndex {
-            result.append(NSAttributedString(string: String(raw[lastEnd...]), attributes: attrs))
+        if cursor < styled.length {
+            result.append(styled.attributedSubstring(from: NSRange(location: cursor, length: styled.length - cursor)))
         }
         return result
+    }
+
+    private func scheduleSourceRestyle() {
+        guard !isPreviewingMarkdown else { return }
+        // Don't fight IME marked text — restyling mid-composition jumps the caret.
+        guard textView.markedTextRange == nil else { return }
+        sourceRestyleTask?.cancel()
+        sourceRestyleTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard let self, !Task.isCancelled, !self.isApplyingAttributedText, !self.isPreviewingMarkdown else { return }
+            guard self.textView.markedTextRange == nil else { return }
+            self.restyleSourcePreservingSelection()
+        }
+    }
+
+    private func restyleSourcePreservingSelection() {
+        let raw = composerRawText
+        let selection = textView.selectedRange
+        let rawPrefix = rawText(inDisplayRange: NSRange(location: 0, length: min(selection.location, textView.attributedText?.length ?? 0)))
+        let styled = makeComposerAttributedString(raw)
+        let caret = makeComposerAttributedString(rawPrefix).length
+        let selected = NSRange(location: min(caret, styled.length), length: 0)
+        applyComposerAttributedText(styled, selectedRange: selected)
+        loadComposerEmojiImages(in: textView.attributedText ?? styled)
     }
 
     private func replaceDisplayRange(
@@ -916,6 +1008,12 @@ final class ReplyComposerViewController: UIViewController {
                         topicId: topicId,
                         replyToPostNumber: replyToPost?.postNumber
                     )
+                    let draftKey = ComposerLocalDraftStore.discourseReplyDraftKey(
+                        topicId: topicId,
+                        replyToPostNumber: replyToPost?.postNumber
+                    )
+                    let api = self.api
+                    Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: draftKey) }
                     if response.isEnqueued {
                         presentQueuedAlert()
                         return
@@ -1070,6 +1168,7 @@ extension ReplyComposerViewController: UITextViewDelegate {
             previewView.update(markdown: composerRawText)
             hideMentionPicker()
         } else {
+            scheduleSourceRestyle()
             refreshMentionSuggestions()
         }
     }

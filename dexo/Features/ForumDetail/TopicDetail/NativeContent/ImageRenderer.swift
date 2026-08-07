@@ -53,10 +53,24 @@ final class TappableImageContainer: UIView {
 
         let displayWidth: CGFloat
         let displayHeight: CGFloat
-        if let w = width, let h = height, w > 0 {
+        if let w = width, let h = height, w > 0, h > 0 {
             let fraction = min(CGFloat(w) / Self.referenceWidth, 1)
-            displayWidth = containerWidth * fraction
-            displayHeight = CGFloat(h) * (displayWidth / CGFloat(w))
+            var width = containerWidth * fraction
+            var height = CGFloat(h) * (width / CGFloat(w))
+            // Very small Discourse thumbs become invisible slivers in chat bubbles.
+            // Keep a readable minimum while preserving aspect ratio.
+            let minSide: CGFloat = 36
+            if width < minSide || height < minSide {
+                let scale = max(minSide / max(width, 1), minSide / max(height, 1))
+                width = min(width * scale, containerWidth)
+                height = CGFloat(h) * (width / CGFloat(w))
+                if height < minSide {
+                    height = minSide
+                    width = min(CGFloat(w) * (height / CGFloat(h)), containerWidth)
+                }
+            }
+            displayWidth = width
+            displayHeight = height
         } else {
             displayWidth = containerWidth
             displayHeight = containerWidth * 9.0 / 16.0
@@ -135,20 +149,34 @@ final class TappableImageContainer: UIView {
                     localized: "topic.image.load_failed",
                     defaultValue: "图片加载失败，点按重试"
                 )
+                // Tiny Discourse thumbs (e.g. 690x48) leave an untappable sliver — give room to retry.
+                if self.imageHeightConstraint.constant < 72 {
+                    self.imageHeightConstraint.constant = 72
+                    self.invalidateIntrinsicContentSize()
+                    self.superview?.setNeedsLayout()
+                    self.notifyPostCellHeightChanged()
+                }
                 return
             }
             self.didFailLoad = false
             self.accessibilityLabel = nil
             self.imageView.backgroundColor = .clear
-            self.imageView.contentMode = .scaleAspectFill
+            // Fit full bitmap in the bubble — avoid scaleAspectFill cropping a wide
+            // screenshot into a thin strip when Discourse attrs lie (e.g. 690x48).
+            self.imageView.contentMode = .scaleAspectFit
             self.imageView.tintColor = nil
             self.imageView.image = image
-            if !hasOriginalSize, image.size.width > 0 {
-                let ratio = containerWidth / image.size.width
-                let newHeight = image.size.height * ratio
-                // Only relayout when height actually changes — avoids thrash on cache hits.
-                if abs(newHeight - self.imageHeightConstraint.constant) > 1.5 {
-                    self.imageHeightConstraint.constant = newHeight
+            if image.size.width > 1, image.size.height > 1 {
+                let targetWidth = max(
+                    self.imageWidthConstraint.isActive ? self.imageWidthConstraint.constant : containerWidth,
+                    1
+                )
+                let newHeight = image.size.height * (targetWidth / image.size.width)
+                let delta = abs(newHeight - self.imageHeightConstraint.constant)
+                let relative = delta / max(self.imageHeightConstraint.constant, 1)
+                // Missing attrs, or attrs off by >12% / 8pt → trust the real pixels.
+                if !hasOriginalSize || (delta > 8 && relative > 0.12) {
+                    self.imageHeightConstraint.constant = max(newHeight, 24)
                     self.invalidateIntrinsicContentSize()
                     self.superview?.setNeedsLayout()
                     self.notifyPostCellHeightChanged()

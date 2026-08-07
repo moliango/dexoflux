@@ -57,29 +57,7 @@ extension PostNativeCell {
     }
 
     func cancelContentMediaLoads(in view: UIView) {
-        if let container = view as? TappableImageContainer {
-            container.cancelImageLoad()
-        } else if let signature = view as? SignatureImageView {
-            signature.cancelImageLoad()
-        } else if let onebox = view as? OneboxCardView {
-            onebox.cancelImageLoad()
-        } else if let video = view as? VideoCardView {
-            video.cancelImageLoad()
-        } else if let fallback = view as? FallbackBlockView {
-            fallback.cancelRender()
-        } else if let badge = view as? BadgeCardView {
-            // BadgeCardView owns a WKWebView; deinit stops loading.
-            _ = badge
-        }
-
-        if let stack = view as? UIStackView {
-            for arranged in stack.arrangedSubviews {
-                cancelContentMediaLoads(in: arranged)
-            }
-        }
-        for subview in view.subviews {
-            cancelContentMediaLoads(in: subview)
-        }
+        CookedInlineImageLoader.cancelMediaLoads(in: view)
     }
 
     func makeGrantedBadgeView(for badge: DiscourseTopicDetail.GrantedBadge, baseURL: String) -> UIView? {

@@ -53,6 +53,8 @@ let project = Project(
                 .external(name: "Lightbox"),
                 .package(product: "CookedHTML"),
                 .package(product: "SwiftSoup"),
+                .target(name: "dexofluxShare"),
+                .target(name: "dexofluxWidget"),
             ],
             settings: .settings(
                 base: [
@@ -93,6 +95,48 @@ let project = Project(
             dependencies: [
                 .target(name: "dexoflux"),
             ]
+        ),
+        .target(
+            name: "dexofluxShare",
+            destinations: .iOS,
+            product: .appExtension,
+            bundleId: "com.naine.dexoflux.share",
+            deploymentTargets: .iOS("15.0"),
+            infoPlist: .file(path: "Extensions/DexoShare/Info.plist"),
+            sources: ["Extensions/DexoShare/**"],
+            dependencies: [],
+            settings: .settings(
+                base: [
+                    "CODE_SIGN_STYLE": "Automatic",
+                    "DEVELOPMENT_TEAM": .string(developmentTeam),
+                    "PRODUCT_NAME": "DexoFluxShare",
+                    "SKIP_INSTALL": "YES",
+                    "SWIFT_VERSION": "5.0",
+                    "TARGETED_DEVICE_FAMILY": "1,2",
+                    "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks",
+                ]
+            )
+        ),
+        .target(
+            name: "dexofluxWidget",
+            destinations: .iOS,
+            product: .appExtension,
+            bundleId: "com.naine.dexoflux.widget",
+            deploymentTargets: .iOS("15.0"),
+            infoPlist: .file(path: "Extensions/DexoWidget/Info.plist"),
+            sources: ["Extensions/DexoWidget/**"],
+            dependencies: [],
+            settings: .settings(
+                base: [
+                    "CODE_SIGN_STYLE": "Automatic",
+                    "DEVELOPMENT_TEAM": .string(developmentTeam),
+                    "PRODUCT_NAME": "DexoFluxWidget",
+                    "SKIP_INSTALL": "YES",
+                    "SWIFT_VERSION": "5.0",
+                    "TARGETED_DEVICE_FAMILY": "1,2",
+                    "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks",
+                ]
+            )
         ),
     ],
     schemes: [

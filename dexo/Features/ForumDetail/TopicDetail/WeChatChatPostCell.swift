@@ -19,7 +19,9 @@ final class WeChatChatPostCell: UITableViewCell {
         static let avatarSize: CGFloat = 40
         static let horizontalInset: CGFloat = 12
         static let avatarBubbleGap: CGFloat = 8
-        static let bubblePadding: CGFloat = 12
+        /// Keep chat bubbles tight — large padding + fill-distribution made a hollow middle.
+        static let bubblePadding: CGFloat = 10
+        static let contentSpacing: CGFloat = 4
         /// Max fraction of row width the bubble may occupy (avatar + gaps reserved separately).
         static let maxBubbleFraction: CGFloat = 0.88
     }
@@ -28,6 +30,7 @@ final class WeChatChatPostCell: UITableViewCell {
     weak var contentDelegate: PostCellDelegate?
 
     private var currentPost: DiscourseTopicDetail.Post?
+    private var imageBaseURL: String?
     private var isMine = false
     private var heightReconcileGeneration = 0
     private var lastReconciledHeight: CGFloat = 0
@@ -65,8 +68,9 @@ final class WeChatChatPostCell: UITableViewCell {
         let stack = UIStackView()
         stack.axis = .vertical
         stack.alignment = .fill
-        stack.spacing = 6
-        // Critical: fill width so LinkTextView / images get a real width (not hug-to-zero).
+        stack.spacing = Metrics.contentSpacing
+        // `.fill` + low vertical hugging lets UITextView eat free height → hollow bubble middle.
+        // Arranged subviews pin vertical hugging to required in configure(_:).
         stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
@@ -206,11 +210,16 @@ final class WeChatChatPostCell: UITableViewCell {
         metaLead.isActive = true
         reactionLead.isActive = true
 
-        // Don't let the bubble collapse horizontally under compression.
+        // Horizontal: bubble may grow with content width constraint.
         bubbleView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         bubbleView.setContentCompressionResistancePriority(.required, for: .horizontal)
         contentStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         contentStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // Vertical: never let the bubble/stack absorb spare row height into empty gaps.
+        bubbleView.setContentHuggingPriority(.required, for: .vertical)
+        bubbleView.setContentCompressionResistancePriority(.required, for: .vertical)
+        contentStack.setContentHuggingPriority(.required, for: .vertical)
+        contentStack.setContentCompressionResistancePriority(.required, for: .vertical)
     }
 
     func configure(
@@ -223,6 +232,7 @@ final class WeChatChatPostCell: UITableViewCell {
     ) {
         currentPost = post
         self.contentDelegate = contentDelegate
+        imageBaseURL = baseURL
         isMine = post.yours
         applyAlignment(isMine: isMine)
 
@@ -269,19 +279,18 @@ final class WeChatChatPostCell: UITableViewCell {
         if views.isEmpty {
             let fallback = makeFallbackLabel(for: post, config: config, baseURL: baseURL)
             if let fallback {
-                contentStack.addArrangedSubview(fallback)
+                pinArrangedSubview(fallback, contentWidth: innerWidth)
             }
         } else {
             for view in views {
-                wireTextViews(in: view, contentWidth: innerWidth)
-                // Native blocks sometimes hug content width; force full bubble width.
-                view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                contentStack.addArrangedSubview(view)
+                // Failed renderers sometimes return a bare UIView() — under `.fill` that
+                // becomes a flexible vertical spacer and hollows out the bubble middle.
+                if isEmptySpacerView(view) { continue }
+                pinArrangedSubview(view, contentWidth: innerWidth)
             }
         }
         if let boostStrip = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
-            contentStack.addArrangedSubview(boostStrip)
+            pinArrangedSubview(boostStrip, contentWidth: innerWidth, isTextMedia: false)
         }
 
         // If still empty after render (e.g. only whitespace cooked), force plain text.
@@ -338,6 +347,35 @@ final class WeChatChatPostCell: UITableViewCell {
         reactionTrailingConstraint?.isActive = isMine
     }
 
+    private func pinArrangedSubview(_ view: UIView, contentWidth: CGFloat, isTextMedia: Bool = true) {
+        if isTextMedia {
+            wireTextViews(in: view, contentWidth: contentWidth)
+        }
+        // Fill bubble width, but never stretch vertically into empty gaps.
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.required, for: .vertical)
+        view.setContentCompressionResistancePriority(.required, for: .vertical)
+        contentStack.addArrangedSubview(view)
+    }
+
+    /// Bare `UIView()` placeholders from failed block renderers have no intrinsic size and
+    /// will soak up free height inside a vertical `.fill` stack.
+    private func isEmptySpacerView(_ view: UIView) -> Bool {
+        if view is LinkTextView || view is UITextView || view is UIImageView || view is UILabel {
+            return false
+        }
+        if view is TappableImageContainer || view is BoostStripView || view is OneboxCardView
+            || view is FallbackBlockView || view is BadgeCardView || view is VideoCardView {
+            return false
+        }
+        // Plain UIView with no meaningful subviews / no intrinsic height.
+        if type(of: view) == UIView.self, view.subviews.isEmpty {
+            return true
+        }
+        return false
+    }
+
     private func wireTextViews(in root: UIView, contentWidth: CGFloat) {
         if let textView = root as? LinkTextView {
             textView.isEditable = false
@@ -349,9 +387,36 @@ final class WeChatChatPostCell: UITableViewCell {
             textView.preferredMeasurementWidth = contentWidth
             textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
             textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            // Critical for chat bubbles: UITextView default vertical hugging is low (250),
+            // so a slightly-too-tall row turns into a hollow middle under the last paragraph.
+            textView.setContentHuggingPriority(.required, for: .vertical)
+            textView.setContentCompressionResistancePriority(.required, for: .vertical)
+            textView.configureSpoilerIfNeeded()
+            loadInlineImages(in: textView)
+            return
+        }
+        if let textView = root as? UITextView {
+            textView.isScrollEnabled = false
+            textView.setContentHuggingPriority(.required, for: .vertical)
+            textView.setContentCompressionResistancePriority(.required, for: .vertical)
+            textView.delegate = self
+            loadInlineImages(in: textView)
+            return
         }
         for child in root.subviews {
             wireTextViews(in: child, contentWidth: contentWidth)
+        }
+    }
+
+    /// Same contract as `PostNativeCell.loadInlineImages` — without this, emoji / inline
+    /// images stay as empty NSTextAttachment placeholders inside chat bubbles.
+    private func loadInlineImages(in textView: UITextView) {
+        CookedInlineImageLoader.loadImages(
+            in: textView,
+            cloudflareBaseURL: imageBaseURL
+        ) { [weak self, weak textView] in
+            textView?.invalidateIntrinsicContentSize()
+            self?.requestHeightReconciliation()
         }
     }
 
@@ -470,6 +535,27 @@ final class WeChatChatPostCell: UITableViewCell {
         return nil
     }
 
+    override func systemLayoutSizeFitting(
+        _ targetSize: CGSize,
+        withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority,
+        verticalFittingPriority: UILayoutPriority
+    ) -> CGSize {
+        // Measure against the real row width so LinkTextView wraps once, not at a stale width.
+        let width = targetSize.width > 1 ? targetSize.width : bounds.width
+        if width > 1 {
+            bounds.size.width = width
+            contentView.bounds.size.width = width
+        }
+        contentView.setNeedsLayout()
+        contentView.layoutIfNeeded()
+        let fitted = contentView.systemLayoutSizeFitting(
+            CGSize(width: width > 1 ? width : UIView.layoutFittingExpandedSize.width, height: 0),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        return CGSize(width: targetSize.width, height: ceil(fitted.height))
+    }
+
     func requestHeightReconciliation() {
         heightReconcileGeneration += 1
         let generation = heightReconcileGeneration
@@ -507,6 +593,7 @@ final class WeChatChatPostCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         currentPost = nil
+        imageBaseURL = nil
         heightReconcileGeneration += 1
         lastReconciledHeight = 0
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }

@@ -524,6 +524,12 @@ final class MeViewController: ObservableViewController {
                 action: { [weak self] in self?.openBookmarks() }
             ),
             MeQuickActionItem(
+                title: String(localized: "me.quick.read_later", defaultValue: "稍后阅读"),
+                symbolName: "square.stack.3d.up.fill",
+                tintColor: .systemIndigo,
+                action: { [weak self] in self?.openReadLater() }
+            ),
+            MeQuickActionItem(
                 title: String(localized: "me.quick.drafts", defaultValue: "我的草稿"),
                 symbolName: "envelope.fill",
                 tintColor: .systemTeal,
@@ -722,6 +728,11 @@ final class MeViewController: ObservableViewController {
             return
         }
         navigationController?.pushViewController(DraftsViewController(api: api), animated: true)
+    }
+
+    private func openReadLater() {
+        let vc = ReadLaterViewController(api: api)
+        navigationController?.pushViewController(vc, animated: true)
     }
 
     private func openBookmarks() {

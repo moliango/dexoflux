@@ -1,7 +1,13 @@
 import UIKit
 
+fileprivate enum DraftsListSection: Int, CaseIterable {
+    case local = 0
+    case cloud = 1
+}
+
 final class DraftsViewController: UIViewController {
     private let api: DiscourseAPI
+    private var localDrafts: [ComposerLocalDraftStore.ListedDraft] = []
     private var drafts: [DiscourseDraft] = []
     private var hasMore = false
     private var isLoading = false
@@ -136,11 +142,13 @@ final class DraftsViewController: UIViewController {
                 hasMore = false
             }
         }
+        // Local drafts always refresh (even if server fetch fails).
+        localDrafts = ComposerLocalDraftStore.listedDrafts(baseURL: api.baseURL)
     }
 
     private func updateState() {
         tableView.reloadData()
-        let hasDrafts = !drafts.isEmpty
+        let hasDrafts = !drafts.isEmpty || !localDrafts.isEmpty
         tableView.isHidden = !hasDrafts
         stateStackView.isHidden = hasDrafts || isLoading
         retryButton.isHidden = errorMessage == nil
@@ -155,7 +163,7 @@ final class DraftsViewController: UIViewController {
         if let errorMessage, !hasDrafts {
             stateLabel.text = errorMessage
         } else if !hasDrafts, !isLoading {
-            stateLabel.text = String(localized: "me.drafts.empty", defaultValue: "没有保存的草稿")
+            stateLabel.text = String(localized: "me.drafts.empty", defaultValue: "没有本地或云端草稿\n在发帖/回帖时输入内容会自动保存")
         }
 
         if isLoadingMore {
@@ -343,6 +351,137 @@ final class DraftsViewController: UIViewController {
         present(alert, animated: true)
     }
 
+
+    private func confirmDeleteLocal(_ draft: ComposerLocalDraftStore.ListedDraft) {
+        let alert = UIAlertController(
+            title: String(localized: "me.drafts.delete.title", defaultValue: "删除草稿？"),
+            message: String(localized: "me.drafts.delete.local_message", defaultValue: "仅删除本机草稿，云端副本不受影响。"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "action.delete", defaultValue: "删除"), style: .destructive) { [weak self] _ in
+            ComposerLocalDraftStore.removeListedDraft(draft)
+            self?.localDrafts.removeAll { $0.id == draft.id }
+            self?.updateState()
+        })
+        present(alert, animated: true)
+    }
+
+    private func openLocal(_ draft: ComposerLocalDraftStore.ListedDraft) {
+        isOpeningDraft = true
+        updateState()
+        Task {
+            defer {
+                isOpeningDraft = false
+                updateState()
+            }
+            do {
+                switch draft.kind {
+                case .newTopic:
+                    try await presentLocalNewTopic(draft)
+                case .reply:
+                    guard let topicId = draft.topicId else {
+                        throw DraftOpenError.missingReplyTarget
+                    }
+                    try await presentLocalReply(draft, topicId: topicId, postNumber: draft.replyToPostNumber)
+                case .privateMessage:
+                    guard let recipient = draft.recipient, !recipient.isEmpty else {
+                        throw DraftOpenError.missingRecipient
+                    }
+                    presentLocalPrivateMessage(draft, recipient: recipient)
+                }
+            } catch {
+                showErrorAlert(error.localizedDescription)
+            }
+        }
+    }
+
+    private func presentLocalNewTopic(_ draft: ComposerLocalDraftStore.ListedDraft) async throws {
+        let siteCategories = (try? await api.fetchSiteCategories()) ?? []
+        let categories: [DiscourseCategory]
+        if !siteCategories.isEmpty {
+            categories = siteCategories
+        } else {
+            let response = try await api.fetchCategories()
+            categories = DiscourseCategory.normalizedTree(fromNested: response.categoryList.categories)
+        }
+        let composer = NewTopicComposerViewController(
+            api: api,
+            categories: categories,
+            initialCategoryId: draft.categoryId,
+            initialTitle: draft.rawTitle,
+            initialRaw: draft.raw,
+            initialTags: draft.tags
+        )
+        composer.onTopicCreated = { [weak self] _ in
+            ComposerLocalDraftStore.removeListedDraft(draft)
+            self?.localDrafts.removeAll { $0.id == draft.id }
+            self?.updateState()
+        }
+        let navigation = UINavigationController(rootViewController: composer)
+        navigation.modalPresentationStyle = .pageSheet
+        if let sheet = navigation.sheetPresentationController {
+            sheet.detents = [.large()]
+        }
+        present(navigation, animated: true)
+    }
+
+    private func presentLocalReply(
+        _ draft: ComposerLocalDraftStore.ListedDraft,
+        topicId: Int,
+        postNumber: Int?
+    ) async throws {
+        let detail = try await api.fetchTopic(id: topicId)
+        var replyTarget = postNumber.flatMap { number in
+            detail.postStream.posts.first { $0.postNumber == number }
+        }
+        if replyTarget == nil,
+           let postNumber,
+           let stream = detail.postStream.stream,
+           stream.indices.contains(postNumber - 1) {
+            let response = try await api.fetchTopicPosts(topicId: topicId, postIds: [stream[postNumber - 1]])
+            replyTarget = response.postStream.posts.first
+        }
+        let composer = ReplyComposerViewController(
+            api: api,
+            topicId: topicId,
+            replyToPost: replyTarget,
+            baseURL: api.baseURL,
+            initialText: draft.raw
+        )
+        composer.onPostCreated = { [weak self] in
+            ComposerLocalDraftStore.removeListedDraft(draft)
+            self?.localDrafts.removeAll { $0.id == draft.id }
+            self?.updateState()
+        }
+        composer.modalPresentationStyle = .pageSheet
+        if let sheet = composer.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = false
+        }
+        present(composer, animated: true)
+    }
+
+    private func presentLocalPrivateMessage(_ draft: ComposerLocalDraftStore.ListedDraft, recipient: String) {
+        let composer = PrivateMessageComposerViewController(
+            api: api,
+            recipient: recipient,
+            initialTitle: draft.rawTitle,
+            initialRaw: draft.raw
+        )
+        composer.onMessageSent = { [weak self] _ in
+            ComposerLocalDraftStore.removeListedDraft(draft)
+            self?.localDrafts.removeAll { $0.id == draft.id }
+            self?.updateState()
+        }
+        let navigation = UINavigationController(rootViewController: composer)
+        navigation.modalPresentationStyle = .pageSheet
+        if let sheet = navigation.sheetPresentationController {
+            sheet.detents = [.large()]
+        }
+        present(navigation, animated: true)
+    }
+
     private func showErrorAlert(_ message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
@@ -350,25 +489,68 @@ final class DraftsViewController: UIViewController {
     }
 }
 
+
 extension DraftsViewController: UITableViewDataSource {
+    func numberOfSections(in tableView: UITableView) -> Int {
+        DraftsListSection.allCases.count
+    }
+
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        drafts.count
+        switch DraftsListSection(rawValue: section) {
+        case .local: return localDrafts.count
+        case .cloud: return drafts.count
+        case .none: return 0
+        }
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        switch DraftsListSection(rawValue: section) {
+        case .local:
+            return localDrafts.isEmpty
+                ? nil
+                : String(localized: "me.drafts.section.local", defaultValue: "本机草稿")
+        case .cloud:
+            return drafts.isEmpty && localDrafts.isEmpty
+                ? nil
+                : String(localized: "me.drafts.section.cloud", defaultValue: "云端草稿（与网页 / FluxDo 同步）")
+        case .none:
+            return nil
+        }
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let draft = drafts[indexPath.row]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: symbolName(for: draft.destination))
-        content.imageProperties.tintColor = tintColor(for: draft.destination)
-        content.text = displayTitle(for: draft)
-        content.secondaryText = displaySubtitle(for: draft)
+        switch DraftsListSection(rawValue: indexPath.section) {
+        case .local:
+            let draft = localDrafts[indexPath.row]
+            content.image = UIImage(systemName: symbolName(forLocal: draft.kind))
+            content.imageProperties.tintColor = .systemTeal
+            content.text = draft.title ?? String(localized: "me.drafts.local", defaultValue: "本地草稿")
+            let time = UserProfileFormatting.relativeDate(isoString(from: draft.updatedAt))
+            let excerpt = draft.preview
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            content.secondaryText = excerpt.isEmpty ? time : "\(String(excerpt.prefix(120))) · \(time)"
+        case .cloud:
+            let draft = drafts[indexPath.row]
+            content.image = UIImage(systemName: symbolName(for: draft.destination))
+            content.imageProperties.tintColor = tintColor(for: draft.destination)
+            content.text = displayTitle(for: draft)
+            content.secondaryText = displaySubtitle(for: draft)
+        case .none:
+            break
+        }
         content.secondaryTextProperties.color = .secondaryLabel
         content.secondaryTextProperties.numberOfLines = 2
         content.textProperties.font = .systemFont(ofSize: 15, weight: .semibold)
         cell.contentConfiguration = content
         cell.accessoryType = .disclosureIndicator
         return cell
+    }
+
+    private func isoString(from date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
     }
 
     private func displayTitle(for draft: DiscourseDraft) -> String {
@@ -411,6 +593,14 @@ extension DraftsViewController: UITableViewDataSource {
         }
     }
 
+    private func symbolName(forLocal kind: ComposerLocalDraftStore.ListedKind) -> String {
+        switch kind {
+        case .newTopic: return "iphone"
+        case .reply: return "iphone.and.arrow.forward"
+        case .privateMessage: return "iphone.badge.play"
+        }
+    }
+
     private func tintColor(for destination: DiscourseDraftDestination) -> UIColor {
         switch destination {
         case .newTopic: return .systemBlue
@@ -424,16 +614,36 @@ extension DraftsViewController: UITableViewDataSource {
 extension DraftsViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        open(drafts[indexPath.row])
+        switch DraftsListSection(rawValue: indexPath.section) {
+        case .local:
+            openLocal(localDrafts[indexPath.row])
+        case .cloud:
+            open(drafts[indexPath.row])
+        case .none:
+            break
+        }
     }
 
     func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let draft = drafts[indexPath.row]
-        let delete = UIContextualAction(style: .destructive, title: String(localized: "action.delete", defaultValue: "删除")) { [weak self] _, _, completion in
-            self?.confirmDelete(draft)
+        let delete = UIContextualAction(
+            style: .destructive,
+            title: String(localized: "action.delete", defaultValue: "删除")
+        ) { [weak self] _, _, completion in
+            guard let self else {
+                completion(false)
+                return
+            }
+            switch DraftsListSection(rawValue: indexPath.section) {
+            case .local:
+                self.confirmDeleteLocal(self.localDrafts[indexPath.row])
+            case .cloud:
+                self.confirmDelete(self.drafts[indexPath.row])
+            case .none:
+                break
+            }
             completion(true)
         }
         delete.image = UIImage(systemName: "trash")
@@ -441,10 +651,12 @@ extension DraftsViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        guard indexPath.section == DraftsListSection.cloud.rawValue else { return }
         guard indexPath.row >= drafts.count - 4 else { return }
         Task { await loadDrafts(reset: false) }
     }
 }
+
 
 private enum DraftOpenError: LocalizedError {
     case missingRecipient

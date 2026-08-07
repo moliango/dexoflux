@@ -170,21 +170,31 @@ extension HomeViewController {
 
     func openTopic(_ topicId: Int) {
         let topic = viewModel.topics.first(where: { $0.id == topicId })
-        // Resume at first unread floor when list has last_read (Phase 1).
-        let resumeFloor = Self.resumeReadingFloor(for: topic)
+        let username = AuthManager.shared.username(for: api.baseURL)
+        let mergedLastRead = TopicReadProgressStore.shared.mergedLastRead(
+            serverLastRead: topic?.lastReadPostNumber,
+            topicId: topicId,
+            baseURL: api.baseURL,
+            username: username
+        )
+        // Resume at first unread floor when we know last_read (server and/or local).
+        let resumeFloor = Self.resumeReadingFloor(for: topic, mergedLastRead: mergedLastRead)
         let detailVC = TopicDetailFactory.make(
             api: api,
             topicId: topicId,
             initialFloor: resumeFloor,
-            lastReadPostNumber: topic?.lastReadPostNumber
+            lastReadPostNumber: mergedLastRead > 0 ? mergedLastRead : topic?.lastReadPostNumber
         )
         navigationController?.pushViewController(detailVC, animated: true)
     }
 
     /// First unread post number, or `nil` to open at the top.
-    static func resumeReadingFloor(for topic: DiscourseTopicList.Topic?) -> Int? {
+    static func resumeReadingFloor(
+        for topic: DiscourseTopicList.Topic?,
+        mergedLastRead: Int? = nil
+    ) -> Int? {
         guard let topic else { return nil }
-        let lastRead = topic.lastReadPostNumber ?? 0
+        let lastRead = mergedLastRead ?? topic.lastReadPostNumber ?? 0
         let highest = topic.highestPostNumber ?? topic.postsCount
         guard lastRead > 0, highest > lastRead else { return nil }
         return min(lastRead + 1, highest)

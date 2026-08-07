@@ -7,6 +7,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     let api: DiscourseAPI
     let viewModel: TopicDetailViewModel
     let topicId: Int
+    var lastReadPostNumber: Int?
     let initialFloor: Int?
     let initialPostId: Int?
     let baseURL: String
@@ -15,8 +16,25 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     private var didLoad = false
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
     private var isRecoveringAfterCloudflare = false
+    private var isHandlingBackSwipeFallback = false
+    private weak var backSwipeFallbackHostView: UIView?
+
+    private enum BackSwipeFallbackMetrics {
+        static let edgeActivationWidth: CGFloat = 44
+        static let minimumCompletionTranslation: CGFloat = 64
+        static let minimumCompletionVelocity: CGFloat = 480
+    }
+
+    private lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleBackSwipeFallback(_:)))
+        gesture.maximumNumberOfTouches = 1
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
     private var isLoadingMore = false
     private var isLoadingEarlier = false
+    lazy var readingTracker = TopicReadingTracker(api: api)
 
     private lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
@@ -63,7 +81,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? []),
                 topicCategoryPresentation: self.viewModel.categoryPresentation
             )
-            // Slightly denser body for chat bubbles.
+            // Denser body for chat bubbles — classic topic detail stays roomier.
             config = NativeRenderConfig(
                 baseFont: config.baseFont,
                 baseColor: post.yours ? UIColor.black.withAlphaComponent(0.9) : .label,
@@ -78,8 +96,8 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 galleryImageURLs: config.galleryImageURLs,
                 topicTagNames: config.topicTagNames,
                 topicCategoryPresentation: config.topicCategoryPresentation,
-                defaultLineSpacing: config.defaultLineSpacing,
-                defaultParagraphSpacing: config.defaultParagraphSpacing
+                defaultLineSpacing: max(1, config.defaultLineSpacing - 1),
+                defaultParagraphSpacing: max(2, config.defaultParagraphSpacing - 1)
             )
 
             cell.actionDelegate = self
@@ -168,6 +186,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         self.topicId = topicId
         self.initialFloor = initialFloor
         self.initialPostId = initialPostId
+        self.lastReadPostNumber = lastReadPostNumber
         self.baseURL = api.baseURL
         self.forum = forum
         super.init(nibName: nil, bundle: nil)
@@ -193,6 +212,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         startObservingCloudflareVerification()
         view.backgroundColor = Self.chatBackgroundColor
         navigationItem.largeTitleDisplayMode = .never
+        configureTopicActions()
         title = String(localized: "topic_detail.default_title", defaultValue: "话题")
 
         inputContainer.addSubview(inputBar)
@@ -236,11 +256,41 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         ])
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
+        // Same as classic Topic Detail: system edge-pop is unreliable with the
+        // hidden-home-navigation setup; own a narrow left-edge fallback instead.
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        installBackSwipeFallbackGesture()
+        isHandlingBackSwipeFallback = false
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard !didLoad else { return }
-        didLoad = true
-        Task { await loadInitial() }
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        installBackSwipeFallbackGesture()
+        readingTracker.start(topicId: topicId)
+        updateVisibleReadingPosts()
+        if !didLoad {
+            didLoad = true
+            Task { await loadInitial() }
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        uninstallBackSwipeFallbackGesture()
+        readingTracker.stop()
+        syncReadLaterProgressOnExit()
+        // Restore system pop for non-detail pages on the stack.
+        if let nav = navigationController, nav.viewControllers.count > 1 {
+            let stillDetail = nav.topViewController is TopicDetailViewController
+                || nav.topViewController is WeChatTopicDetailViewController
+            nav.interactivePopGestureRecognizer?.isEnabled = !stillDetail
+        } else {
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 
     override func updateUI() {
@@ -251,6 +301,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             title = display
             navigationItem.title = display
         }
+        configureTopicActions()
 
         if viewModel.isLoading && !viewModel.isReady {
             activityIndicator.startAnimating()
@@ -276,14 +327,38 @@ final class WeChatTopicDetailViewController: ObservableViewController {
 
     private func loadInitial() async {
         await viewModel.loadTopic(id: topicId, containerWidth: max(view.bounds.width, UIScreen.main.bounds.width))
+        // Merge server detail last_read with constructor hint / local store.
+        if let detailLast = viewModel.topic?.lastReadPostNumber {
+            lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLast)
+        }
+        let local = TopicReadProgressStore.shared.highestSeen(
+            topicId: topicId,
+            baseURL: baseURL,
+            username: AuthManager.shared.username(for: baseURL)
+        )
+        if local > 0 {
+            lastReadPostNumber = max(lastReadPostNumber ?? 0, local)
+        }
+
         if let postId = initialPostId {
             scrollToPostId(postId)
         } else if let floor = initialFloor {
             await jumpToFloor(floor)
+        } else if let resume = resumeUnreadFloor() {
+            await jumpToFloor(resume)
         }
     }
 
-    private func applySnapshot() {
+    /// First unread floor from last-read watermark.
+    private func resumeUnreadFloor() -> Int? {
+        let total = viewModel.totalFloors
+        guard total > 0 else { return nil }
+        let lastRead = lastReadPostNumber ?? 0
+        guard lastRead > 0, lastRead < total else { return nil }
+        return min(lastRead + 1, total)
+    }
+
+    func applySnapshot() {
         // Only show posts that finished HTML parse — same gate as classic Topic Detail.
         // (Cell still has plain-text fallback if blocks are empty.)
         var seen = Set<Int>()
@@ -310,6 +385,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         snapshot.appendSections([0])
         snapshot.appendItems(ids, toSection: 0)
         dataSource.apply(snapshot, animatingDifferences: false)
+        prefetchContentImages(forPostIds: ids)
     }
 
     private func floorNumber(for postId: Int) -> Int {
@@ -327,13 +403,13 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
-    private func scrollToPostId(_ postId: Int) {
+    func scrollToPostId(_ postId: Int) {
         guard let index = dataSource.snapshot().indexOfItem(postId) else { return }
         let indexPath = IndexPath(row: index, section: 0)
         tableView.scrollToRow(at: indexPath, at: .middle, animated: false)
     }
 
-    private func jumpToFloor(_ floor: Int) async {
+    func jumpToFloor(_ floor: Int) async {
         await viewModel.jumpToFloor(floor, containerWidth: view.bounds.width)
         applySnapshot()
         let ids = viewModel.allPostIds
@@ -346,7 +422,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
 
     // MARK: - Auth / errors
 
-    private func performAuthenticated(_ action: @escaping () -> Void) {
+    func performAuthenticated(_ action: @escaping () -> Void) {
         if let gate = nearestAuthGating() {
             gate.requireAuth(then: action)
         } else {
@@ -354,7 +430,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
     }
 
-    private func showPostActionError(_ error: Error) {
+    func showPostActionError(_ error: Error) {
         let alert = UIAlertController(
             title: String(localized: "post.action.failed", defaultValue: "操作失败"),
             message: error.localizedDescription,
@@ -521,6 +597,105 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
     }
 
+
+    // MARK: - Back swipe
+
+    private var canNavigateBack: Bool {
+        guard let navigationController else { return false }
+        return navigationController.viewControllers.count > 1
+            && navigationController.viewControllers.first !== self
+    }
+
+    private func installBackSwipeFallbackGesture() {
+        guard let hostView = navigationController?.view else { return }
+        if backSwipeFallbackHostView !== hostView {
+            backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
+            hostView.addGestureRecognizer(backSwipeFallbackGesture)
+            backSwipeFallbackHostView = hostView
+        }
+        backSwipeFallbackGesture.isEnabled = canNavigateBack
+    }
+
+    private func uninstallBackSwipeFallbackGesture() {
+        backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
+        backSwipeFallbackHostView = nil
+        backSwipeFallbackGesture.isEnabled = false
+    }
+
+    private var backSwipeCoordinateView: UIView {
+        backSwipeFallbackGesture.view ?? view
+    }
+
+    private func shouldCompleteBackSwipe(translation: CGPoint, velocity: CGPoint) -> Bool {
+        guard translation.x > 0 else { return false }
+        return translation.x > BackSwipeFallbackMetrics.minimumCompletionTranslation
+            || velocity.x > BackSwipeFallbackMetrics.minimumCompletionVelocity
+    }
+
+    @objc private func handleBackSwipeFallback(_ gesture: UIPanGestureRecognizer) {
+        guard canNavigateBack, presentedViewController == nil else { return }
+        switch gesture.state {
+        case .began:
+            isHandlingBackSwipeFallback = false
+        case .ended:
+            let coordinateView = backSwipeCoordinateView
+            let translation = gesture.translation(in: coordinateView)
+            let velocity = gesture.velocity(in: coordinateView)
+            guard shouldCompleteBackSwipe(translation: translation, velocity: velocity),
+                  !isHandlingBackSwipeFallback
+            else { return }
+            isHandlingBackSwipeFallback = true
+            navigationController?.popViewController(animated: true)
+        case .cancelled, .failed:
+            isHandlingBackSwipeFallback = false
+        default:
+            break
+        }
+    }
+
+
+    // MARK: - Reading Tracking
+
+    func updateVisibleReadingPosts() {
+        guard isViewLoaded, view.window != nil, viewModel.isReady else { return }
+        let postNumbers = (tableView.indexPathsForVisibleRows ?? []).compactMap { indexPath -> Int? in
+            guard let postId = dataSource.itemIdentifier(for: indexPath) else { return nil }
+            return viewModel.posts.first(where: { $0.id == postId })?.postNumber
+        }
+        readingTracker.setVisiblePostNumbers(Set(postNumbers))
+        if let highest = postNumbers.max(), highest > 0 {
+            lastReadPostNumber = max(lastReadPostNumber ?? 0, highest)
+        }
+    }
+
+    /// Persist resume floor into the read-later queue when the topic is queued.
+    func syncReadLaterProgressOnExit() {
+        let username = AuthManager.shared.username(for: baseURL)
+        let merged = TopicReadProgressStore.shared.mergedLastRead(
+            serverLastRead: lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber,
+            topicId: topicId,
+            baseURL: baseURL,
+            username: username
+        )
+        guard merged > 0 else { return }
+        let title = viewModel.topic.map {
+            TitleEmojiRenderer.plainTitle(fancyTitle: $0.fancyTitle, title: $0.title)
+        }
+        TopicReadLaterStore.shared.updateProgress(
+            topicId: topicId,
+            baseURL: baseURL,
+            username: username,
+            lastReadPostNumber: merged,
+            title: title
+        )
+    }
+
+    private func prefetchContentImages(forPostIds postIds: [Int]) {
+        let urls = postIds.flatMap { postId -> [URL] in
+            viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
+        }
+        ForumImageLoader.prefetch(urls: urls, cloudflareBaseURL: baseURL)
+    }
 }
 
 // MARK: - Table
@@ -532,8 +707,19 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         (cell as? WeChatChatPostCell)?.requestHeightReconciliation()
+        updateVisibleReadingPosts()
 
         guard let postId = dataSource.itemIdentifier(for: indexPath) else { return }
+        var ahead: [Int] = [postId]
+        let total = tableView.numberOfRows(inSection: 0)
+        for offset in 1...3 {
+            let next = indexPath.row + offset
+            guard next < total,
+                  let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0))
+            else { break }
+            ahead.append(id)
+        }
+        prefetchContentImages(forPostIds: ahead)
         if let streamIndex = viewModel.allPostIds.firstIndex(of: postId) {
             let width = max(view.bounds.width, UIScreen.main.bounds.width)
             viewModel.acknowledgeVisibleTailIfNeeded(visibleStreamIndex: streamIndex)
@@ -545,7 +731,6 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
             }
         }
 
-        let total = tableView.numberOfRows(inSection: 0)
         if indexPath.row >= max(0, total - 4) {
             loadMoreIfNeeded()
         }
@@ -553,6 +738,8 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard viewModel.isReady else { return }
+        updateVisibleReadingPosts()
+        readingTracker.scrolled()
         let offsetY = scrollView.contentOffset.y
         let contentH = scrollView.contentSize.height
         let frameH = scrollView.frame.height
@@ -786,5 +973,37 @@ extension WeChatTopicDetailViewController: PostCellDelegate {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Back swipe gesture delegate
+
+extension WeChatTopicDetailViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === backSwipeFallbackGesture else { return true }
+        guard canNavigateBack, presentedViewController == nil else { return false }
+        let coordinateView = backSwipeCoordinateView
+        let location = backSwipeFallbackGesture.location(in: coordinateView)
+        guard location.x <= BackSwipeFallbackMetrics.edgeActivationWidth else { return false }
+        let velocity = backSwipeFallbackGesture.velocity(in: coordinateView)
+        guard velocity.x >= 0 else { return false }
+        if abs(velocity.y) > abs(velocity.x), abs(velocity.y) > 40 {
+            return false
+        }
+        return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard gestureRecognizer === backSwipeFallbackGesture || otherGestureRecognizer === backSwipeFallbackGesture else {
+            return false
+        }
+        return otherGestureRecognizer === tableView.panGestureRecognizer
+            || gestureRecognizer === tableView.panGestureRecognizer
+            || otherGestureRecognizer.view is UIScrollView
+            || gestureRecognizer.view is UIScrollView
     }
 }

@@ -184,8 +184,9 @@ final class WeChatTopicListCell: UITableViewCell {
 
         let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
         let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
+        let unread = topic.isUnreadForDisplay
         titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: .medium)
+            matching: .systemFont(ofSize: titlePoint, weight: unread ? .semibold : .regular)
         )
         subtitleLabel.font = AppSettings.shared.appInterfaceFont(
             matching: .systemFont(ofSize: subPoint, weight: .regular)
@@ -195,7 +196,7 @@ final class WeChatTopicListCell: UITableViewCell {
         )
         replyLabel.font = timeLabel.font
 
-        titleLabel.textColor = topic.isUnreadForDisplay ? .label : .secondaryLabel
+        titleLabel.textColor = unread ? .label : .secondaryLabel
         emojiBaseURL = categoryBaseURL
         let plain = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
         renderedTitle = plain

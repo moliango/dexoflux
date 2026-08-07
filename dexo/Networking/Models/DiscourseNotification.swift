@@ -381,3 +381,52 @@ private extension KeyedDecodingContainer {
         try decodeIfPresent(LossyInt.self, forKey: key)?.value
     }
 }
+
+
+// MARK: - List filters (Notifications screen)
+
+enum NotificationListFilter: Int, CaseIterable, Hashable {
+    case all
+    case unread
+    case replies
+    case mentions
+    case messages
+    case system
+
+    var title: String {
+        switch self {
+        case .all:
+            return String(localized: "notifications.filter.all", defaultValue: "全部")
+        case .unread:
+            return String(localized: "notifications.filter.unread", defaultValue: "未读")
+        case .replies:
+            return String(localized: "notifications.filter.replies", defaultValue: "回复")
+        case .mentions:
+            return String(localized: "notifications.filter.mentions", defaultValue: "@我")
+        case .messages:
+            return String(localized: "notifications.filter.messages", defaultValue: "私信")
+        case .system:
+            return String(localized: "notifications.filter.system", defaultValue: "系统")
+        }
+    }
+
+    func matches(_ notification: DiscourseNotification) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .unread:
+            return !notification.read
+        case .replies:
+            // replied / quoted / posted in topic
+            return [2, 3, 9].contains(notification.notificationType)
+        case .mentions:
+            return notification.notificationType == 1
+        case .messages:
+            // private message (+ group message type 7 if present)
+            return [6, 7].contains(notification.notificationType)
+        case .system:
+            // everything else: likes, badges, bookmarks, reactions, boosts, links, ...
+            return ![1, 2, 3, 6, 7, 9].contains(notification.notificationType)
+        }
+    }
+}

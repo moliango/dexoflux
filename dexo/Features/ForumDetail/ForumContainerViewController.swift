@@ -151,6 +151,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             installCloudflareShieldButtonIfNeeded()
         }
         presentPendingNotificationRouteIfPossible()
+        presentPendingInAppRouteIfNeeded()
         guard !showsDismissButton else { return }
         AppUpdateCoordinator.shared.scheduleAutomaticCheckIfNeeded()
         presentPendingAppUpdateIfPossible()
@@ -309,6 +310,30 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             TopicDetailFactory.make(api: api, topicId: topicId, initialFloor: postNumber),
             animated: true
         )
+    }
+
+    func presentPendingInAppRouteIfNeeded() {
+        guard let route = DexoInAppRouteStore.shared.consume() else { return }
+        handleInAppRoute(route)
+    }
+
+    func handleInAppRoute(_ route: DexoInAppRoute) {
+        switch route {
+        case .readLater:
+            guard let tabBarViewController else {
+                DexoInAppRouteStore.shared.enqueue(route)
+                return
+            }
+            // Me tab is always last in current tab builder.
+            let meIndex = max(tabBarViewController.navigationControllers.count - 1, 0)
+            tabBarViewController.selectedIndex = meIndex
+            let meNav = tabBarViewController.navigationControllers[meIndex]
+            // Avoid stacking duplicate ReadLater pages.
+            if meNav.topViewController is ReadLaterViewController {
+                return
+            }
+            meNav.pushViewController(ReadLaterViewController(api: api), animated: true)
+        }
     }
 
     func presentClipboardTopicLinkIfNeeded() {

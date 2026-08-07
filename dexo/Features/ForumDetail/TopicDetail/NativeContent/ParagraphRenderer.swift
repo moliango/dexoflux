@@ -26,6 +26,7 @@ enum ParagraphRenderer: BlockRenderer {
         // Inline taxonomy links carry their own server-derived color.
         textView.linkTextAttributes = [:]
         textView.preferredMeasurementWidth = config.contentWidth
+        textView.setContentHuggingPriority(.required, for: .vertical)
         textView.setContentCompressionResistancePriority(.required, for: .vertical)
         textView.translatesAutoresizingMaskIntoConstraints = false
         return textView

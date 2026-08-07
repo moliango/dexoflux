@@ -196,11 +196,18 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
     }
 
     var isNewTopic: Bool {
-        draftKey == "new_topic" || draftKey.hasPrefix("new_topic_") || data.action == "createTopic"
+        draftKey == "new_topic"
+            || draftKey.hasPrefix("new_topic_")
+            || data.action == "createTopic"
+            || data.action == "create_topic"
     }
 
     var isPrivateMessage: Bool {
-        draftKey == "new_private_message" || draftKey.hasPrefix("new_private_message_")
+        draftKey == "new_private_message"
+            || draftKey.hasPrefix("new_private_message_")
+            || data.action == "privateMessage"
+            || data.action == "private_message"
+            || data.archetypeId == "private_message"
     }
 
     var destination: DiscourseDraftDestination {
@@ -211,13 +218,16 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
             return .newTopic
         }
         if let topicId {
-            return .topicReply(topicId: topicId, postNumber: replyToPostNumber)
+            return .topicReply(topicId: topicId, postNumber: data.replyToPostNumber ?? replyToPostNumber)
         }
         return .unsupported
     }
 
     private var firstTargetRecipient: String? {
-        let recipients = data.targetRecipients ?? username
+        if let first = data.recipients.first(where: { !$0.isEmpty }) {
+            return first
+        }
+        let recipients = data.targetRecipients
         return recipients?
             .split(separator: ",", omittingEmptySubsequences: true)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -270,14 +280,17 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
     }
 }
 
-struct DiscourseDraftData: Decodable, Hashable {
+struct DiscourseDraftData: Codable, Hashable {
     let title: String?
     let reply: String?
     let categoryId: Int?
     let tags: [String]
     let action: String?
     let archetypeId: String?
+    /// FluxDo / Discourse composer field (comma-joined also accepted via targetRecipients).
+    let recipients: [String]
     let targetRecipients: String?
+    let replyToPostNumber: Int?
 
     init(
         title: String? = nil,
@@ -286,7 +299,9 @@ struct DiscourseDraftData: Decodable, Hashable {
         tags: [String] = [],
         action: String? = nil,
         archetypeId: String? = nil,
-        targetRecipients: String? = nil
+        recipients: [String] = [],
+        targetRecipients: String? = nil,
+        replyToPostNumber: Int? = nil
     ) {
         self.title = title
         self.reply = reply
@@ -294,17 +309,21 @@ struct DiscourseDraftData: Decodable, Hashable {
         self.tags = tags
         self.action = action
         self.archetypeId = archetypeId
+        self.recipients = recipients
         self.targetRecipients = targetRecipients
+        self.replyToPostNumber = replyToPostNumber
     }
 
     enum CodingKeys: String, CodingKey {
-        case title, reply, tags, action
+        case title, reply, tags, action, recipients
         case categoryId
         case categoryIdSnake = "category_id"
         case archetypeId
         case archetypeIdSnake = "archetype_id"
         case targetRecipients
         case targetRecipientsSnake = "target_recipients"
+        case replyToPostNumber
+        case replyToPostNumberSnake = "reply_to_post_number"
     }
 
     init(from decoder: Decoder) throws {
@@ -317,7 +336,48 @@ struct DiscourseDraftData: Decodable, Hashable {
         action = try container.decodeIfPresent(String.self, forKey: .action)
         archetypeId = try container.decodeIfPresent(String.self, forKey: .archetypeId)
             ?? container.decodeIfPresent(String.self, forKey: .archetypeIdSnake)
+        if let list = try container.decodeIfPresent([String].self, forKey: .recipients) {
+            recipients = list
+        } else if let raw = try container.decodeIfPresent(String.self, forKey: .recipients) {
+            recipients = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        } else {
+            recipients = []
+        }
         targetRecipients = try container.decodeIfPresent(String.self, forKey: .targetRecipients)
             ?? container.decodeIfPresent(String.self, forKey: .targetRecipientsSnake)
+        replyToPostNumber = try container.decodeIfPresent(Int.self, forKey: .replyToPostNumber)
+            ?? container.decodeIfPresent(Int.self, forKey: .replyToPostNumberSnake)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        // Encode FluxDo-compatible camelCase keys so web / FluxDo resume the same payload.
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(reply, forKey: .reply)
+        try container.encodeIfPresent(categoryId, forKey: .categoryId)
+        if !tags.isEmpty {
+            try container.encode(tags, forKey: .tags)
+        }
+        try container.encodeIfPresent(action, forKey: .action)
+        try container.encodeIfPresent(archetypeId, forKey: .archetypeId)
+        if !recipients.isEmpty {
+            try container.encode(recipients, forKey: .recipients)
+        }
+        try container.encodeIfPresent(replyToPostNumber, forKey: .replyToPostNumber)
+        // Keep legacy field only when recipients array is empty but a raw string exists.
+        if recipients.isEmpty {
+            try container.encodeIfPresent(targetRecipients, forKey: .targetRecipients)
+        }
+    }
+}
+
+
+struct DiscourseSaveDraftResponse: Decodable {
+    let draftSequence: Int?
+    let success: String?
+
+    enum CodingKeys: String, CodingKey {
+        case draftSequence = "draft_sequence"
+        case success
     }
 }

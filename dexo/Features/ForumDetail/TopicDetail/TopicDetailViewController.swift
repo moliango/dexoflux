@@ -421,6 +421,14 @@ final class TopicDetailViewController: ObservableViewController {
             if let detailLastRead = viewModel.topic?.lastReadPostNumber {
                 lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLastRead)
             }
+            let localHighest = TopicReadProgressStore.shared.highestSeen(
+                topicId: topicId,
+                baseURL: baseURL,
+                username: AuthManager.shared.username(for: baseURL)
+            )
+            if localHighest > 0 {
+                lastReadPostNumber = max(lastReadPostNumber ?? 0, localHighest)
+            }
             // Notification / deep-link targets are Discourse post_number or post id —
             // never treat them as raw stream indices (deleted posts create gaps).
             if let initialPostId {
@@ -472,6 +480,7 @@ final class TopicDetailViewController: ObservableViewController {
         super.viewWillDisappear(animated)
         uninstallBackSwipeFallbackGesture()
         readingTracker.stop()
+        syncReadLaterProgressOnExit()
         stopLiveTopicSync()
     }
 
@@ -974,6 +983,28 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
     // MARK: - Reading Tracking
+
+    func syncReadLaterProgressOnExit() {
+        let username = AuthManager.shared.username(for: baseURL)
+        let serverLast = viewModel.topic?.lastReadPostNumber
+        let local = TopicReadProgressStore.shared.highestSeen(
+            topicId: topicId,
+            baseURL: baseURL,
+            username: username
+        )
+        let merged = max(serverLast ?? 0, local)
+        guard merged > 0 else { return }
+        let title = viewModel.topic.map {
+            TitleEmojiRenderer.plainTitle(fancyTitle: $0.fancyTitle, title: $0.title)
+        }
+        TopicReadLaterStore.shared.updateProgress(
+            topicId: topicId,
+            baseURL: baseURL,
+            username: username,
+            lastReadPostNumber: merged,
+            title: title
+        )
+    }
 
     func updateVisibleReadingPosts() {
         guard isViewLoaded, view.window != nil, !isApplyingPostSnapshot else { return }

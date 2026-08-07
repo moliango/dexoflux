@@ -231,7 +231,14 @@ final class TopicCell: UITableViewCell {
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
         cardView.layer.cornerRadius = themeStyle.chromeCornerRadius
         applyTypography()
-        titleLabel.textColor = topic.isUnreadForDisplay ? .label : .secondaryLabel
+        let unread = topic.isUnreadForDisplay
+        titleLabel.textColor = unread ? .label : .secondaryLabel
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(
+                ofSize: AppSettings.shared.effectiveInterfacePointSize(for: 16),
+                weight: unread ? .semibold : .regular
+            )
+        )
         emojiBaseURL = categoryBaseURL
         configureTitleWithEmoji(TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title))
 

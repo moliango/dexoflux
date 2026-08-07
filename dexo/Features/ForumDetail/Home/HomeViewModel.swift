@@ -147,6 +147,19 @@ final class HomeViewModel: DexoObservableObject {
         return categoryIndex[id]
     }
 
+
+    /// Overlay local highest-seen so list read styling survives timings lag / offline.
+    private func applyLocalReadProgress(to topics: [DiscourseTopicList.Topic]) -> [DiscourseTopicList.Topic] {
+        let username = AuthManager.shared.username(for: api.baseURL)
+        return topics.map {
+            TopicReadProgressStore.shared.applyLocalProgress(
+                to: $0,
+                baseURL: api.baseURL,
+                username: username
+            )
+        }
+    }
+
     @discardableResult
     func updateTopicReadProgress(topicId: Int, highestSeen: Int, notify: Bool = true) -> Bool {
         guard highestSeen > 0,
@@ -158,6 +171,12 @@ final class HomeViewModel: DexoObservableObject {
             return false
         }
         topics[index] = current.updatingReadProgress(highestSeen: highestSeen)
+        TopicReadProgressStore.shared.record(
+            topicId: topicId,
+            highestSeen: highestSeen,
+            baseURL: api.baseURL,
+            username: AuthManager.shared.username(for: api.baseURL)
+        )
         // Callers that only need a single-row reconfigure pass `notify: false` (Phase 7).
         if notify {
             notifyChanged()
@@ -169,7 +188,7 @@ final class HomeViewModel: DexoObservableObject {
     func hydrateFromBackgroundCacheIfNeeded() {
         guard isGlobalLatestList, topics.isEmpty else { return }
         guard let cached = TopicListCacheFacade.load(baseURL: api.baseURL) else { return }
-        topics = cached.topicList.topics
+        topics = applyLocalReadProgress(to: cached.topicList.topics)
         canLoadMore = cached.topicList.moreTopicsUrl != nil
         indexUsers(cached.users)
         indexCategories(cached.categories, source: .topicList)
@@ -225,7 +244,7 @@ final class HomeViewModel: DexoObservableObject {
             }
             let result = try await fetchTopics(page: 0)
             try Task.checkCancellation()
-            topics = result.topicList.topics
+            topics = applyLocalReadProgress(to: result.topicList.topics)
             if isGlobalLatestList {
                 // Full page-0 refresh is the source of truth — clear leftover
                 // background pending so cold start / foreground reload don't
@@ -298,7 +317,7 @@ final class HomeViewModel: DexoObservableObject {
             currentPage = nextPage
             let existingIds = Set(topics.map(\.id))
             let newTopics = result.topicList.topics.filter { !existingIds.contains($0.id) }
-            topics.append(contentsOf: newTopics)
+            topics.append(contentsOf: applyLocalReadProgress(to: newTopics))
             canLoadMore = result.topicList.moreTopicsUrl != nil
             loadMoreErrorMessage = nil
             shouldRetryLoadMoreAfterCloudflare = false
@@ -429,7 +448,7 @@ final class HomeViewModel: DexoObservableObject {
                 incomingTopics.sort { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
                 let incomingIds = Set(incomingTopics.map(\.id))
                 let remaining = topics.filter { !incomingIds.contains($0.id) }
-                topics = incomingTopics + remaining
+                topics = applyLocalReadProgress(to: incomingTopics + remaining)
                 indexUsers(incomingUsers)
                 indexCategories(incomingCategories, source: .topicList)
             }

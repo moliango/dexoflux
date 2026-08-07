@@ -6,6 +6,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     private let api: DiscourseAPI
     private let recipient: String
     private var draftSaveTask: Task<Void, Never>?
+    private var serverDraftSaveTask: Task<Void, Never>?
 
     private let recipientLabel = UILabel()
     private let titleField = UITextField()
@@ -35,6 +36,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         setupUI()
         restoreDraftIfNeeded()
         updateSendState()
+        Task { await hydrateServerDraftIfNeeded() }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -133,22 +135,89 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         placeholderLabel.isHidden = !draft.raw.isEmpty
     }
 
+    private func hydrateServerDraftIfNeeded() async {
+        let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let localRaw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            guard let server = try await api.fetchDraft(key: "new_private_message") else { return }
+            ComposerLocalDraftStore.saveSequence(
+                baseURL: api.baseURL,
+                draftKey: "new_private_message",
+                sequence: server.sequence
+            )
+            // Only fill empty composer; never clobber typing / explicit initial.
+            guard localTitle.isEmpty, localRaw.isEmpty else { return }
+            let serverTitle = server.data.title ?? ""
+            let serverRaw = server.data.reply ?? ""
+            guard !serverTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !serverRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            // Prefer drafts aimed at this recipient when recipients are present.
+            let recipients = server.data.recipients
+            if !recipients.isEmpty {
+                let normalized = recipient.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let hit = recipients.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized }
+                guard hit else { return }
+            }
+            titleField.text = serverTitle
+            textView.text = serverRaw
+            placeholderLabel.isHidden = !serverRaw.isEmpty
+            ComposerLocalDraftStore.savePrivateMessage(
+                baseURL: api.baseURL,
+                recipient: recipient,
+                title: serverTitle,
+                raw: serverRaw
+            )
+            updateSendState()
+        } catch {
+            // Offline / CF — keep local.
+        }
+    }
+
     private func scheduleDraftSave() {
         draftSaveTask?.cancel()
         draftSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.persistDraft()
+            self.persistLocalDraftOnly()
+        }
+        serverDraftSaveTask?.cancel()
+        serverDraftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.persistServerDraft()
         }
     }
 
     private func persistDraft() {
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        persistLocalDraftOnly()
+        persistServerDraft()
+    }
+
+    private func persistLocalDraftOnly() {
         ComposerLocalDraftStore.savePrivateMessage(
             baseURL: api.baseURL,
             recipient: recipient,
             title: titleField.text ?? "",
-            raw: textView.text
+            raw: textView.text ?? ""
         )
+    }
+
+    private func persistServerDraft() {
+        let title = titleField.text ?? ""
+        let raw = textView.text ?? ""
+        let api = self.api
+        let recipient = self.recipient
+        Task {
+            await ComposerServerDraftSync.syncPrivateMessage(
+                api: api,
+                recipient: recipient,
+                title: title,
+                raw: raw
+            )
+        }
     }
 
     private func updateSendState() {
@@ -189,6 +258,8 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             do {
                 let response = try await api.sendPrivateMessage(to: recipient, title: messageTitle, raw: raw)
                 ComposerLocalDraftStore.clearPrivateMessage(baseURL: api.baseURL, recipient: recipient)
+                let api = self.api
+                Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_private_message") }
                 dismiss(animated: true) { [onMessageSent] in
                     onMessageSent?(response)
                 }

@@ -25,6 +25,36 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             enqueueNotificationRoute(from: response.notification.request.content.userInfo)
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
         }
+        // Cold-start / warm URL contexts (dexo:// or https://forum/t/…).
+        for context in connectionOptions.urlContexts {
+            handleIncomingURL(context.url)
+        }
+        if let activity = connectionOptions.userActivities.first(where: { $0.activityType == NSUserActivityTypeBrowsingWeb }),
+           let url = activity.webpageURL {
+            handleIncomingURL(url)
+        }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        for context in URLContexts {
+            handleIncomingURL(context.url)
+        }
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+           let url = userActivity.webpageURL {
+            handleIncomingURL(url)
+        }
+    }
+
+    private func handleIncomingURL(_ url: URL) {
+        let baseURL = DatabaseManager.shared.defaultForum().baseURL
+        _ = DexoDeepLinkRouter.handle(url, defaultBaseURL: baseURL)
+        if let window {
+            ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
+            DexoInAppRoutePresenter.presentPendingIfNeeded(in: window)
+        }
     }
 
     private func enqueueNotificationRoute(from userInfo: [AnyHashable: Any]) {
@@ -39,9 +69,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
             if let container = window.rootViewController as? ForumContainerViewController {
                 container.presentClipboardTopicLinkIfNeeded()
+                container.presentPendingInAppRouteIfNeeded()
             } else if let container = window.rootViewController?.children.compactMap({ $0 as? ForumContainerViewController }).first {
                 container.presentClipboardTopicLinkIfNeeded()
+                container.presentPendingInAppRouteIfNeeded()
             }
+            DexoInAppRoutePresenter.presentPendingIfNeeded(in: window)
         }
     }
     func sceneWillResignActive(_ scene: UIScene) {}

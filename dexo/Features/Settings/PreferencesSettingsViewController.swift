@@ -5,6 +5,17 @@ final class PreferencesSettingsViewController: ObservableViewController {
 
     private let clipboardRow = ReadingToggleRowView()
     private let autoOpenRow = ReadingToggleRowView()
+    private let notificationFilterButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.cornerStyle = .medium
+        config.baseBackgroundColor = UIColor.secondarySystemGroupedBackground
+        config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
 
     private let scrollView: UIScrollView = {
         let scroll = UIScrollView()
@@ -52,6 +63,7 @@ final class PreferencesSettingsViewController: ObservableViewController {
             self?.settings.autoOpenLastForum = isOn
             self?.refreshDataViews()
         }
+        notificationFilterButton.addTarget(self, action: #selector(notificationFilterTapped), for: .touchUpInside)
 
         rebuildContent()
         refreshDataViews()
@@ -83,6 +95,36 @@ final class PreferencesSettingsViewController: ObservableViewController {
             symbolName: "slider.horizontal.3",
             body: basic
         ))
+
+        let notifyStack = UIStackView(arrangedSubviews: [notificationFilterButton])
+        notifyStack.axis = .vertical
+        notifyStack.spacing = 12
+        contentStack.addArrangedSubview(makeSection(
+            title: String(localized: "settings.preferences.section.notifications", defaultValue: "本地通知"),
+            symbolName: "bell.badge",
+            body: notifyStack
+        ))
+    }
+
+    @objc private func notificationFilterTapped() {
+        let sheet = UIAlertController(
+            title: String(localized: "settings.notifications.filter.title", defaultValue: "横幅推送范围"),
+            message: String(localized: "settings.notifications.filter.message", defaultValue: "控制后台同步后的本地横幅；角标仍会更新"),
+            preferredStyle: .actionSheet
+        )
+        for filter in AppSettings.LocalNotificationFilter.allCases {
+            let mark = filter == settings.localNotificationFilter ? "✓ " : ""
+            sheet.addAction(UIAlertAction(title: mark + filter.title, style: .default) { [weak self] _ in
+                self?.settings.localNotificationFilter = filter
+                self?.refreshDataViews()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = notificationFilterButton
+            pop.sourceRect = notificationFilterButton.bounds
+        }
+        present(sheet, animated: true)
     }
 
     private func makeSection(title: String, symbolName: String, body: UIView) -> UIView {
@@ -129,5 +171,11 @@ final class PreferencesSettingsViewController: ObservableViewController {
             accentColor: accent,
             backgroundColor: card
         )
+
+        var filterConfig = notificationFilterButton.configuration
+        filterConfig?.title = settings.localNotificationFilter.title
+        filterConfig?.subtitle = settings.localNotificationFilter.subtitle
+        filterConfig?.titleAlignment = .leading
+        notificationFilterButton.configuration = filterConfig
     }
 }

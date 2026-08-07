@@ -8,6 +8,28 @@ final class NotificationsViewController: ObservableViewController {
     private let api: DiscourseAPI
     private let viewModel: NotificationsViewModel
     private weak var authGate: AuthGating?
+    private var selectedFilter: NotificationListFilter = .all
+    private var filterButtons: [NotificationListFilter: UIButton] = [:]
+
+
+
+    private let filterScrollView: UIScrollView = {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.alwaysBounceHorizontal = true
+        scroll.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        return scroll
+    }()
+
+    private let filterStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+        return stack
+    }()
 
     private lazy var tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .plain)
@@ -91,7 +113,12 @@ final class NotificationsViewController: ObservableViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    private var filteredNotifications: [DiscourseNotification] {
+        viewModel.notifications.filter { selectedFilter.matches($0) }
+    }
+
     override func viewDidLoad() {
+
         super.viewDidLoad()
         observe(viewModel)
         observe(AppSettings.shared)
@@ -105,16 +132,30 @@ final class NotificationsViewController: ObservableViewController {
         )
         navigationItem.rightBarButtonItem?.accessibilityLabel = String(localized: "notifications.mark_all_read")
 
+        buildFilterChips()
+        filterScrollView.addSubview(filterStackView)
+        view.addSubview(filterScrollView)
         view.addSubview(tableView)
         view.addSubview(skeletonView)
         view.addSubview(stateStackView)
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            filterScrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            filterScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            filterScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            filterScrollView.heightAnchor.constraint(equalToConstant: 48),
+
+            filterStackView.topAnchor.constraint(equalTo: filterScrollView.topAnchor, constant: 8),
+            filterStackView.bottomAnchor.constraint(equalTo: filterScrollView.bottomAnchor, constant: -8),
+            filterStackView.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor),
+            filterStackView.trailingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.trailingAnchor),
+            filterStackView.heightAnchor.constraint(equalTo: filterScrollView.frameLayoutGuide.heightAnchor, constant: -16),
+
+            tableView.topAnchor.constraint(equalTo: filterScrollView.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            skeletonView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            skeletonView.topAnchor.constraint(equalTo: filterScrollView.bottomAnchor),
             skeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             skeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             skeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -146,12 +187,18 @@ final class NotificationsViewController: ObservableViewController {
         refreshControl.endRefreshing()
         applyThemeStyle()
 
-        let hasNotifications = !viewModel.notifications.isEmpty
-        let showSkeleton = viewModel.isLoading && !hasNotifications
+        let sourceEmpty = viewModel.notifications.isEmpty
+        let filtered = filteredNotifications
+        let hasFiltered = !filtered.isEmpty
+        let showSkeleton = viewModel.isLoading && sourceEmpty
         skeletonView.isHidden = !showSkeleton
-        tableView.isHidden = !hasNotifications || showSkeleton
-        stateStackView.isHidden = hasNotifications || showSkeleton
+        filterScrollView.isHidden = viewModel.requiresLogin
+        tableView.isHidden = !hasFiltered || showSkeleton
+        stateStackView.isHidden = hasFiltered || showSkeleton
+        // Keep mark-all enabled if any unread exists (global), not just current filter.
         navigationItem.rightBarButtonItem?.isEnabled = viewModel.notifications.contains { !$0.read }
+            || viewModel.unreadCount > 0
+        refreshFilterChipStyles()
 
         if viewModel.requiresLogin {
             configureState(
@@ -160,17 +207,24 @@ final class NotificationsViewController: ObservableViewController {
                 showLogin: true,
                 showRetry: false
             )
-        } else if let errorMessage = viewModel.errorMessage, !hasNotifications {
+        } else if let errorMessage = viewModel.errorMessage, sourceEmpty {
             configureState(
                 iconName: "exclamationmark.triangle",
                 text: errorMessage,
                 showLogin: false,
                 showRetry: true
             )
-        } else if !hasNotifications, !viewModel.isLoading {
+        } else if sourceEmpty, !viewModel.isLoading {
             configureState(
                 iconName: "bell",
                 text: String(localized: "notifications.empty"),
+                showLogin: false,
+                showRetry: false
+            )
+        } else if !hasFiltered, !viewModel.isLoading {
+            configureState(
+                iconName: "line.3.horizontal.decrease.circle",
+                text: String(localized: "notifications.filter.empty", defaultValue: "当前筛选下没有通知"),
                 showLogin: false,
                 showRetry: false
             )
@@ -230,6 +284,66 @@ final class NotificationsViewController: ObservableViewController {
         })
     }
 
+
+    private func buildFilterChips() {
+        filterStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        filterButtons.removeAll()
+        for filter in NotificationListFilter.allCases {
+            var config = UIButton.Configuration.plain()
+            config.cornerStyle = .capsule
+            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
+                return outgoing
+            }
+            let button = UIButton(configuration: config)
+            button.tag = filter.rawValue
+            button.addTarget(self, action: #selector(filterChipTapped(_:)), for: .touchUpInside)
+            filterButtons[filter] = button
+            filterStackView.addArrangedSubview(button)
+        }
+        refreshFilterChipStyles()
+    }
+
+    private func refreshFilterChipStyles() {
+        let accent = AppSettings.shared.themeStyle.accentColor
+        for filter in NotificationListFilter.allCases {
+            guard let button = filterButtons[filter] else { continue }
+            let selected = filter == selectedFilter
+            var config = button.configuration ?? .plain()
+            // Count badge in title for non-all filters.
+            let count: Int = {
+                switch filter {
+                case .all:
+                    return viewModel.notifications.count
+                default:
+                    return viewModel.notifications.filter { filter.matches($0) }.count
+                }
+            }()
+            if filter == .all {
+                config.title = filter.title
+            } else {
+                config.title = count > 0 ? "\(filter.title) \(count)" : filter.title
+            }
+            config.baseForegroundColor = selected ? .white : .secondaryLabel
+            config.background.backgroundColor = selected
+                ? accent
+                : UIColor.secondarySystemFill
+            button.configuration = config
+        }
+    }
+
+    @objc private func filterChipTapped(_ sender: UIButton) {
+        guard let filter = NotificationListFilter(rawValue: sender.tag) else { return }
+        guard filter != selectedFilter else { return }
+        selectedFilter = filter
+        refreshFilterChipStyles()
+        tableView.reloadData()
+        // Re-evaluate empty/filter state without full network reload.
+        updateUI()
+    }
+
     @objc private func markAllReadTapped() {
         Task {
             await viewModel.markAllRead()
@@ -264,20 +378,55 @@ final class NotificationsViewController: ObservableViewController {
 
 extension NotificationsViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        viewModel.notifications.count
+        filteredNotifications.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let cell = tableView.dequeueReusableCell(withIdentifier: NotificationCell.reuseIdentifier, for: indexPath) as? NotificationCell else {
             return UITableViewCell()
         }
-        cell.configure(with: viewModel.notifications[indexPath.row], baseURL: api.baseURL)
+        cell.configure(with: filteredNotifications[indexPath.row], baseURL: api.baseURL)
         return cell
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        openNotification(viewModel.notifications[indexPath.row])
+        openNotification(filteredNotifications[indexPath.row])
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        let notification = filteredNotifications[indexPath.row]
+        guard !notification.read else { return nil }
+
+        let markRead = UIContextualAction(
+            style: .normal,
+            title: String(localized: "notifications.mark_read", defaultValue: "标为已读")
+        ) { [weak self] _, _, completion in
+            guard let self else {
+                completion(false)
+                return
+            }
+            Task {
+                await self.viewModel.markNotificationRead(id: notification.id)
+                completion(true)
+            }
+        }
+        markRead.image = UIImage(systemName: "checkmark.circle.fill")
+        markRead.backgroundColor = AppSettings.shared.themeStyle.accentColor
+        let config = UISwipeActionsConfiguration(actions: [markRead])
+        config.performsFirstActionWithFullSwipe = true
+        return config
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        // Mirror trailing: left-swipe also marks read for one-handed use.
+        self.tableView(tableView, trailingSwipeActionsConfigurationForRowAt: indexPath)
     }
 }
 

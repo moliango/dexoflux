@@ -49,8 +49,10 @@ final class BackgroundNotificationDeliveryPipeline {
                 baseURL: snapshot.forum.baseURL,
                 username: snapshot.username
             )
+            let filter = AppSettings.shared.localNotificationFilter
+            let filtered = snapshot.notifications.filter { filter.allows($0) }
             let candidates = deliveryStore.reservePendingNotifications(
-                snapshot.notifications,
+                filtered,
                 baseURL: snapshot.forum.baseURL,
                 username: snapshot.username,
                 limit: 3

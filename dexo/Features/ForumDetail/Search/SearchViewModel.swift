@@ -1,5 +1,19 @@
 import Foundation
 
+enum SearchResultScope: Int, CaseIterable {
+    case topics
+    case users
+    case tags
+
+    var title: String {
+        switch self {
+        case .topics: return String(localized: "search.scope.topics", defaultValue: "帖子")
+        case .users: return String(localized: "search.scope.users", defaultValue: "用户")
+        case .tags: return String(localized: "search.scope.tags", defaultValue: "标签")
+        }
+    }
+}
+
 enum SearchSortOrder: String, CaseIterable {
     case relevance
     case latest
@@ -24,6 +38,10 @@ final class SearchViewModel: DexoObservableObject {
 
     var searchResults: [DiscourseSearchResult.SearchPost] = []
     var userResults: [DiscourseSearchResult.SearchUser] = []
+    var tagResults: [DiscourseTag] = []
+    /// Idle-state hot tags (from /tags.json).
+    var hotTags: [DiscourseTag] = []
+    var selectedScope: SearchResultScope = .topics
     /// AI 语义搜索命中的 topicId（用于结果行的 AI 徽标）。
     private(set) var aiTopicIds: Set<Int> = []
     private(set) var topicsById: [Int: DiscourseSearchResult.SearchTopic] = [:]
@@ -121,8 +139,32 @@ final class SearchViewModel: DexoObservableObject {
 
     func loadRecentSearches() async {
         let raw = (try? await api.fetchRecentSearches()) ?? []
-        recentSearches = Self.sanitizeRecentSearches(raw)
+        var merged = Self.sanitizeRecentSearches(raw)
+        // Local fallback / merge so history works offline and for guests.
+        for term in SearchLocalHistoryStore.load(baseURL: api.baseURL) {
+            if !merged.contains(where: { $0.caseInsensitiveCompare(term) == .orderedSame }) {
+                merged.append(term)
+            }
+        }
+        recentSearches = Array(merged.prefix(20))
         notifyChanged()
+    }
+
+    func loadHotTags() async {
+        do {
+            let list = try await api.fetchTags()
+            hotTags = Array(list.tags.sorted { $0.count > $1.count }.prefix(24))
+            notifyChanged()
+        } catch {
+            // Silent — idle hot section simply hides.
+        }
+    }
+
+    func recordLocalHistory(term: String) {
+        let clean = Self.stripFilterTokens(from: term)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        SearchLocalHistoryStore.push(term: clean, baseURL: api.baseURL)
     }
 
     /// Display/tap term without Discourse filter tokens (FluxDO strips `order:`).
@@ -183,6 +225,7 @@ final class SearchViewModel: DexoObservableObject {
 
     func clearRecentSearches() async {
         try? await api.clearRecentSearches()
+        SearchLocalHistoryStore.clear(baseURL: api.baseURL)
         recentSearches = []
         notifyChanged()
     }
@@ -194,6 +237,7 @@ final class SearchViewModel: DexoObservableObject {
         guard !query.isEmpty else {
             searchResults = []
             userResults = []
+            tagResults = []
             hasSearched = false
             notifyChanged()
             return
@@ -217,6 +261,12 @@ final class SearchViewModel: DexoObservableObject {
             indexTopics(result.topics ?? [])
             standardPosts = uniqueTopics(from: result.posts ?? [])
             userResults = result.users ?? []
+            recordLocalHistory(term: term)
+            // Refresh recent list (server may have recorded this query).
+            Task { await loadRecentSearches() }
+            // Parallel tag search for the Tags tab.
+            let tagQuery = Self.stripFilterTokens(from: term)
+            tagResults = (try? await api.searchTags(query: tagQuery)) ?? []
             currentPage = 1
             canLoadMore = result.groupedSearchResult?.morePosts
                 ?? result.groupedSearchResult?.moreFullPageResults
@@ -226,6 +276,7 @@ final class SearchViewModel: DexoObservableObject {
             standardPosts = []
             searchResults = []
             userResults = []
+            tagResults = []
             canLoadMore = false
             errorMessage = error.localizedDescription
         }
@@ -358,5 +409,35 @@ final class SearchViewModel: DexoObservableObject {
     private func parentCategory(for category: DiscourseCategory) -> DiscourseCategory? {
         guard let parentId = category.parentCategoryId else { return nil }
         return categoriesById[parentId]
+    }
+}
+
+
+// MARK: - Local search history (guest / offline fallback)
+
+enum SearchLocalHistoryStore {
+    private static let prefix = "search.local_history."
+
+    static func load(baseURL: String) -> [String] {
+        defaults.stringArray(forKey: key(baseURL)) ?? []
+    }
+
+    static func push(term: String, baseURL: String) {
+        var items = load(baseURL: baseURL).filter { $0.caseInsensitiveCompare(term) != .orderedSame }
+        items.insert(term, at: 0)
+        if items.count > 20 { items = Array(items.prefix(20)) }
+        defaults.set(items, forKey: key(baseURL))
+    }
+
+    static func clear(baseURL: String) {
+        defaults.removeObject(forKey: key(baseURL))
+    }
+
+    private static var defaults: UserDefaults { .standard }
+
+    private static func key(_ baseURL: String) -> String {
+        let host = URL(string: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")))?.host?.lowercased()
+            ?? baseURL.lowercased()
+        return prefix + host
     }
 }

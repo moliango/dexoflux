@@ -165,10 +165,15 @@ extension TopicDetailViewController {
             state: isReadLater ? .on : .off
         ) { [weak self] _ in
             guard let self else { return }
+            let title = self.viewModel.topic?.title
+                ?? self.viewModel.topic?.fancyTitle
+                ?? "#\(self.topicId)"
             TopicReadLaterStore.shared.toggle(
                 topicId: self.topicId,
                 baseURL: self.api.baseURL,
-                username: AuthManager.shared.username(for: self.api.baseURL)
+                username: AuthManager.shared.username(for: self.api.baseURL),
+                title: title,
+                lastReadPostNumber: self.lastReadPostNumber ?? self.viewModel.topic?.lastReadPostNumber
             )
             self.configureTopicActions()
         }

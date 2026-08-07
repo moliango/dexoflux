@@ -679,6 +679,13 @@ enum BlockExtractor {
             }
         }
 
+        // Whole-paragraph sole bare image (non-emoji) → block image.
+        if substantial.count == 1,
+           case .image(let src, let alt, let width, let height, let isEmoji) = substantial[0],
+           !isEmoji {
+            return [.image(src: src, alt: alt, width: width, height: height, href: nil)]
+        }
+
         // Whole-paragraph sole link whose href is image-like (ignore <br>/whitespace).
         if substantial.count == 1, case .link(let href, _) = substantial[0] {
             let cleaned = ImageURLDetector.normalizeURLString(href.replacingOccurrences(of: "&amp;", with: "&"))
@@ -722,6 +729,16 @@ enum BlockExtractor {
 
     private static func imageBlock(from inline: InlineNode, soleInParagraph: Bool) -> ContentBlock? {
         switch inline {
+        case .image(let src, let alt, let width, let height, let isEmoji):
+            // Bare <img> mixed into paragraph text. Promote real content images to
+            // block media so clients render TappableImageContainer instead of a blank
+            // NSTextAttachment placeholder. Keep emoji / tiny decorative imgs inline.
+            guard !isEmoji else { return nil }
+            if let width, let height, width <= 80, height <= 80 {
+                return nil
+            }
+            return .image(src: src, alt: alt, width: width, height: height, href: nil)
+
         case .link(let href, let children):
             // <a href="..."><img></a> with a non-emoji image becomes a tappable block image.
             if children.count == 1,

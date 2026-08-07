@@ -50,6 +50,8 @@ enum DiscourseRouter {
     case following(username: String)
     case followers(username: String)
     case drafts(offset: Int, limit: Int)
+    case draft(key: String)
+    case saveDraft
     case deleteDraft(key: String, sequence: Int)
     case createdTopics(username: String, page: Int)
     case userBadges(username: String)
@@ -69,7 +71,7 @@ enum DiscourseRouter {
     var method: HTTPMethod {
         switch self {
         case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
-             .topicNotificationLevel, .presenceUpdate:
+             .topicNotificationLevel, .presenceUpdate, .saveDraft:
             return .post
         case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
             return .put
@@ -194,6 +196,10 @@ enum DiscourseRouter {
             return "/u/\(Self.pathComponent(username))/follow/followers"
         case .drafts(let offset, let limit):
             return "/drafts.json?offset=\(offset)&limit=\(limit)"
+        case .draft(let key):
+            return "/drafts/\(Self.pathComponent(key)).json"
+        case .saveDraft:
+            return "/drafts.json"
         case .deleteDraft(let key, let sequence):
             return "/drafts/\(Self.pathComponent(key)).json?sequence=\(sequence)"
         case .createdTopics(let username, let page):

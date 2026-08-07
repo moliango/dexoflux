@@ -171,6 +171,260 @@ extension HomeViewController: UITableViewDelegate {
         openTopic(topicId)
     }
 
+    func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              Self.xiaohongshuRowIndex(from: topicId) == nil,
+              let topic = viewModel.topics.first(where: { $0.id == topicId })
+        else { return nil }
+
+        let username = AuthManager.shared.username(for: api.baseURL)
+
+        // Rightmost first: 已读 / 书签 / 稍后
+        let markRead = UIContextualAction(
+            style: .normal,
+            title: String(localized: "topic.mark_read", defaultValue: "已读")
+        ) { [weak self] _, _, completion in
+            guard let self else { completion(false); return }
+            self.markTopicReadFromList(topic)
+            completion(true)
+        }
+        markRead.image = UIImage(systemName: "checkmark.circle")
+        markRead.backgroundColor = .systemGray
+
+        let bookmark = UIContextualAction(
+            style: .normal,
+            title: String(localized: "topic.bookmark.add", defaultValue: "书签")
+        ) { [weak self] _, _, completion in
+            guard let self else { completion(false); return }
+            self.bookmarkTopicFromList(topicId: topicId, title: topic.title)
+            completion(true)
+        }
+        bookmark.image = UIImage(systemName: "bookmark")
+        bookmark.backgroundColor = .systemOrange
+
+        let inQueue = TopicReadLaterStore.shared.contains(
+            topicId: topicId,
+            baseURL: api.baseURL,
+            username: username
+        )
+        let laterTitle = inQueue
+            ? String(localized: "topic.read_later.remove", defaultValue: "移出稍后")
+            : String(localized: "topic.read_later.add", defaultValue: "稍后阅读")
+        let readLater = UIContextualAction(style: .normal, title: laterTitle) { [weak self] _, _, completion in
+            guard let self else { completion(false); return }
+            TopicReadLaterStore.shared.toggle(
+                topicId: topicId,
+                baseURL: self.api.baseURL,
+                username: username,
+                title: topic.title,
+                lastReadPostNumber: topic.lastReadPostNumber
+            )
+            completion(true)
+        }
+        readLater.image = UIImage(systemName: inQueue ? "square.stack.3d.up.slash" : "square.stack.3d.up.fill")
+        readLater.backgroundColor = .systemIndigo
+
+        let config = UISwipeActionsConfiguration(actions: [readLater, bookmark, markRead])
+        config.performsFirstActionWithFullSwipe = false
+        return config
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              Self.xiaohongshuRowIndex(from: topicId) == nil,
+              let topic = viewModel.topics.first(where: { $0.id == topicId })
+        else { return nil }
+
+        let notify = UIContextualAction(
+            style: .normal,
+            title: String(localized: "topic.notifications", defaultValue: "通知")
+        ) { [weak self] _, _, completion in
+            guard let self else { completion(false); return }
+            self.presentTopicNotificationLevelPicker(topicId: topicId, title: topic.title)
+            completion(true)
+        }
+        notify.image = UIImage(systemName: "bell")
+        notify.backgroundColor = .systemTeal
+
+        let remind = UIContextualAction(
+            style: .normal,
+            title: String(localized: "reminder.action", defaultValue: "提醒")
+        ) { [weak self] _, _, completion in
+            guard let self else { completion(false); return }
+            self.presentReminderPicker(
+                kind: .readLater,
+                topicId: topicId,
+                title: topic.title
+            )
+            completion(true)
+        }
+        remind.image = UIImage(systemName: "alarm")
+        remind.backgroundColor = .systemPurple
+
+        return UISwipeActionsConfiguration(actions: [notify, remind])
+    }
+
+    private func markTopicReadFromList(_ topic: DiscourseTopicList.Topic) {
+        let highest = max(topic.highestPostNumber ?? 0, topic.postsCount, topic.lastReadPostNumber ?? 0)
+        guard highest > 0 else { return }
+        _ = viewModel.updateTopicReadProgress(topicId: topic.id, highestSeen: highest, notify: true)
+        // Best-effort server timing so web unread clears too.
+        let topicId = topic.id
+        let api = self.api
+        Task {
+            _ = await api.sendTopicTimings(
+                topicId: topicId,
+                topicTime: 1_000,
+                timings: [highest: 1_000]
+            )
+        }
+        // Single-row reconfigure
+        if let index = viewModel.topics.firstIndex(where: { $0.id == topic.id }) {
+            let indexPath = IndexPath(row: index, section: 0)
+            if tableView.indexPathsForVisibleRows?.contains(indexPath) == true {
+                tableView.reloadRows(at: [indexPath], with: .none)
+            }
+        }
+    }
+
+    private func bookmarkTopicFromList(topicId: Int, title: String) {
+        let work = { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    _ = try await self.api.createBookmark(topicId: topicId)
+                    await MainActor.run {
+                        let ban = UIAlertController(
+                            title: String(localized: "topic.bookmark.added", defaultValue: "已添加书签"),
+                            message: title,
+                            preferredStyle: .alert
+                        )
+                        ban.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        // Avoid interrupting swipe animation heavily — brief toast-style alert.
+                        self.present(ban, animated: true)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak ban] in
+                            ban?.dismiss(animated: true)
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        let alert = UIAlertController(
+                            title: String(localized: "common.error", defaultValue: "失败"),
+                            message: error.localizedDescription,
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            }
+        }
+        if let authGate {
+            authGate.requireAuth(then: work)
+        } else {
+            work()
+        }
+    }
+
+    private func presentTopicNotificationLevelPicker(topicId: Int, title: String) {
+        let work = { [weak self] in
+            guard let self else { return }
+            let sheet = UIAlertController(
+                title: String(localized: "topic.notifications", defaultValue: "通知级别"),
+                message: title,
+                preferredStyle: .actionSheet
+            )
+            let levels: [(DiscourseTopicDetail.NotificationLevel, String)] = [
+                (.watching, String(localized: "topic.notifications.watching", defaultValue: "关注")),
+                (.tracking, String(localized: "topic.notifications.tracking", defaultValue: "跟踪")),
+                (.regular, String(localized: "topic.notifications.regular", defaultValue: "常规")),
+                (.muted, String(localized: "topic.notifications.muted", defaultValue: "静音")),
+            ]
+            for (level, label) in levels {
+                sheet.addAction(UIAlertAction(title: label, style: .default) { [weak self] _ in
+                    guard let self else { return }
+                    Task {
+                        do {
+                            try await self.api.updateTopicNotificationLevel(topicId: topicId, level: level)
+                        } catch {
+                            await MainActor.run {
+                                let alert = UIAlertController(
+                                    title: String(localized: "common.error", defaultValue: "失败"),
+                                    message: error.localizedDescription,
+                                    preferredStyle: .alert
+                                )
+                                alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                                self.present(alert, animated: true)
+                            }
+                        }
+                    }
+                })
+            }
+            sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+            if let pop = sheet.popoverPresentationController {
+                pop.sourceView = self.tableView
+                pop.sourceRect = self.tableView.bounds
+            }
+            self.present(sheet, animated: true)
+        }
+        if let authGate {
+            authGate.requireAuth(then: work)
+        } else {
+            work()
+        }
+    }
+
+    func presentReminderPicker(kind: LocalReminderScheduler.Kind, topicId: Int, title: String) {
+        let sheet = UIAlertController(
+            title: String(localized: "reminder.pick", defaultValue: "设置提醒"),
+            message: title,
+            preferredStyle: .actionSheet
+        )
+        for preset in LocalReminderScheduler.presetDates() {
+            sheet.addAction(UIAlertAction(title: preset.title, style: .default) { [weak self] _ in
+                guard let self else { return }
+                Task {
+                    let ok = await LocalReminderScheduler.schedule(
+                        .init(
+                            kind: kind,
+                            topicId: topicId,
+                            baseURL: self.api.baseURL,
+                            title: title,
+                            fireAt: preset.date
+                        )
+                    )
+                    await MainActor.run {
+                        let message = ok
+                            ? String(localized: "reminder.scheduled", defaultValue: "已设置本地提醒")
+                            : String(localized: "reminder.denied", defaultValue: "未获得通知权限")
+                        let alert = UIAlertController(title: message, message: nil, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(
+            title: String(localized: "reminder.cancel_existing", defaultValue: "取消已有提醒"),
+            style: .destructive
+        ) { [weak self] _ in
+            guard let self else { return }
+            LocalReminderScheduler.cancel(kind: kind, topicId: topicId, baseURL: self.api.baseURL)
+        })
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = tableView
+            pop.sourceRect = tableView.bounds
+        }
+        present(sheet, animated: true)
+    }
+
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         // Follow-scroll avatar warm-up (not only the first page of the list).
         prefetchAvatarsAroundVisibleRows(around: indexPath)

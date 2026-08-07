@@ -227,9 +227,12 @@ final class ForumLocalNotificationPresenter: ForumLocalNotificationPresenting {
         guard !notifications.isEmpty else { return [] }
         guard await ensureAuthorization(policy: authorizationPolicy) else { return [] }
 
+        let filter = AppSettings.shared.localNotificationFilter
         var delivered: [DiscourseNotification] = []
         for notification in notifications {
             guard !Task.isCancelled else { break }
+            // Quiet mode / mention-only: still allow badge updates elsewhere, skip banner.
+            guard filter.allows(notification) else { continue }
             let content = UNMutableNotificationContent()
             content.title = notification.displayTitle
             content.body = notification.displayDescription
