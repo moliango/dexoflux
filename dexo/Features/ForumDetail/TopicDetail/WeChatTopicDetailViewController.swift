@@ -131,36 +131,29 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         return label
     }()
 
-    /// WeChat-like bottom composer entry (opens full ReplyComposer).
-    private lazy var inputBar: UIButton = {
-        var config = UIButton.Configuration.plain()
-        config.title = String(localized: "wechat_chat.input_placeholder", defaultValue: "回复…")
-        config.baseForegroundColor = .secondaryLabel
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
-        config.background.backgroundColor = UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(white: 0.16, alpha: 1)
-                : UIColor.white
+    /// WeChat-style bottom chat input: type+send text, plus opens full composer for images.
+    private lazy var chatInputBar: WeChatChatInputBar = {
+        let bar = WeChatChatInputBar()
+        bar.onSend = { [weak self] raw in
+            self?.performAuthenticated { self?.sendQuickReply(raw) }
         }
-        config.background.cornerRadius = 6
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.contentHorizontalAlignment = .leading
-        button.addAction(UIAction { [weak self] _ in
-            self?.performAuthenticated { self?.presentReplyComposer(for: nil) }
-        }, for: .touchUpInside)
-        return button
-    }()
-
-    private let inputContainer: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(white: 0.11, alpha: 1)
-                : UIColor(red: 0.96, green: 0.96, blue: 0.96, alpha: 1)
+        bar.onPlus = { [weak self] in
+            self?.performAuthenticated {
+                guard let self else { return }
+                let target = self.chatInputBar.replyToPost
+                let draft = self.chatInputBar.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.presentReplyComposer(
+                    for: target,
+                    initialText: draft.isEmpty ? nil : draft
+                )
+            }
         }
-        return view
+        bar.onBeginEditing = { [weak self] in
+            self?.performAuthenticated {
+                // Auth gate only; keep first responder if already logged in.
+            }
+        }
+        return bar
     }()
 
     private static var chatBackgroundColor: UIColor {
@@ -215,37 +208,21 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         configureTopicActions()
         title = String(localized: "topic_detail.default_title", defaultValue: "话题")
 
-        inputContainer.addSubview(inputBar)
         view.addSubview(tableView)
-        view.addSubview(inputContainer)
+        view.addSubview(chatInputBar)
         view.addSubview(activityIndicator)
         view.addSubview(errorLabel)
 
-        let topLine = UIView()
-        topLine.translatesAutoresizingMaskIntoConstraints = false
-        topLine.backgroundColor = UIColor.separator.withAlphaComponent(0.45)
-        inputContainer.addSubview(topLine)
-
+        // Pin to keyboard so the bar lifts with the software keyboard (iOS 15+).
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: chatInputBar.topAnchor),
 
-            inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            inputContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            topLine.topAnchor.constraint(equalTo: inputContainer.topAnchor),
-            topLine.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor),
-            topLine.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor),
-            topLine.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
-
-            inputBar.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 8),
-            inputBar.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
-            inputBar.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
-            inputBar.bottomAnchor.constraint(equalTo: inputContainer.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            inputBar.heightAnchor.constraint(equalToConstant: 40),
+            chatInputBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatInputBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chatInputBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -254,6 +231,15 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             errorLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
             errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+
+        // Tap blank chat area to dismiss keyboard.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissChatKeyboard))
+        tap.cancelsTouchesInView = false
+        tableView.addGestureRecognizer(tap)
+    }
+
+    @objc private func dismissChatKeyboard() {
+        chatInputBar.resign()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -275,6 +261,12 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         if !didLoad {
             didLoad = true
             Task { await loadInitial() }
+        }
+        Task {
+            await api.loadOrFetchEmojiMap()
+            await MainActor.run { [weak self] in
+                self?.tableView.reloadData()
+            }
         }
     }
 
@@ -362,7 +354,13 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         // Only show posts that finished HTML parse — same gate as classic Topic Detail.
         // (Cell still has plain-text fallback if blocks are empty.)
         var seen = Set<Int>()
-        let ids = viewModel.visiblePosts.compactMap { post -> Int? in
+        let sourcePosts: [DiscourseTopicDetail.Post] = {
+            if viewModel.isNestedViewEnabled {
+                return NestedReplyOrdering.ordered(viewModel.visiblePosts).map(\.post)
+            }
+            return viewModel.visiblePosts
+        }()
+        let ids = sourcePosts.compactMap { post -> Int? in
             guard viewModel.parsedBlocks[post.id] != nil,
                   seen.insert(post.id).inserted
             else { return nil }
@@ -443,6 +441,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     // MARK: - Composer / boost
 
     private func presentReplyComposer(for post: DiscourseTopicDetail.Post?, initialText: String? = nil) {
+        chatInputBar.resign()
         let composer = ReplyComposerViewController(
             api: api,
             topicId: topicId,
@@ -453,6 +452,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         )
         composer.onPostCreated = { [weak self] in
             guard let self else { return }
+            self.chatInputBar.clearAfterSend()
             Task {
                 await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
             }
@@ -463,6 +463,63 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             sheet.prefersGrabberVisible = false
         }
         present(composer, animated: true)
+    }
+
+    /// Focus bottom bar for a quick text reply (WeChat style), optional reply-to target.
+    private func beginQuickReply(to post: DiscourseTopicDetail.Post?) {
+        chatInputBar.setReplyTarget(post)
+        chatInputBar.focus()
+    }
+
+    private func sendQuickReply(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let replyTo = chatInputBar.replyToPost
+        chatInputBar.setSending(true)
+        Task {
+            do {
+                let response = try await api.createReply(
+                    topicId: topicId,
+                    replyToPostNumber: replyTo?.postNumber,
+                    raw: trimmed
+                )
+                await MainActor.run {
+                    self.chatInputBar.clearAfterSend()
+                    self.chatInputBar.resign()
+                }
+                if response.isEnqueued {
+                    await MainActor.run {
+                        let alert = UIAlertController(
+                            title: String(localized: "reply.queued.title", defaultValue: "已进入审核"),
+                            message: String(localized: "reply.queued.message", defaultValue: "回复已提交，等待审核通过后显示。"),
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self.present(alert, animated: true)
+                    }
+                    return
+                }
+                await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
+            } catch {
+                await MainActor.run {
+                    self.chatInputBar.setSending(false)
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
+    private func deleteBoost(_ boost: DiscourseTopicDetail.Boost, for post: DiscourseTopicDetail.Post) {
+        Task {
+            do {
+                try await api.deleteBoost(boostId: boost.id)
+                viewModel.removePostBoost(postId: post.id, boostId: boost.id)
+                reloadPostCell(postId: post.id)
+            } catch {
+                reloadPostCell(postId: post.id)
+                showPostActionError(error)
+            }
+        }
     }
 
     private func presentBoostInput(for post: DiscourseTopicDetail.Post) {
@@ -803,7 +860,7 @@ extension WeChatTopicDetailViewController: WeChatChatPostCellDelegate {
 
     func weChatChatPostCell(_ cell: WeChatChatPostCell, didRequestReply post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
-            self?.presentReplyComposer(for: post)
+            self?.beginQuickReply(to: post)
         }
     }
 
@@ -880,7 +937,7 @@ extension WeChatTopicDetailViewController: PostCellDelegate {
 
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
-            self?.presentReplyComposer(for: post)
+            self?.beginQuickReply(to: post)
         }
     }
 
@@ -916,6 +973,12 @@ extension WeChatTopicDetailViewController: PostCellDelegate {
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
             self?.presentBoostInput(for: post)
+        }
+    }
+
+    func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            self?.deleteBoost(boost, for: post)
         }
     }
 
