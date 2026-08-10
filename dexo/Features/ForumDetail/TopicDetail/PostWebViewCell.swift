@@ -574,6 +574,7 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post)
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool)
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
+    func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
     func postCell(didTapQuotedPostNumber postNumber: Int)
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post)
@@ -980,4 +981,5 @@ final class PostWebViewCell: UITableViewCell {
 extension PostCellDelegate {
     func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {}
     func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post) {}
+    func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {}
 }

@@ -90,11 +90,13 @@ enum TitleEmojiRenderer {
                 let attachment = EmojiTextAttachment()
                 attachment.emojiURL = url
                 attachment.shortcode = ":\(code):"
+                // Transparent placeholder reserves layout; nil/empty UIImage leaves a blank chip.
+                attachment.image = transparentPlaceholderImage()
                 attachment.bounds = CGRect(
                     x: 0,
-                    y: font.descender,
-                    width: font.lineHeight,
-                    height: font.lineHeight
+                    y: (font.capHeight - font.pointSize) / 2,
+                    width: font.pointSize,
+                    height: font.pointSize
                 )
                 result.append(NSAttributedString(attachment: attachment))
                 replacedAny = true
@@ -144,9 +146,9 @@ enum TitleEmojiRenderer {
 
         label.text = nil
         label.attributedText = rendered
-        loadImages(in: rendered, cloudflareBaseURL: baseURL) { [weak label] in
+        loadImages(in: rendered, cloudflareBaseURL: baseURL) { [weak label] updated in
             guard let label else { return }
-            label.attributedText = rendered
+            label.attributedText = updated
             label.setNeedsDisplay()
             label.invalidateIntrinsicContentSize()
         }
@@ -155,33 +157,110 @@ enum TitleEmojiRenderer {
     static func loadImages(
         in attributedString: NSAttributedString,
         cloudflareBaseURL: String? = nil,
-        onImageLoaded: @escaping () -> Void
+        onImageLoaded: @escaping (NSAttributedString) -> Void
     ) {
-        attributedString.enumerateAttribute(
+        let mutable = NSMutableAttributedString(attributedString: attributedString)
+        var entries: [(attachment: EmojiTextAttachment, url: URL)] = []
+        mutable.enumerateAttribute(
             .attachment,
-            in: NSRange(location: 0, length: attributedString.length)
+            in: NSRange(location: 0, length: mutable.length)
         ) { value, _, _ in
             guard let attachment = value as? EmojiTextAttachment, let url = attachment.emojiURL else { return }
-            ForumImageLoader.loadImage(with: url, cloudflareBaseURL: cloudflareBaseURL) { image in
+            entries.append((attachment, url))
+        }
+        guard !entries.isEmpty else { return }
+
+        for entry in entries {
+            ForumImageLoader.loadImage(with: entry.url, cloudflareBaseURL: cloudflareBaseURL) { image in
                 guard let image else { return }
-                attachment.image = image
-                onImageLoaded()
+                DispatchQueue.main.async {
+                    entry.attachment.image = image
+                    onImageLoaded(mutable)
+                }
             }
         }
     }
 
-    /// Recover `:shortcode:` from Discourse fancy_title HTML img tags and strip markup.
+    private static func transparentPlaceholderImage() -> UIImage {
+        let size = CGSize(width: 1, height: 1)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            UIColor.clear.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Recover `:shortcode:` from Discourse HTML img tags and strip markup.
+    /// Handles alt/title=":name:" and src paths like `/images/emoji/twitter/name.png`.
     static func recoverShortcodesFromHTML(_ html: String) -> String {
         var result = html
-        let imgPattern = try! NSRegularExpression(
-            pattern: #"<img\b[^>]*(?:title|alt)\s*=\s*[\"']:([^\"']+)[\"'][^>]*>"#,
+
+                // 1) emoji <img> alt/title → :shortcode: (bare name or :name: / :name:t2:)
+        let altTitlePattern = try! NSRegularExpression(
+            pattern: #"<img\b([^>]+)>"#,
             options: [.caseInsensitive]
         )
-        result = imgPattern.stringByReplacingMatches(
-            in: result,
-            range: NSRange(result.startIndex..., in: result),
-            withTemplate: ":$1:"
+        let altNS = result as NSString
+        let altMatches = altTitlePattern.matches(in: result, range: NSRange(location: 0, length: altNS.length))
+        for match in altMatches.reversed() {
+            guard match.numberOfRanges > 1 else { continue }
+            let attrs = altNS.substring(with: match.range(at: 1))
+            let isEmoji = attrs.localizedCaseInsensitiveContains("emoji")
+                || attrs.localizedCaseInsensitiveContains("/emoji/")
+            guard isEmoji else { continue }
+
+            // Extract title/alt manually
+            var rawName = ""
+            for key in ["title", "alt"] {
+                let p = try! NSRegularExpression(
+                    pattern: key + #"\s*=\s*[\"']([^\"']+)[\"']"#,
+                    options: [.caseInsensitive]
+                )
+                if let m = p.firstMatch(in: attrs, range: NSRange(location: 0, length: (attrs as NSString).length)),
+                   m.numberOfRanges > 1 {
+                    rawName = (attrs as NSString).substring(with: m.range(at: 1))
+                    break
+                }
+            }
+            var name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            name = name.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            if name.isEmpty {
+                let srcPattern = try! NSRegularExpression(
+                    pattern: #"src\s*=\s*[\"']([^\"']+)[\"']"#,
+                    options: [.caseInsensitive]
+                )
+                if let m = srcPattern.firstMatch(in: attrs, range: NSRange(location: 0, length: (attrs as NSString).length)),
+                   m.numberOfRanges > 1 {
+                    let src = (attrs as NSString).substring(with: m.range(at: 1))
+                    name = emojiName(fromSrc: src)
+                }
+            }
+            guard !name.isEmpty, let full = Range(match.range, in: result) else { continue }
+            result.replaceSubrange(full, with: ":\(name):")
+        }
+
+// 2) Remaining <img class="emoji" src=".../emoji/set/name.png"> → :name:
+        //    (custom boost stickers often only have src, not a colon-wrapped alt)
+        let srcPattern = try! NSRegularExpression(
+            pattern: #"<img\b[^>]*class\s*=\s*[\"'][^\"']*emoji[^\"']*[\"'][^>]*src\s*=\s*[\"']([^\"']+)[\"'][^>]*>|<img\b[^>]*src\s*=\s*[\"']([^\"']+)[\"'][^>]*class\s*=\s*[\"'][^\"']*emoji[^\"']*[\"'][^>]*>"#,
+            options: [.caseInsensitive]
         )
+        let ns = result as NSString
+        let matches = srcPattern.matches(in: result, range: NSRange(location: 0, length: ns.length))
+        for match in matches.reversed() {
+            var src = ""
+            if match.numberOfRanges > 1, match.range(at: 1).location != NSNotFound {
+                src = ns.substring(with: match.range(at: 1))
+            } else if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound {
+                src = ns.substring(with: match.range(at: 2))
+            }
+            let name = emojiName(fromSrc: src)
+            let replacement = name.isEmpty ? "" : ":\(name):"
+            if let full = Range(match.range, in: result) {
+                result.replaceSubrange(full, with: replacement)
+            }
+        }
+
         let tagPattern = try! NSRegularExpression(pattern: #"<[^>]+>"#, options: [])
         result = tagPattern.stringByReplacingMatches(
             in: result,
@@ -189,6 +268,31 @@ enum TitleEmojiRenderer {
             withTemplate: ""
         )
         return result
+    }
+
+    /// Public wrapper for boost chip shortcode recovery from cooked img src.
+    static func emojiNameForBoost(fromSrc src: String) -> String {
+        emojiName(fromSrc: src)
+    }
+
+    /// `/images/emoji/twitter/foo.png` or `.../foo/t2.png` → `foo` / `foo:t2`
+    private static func emojiName(fromSrc src: String) -> String {
+        let decoded = src.removingPercentEncoding ?? src
+        guard let regex = try? NSRegularExpression(
+            pattern: #"/emoji/[^/]+/([^/?#]+?)(?:/(t\d))?\.png"#,
+            options: [.caseInsensitive]
+        ) else { return "" }
+        let ns = decoded as NSString
+        guard let match = regex.firstMatch(in: decoded, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges >= 2,
+              match.range(at: 1).location != NSNotFound
+        else { return "" }
+        let base = ns.substring(with: match.range(at: 1))
+        if match.numberOfRanges >= 3, match.range(at: 2).location != NSNotFound {
+            let tone = ns.substring(with: match.range(at: 2))
+            return "\(base):\(tone)"
+        }
+        return base
     }
 
     /// Decode HTML entities commonly present in Discourse `fancy_title`.

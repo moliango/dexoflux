@@ -289,7 +289,19 @@ final class WeChatChatPostCell: UITableViewCell {
                 pinArrangedSubview(view, contentWidth: innerWidth)
             }
         }
-        if let boostStrip = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
+        if let boostStrip = BoostStripView(
+            boosts: post.boosts,
+            baseURL: baseURL,
+            prefersHighContrast: isMine
+        ) {
+            boostStrip.onRequestDeleteBoost = { [weak self] boost in
+                guard let self, let current = self.currentPost else { return }
+                self.contentDelegate?.postCell(didRequestDeleteBoost: boost, forPost: current)
+            }
+            boostStrip.onOpenUserProfile = { [weak self] username in
+                guard let self else { return }
+                self.actionDelegate?.weChatChatPostCell(self, didTapAvatar: username)
+            }
             pinArrangedSubview(boostStrip, contentWidth: innerWidth, isTextMedia: false)
         }
 

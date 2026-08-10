@@ -120,6 +120,12 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            self?.deleteBoost(boost, for: post)
+        }
+    }
+
     func postCell(didTapAvatarForUsername username: String) {
         let previewVC = UserProfilePreviewViewController(api: api, username: username)
         previewVC.onViewProfile = { [weak self] selectedUsername in
@@ -156,7 +162,21 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
-    func presentBoostInput(for post: DiscourseTopicDetail.Post) {
+    
+    func deleteBoost(_ boost: DiscourseTopicDetail.Boost, for post: DiscourseTopicDetail.Post) {
+        Task {
+            do {
+                try await api.deleteBoost(boostId: boost.id)
+                viewModel.removePostBoost(postId: post.id, boostId: boost.id)
+                reloadPostCell(postId: post.id)
+            } catch {
+                reloadPostCell(postId: post.id)
+                showPostActionError(error)
+            }
+        }
+    }
+
+func presentBoostInput(for post: DiscourseTopicDetail.Post) {
         let input = BoostInputViewController(api: api)
         input.onSubmit = { [weak self] result in
             guard let self else { return }

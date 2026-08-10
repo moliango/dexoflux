@@ -331,6 +331,24 @@ extension RepliesViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.api.deleteBoost(boostId: boost.id)
+                    if let idx = self.replies.firstIndex(where: { $0.id == post.id }) {
+                        self.replies[idx].boosts.removeAll { $0.id == boost.id }
+                        self.replies[idx].canBoost = true
+                    }
+                    await self.loadReplies()
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
     private func performAuthenticated(_ action: @escaping () -> Void) {
         if let authGate = findAuthGating() {
             authGate.requireAuth(then: action)
@@ -484,7 +502,13 @@ extension RepliesViewController: PostCellDelegate {
             case let .boost(raw):
                 Task {
                     do {
-                        _ = try await self.api.createBoost(postId: post.id, raw: raw)
+                        let boost = try await self.api.createBoost(postId: post.id, raw: raw)
+                        if let idx = self.replies.firstIndex(where: { $0.id == post.id }) {
+                            if !self.replies[idx].boosts.contains(where: { $0.id == boost.id }) {
+                                self.replies[idx].boosts.append(boost)
+                            }
+                            self.replies[idx].canBoost = false
+                        }
                         await self.loadReplies()
                     } catch {
                         self.showPostActionError(error)

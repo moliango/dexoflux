@@ -828,6 +828,13 @@ final class PostNativeCell: UITableViewCell {
             contentStackView.addArrangedSubview(view)
         }
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
+            boostStripView.onRequestDeleteBoost = { [weak self] boost in
+                guard let self, let current = self.currentPost else { return }
+                self.delegate?.postCell(didRequestDeleteBoost: boost, forPost: current)
+            }
+            boostStripView.onOpenUserProfile = { [weak self] username in
+                self?.delegate?.postCell(didTapAvatarForUsername: username)
+            }
             contentStackView.addArrangedSubview(boostStripView)
         }
         if let relatedLinksView = RelatedLinksCardView(linkCounts: post.linkCounts, baseURL: baseURL) {
