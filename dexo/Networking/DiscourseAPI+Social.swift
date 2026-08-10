@@ -89,6 +89,14 @@ extension DiscourseAPI {
         switch response.result {
         case .success(let data):
             do {
+                // Plugin may return bare Boost or `{ "boost": {…} }`.
+                if let boost = try? JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data) {
+                    return boost
+                }
+                struct Envelope: Decodable { let boost: DiscourseTopicDetail.Boost }
+                if let env = try? JSONDecoder().decode(Envelope.self, from: data) {
+                    return env.boost
+                }
                 return try JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data)
             } catch {
                 throw DiscourseDecodingError(
@@ -109,6 +117,11 @@ extension DiscourseAPI {
             )
         }
     }
+
+    func deleteBoost(boostId: Int) async throws {
+        try await requestVoid(route: .deleteBoost(boostId: boostId))
+    }
+
 
     func votePoll(postId: Int, pollName: String, optionIds: [String]) async throws -> DiscoursePollVoteResponse {
         let cleanedOptions = optionIds

@@ -12,6 +12,10 @@ enum DiscourseRouter {
     case categories
     case topic(id: Int, trackVisit: Bool)
     case topicPosts(topicId: Int, postIds: [Int])
+    /// FluxDo nested tree roots: GET /n/topic/:id.json
+    case nestedTopicRoots(topicId: Int, sort: String, page: Int, trackVisit: Bool)
+    /// FluxDo nested children: GET /n/topic/:id/children/:postNumber.json
+    case nestedTopicChildren(topicId: Int, postNumber: Int, sort: String, page: Int, depth: Int)
     case post(id: Int)
     case postByNumber(topicId: Int, postNumber: Int)
     case updatePost(id: Int)
@@ -65,6 +69,7 @@ enum DiscourseRouter {
     case toggleReaction(postId: Int, reactionId: String)
     case toggleSharedIssue
     case createBoost(postId: Int)
+    case deleteBoost(boostId: Int)
     case votePoll
     case upload(clientId: String)
     
@@ -75,7 +80,7 @@ enum DiscourseRouter {
             return .post
         case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
             return .put
-        case .deleteBookmark, .unfollow, .deleteDraft, .clearRecentSearches:
+        case .deleteBookmark, .unfollow, .deleteDraft, .clearRecentSearches, .deleteBoost:
             return .delete
         default:
             return .get
@@ -107,6 +112,12 @@ enum DiscourseRouter {
                 path += "?track_visit=true"
             }
             return path
+        case .nestedTopicRoots(let topicId, let sort, let page, let trackVisit):
+            var path = "/n/topic/\(topicId).json?sort=\(sort)&page=\(page)"
+            if trackVisit { path += "&track_visit=true" }
+            return path
+        case .nestedTopicChildren(let topicId, let postNumber, let sort, let page, let depth):
+            return "/n/topic/\(topicId)/children/\(postNumber).json?sort=\(sort)&page=\(page)&depth=\(depth)"
         case .topicPosts(let topicId, let postIds):
             let ids = postIds.map { "post_ids[]=\($0)" }.joined(separator: "&")
             return "/t/\(topicId)/posts.json?\(ids)"
@@ -227,6 +238,8 @@ enum DiscourseRouter {
             return "/solution/shared_issue"
         case .createBoost(let postId):
             return "/discourse-boosts/posts/\(postId)/boosts"
+        case .deleteBoost(let boostId):
+            return "/discourse-boosts/boosts/\(boostId)"
         case .votePoll:
             return "/polls/vote"
         case .upload(let clientId):

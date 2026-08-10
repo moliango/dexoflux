@@ -1,5 +1,6 @@
 import Alamofire
 import Foundation
+
 import UniformTypeIdentifiers
 
 // MARK: - topics
@@ -231,5 +232,41 @@ extension DiscourseAPI {
 
     func fetchPostRevision(postId: Int, revision: String = "latest") async throws -> DiscoursePostRevision {
         try await request(route: .postRevision(postId: postId, revision: revision))
+    }
+
+    // MARK: - Nested / tree view (FluxDo /n/topic)
+
+    func fetchNestedRoots(
+        topicId: Int,
+        sort: String = "old",
+        page: Int = 0,
+        trackVisit: Bool = false
+    ) async throws -> DiscourseNestedRootsResponse {
+        try await request(
+            route: .nestedTopicRoots(
+                topicId: topicId,
+                sort: sort,
+                page: page,
+                trackVisit: trackVisit
+            )
+        )
+    }
+
+    func fetchNestedChildren(
+        topicId: Int,
+        postNumber: Int,
+        sort: String = "old",
+        page: Int = 0,
+        depth: Int = 1
+    ) async throws -> DiscourseNestedChildrenResponse {
+        try await request(
+            route: .nestedTopicChildren(
+                topicId: topicId,
+                postNumber: postNumber,
+                sort: sort,
+                page: page,
+                depth: depth
+            )
+        )
     }
 }
