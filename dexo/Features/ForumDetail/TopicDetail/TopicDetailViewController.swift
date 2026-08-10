@@ -615,7 +615,7 @@ final class TopicDetailViewController: ObservableViewController {
             tableView.isHidden = false
             var seen = Set<Int>()
             let sourcePosts: [DiscourseTopicDetail.Post] = {
-                if AppSettings.shared.nestedReplyViewEnabled {
+                if viewModel.isNestedViewEnabled {
                     return NestedReplyOrdering.ordered(viewModel.visiblePosts).map { $0.post }
                 }
                 return viewModel.visiblePosts

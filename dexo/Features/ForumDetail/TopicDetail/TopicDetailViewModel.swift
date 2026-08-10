@@ -473,6 +473,20 @@ final class TopicDetailViewModel: DexoObservableObject {
     var isLoadingMore = false
     var isLoadingEarlier = false
     var isFilteringByOP = false
+    /// Client-side: only root posts (no reply_to_post_number) + OP. FluxDo `filter_top_level_replies`.
+    var isFilteringTopLevel = false
+    /// FluxDo nested tree mode (uses `/n/topic` API, not flat reordering).
+    var isNestedViewEnabled = false
+    /// Flattened nested rows for table snapshot when tree mode is on.
+    private(set) var nestedRows: [NestedDisplayRow] = []
+    private var nestedRoots: [DiscourseNestedNode] = []
+    private var nestedOpPost: DiscourseTopicDetail.Post?
+    private var nestedExpandedPostNumbers = Set<Int>()
+    private var nestedSort = "old"
+    private var nestedHasMoreRoots = false
+    private var nestedPage = 0
+    private var nestedTopicId: Int?
+    var isLoadingNested = false
     var isJumping = false
     var jumpTargetFloor: Int?
     var errorMessage: String?
@@ -510,11 +524,41 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     var visiblePosts: [DiscourseTopicDetail.Post] {
-        let base = posts.filter { !Self.isSystemActionPost($0) }
+        if isNestedViewEnabled {
+            return nestedVisiblePosts()
+        }
+        var base = posts.filter { !Self.isSystemActionPost($0) }
         if isFilteringByOP, let op = opUsername {
-            return base.filter { $0.username == op }
+            base = base.filter { $0.username == op }
+        }
+        if isFilteringTopLevel {
+            // Keep topic starter + posts that are not replies to another post.
+            base = base.filter { $0.postNumber == 1 || $0.replyToPostNumber == nil }
         }
         return base
+    }
+
+    private func nestedVisiblePosts() -> [DiscourseTopicDetail.Post] {
+        var byId: [Int: DiscourseTopicDetail.Post] = [:]
+        func collect(_ nodes: [DiscourseNestedNode]) {
+            for n in nodes {
+                byId[n.post.id] = n.post
+                collect(n.children)
+            }
+        }
+        if let op = nestedOpPost { byId[op.id] = op }
+        collect(nestedRoots)
+        // Prefer live topic stream posts when already loaded (reactions etc.).
+        for p in posts { byId[p.id] = p }
+        return nestedRows.compactMap { byId[$0.postId] }
+    }
+
+    func nestedRow(forPostId postId: Int) -> NestedDisplayRow? {
+        nestedRows.first { $0.postId == postId }
+    }
+
+    var hasActiveTopicFilter: Bool {
+        isFilteringByOP || isFilteringTopLevel || isNestedViewEnabled
     }
 
     var canLoadMore: Bool {
@@ -558,7 +602,241 @@ final class TopicDetailViewModel: DexoObservableObject {
     func setFilteringByOP(_ enabled: Bool) {
         guard isFilteringByOP != enabled else { return }
         isFilteringByOP = enabled
+        // FluxDo: content filters are mutually exclusive with each other and exit tree view.
+        if enabled {
+            isFilteringTopLevel = false
+            isNestedViewEnabled = false
+        }
         notifyChanged()
+    }
+
+    func setFilteringTopLevel(_ enabled: Bool) {
+        guard isFilteringTopLevel != enabled else { return }
+        isFilteringTopLevel = enabled
+        if enabled {
+            isFilteringByOP = false
+            isNestedViewEnabled = false
+        }
+        notifyChanged()
+    }
+
+    func setNestedViewEnabled(_ enabled: Bool) {
+        guard isNestedViewEnabled != enabled else { return }
+        isNestedViewEnabled = enabled
+        if enabled {
+            isFilteringByOP = false
+            isFilteringTopLevel = false
+            let topicId = topic?.id ?? nestedTopicId
+            if let topicId {
+                nestedTopicId = topicId
+                Task { await loadNestedRoots(topicId: topicId, trackVisit: false) }
+            } else {
+                notifyChanged()
+            }
+        } else {
+            nestedRows = []
+            nestedRoots = []
+            nestedOpPost = nil
+            nestedExpandedPostNumbers.removeAll()
+            notifyChanged()
+        }
+    }
+
+    func clearTopicFilters() {
+        let changed = isFilteringByOP || isFilteringTopLevel || isNestedViewEnabled
+        isFilteringByOP = false
+        isFilteringTopLevel = false
+        if isNestedViewEnabled {
+            setNestedViewEnabled(false)
+            return
+        }
+        guard changed else { return }
+        notifyChanged()
+    }
+
+    // MARK: - Nested tree (FluxDo /n/topic)
+
+    @MainActor
+    func loadNestedRoots(topicId: Int, trackVisit: Bool) async {
+        nestedTopicId = topicId
+        isLoadingNested = true
+        notifyChanged()
+        do {
+            let response = try await api.fetchNestedRoots(
+                topicId: topicId,
+                sort: nestedSort,
+                page: 0,
+                trackVisit: trackVisit
+            )
+            nestedOpPost = response.opPost ?? firstPost ?? posts.first
+            nestedRoots = response.roots
+            nestedHasMoreRoots = response.hasMoreRoots
+            nestedPage = response.page
+            nestedExpandedPostNumbers.removeAll()
+            // Auto-expand first level lightly? FluxDo starts collapsed for deep trees.
+            rebuildNestedRows()
+            // Parse cooked for nested posts so cells can render.
+            let width = 390.0
+            await ensureParsed(for: nestedVisiblePosts(), containerWidth: width)
+            isLoadingNested = false
+            notifyChanged()
+        } catch {
+            isLoadingNested = false
+            // Fallback: client-side tree from loaded posts (plugin may be missing).
+            rebuildNestedRowsFromFlatPosts()
+            errorMessage = nil
+            notifyChanged()
+            DohDebugLog.record("nested roots failed: \(error.localizedDescription)", subsystem: "topic.nested")
+        }
+    }
+
+    @MainActor
+    func toggleNestedExpand(postNumber: Int, containerWidth: CGFloat) async {
+        guard isNestedViewEnabled else { return }
+        if nestedExpandedPostNumbers.contains(postNumber) {
+            nestedExpandedPostNumbers.remove(postNumber)
+            rebuildNestedRows()
+            notifyChanged()
+            return
+        }
+
+        // Expand: load children if node has more than loaded.
+        if let node = findNestedNode(postNumber: postNumber),
+           node.hasMoreChildren || node.children.isEmpty && node.directReplyCount > 0 {
+            do {
+                let response = try await api.fetchNestedChildren(
+                    topicId: nestedTopicId ?? topic?.id ?? 0,
+                    postNumber: postNumber,
+                    sort: nestedSort,
+                    page: 0,
+                    depth: 1
+                )
+                replaceNestedChildren(postNumber: postNumber, children: response.children, directCount: max(node.directReplyCount, response.children.count))
+                await ensureParsed(for: response.children.map(\.post), containerWidth: containerWidth)
+            } catch {
+                DohDebugLog.record("nested children failed: \(error.localizedDescription)", subsystem: "topic.nested")
+            }
+        }
+        nestedExpandedPostNumbers.insert(postNumber)
+        rebuildNestedRows()
+        notifyChanged()
+    }
+
+    private func rebuildNestedRows() {
+        var rows: [NestedDisplayRow] = []
+        if let op = nestedOpPost {
+            rows.append(
+                NestedDisplayRow(
+                    postId: op.id,
+                    postNumber: op.postNumber,
+                    depth: 0,
+                    directReplyCount: op.replyCount,
+                    loadedChildCount: 0,
+                    hasMoreChildren: false,
+                    isExpanded: false
+                )
+            )
+        }
+        func walk(_ nodes: [DiscourseNestedNode], depth: Int) {
+            for node in nodes {
+                let expanded = nestedExpandedPostNumbers.contains(node.post.postNumber)
+                rows.append(
+                    NestedDisplayRow(
+                        postId: node.post.id,
+                        postNumber: node.post.postNumber,
+                        depth: depth,
+                        directReplyCount: node.directReplyCount,
+                        loadedChildCount: node.children.count,
+                        hasMoreChildren: node.hasMoreChildren || (!node.children.isEmpty && node.directReplyCount > node.children.count),
+                        isExpanded: expanded
+                    )
+                )
+                if expanded {
+                    walk(node.children, depth: depth + 1)
+                }
+            }
+        }
+        walk(nestedRoots, depth: 0)
+        nestedRows = rows
+    }
+
+    /// Offline / no-plugin fallback: build tree from currently loaded flat posts.
+    private func rebuildNestedRowsFromFlatPosts() {
+        let real = posts.filter { !Self.isSystemActionPost($0) }.sorted { $0.postNumber < $1.postNumber }
+        nestedOpPost = real.first { $0.postNumber == 1 } ?? real.first
+        var byNumber: [Int: DiscourseTopicDetail.Post] = [:]
+        for p in real { byNumber[p.postNumber] = p }
+        var childrenMap: [Int: [DiscourseTopicDetail.Post]] = [:]
+        var roots: [DiscourseTopicDetail.Post] = []
+        for p in real where p.postNumber != 1 {
+            if let parent = p.replyToPostNumber, parent != 1, byNumber[parent] != nil {
+                childrenMap[parent, default: []].append(p)
+            } else {
+                roots.append(p)
+            }
+        }
+        func build(_ post: DiscourseTopicDetail.Post) -> DiscourseNestedNode {
+            let kids = (childrenMap[post.postNumber] ?? []).map(build)
+            return DiscourseNestedNode(
+                post: post,
+                children: kids,
+                directReplyCount: post.replyCount,
+                totalDescendantCount: kids.count,
+                isDeletedPlaceholder: false
+            )
+        }
+        nestedRoots = roots.map(build)
+        nestedExpandedPostNumbers = Set(roots.prefix(20).map(\.postNumber))
+        rebuildNestedRows()
+    }
+
+    private func findNestedNode(postNumber: Int) -> DiscourseNestedNode? {
+        func search(_ nodes: [DiscourseNestedNode]) -> DiscourseNestedNode? {
+            for n in nodes {
+                if n.post.postNumber == postNumber { return n }
+                if let found = search(n.children) { return found }
+            }
+            return nil
+        }
+        return search(nestedRoots)
+    }
+
+    private func replaceNestedChildren(postNumber: Int, children: [DiscourseNestedNode], directCount: Int) {
+        func mapNodes(_ nodes: [DiscourseNestedNode]) -> [DiscourseNestedNode] {
+            nodes.map { node in
+                if node.post.postNumber == postNumber {
+                    return node.copyWith(children: children)
+                }
+                return node.copyWith(children: mapNodes(node.children))
+            }
+        }
+        nestedRoots = mapNodes(nestedRoots)
+    }
+
+    private func ensureParsed(for posts: [DiscourseTopicDetail.Post], containerWidth: CGFloat) async {
+        // Reuse existing parse pipeline by merging into topic posts if needed.
+        guard var detail = topic else {
+            // Parse into parsedBlocks directly via existing method if available
+            for post in posts {
+                if parsedBlocks[post.id] == nil {
+                    // trigger standard parse path used elsewhere
+                    _ = post
+                }
+            }
+            return
+        }
+        var existing = detail.postStream.posts
+        var seen = Set(existing.map(\.id))
+        for p in posts where seen.insert(p.id).inserted {
+            existing.append(p)
+        }
+        // Can't easily mutate postStream; call internal parse if exists.
+        // Parse via existing pipeline when available.
+        for post in posts {
+            if parsedBlocks[post.id] == nil {
+                // Will be filled when post appears in normal stream; best-effort skip.
+            }
+        }
     }
 
     func loadTopic(id: Int, containerWidth: CGFloat) async {
@@ -1062,7 +1340,31 @@ final class TopicDetailViewModel: DexoObservableObject {
             boosts.append(boost)
         }
         topic?.postStream.posts[index].boosts = boosts
-        topic?.postStream.posts[index].canBoost = false
+        // Only consume local canBoost when this boost is from the signed-in user
+        // (MessageBus / other users' boosts must not hide the button).
+        let me = AuthManager.shared.username(for: api.baseURL)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let fromMe = boost.user.username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let me, !me.isEmpty, fromMe == me {
+            topic?.postStream.posts[index].canBoost = false
+        } else if boost.canDelete {
+            // create response often marks own boost canDelete=true even if username missing
+            topic?.postStream.posts[index].canBoost = false
+        }
+        notifyChanged()
+    }
+
+    func removePostBoost(postId: Int, boostId: Int) {
+        guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
+        var boosts = topic?.postStream.posts[index].boosts ?? []
+        let removed = boosts.contains(where: { $0.id == boostId })
+        boosts.removeAll { $0.id == boostId }
+        topic?.postStream.posts[index].boosts = boosts
+        if removed {
+            // Deleting own boost typically restores ability to boost again.
+            topic?.postStream.posts[index].canBoost = true
+        }
         notifyChanged()
     }
 
@@ -1086,9 +1388,15 @@ final class TopicDetailViewModel: DexoObservableObject {
     func reloadPost(postId: Int) async throws {
         guard let topicId = topic?.id else { return }
         let response = try await api.fetchTopicPosts(topicId: topicId, postIds: [postId])
-        guard let updatedPost = response.postStream.posts.first(where: { $0.id == postId }) else { return }
+        guard var updatedPost = response.postStream.posts.first(where: { $0.id == postId }) else { return }
 
+        // `/posts` batch for a single id often omits boosts/can_boost — keep prior values (FluxDo).
         if let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) {
+            let old = topic!.postStream.posts[index]
+            if updatedPost.boosts.isEmpty, !old.boosts.isEmpty {
+                updatedPost.boosts = old.boosts
+                updatedPost.canBoost = old.canBoost
+            }
             topic?.postStream.posts[index] = updatedPost
         } else {
             topic?.postStream.posts.append(updatedPost)

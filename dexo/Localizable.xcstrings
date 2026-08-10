@@ -12287,6 +12287,39 @@
         }
       }
     },
+    "post.boost.authors_count_fmt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 人发送了相同 Boost"
+          }
+        }
+      }
+    },
+    "post.boost.delete_fmt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删除 %@ 的 Boost"
+          }
+        }
+      }
+    },
+    "post.boost.delete_mine" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删除我的 Boost"
+          }
+        }
+      }
+    },
     "post.boost.failed" : {
       "localizations" : {
         "en" : {
@@ -12339,6 +12372,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "說點什麼..."
+          }
+        }
+      }
+    },
+    "post.boost.view_authors" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查看发送者"
           }
         }
       }
@@ -13517,6 +13561,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暫無可預覽內容"
+          }
+        }
+      }
+    },
+    "reply.queued.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复已提交，等待审核通过后显示。"
+          }
+        }
+      }
+    },
+    "reply.queued.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已进入审核"
           }
         }
       }
@@ -23270,13 +23336,35 @@
         }
       }
     },
-    "topic.filter_all" : {
+    "topic.filter" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "显示全部回复"
+            "value" : "筛选"
+          }
+        }
+      }
+    },
+    "topic.filter_clear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消筛选"
+          }
+        }
+      }
+    },
+    "topic.filter_nested" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "树形视图"
           }
         }
       }
@@ -23287,7 +23375,18 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "只看楼主"
+            "value" : "只看题主"
+          }
+        }
+      }
+    },
+    "topic.filter_top_level" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "只看顶层"
           }
         }
       }
@@ -25490,6 +25589,17 @@
         }
       }
     },
+    "wechat_chat.more" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更多"
+          }
+        }
+      }
+    },
     "wechat_chat.reply" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -25497,6 +25607,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "回复"
+          }
+        }
+      }
+    },
+    "wechat_chat.reply_to_fmt" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回复 %1$@：%2$@"
           }
         }
       }

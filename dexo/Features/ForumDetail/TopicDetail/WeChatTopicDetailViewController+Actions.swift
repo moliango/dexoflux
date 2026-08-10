@@ -9,7 +9,7 @@ extension WeChatTopicDetailViewController {
         )
     }
 
-    /// Mirrors classic Topic Detail top-right: search + ellipsis menu.
+    /// Top-right: search + FluxDo-style more popup (quick icons + list).
     func configureTopicActions() {
         let searchButton = UIBarButtonItem(
             image: UIImage(systemName: "magnifyingglass"),
@@ -19,127 +19,168 @@ extension WeChatTopicDetailViewController {
         )
         searchButton.accessibilityLabel = String(localized: "topic.search", defaultValue: "搜索话题")
 
+        let moreButton = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            style: .plain,
+            target: self,
+            action: #selector(presentTopicMoreMenu)
+        )
+        moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
+        navigationItem.rightBarButtonItems = [moreButton, searchButton]
+    }
+
+    @objc private func presentTopicMoreMenu() {
         let topic = viewModel.topic
-        let bookmarkTitle = topic?.bookmarked == true
-            ? String(localized: "topic.bookmark.remove", defaultValue: "取消书签")
-            : String(localized: "topic.bookmark.add", defaultValue: "添加书签")
-        let bookmark = UIAction(
-            title: bookmarkTitle,
-            image: UIImage(systemName: topic?.bookmarked == true ? "bookmark.slash" : "bookmark")
-        ) { [weak self] _ in
-            self?.bookmarkTopic()
-        }
-
-        let share = UIAction(
-            title: String(localized: "topic.share", defaultValue: "分享链接"),
-            image: UIImage(systemName: "square.and.arrow.up")
-        ) { [weak self] _ in
-            self?.shareTopicLink()
-        }
-
         let username = AuthManager.shared.username(for: api.baseURL)
         let isReadLater = TopicReadLaterStore.shared.contains(
             topicId: topicId,
             baseURL: api.baseURL,
             username: username
         )
-        let readLater = UIAction(
-            title: isReadLater
-                ? String(localized: "topic.read_later.remove", defaultValue: "移出稍后阅读")
-                : String(localized: "topic.read_later.add", defaultValue: "稍后阅读"),
-            image: UIImage(systemName: "square.stack.3d.up"),
-            state: isReadLater ? .on : .off
-        ) { [weak self] _ in
-            guard let self else { return }
-            let title = self.viewModel.topic?.title
-                ?? self.viewModel.topic?.fancyTitle
-                ?? "#\(self.topicId)"
-            TopicReadLaterStore.shared.toggle(
-                topicId: self.topicId,
-                baseURL: self.api.baseURL,
-                username: AuthManager.shared.username(for: self.api.baseURL),
-                title: title,
-                lastReadPostNumber: self.lastReadPostNumber ?? self.viewModel.topic?.lastReadPostNumber
+        let model = TopicMoreMenuViewController.Model(
+            isBookmarked: topic?.bookmarked == true,
+            isInReadLater: isReadLater,
+            notificationLevel: topic?.notificationLevel,
+            hasActiveFilter: viewModel.isFilteringByOP || viewModel.isFilteringTopLevel,
+            canEdit: topic?.canEdit == true,
+            showExport: DexoPluginRuntime.shared.registry.isPluginEnabled(
+                BuiltInPluginID.topicExport,
+                for: pluginScope
             )
-            self.configureTopicActions()
+        )
+        TopicMoreMenuPresenter.present(
+            from: self,
+            barButtonItem: navigationItem.rightBarButtonItems?.first,
+            model: model
+        ) { [weak self] action in
+            self?.handleTopicMoreMenuAction(action)
         }
+    }
 
-        let shareImage = UIAction(
-            title: String(localized: "topic.share_image", defaultValue: "生成分享图片"),
-            image: UIImage(systemName: "photo")
-        ) { [weak self] _ in
-            self?.shareTopicImage()
+    private func handleTopicMoreMenuAction(_ action: TopicMoreMenuViewController.Action) {
+        switch action {
+        case .bookmark:
+            bookmarkTopic()
+        case .readLater:
+            let title = viewModel.topic?.title
+                ?? viewModel.topic?.fancyTitle
+                ?? "#\(topicId)"
+            TopicReadLaterStore.shared.toggle(
+                topicId: topicId,
+                baseURL: api.baseURL,
+                username: AuthManager.shared.username(for: api.baseURL),
+                title: title,
+                lastReadPostNumber: lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber
+            )
+            configureTopicActions()
+        case .notification:
+            presentNotificationLevelPicker()
+        case .shareLink:
+            shareTopicLink()
+        case .filter:
+            presentTopicFilterSheet()
+        case .editTopic:
+            editTopic()
+        case .shareImage:
+            shareTopicImage()
+        case .export:
+            let alert = UIAlertController(
+                title: String(localized: "topic.export", defaultValue: "导出文章"),
+                message: nil,
+                preferredStyle: .actionSheet
+            )
+            for format in TopicExportFormat.allCases {
+                for range in TopicExportRange.allCases {
+                    alert.addAction(UIAlertAction(
+                        title: "\(format.title) · \(range.title)",
+                        style: .default
+                    ) { [weak self] _ in
+                        self?.exportTopic(format: format, range: range)
+                    })
+                }
+            }
+            alert.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+            if let pop = alert.popoverPresentationController {
+                pop.barButtonItem = navigationItem.rightBarButtonItems?.first
+            }
+            present(alert, animated: true)
+        case .openBrowser:
+            guard let url = URL(string: "\(baseURL)/t/\(topicId)") else { return }
+            let browser = InAppBrowserViewController(
+                api: api,
+                username: AuthManager.shared.username(for: api.baseURL),
+                initialURL: url
+            )
+            navigationController?.pushViewController(browser, animated: true)
+        case .readingSettings:
+            navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
         }
+    }
 
-        let opFilter = UIAction(
-            title: viewModel.isFilteringByOP
-                ? String(localized: "topic.filter_all", defaultValue: "显示全部回复")
-                : String(localized: "topic.filter_op", defaultValue: "只看楼主"),
-            image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
-            state: viewModel.isFilteringByOP ? .on : .off
-        ) { [weak self] _ in
+    private func presentNotificationLevelPicker() {
+        let sheet = UIAlertController(
+            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        let current = viewModel.topic?.notificationLevel
+        for level in DiscourseTopicDetail.NotificationLevel.allCases.reversed() {
+            let mark = current == level ? "✓ " : ""
+            sheet.addAction(UIAlertAction(title: mark + title(for: level), style: .default) { [weak self] _ in
+                self?.setNotificationLevel(level)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.barButtonItem = navigationItem.rightBarButtonItems?.first
+        }
+        present(sheet, animated: true)
+    }
+
+    private func presentTopicFilterSheet() {
+        let sheet = UIAlertController(
+            title: String(localized: "topic.filter", defaultValue: "筛选"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        func add(_ title: String, on: Bool, handler: @escaping () -> Void) {
+            sheet.addAction(UIAlertAction(title: on ? "✓ \(title)" : title, style: .default) { _ in handler() })
+        }
+        add(String(localized: "topic.filter_op", defaultValue: "只看题主"), on: viewModel.isFilteringByOP) { [weak self] in
             guard let self else { return }
             self.viewModel.setFilteringByOP(!self.viewModel.isFilteringByOP)
             self.applySnapshot()
             self.configureTopicActions()
         }
-
-        let notificationMenu = UIMenu(
-            title: String(localized: "topic.notifications", defaultValue: "通知级别"),
-            image: UIImage(systemName: "bell"),
-            children: DiscourseTopicDetail.NotificationLevel.allCases.reversed().map { level in
-                UIAction(
-                    title: self.title(for: level),
-                    state: topic?.notificationLevel == level ? .on : .off
-                ) { [weak self] _ in
-                    self?.setNotificationLevel(level)
-                }
-            }
-        )
-
-        let openBrowser = UIAction(
-            title: String(localized: "topic.open_browser", defaultValue: "在浏览器打开"),
-            image: UIImage(systemName: "globe")
-        ) { [weak self] _ in
-            guard let self, let url = URL(string: "\(self.baseURL)/t/\(self.topicId)") else { return }
-            let browser = InAppBrowserViewController(
-                api: self.api,
-                username: AuthManager.shared.username(for: self.api.baseURL),
-                initialURL: url
-            )
-            self.navigationController?.pushViewController(browser, animated: true)
+        add(String(localized: "topic.filter_top_level", defaultValue: "只看顶层"), on: viewModel.isFilteringTopLevel) { [weak self] in
+            guard let self else { return }
+            self.viewModel.setFilteringTopLevel(!self.viewModel.isFilteringTopLevel)
+            self.applySnapshot()
+            self.configureTopicActions()
         }
-
-        let readingSettings = UIAction(
-            title: String(localized: "topic.reading_settings", defaultValue: "阅读设置"),
-            image: UIImage(systemName: "book")
-        ) { [weak self] _ in
-            self?.navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
+        add(String(localized: "topic.filter_nested", defaultValue: "树形视图"), on: viewModel.isNestedViewEnabled) { [weak self] in
+            guard let self else { return }
+            self.viewModel.setNestedViewEnabled(!self.viewModel.isNestedViewEnabled)
+            self.applySnapshot()
+            self.configureTopicActions()
         }
-
-        var actions: [UIMenuElement] = [bookmark, readLater, notificationMenu, share, shareImage, opFilter]
-        if topic?.canEdit == true {
-            actions.append(
-                UIAction(
-                    title: String(localized: "topic.edit", defaultValue: "编辑话题"),
-                    image: UIImage(systemName: "pencil")
-                ) { [weak self] _ in
-                    self?.editTopic()
-                }
-            )
+        if viewModel.isFilteringByOP || viewModel.isFilteringTopLevel {
+            sheet.addAction(UIAlertAction(
+                title: String(localized: "topic.filter_clear", defaultValue: "取消筛选"),
+                style: .destructive
+            ) { [weak self] _ in
+                self?.viewModel.clearTopicFilters()
+                self?.applySnapshot()
+                self?.configureTopicActions()
+            })
         }
-        if DexoPluginRuntime.shared.registry.isPluginEnabled(BuiltInPluginID.topicExport, for: pluginScope) {
-            actions.append(makeExportMenu())
+        sheet.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.barButtonItem = navigationItem.rightBarButtonItems?.first
         }
-        actions.append(contentsOf: [openBrowser, readingSettings])
-
-        let moreButton = UIBarButtonItem(
-            image: UIImage(systemName: "ellipsis.circle"),
-            menu: UIMenu(children: actions)
-        )
-        moreButton.accessibilityLabel = String(localized: "topic.more", defaultValue: "更多操作")
-        navigationItem.rightBarButtonItems = [moreButton, searchButton]
+        present(sheet, animated: true)
     }
+
 
     private func title(for level: DiscourseTopicDetail.NotificationLevel) -> String {
         switch level {
