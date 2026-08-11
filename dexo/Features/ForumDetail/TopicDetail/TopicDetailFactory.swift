@@ -1,6 +1,6 @@
 import UIKit
 
-/// Picks classic vs WeChat chat Topic Detail without mutating the classic VC.
+/// Picks classic vs chat-style Topic Detail (WeChat / Telegram) without mutating classic VC.
 enum TopicDetailFactory {
     static func make(
         api: DiscourseAPI,
@@ -8,10 +8,12 @@ enum TopicDetailFactory {
         initialFloor: Int? = nil,
         initialPostId: Int? = nil,
         lastReadPostNumber: Int? = nil,
-        forum: ForumInstance? = nil
+        forum: ForumInstance? = nil,
+        preferNested: Bool = false
     ) -> UIViewController {
-        if AppSettings.shared.themeStyle == .weChat {
-            return WeChatTopicDetailViewController(
+        // WeChat + Telegram share the chat-bubble detail surface (styled via ChatTopicStyle).
+        if AppSettings.shared.themeStyle.usesChatTopicDetail {
+            let vc = WeChatTopicDetailViewController(
                 api: api,
                 topicId: topicId,
                 initialFloor: initialFloor,
@@ -19,8 +21,12 @@ enum TopicDetailFactory {
                 lastReadPostNumber: lastReadPostNumber,
                 forum: forum
             )
+            if preferNested || AppSettings.shared.nestedReplyViewEnabled {
+                vc.preferNestedOnLoad = true
+            }
+            return vc
         }
-        return TopicDetailViewController(
+        let vc = TopicDetailViewController(
             api: api,
             topicId: topicId,
             initialFloor: initialFloor,
@@ -28,5 +34,9 @@ enum TopicDetailFactory {
             lastReadPostNumber: lastReadPostNumber,
             forum: forum
         )
+        if preferNested || AppSettings.shared.nestedReplyViewEnabled {
+            vc.preferNestedOnLoad = true
+        }
+        return vc
     }
 }

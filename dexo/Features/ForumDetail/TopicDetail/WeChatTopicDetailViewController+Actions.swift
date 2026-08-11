@@ -41,12 +41,17 @@ extension WeChatTopicDetailViewController {
             isBookmarked: topic?.bookmarked == true,
             isInReadLater: isReadLater,
             notificationLevel: topic?.notificationLevel,
-            hasActiveFilter: viewModel.isFilteringByOP || viewModel.isFilteringTopLevel,
+            hasActiveFilter: viewModel.isFilteringByOP || viewModel.isFilteringTopLevel || viewModel.isNestedViewEnabled,
+            isFilteringByOP: viewModel.isFilteringByOP,
+            isFilteringTopLevel: viewModel.isFilteringTopLevel,
+            isNestedViewEnabled: viewModel.isNestedViewEnabled,
             canEdit: topic?.canEdit == true,
             showExport: DexoPluginRuntime.shared.registry.isPluginEnabled(
                 BuiltInPluginID.topicExport,
                 for: pluginScope
-            )
+            ),
+            canAssign: topic?.canAssign == true || topic?.assignedToUsername != nil,
+            assignedToUsername: topic?.assignedToUsername
         )
         TopicMoreMenuPresenter.present(
             from: self,
@@ -73,37 +78,14 @@ extension WeChatTopicDetailViewController {
                 lastReadPostNumber: lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber
             )
             configureTopicActions()
-        case .notification:
-            presentNotificationLevelPicker()
         case .shareLink:
             shareTopicLink()
-        case .filter:
-            presentTopicFilterSheet()
         case .editTopic:
             editTopic()
         case .shareImage:
             shareTopicImage()
-        case .export:
-            let alert = UIAlertController(
-                title: String(localized: "topic.export", defaultValue: "导出文章"),
-                message: nil,
-                preferredStyle: .actionSheet
-            )
-            for format in TopicExportFormat.allCases {
-                for range in TopicExportRange.allCases {
-                    alert.addAction(UIAlertAction(
-                        title: "\(format.title) · \(range.title)",
-                        style: .default
-                    ) { [weak self] _ in
-                        self?.exportTopic(format: format, range: range)
-                    })
-                }
-            }
-            alert.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
-            if let pop = alert.popoverPresentationController {
-                pop.barButtonItem = navigationItem.rightBarButtonItems?.first
-            }
-            present(alert, animated: true)
+        case .export(let format, let range):
+            exportTopic(format: format, range: range)
         case .openBrowser:
             guard let url = URL(string: "\(baseURL)/t/\(topicId)") else { return }
             let browser = InAppBrowserViewController(
@@ -114,6 +96,140 @@ extension WeChatTopicDetailViewController {
             navigationController?.pushViewController(browser, animated: true)
         case .readingSettings:
             navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
+        case .markUnreadStepBack:
+            markTopicUnread(mode: .stepBack)
+        case .markUnreadClear:
+            markTopicUnread(mode: .clear)
+        case .assignToMe:
+            performAssign(mode: .toMe)
+        case .assignPickUser:
+            performAssign(mode: .pickUser)
+        case .unassign:
+            performAssign(mode: .clear)
+        case .filterOP:
+            viewModel.setFilteringByOP(!viewModel.isFilteringByOP)
+            configureTopicActions()
+        case .filterTopLevel:
+            viewModel.setFilteringTopLevel(!viewModel.isFilteringTopLevel)
+            configureTopicActions()
+        case .filterNested:
+            viewModel.setNestedViewEnabled(!viewModel.isNestedViewEnabled)
+            configureTopicActions()
+        case .notification(let level):
+            setNotificationLevel(level)
+        }
+    }
+
+    private enum AssignMode {
+        case toMe
+        case pickUser
+        case clear
+    }
+
+    private func performAssign(mode: AssignMode) {
+        let width = max(view.bounds.width, UIScreen.main.bounds.width)
+        switch mode {
+        case .clear:
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.api.unassignTopic(topicId: self.topicId)
+                    DexoFeedback.presentToast(
+                        String(localized: "topic.assign.clear.done", defaultValue: "已取消指定"),
+                        on: self
+                    )
+                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
+                } catch {
+                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                }
+            }
+        case .toMe:
+            let me = AuthManager.shared.username(for: api.baseURL)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.api.assignTopic(topicId: self.topicId, username: me)
+                    DexoFeedback.presentToast(
+                        String(localized: "topic.assign.to_me.done", defaultValue: "已指定给你"),
+                        on: self
+                    )
+                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
+                } catch {
+                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                }
+            }
+        case .pickUser:
+            let me = AuthManager.shared.username(for: api.baseURL)
+            let alert = UIAlertController(
+                title: String(localized: "topic.assign.pick_user", defaultValue: "指定给"),
+                message: String(localized: "topic.assign.pick_user.message", defaultValue: "输入用户名"),
+                preferredStyle: .alert
+            )
+            alert.addTextField { field in
+                field.placeholder = String(localized: "messages.compose.recipient_placeholder", defaultValue: "用户名")
+                field.autocapitalizationType = .none
+                field.autocorrectionType = .no
+                field.text = me
+            }
+            alert.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel))
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default) { [weak self] _ in
+                let name = alert.textFields?.first?.text?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+                guard let self, let name, !name.isEmpty else { return }
+                Task { @MainActor in
+                    do {
+                        try await self.api.assignTopic(topicId: self.topicId, username: name)
+                        DexoFeedback.presentToast(
+                            String(localized: "topic.assign.to_me.done", defaultValue: "已指定"),
+                            on: self
+                        )
+                        await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
+                    } catch {
+                        DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    }
+                }
+            })
+            present(alert, animated: true)
+        }
+    }
+
+    private enum MarkUnreadMode {
+        case stepBack
+        case clear
+    }
+
+    private func markTopicUnread(mode: MarkUnreadMode) {
+        let username = AuthManager.shared.username(for: api.baseURL)
+        let server = lastReadPostNumber ?? viewModel.topic?.lastReadPostNumber
+        switch mode {
+        case .stepBack:
+            let next = TopicReadProgressStore.shared.stepBack(
+                topicId: topicId,
+                baseURL: api.baseURL,
+                username: username,
+                serverLastRead: server
+            )
+            lastReadPostNumber = next > 0 ? next : nil
+            DexoFeedback.presentToast(
+                String(localized: "topic.mark_unread.step_back.done", defaultValue: "已回退一层阅读进度"),
+                on: self
+            )
+        case .clear:
+            TopicReadProgressStore.shared.clear(
+                topicId: topicId,
+                baseURL: api.baseURL,
+                username: username
+            )
+            lastReadPostNumber = nil
+            DexoFeedback.presentToast(
+                String(localized: "topic.mark_unread.clear.done", defaultValue: "已清空阅读进度"),
+                on: self
+            )
+        }
+        let target = lastReadPostNumber ?? 1
+        Task {
+            _ = await api.sendTopicTimings(topicId: topicId, topicTime: 1, timings: [target: 1])
         }
     }
 

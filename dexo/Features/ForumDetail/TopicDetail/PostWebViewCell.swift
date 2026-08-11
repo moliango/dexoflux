@@ -580,6 +580,11 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post)
     func postCell(didTapToggleSharedIssueForTopicId topicId: Int)
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String])
+    func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post)
+}
+
+extension PostCellDelegate {
+    func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post) {}
 }
 
 final class PostWebViewCell: UITableViewCell {

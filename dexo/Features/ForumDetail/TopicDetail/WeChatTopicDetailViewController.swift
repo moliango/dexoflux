@@ -2,12 +2,17 @@ import CookedHTML
 import SafariServices
 import UIKit
 
-/// WeChat chat-style Topic Detail. Parallel to `TopicDetailViewController` — classic path unchanged.
+/// Chat-style Topic Detail for WeChat / Telegram themes.
+/// Parallel to `TopicDetailViewController` — classic path unchanged.
+/// Visuals switch via `ChatTopicStyle` from `AppSettings.themeStyle`.
 final class WeChatTopicDetailViewController: ObservableViewController {
+    private var chatStyle: ChatTopicStyle { ChatTopicStyle.current ?? .weChat }
     let api: DiscourseAPI
     let viewModel: TopicDetailViewModel
     let topicId: Int
     var lastReadPostNumber: Int?
+    /// Notification / deep-link: try nested tree first, fall back to flat.
+    var preferNestedOnLoad = false
     let initialFloor: Int?
     let initialPostId: Int?
     let baseURL: String
@@ -41,7 +46,13 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(WeChatChatPostCell.self, forCellReuseIdentifier: WeChatChatPostCell.reuseIdentifier)
         tv.separatorStyle = .none
-        tv.backgroundColor = Self.chatBackgroundColor
+        // Force a real background view — plain UITableView sometimes ignores backgroundColor
+        // and falls back to system white, which reads as “no chat wallpaper”.
+        let canvas = ChatTopicStyle.current?.chatBackgroundColor ?? Self.legacyWeChatBackground
+        tv.backgroundColor = canvas
+        let bg = UIView()
+        bg.backgroundColor = canvas
+        tv.backgroundView = bg
         tv.keyboardDismissMode = .interactive
         tv.rowHeight = UITableView.automaticDimension
         tv.estimatedRowHeight = 120
@@ -67,11 +78,14 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             let annotatedBlocks = self.viewModel.parsedBlocks[postId] ?? []
             let floorNumber = self.floorNumber(for: postId)
             let tableWidth = tableView.bounds.width > 1 ? tableView.bounds.width : UIScreen.main.bounds.width
-            // Row: 12 + avatar40 + 8 + bubble + 12(trailing margin) ≈ usable bubble outer.
-            // Inner content width = outer - bubble padding*2; keep generous for forum posts.
-            let maxOuter = tableWidth - 12 - 40 - 8 - 12
-            let bubbleOuter = max(maxOuter * 0.92, 200)
-            let bubbleWidth = max(bubbleOuter - 24, 160) // inner content width for NativeRenderConfig
+            let style = self.chatStyle
+            // Reserve avatar column for incoming; outgoing Telegram has no avatar.
+            let avatarReserve: CGFloat = (post.yours && !style.showsOutgoingAvatar) ? 0 : style.avatarSize
+            // Row: inset + avatar + gap + bubble + trailing margin — wider for chat themes.
+            let maxOuter = tableWidth - 8 - avatarReserve - 6 - 8
+            let bubbleOuter = max(maxOuter * style.maxBubbleFraction, 200)
+            let pad = style.bubblePadding
+            let bubbleWidth = max(bubbleOuter - pad * 2, 160) // inner content width for NativeRenderConfig
             let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
             var config = NativeRenderConfig.default(
                 contentWidth: bubbleWidth,
@@ -81,13 +95,16 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? []),
                 topicCategoryPresentation: self.viewModel.categoryPresentation
             )
+            let isDark = self.traitCollection.userInterfaceStyle == .dark
             // Denser body for chat bubbles — classic topic detail stays roomier.
             config = NativeRenderConfig(
                 baseFont: config.baseFont,
-                baseColor: post.yours ? UIColor.black.withAlphaComponent(0.9) : .label,
+                baseColor: post.yours
+                    ? style.outgoingTextColor(isDark: isDark)
+                    : .label,
                 linkColor: post.yours
-                    ? UIColor(red: 0.05, green: 0.35, blue: 0.75, alpha: 1)
-                    : config.linkColor,
+                    ? style.outgoingLinkColor(isDark: isDark)
+                    : (style == .telegram ? style.accentColor : config.linkColor),
                 codeFont: config.codeFont,
                 codeBackgroundColor: config.codeBackgroundColor,
                 contentWidth: config.contentWidth,
@@ -100,6 +117,11 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 defaultParagraphSpacing: max(2, config.defaultParagraphSpacing - 1)
             )
 
+            let dateSeparator: String? = {
+                guard style == .telegram else { return nil }
+                return self.dateSeparatorText(for: post, at: indexPath.row)
+            }()
+
             cell.actionDelegate = self
             cell.configure(
                 with: post,
@@ -107,18 +129,15 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 config: config,
                 floorNumber: floorNumber,
                 baseURL: self.baseURL,
-                contentDelegate: self
+                contentDelegate: self,
+                dateSeparatorText: dateSeparator
             )
             return cell
         }
     }()
 
-    private let activityIndicator: UIActivityIndicatorView = {
-        let ai = UIActivityIndicatorView(style: .medium)
-        ai.hidesWhenStopped = true
-        ai.translatesAutoresizingMaskIntoConstraints = false
-        return ai
-    }()
+    private let loadingSkeletonView = TopicDetailSkeletonView()
+    private let suggestedTopicsFooter = SuggestedTopicsFooterView()
 
     private let errorLabel: UILabel = {
         let label = UILabel()
@@ -156,14 +175,65 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         return bar
     }()
 
-    private static var chatBackgroundColor: UIColor {
+    private static var legacyWeChatBackground: UIColor {
         UIColor { trait in
             if trait.userInterfaceStyle == .dark {
                 return UIColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
             }
-            // WeChat light chat gray
             return UIColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1)
         }
+    }
+
+    private var chatBackgroundColor: UIColor {
+        chatStyle.chatBackgroundColor
+    }
+
+    private var lastCanvasColor: UIColor?
+
+    /// Keep view + table + backgroundView in sync (theme switch / trait change).
+    /// Uses spring animation (Telegram-like organic feel) only when switching between WeChat ↔ Telegram themes.
+    private func applyChatCanvasBackground() {
+        let canvas = chatBackgroundColor
+
+        if let last = lastCanvasColor, last != canvas {
+            let animator = DexoMotion.propertyAnimator(
+                duration: DexoMotion.standard,
+                timingParameters: DexoMotion.softSpring
+            )
+            animator.addAnimations {
+                self.updateCanvasBackground(to: canvas)
+                self.updateInputBarStyle(to: canvas)
+            }
+            animator.startAnimation()
+        } else {
+            updateCanvasBackground(to: canvas)
+            updateInputBarStyle(to: canvas)
+        }
+
+        lastCanvasColor = canvas
+    }
+
+    private func updateInputBarStyle(to canvas: UIColor) {
+        // Also sync input bar for full seamless feel
+        chatInputBar.backgroundColor = canvas
+        // If it has subviews that need color sync, add here
+    }
+
+    private func updateCanvasBackground(to canvas: UIColor) {
+        view.backgroundColor = canvas
+        tableView.backgroundColor = canvas
+        if let bg = tableView.backgroundView {
+            bg.backgroundColor = canvas
+        } else {
+            let bg = UIView()
+            bg.backgroundColor = canvas
+            tableView.backgroundView = bg
+        }
+        // Empty table footer prevents last-cell white bleed on some iOS versions.
+        if tableView.tableFooterView == nil {
+            tableView.tableFooterView = UIView()
+        }
+        tableView.tableFooterView?.backgroundColor = .clear
     }
 
     init(
@@ -203,14 +273,15 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         super.viewDidLoad()
         observe(viewModel)
         startObservingCloudflareVerification()
-        view.backgroundColor = Self.chatBackgroundColor
+        applyChatCanvasBackground()
+        chatInputBar.applyChatStyle()
         navigationItem.largeTitleDisplayMode = .never
         configureTopicActions()
         title = String(localized: "topic_detail.default_title", defaultValue: "话题")
 
         view.addSubview(tableView)
         view.addSubview(chatInputBar)
-        view.addSubview(activityIndicator)
+        view.addSubview(loadingSkeletonView)
         view.addSubview(errorLabel)
 
         // Pin to keyboard so the bar lifts with the software keyboard (iOS 15+).
@@ -224,8 +295,10 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             chatInputBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatInputBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
 
-            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            loadingSkeletonView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            loadingSkeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingSkeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingSkeletonView.bottomAnchor.constraint(equalTo: chatInputBar.topAnchor),
 
             errorLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             errorLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
@@ -288,6 +361,9 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     override func updateUI() {
         tableView.showsVerticalScrollIndicator = !AppSettings.shared.hideScrollIndicators
         tableView.showsHorizontalScrollIndicator = false
+        applyChatCanvasBackground()
+        chatInputBar.applyChatStyle()
+        loadingSkeletonView.applyThemeStyle()
         if let topic = viewModel.topic {
             let display = TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title)
             title = display
@@ -295,30 +371,59 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
         configureTopicActions()
 
-        if viewModel.isLoading && !viewModel.isReady {
-            activityIndicator.startAnimating()
-            tableView.isHidden = true
-            errorLabel.isHidden = true
-        } else {
-            activityIndicator.stopAnimating()
-            tableView.isHidden = false
-        }
+        let showsInitialLoading = viewModel.isLoading && !viewModel.isReady && viewModel.errorMessage == nil
+        loadingSkeletonView.setSkeletonActive(showsInitialLoading, animated: view.window != nil)
+        tableView.isHidden = showsInitialLoading
+            || (viewModel.errorMessage != nil && !viewModel.isReady)
 
         if let error = viewModel.errorMessage, !viewModel.isReady {
             errorLabel.isHidden = false
             errorLabel.text = error
-            tableView.isHidden = true
         } else {
             errorLabel.isHidden = true
         }
 
         if viewModel.isReady {
             applySnapshot()
+            updateSuggestedTopicsFooter()
         }
     }
 
+    private func updateSuggestedTopicsFooter() {
+        let topics = viewModel.topic?.suggestedTopics ?? []
+        let show = viewModel.isReady
+            && !viewModel.canLoadMore
+            && !topics.isEmpty
+            && AppSettings.shared.showSuggestedTopics
+        guard show else {
+            if tableView.tableFooterView === suggestedTopicsFooter {
+                tableView.tableFooterView = UIView()
+            }
+            return
+        }
+        suggestedTopicsFooter.onSelectTopic = { [weak self] id in
+            guard let self else { return }
+            let detail = TopicDetailFactory.make(api: self.api, topicId: id)
+            self.navigationController?.pushViewController(detail, animated: true)
+        }
+        suggestedTopicsFooter.configure(topics: topics)
+        let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+        let height = suggestedTopicsFooter.preferredHeight(forWidth: width)
+        suggestedTopicsFooter.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        tableView.tableFooterView = suggestedTopicsFooter
+    }
+
     private func loadInitial() async {
-        await viewModel.loadTopic(id: topicId, containerWidth: max(view.bounds.width, UIScreen.main.bounds.width))
+        if preferNestedOnLoad {
+            viewModel.setNestedViewEnabled(true)
+        }
+        let width = max(view.bounds.width, UIScreen.main.bounds.width)
+        await viewModel.loadTopic(id: topicId, containerWidth: width)
+        if preferNestedOnLoad, viewModel.isNestedViewEnabled, viewModel.nestedRows.isEmpty, viewModel.errorMessage != nil {
+            viewModel.setNestedViewEnabled(false)
+            viewModel.errorMessage = nil
+            await viewModel.loadTopic(id: topicId, containerWidth: width)
+        }
         // Merge server detail last_read with constructor hint / local store.
         if let detailLast = viewModel.topic?.lastReadPostNumber {
             lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLast)
@@ -392,6 +497,51 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             return streamIndex + 1
         }
         return (viewModel.visiblePosts.firstIndex(where: { $0.id == postId }) ?? 0) + 1
+    }
+
+    /// Telegram-style centered date chip when the calendar day changes vs previous row.
+    private func dateSeparatorText(for post: DiscourseTopicDetail.Post, at row: Int) -> String? {
+        let currentDay = Self.dayKey(fromISO: post.createdAt)
+        guard let currentDay else { return nil }
+        let ids = dataSource.snapshot().itemIdentifiers
+        if row > 0, row - 1 < ids.count {
+            let prevId = ids[row - 1]
+            if let prevPost = viewModel.posts.first(where: { $0.id == prevId }),
+               Self.dayKey(fromISO: prevPost.createdAt) == currentDay {
+                return nil
+            }
+        }
+        return Self.friendlyDayLabel(fromISO: post.createdAt)
+    }
+
+    private static func dayKey(fromISO iso: String) -> String? {
+        guard let date = parseISODate(iso) else { return nil }
+        let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        guard let y = comps.year, let m = comps.month, let d = comps.day else { return nil }
+        return "\(y)-\(m)-\(d)"
+    }
+
+    private static func friendlyDayLabel(fromISO iso: String) -> String? {
+        guard let date = parseISODate(iso) else { return nil }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return String(localized: "telegram_chat.today", defaultValue: "今天")
+        }
+        if cal.isDateInYesterday(date) {
+            return String(localized: "telegram_chat.yesterday", defaultValue: "昨天")
+        }
+        let df = DateFormatter()
+        df.locale = .current
+        df.setLocalizedDateFormatFromTemplate("MMMd")
+        return df.string(from: date)
+    }
+
+    private static func parseISODate(_ iso: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = formatter.date(from: iso) { return d }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: iso)
     }
 
     private func reloadPostCell(postId: Int) {
@@ -748,8 +898,17 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     }
 
     private func prefetchContentImages(forPostIds postIds: [Int]) {
-        let urls = postIds.flatMap { postId -> [URL] in
-            viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
+        var seen = Set<String>()
+        var urls: [URL] = []
+        for postId in postIds {
+            let raw = viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
+            for url in raw {
+                guard seen.insert(url.absoluteString).inserted else { continue }
+                if AvatarImageLoader.isImageCached(for: url) { continue }
+                urls.append(url)
+                if urls.count >= 8 { break }
+            }
+            if urls.count >= 8 { break }
         }
         ForumImageLoader.prefetch(urls: urls, cloudflareBaseURL: baseURL)
     }
@@ -762,9 +921,25 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
         140
     }
 
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        tableView.dexo_setScrollBusy(true)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            tableView.dexo_setScrollBusy(false)
+        }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        tableView.dexo_setScrollBusy(false)
+    }
+
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        (cell as? WeChatChatPostCell)?.requestHeightReconciliation()
-        updateVisibleReadingPosts()
+        let scrollBusy = tableView.dexo_isScrollBusy || tableView.isDragging || tableView.isDecelerating
+        if !scrollBusy {
+            (cell as? WeChatChatPostCell)?.requestHeightReconciliation()
+        }
 
         guard let postId = dataSource.itemIdentifier(for: indexPath) else { return }
         var ahead: [Int] = [postId]
@@ -795,8 +970,11 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard viewModel.isReady else { return }
-        updateVisibleReadingPosts()
         readingTracker.scrolled()
+        // Throttle visible-post bookkeeping while flinging.
+        if !tableView.dexo_isScrollBusy {
+            updateVisibleReadingPosts()
+        }
         let offsetY = scrollView.contentOffset.y
         let contentH = scrollView.contentSize.height
         let frameH = scrollView.frame.height
@@ -1032,6 +1210,29 @@ extension WeChatTopicDetailViewController: PostCellDelegate {
                     self.reloadPostCell(postId: postId)
                 } catch {
                     self.reloadPostCell(postId: postId)
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
+    func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    let normalized = direction.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if normalized.isEmpty || normalized == "none" {
+                        try await self.api.removePostVotingVote(postId: post.id)
+                    } else {
+                        try await self.api.castPostVotingVote(postId: post.id, direction: normalized)
+                    }
+                    await self.viewModel.loadTopic(
+                        id: self.topicId,
+                        containerWidth: max(self.view.bounds.width, UIScreen.main.bounds.width)
+                    )
+                    self.reloadPostCell(postId: post.id)
+                } catch {
                     self.showPostActionError(error)
                 }
             }

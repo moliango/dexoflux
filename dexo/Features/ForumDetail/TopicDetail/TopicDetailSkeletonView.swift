@@ -55,10 +55,12 @@ final class TopicDetailSkeletonView: DexoSkeletonPlaceholderView {
 
     func applyThemeStyle() {
         let themeStyle = AppSettings.shared.themeStyle
-        applySkeletonTheme(
-            backgroundColor: themeStyle.topicListBackgroundColor,
-            blockColor: themeStyle.accentColor.withAlphaComponent(0.12)
-        )
+        // Chat detail (WeChat / Telegram) uses canvas color so skeleton matches the page.
+        let background = ChatTopicStyle.current?.chatBackgroundColor ?? themeStyle.topicListBackgroundColor
+        let block = ChatTopicStyle.current != nil
+            ? UIColor.label.withAlphaComponent(0.10)
+            : themeStyle.accentColor.withAlphaComponent(0.12)
+        applySkeletonTheme(backgroundColor: background, blockColor: block)
         cardSurfaces.forEach {
             $0.backgroundColor = themeStyle.topicCardBackgroundColor
             $0.layer.borderColor = UIColor.separator.withAlphaComponent(0.20).cgColor

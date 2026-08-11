@@ -21,6 +21,10 @@ final class TopicDetailViewController: ObservableViewController {
     var lastScrollOffset: CGFloat = 0
     /// Measured row heights keyed by post id — stabilizes estimatedHeight while scrolling.
     var postRowHeightCache: [Int: CGFloat] = [:]
+    /// Coarse estimates from parsed blocks when measured height is not yet known.
+    var postRowEstimatedHeightCache: [Int: CGFloat] = [:]
+    /// Throttle heavy work in `scrollViewDidScroll` (reading tracker / progress bar).
+    var lastScrollChromeUpdateUptime: TimeInterval = 0
     /// Suppress load-earlier after a jump until user scrolls down first
     var suppressLoadEarlier = false
     /// Anchor info for restoring scroll position after loading earlier posts
@@ -44,6 +48,8 @@ final class TopicDetailViewController: ObservableViewController {
     lazy var readingTracker = TopicReadingTracker(api: api)
     var isShowingCollapsedNavigationTitle = false
     var lastBottomBarProgressState: (current: Int, total: Int)?
+    /// When true (e.g. opened from notification), enable nested tree on first load; fall back to flat on failure.
+    var preferNestedOnLoad = false
     var downloadedAttachmentURLs: Set<URL> = []
     var prefetchedImagePostIds = Set<Int>()
     var pendingSharedIssueTopicIds = Set<Int>()
@@ -167,6 +173,7 @@ final class TopicDetailViewController: ObservableViewController {
     }()
 
     let loadingSkeletonView = TopicDetailSkeletonView()
+    let suggestedTopicsFooter = SuggestedTopicsFooterView()
 
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -368,6 +375,11 @@ final class TopicDetailViewController: ObservableViewController {
         applyTypography()
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
+        // P2: after fling settles, finish progressive bodies + resume GIF.
+        tableView.dexo_onScrollSettled = { [weak self] in
+            self?.finishVisibleCellsAfterScrollSettle()
+        }
+
         view.addSubview(tableView)
         view.addSubview(loadingSkeletonView)
         view.addSubview(activityIndicator)
@@ -416,7 +428,16 @@ final class TopicDetailViewController: ObservableViewController {
         ])
 
         Task {
+            if preferNestedOnLoad {
+                viewModel.setNestedViewEnabled(true)
+            }
             await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
+            // Nested load can fail on some sites — fall back to flat stream.
+            if preferNestedOnLoad, viewModel.isNestedViewEnabled, viewModel.nestedRows.isEmpty, viewModel.errorMessage != nil {
+                viewModel.setNestedViewEnabled(false)
+                viewModel.errorMessage = nil
+                await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
+            }
             // Prefer list hint; fall back to detail payload when present.
             if let detailLastRead = viewModel.topic?.lastReadPostNumber {
                 lastReadPostNumber = max(lastReadPostNumber ?? 0, detailLastRead)
@@ -579,13 +600,13 @@ final class TopicDetailViewController: ObservableViewController {
             errorLabel.isHidden = true
         }
 
-        // Footer spinner
+        // Footer: load-more spinner or suggested topics
         if viewModel.isLoadingMore {
             tableView.tableFooterView = footerSpinner
             footerSpinner.startAnimating()
         } else {
             footerSpinner.stopAnimating()
-            tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+            updateSuggestedTopicsFooter()
         }
 
         // Top loading bar for loading earlier posts
@@ -626,9 +647,14 @@ final class TopicDetailViewController: ObservableViewController {
                 return post.id
             }
             prefetchContentImages(forPostIds: readyIds)
+            warmEstimatedRowHeights(forPostIds: readyIds)
             let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
             applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
             if shouldReloadVisibleContent {
+                // Font/theme change invalidates measured row heights.
+                postRowHeightCache.removeAll(keepingCapacity: true)
+                postRowEstimatedHeightCache.removeAll(keepingCapacity: true)
+                warmEstimatedRowHeights(forPostIds: readyIds)
                 reconfigureVisiblePostCells(reloadAllIfNoneVisible: true)
             }
             updateVisibleReadingPosts()
@@ -660,6 +686,39 @@ final class TopicDetailViewController: ObservableViewController {
         replyConfig.baseBackgroundColor = accentColor.withAlphaComponent(0.14)
         floatingReplyButton.configuration = replyConfig
         floatingReplyButton.layer.shadowColor = accentColor.cgColor
+    }
+
+    func updateSuggestedTopicsFooter() {
+        let topics = viewModel.topic?.suggestedTopics ?? []
+        // Hide when still loading more, or when user disabled related expansion preference.
+        let show = viewModel.isReady
+            && !viewModel.canLoadMore
+            && !topics.isEmpty
+            && AppSettings.shared.showSuggestedTopics
+        guard show else {
+            if tableView.tableFooterView === suggestedTopicsFooter
+                || tableView.tableFooterView === footerSpinner {
+                tableView.tableFooterView = UIView(
+                    frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude)
+                )
+            }
+            return
+        }
+        suggestedTopicsFooter.onSelectTopic = { [weak self] id in
+            guard let self else { return }
+            let detail = TopicDetailFactory.make(
+                api: self.api,
+                topicId: id,
+                forum: self.coordinator.forum
+            )
+            self.navigationController?.pushViewController(detail, animated: true)
+        }
+        suggestedTopicsFooter.configure(topics: topics)
+        let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+        let height = suggestedTopicsFooter.preferredHeight(forWidth: width)
+        suggestedTopicsFooter.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        // Re-assign footer so UITableView picks up the new frame.
+        tableView.tableFooterView = suggestedTopicsFooter
     }
 
     func applyTypography() {
@@ -694,12 +753,26 @@ final class TopicDetailViewController: ObservableViewController {
         let newPostIds = postIds.filter { postId in
             prefetchedImagePostIds.insert(postId).inserted
         }
-        let contentURLs = newPostIds.flatMap { postId in
+        // Cap content-image prefetch: long posts have dozens of URLs; warming all of them
+        // on main/CDN hosts is a common CF shield trigger even with disk cache.
+        let rawContentURLs = newPostIds.flatMap { postId in
             viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
         }
+        var seen = Set<String>()
+        var contentURLs: [URL] = []
+        for url in rawContentURLs {
+            let key = url.absoluteString
+            guard seen.insert(key).inserted else { continue }
+            // Skip warm cache entirely — no network, no CF.
+            if AvatarImageLoader.isImageCached(for: url) { continue }
+            contentURLs.append(url)
+            if contentURLs.count >= 8 { break }
+        }
         ForumImageLoader.prefetch(urls: contentURLs, cloudflareBaseURL: baseURL)
+
+        let avatarURLs = avatarURLs(forPostIds: newPostIds).filter { !AvatarImageLoader.isImageCached(for: $0) }
         AvatarImageLoader.prefetch(
-            urls: avatarURLs(forPostIds: newPostIds),
+            urls: avatarURLs,
             cloudflareBaseURL: baseURL
         )
     }
@@ -1013,6 +1086,45 @@ final class TopicDetailViewController: ObservableViewController {
             return viewModel.posts.first(where: { $0.id == postId })?.postNumber
         }
         readingTracker.setVisiblePostNumbers(Set(postNumbers))
+    }
+
+    /// Complete deferred long-post tails and unpause animated media on visible rows.
+    func finishVisibleCellsAfterScrollSettle() {
+        guard isViewLoaded, view.window != nil else { return }
+        for cell in tableView.visibleCells {
+            guard let native = cell as? PostNativeCell else { continue }
+            native.completeProgressiveContentIfNeeded(force: true)
+            native.setScrollMediaPaused(false)
+        }
+        #if DEBUG
+        // Occasional breadcrumb while tuning scroll perf.
+        if TopicDetailPerfCounters.progressiveCompletes > 0 || TopicDetailPerfCounters.heightInvalidateRequests > 0 {
+            print("[TopicDetailPerf] \(TopicDetailPerfCounters.summary)")
+        }
+        #endif
+    }
+
+    /// Pre-fill estimated heights from parsed blocks so first-pass `estimatedHeightForRowAt`
+    /// is closer to real size and reduces scroll compensation jank.
+    func warmEstimatedRowHeights(forPostIds postIds: [Int]) {
+        let tableWidth = tableView.bounds.width > 1 ? tableView.bounds.width : view.bounds.width
+        for postId in postIds {
+            if let measured = postRowHeightCache[postId], measured > 1 { continue }
+            if let existing = postRowEstimatedHeightCache[postId], existing > 1 { continue }
+            guard let blocks = viewModel.parsedBlocks[postId] else { continue }
+            let isFirst: Bool = {
+                if let streamIndex = viewModel.allPostIds.firstIndex(of: postId) {
+                    return streamIndex == 0
+                }
+                return postIds.first == postId
+            }()
+            let contentWidth = PostNativeCell.renderContentWidth(for: tableWidth, isFirstPost: isFirst)
+            postRowEstimatedHeightCache[postId] = TopicDetailRowHeightEstimator.estimate(
+                blocks: blocks,
+                isFirstPost: isFirst,
+                contentWidth: contentWidth
+            )
+        }
     }
 
     func applyPostSnapshot(

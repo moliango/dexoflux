@@ -1,6 +1,8 @@
 import UIKit
 
-/// WeChat-style chat input: type text, keyboard Send/换行 sends; plus opens full composer.
+/// Chat input bar for WeChat / Telegram themes.
+/// - WeChat: [ field …………………… plus ]
+/// - Telegram: [ paperclip ][ Message field ][ mic | send ]
 final class WeChatChatInputBar: UIView, UITextViewDelegate {
     var onSend: ((String) -> Void)?
     var onPlus: (() -> Void)?
@@ -10,23 +12,44 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     private let minTextHeight: CGFloat = 36
     private let maxTextHeight: CGFloat = 100
 
+    private let topLine = UIView()
     private let replyBanner = UIView()
     private let replyLabel = UILabel()
     private let replyCloseButton = UIButton(type: .system)
     private let textBackground = UIView()
     private let textView = UITextView()
     private let placeholderLabel = UILabel()
-    private let plusButton = UIButton(type: .system)
+    private let attachButton = UIButton(type: .system)
+    private let micButton = UIButton(type: .system)
+    private let sendButton = UIButton(type: .system)
 
     private var textHeightConstraint: NSLayoutConstraint?
     private var replyBannerHeightConstraint: NSLayoutConstraint?
+
+    // Layout mode constraints (activated per theme).
+    private var wechatTextLeading: NSLayoutConstraint?
+    private var wechatTextTrailing: NSLayoutConstraint?
+    private var wechatAttachTrailing: NSLayoutConstraint?
+
+    private var telegramAttachLeading: NSLayoutConstraint?
+    private var telegramTextLeading: NSLayoutConstraint?
+    private var telegramTextTrailingToMic: NSLayoutConstraint?
+    private var telegramTextTrailingToSend: NSLayoutConstraint?
+
     private var isSending = false
+    private var chatStyle: ChatTopicStyle { ChatTopicStyle.current ?? .weChat }
 
     private(set) var replyToPost: DiscourseTopicDetail.Post?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
+        applyChatStyle()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        applyChatStyle()
     }
 
     @available(*, unavailable)
@@ -46,7 +69,9 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         get { textView.isEditable }
         set {
             textView.isEditable = newValue
-            plusButton.isEnabled = newValue
+            attachButton.isEnabled = newValue
+            micButton.isEnabled = newValue
+            sendButton.isEnabled = newValue
         }
     }
 
@@ -97,14 +122,9 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     // MARK: - Setup
 
     private func setup() {
-        backgroundColor = UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(white: 0.11, alpha: 1)
-                : UIColor(red: 0.96, green: 0.96, blue: 0.96, alpha: 1)
-        }
         translatesAutoresizingMaskIntoConstraints = false
 
-        let topLine = UIView()
+        topLine.tag = 91001
         topLine.translatesAutoresizingMaskIntoConstraints = false
         topLine.backgroundColor = UIColor.separator.withAlphaComponent(0.45)
         addSubview(topLine)
@@ -123,7 +143,10 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
 
         replyCloseButton.translatesAutoresizingMaskIntoConstraints = false
         replyCloseButton.setImage(
-            UIImage(systemName: "xmark.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)),
+            UIImage(
+                systemName: "xmark.circle.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            ),
             for: .normal
         )
         replyCloseButton.tintColor = .tertiaryLabel
@@ -132,13 +155,14 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         }, for: .touchUpInside)
         replyBanner.addSubview(replyCloseButton)
 
+        attachButton.translatesAutoresizingMaskIntoConstraints = false
+        attachButton.accessibilityLabel = String(localized: "wechat_chat.more", defaultValue: "更多")
+        attachButton.addAction(UIAction { [weak self] _ in
+            self?.onPlus?()
+        }, for: .touchUpInside)
+        addSubview(attachButton)
+
         textBackground.translatesAutoresizingMaskIntoConstraints = false
-        textBackground.backgroundColor = UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(white: 0.18, alpha: 1)
-                : UIColor.white
-        }
-        textBackground.layer.cornerRadius = 6
         textBackground.layer.cornerCurve = .continuous
         addSubview(textBackground)
 
@@ -146,37 +170,50 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         textView.backgroundColor = .clear
         textView.font = .systemFont(ofSize: 16)
         textView.textColor = .label
-        textView.tintColor = UIColor(red: 0.03, green: 0.76, blue: 0.38, alpha: 1)
-        textView.textContainerInset = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textView.textContainer.lineFragmentPadding = 0
         textView.isScrollEnabled = false
         textView.delegate = self
-        // Keyboard shows 发送 — tap it (or physical Return) to send, WeChat-like.
         textView.returnKeyType = .send
         textView.enablesReturnKeyAutomatically = true
         textBackground.addSubview(textView)
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeholderLabel.text = String(localized: "wechat_chat.input_placeholder", defaultValue: "回复…")
         placeholderLabel.font = .systemFont(ofSize: 16)
         placeholderLabel.textColor = .tertiaryLabel
         placeholderLabel.isUserInteractionEnabled = false
         textBackground.addSubview(placeholderLabel)
 
-        let plusConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)
-        plusButton.setImage(UIImage(systemName: "plus.circle", withConfiguration: plusConfig), for: .normal)
-        plusButton.tintColor = .secondaryLabel
-        plusButton.translatesAutoresizingMaskIntoConstraints = false
-        plusButton.accessibilityLabel = String(localized: "wechat_chat.more", defaultValue: "更多")
-        plusButton.addAction(UIAction { [weak self] _ in
+        micButton.translatesAutoresizingMaskIntoConstraints = false
+        micButton.accessibilityLabel = String(localized: "telegram_chat.voice", defaultValue: "语音")
+        micButton.addAction(UIAction { [weak self] _ in
             self?.onPlus?()
         }, for: .touchUpInside)
-        addSubview(plusButton)
+        addSubview(micButton)
+
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        sendButton.isHidden = true
+        sendButton.accessibilityLabel = String(localized: "action.reply", defaultValue: "发送")
+        sendButton.addAction(UIAction { [weak self] _ in
+            self?.sendTapped()
+        }, for: .touchUpInside)
+        addSubview(sendButton)
 
         let textHeight = textView.heightAnchor.constraint(equalToConstant: minTextHeight)
         textHeightConstraint = textHeight
         let bannerHeight = replyBanner.heightAnchor.constraint(equalToConstant: 0)
         replyBannerHeightConstraint = bannerHeight
+
+        // WeChat layout edges
+        wechatTextLeading = textBackground.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10)
+        wechatTextTrailing = textBackground.trailingAnchor.constraint(equalTo: attachButton.leadingAnchor, constant: -8)
+        wechatAttachTrailing = attachButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
+
+        // Telegram layout edges
+        telegramAttachLeading = attachButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4)
+        telegramTextLeading = textBackground.leadingAnchor.constraint(equalTo: attachButton.trailingAnchor, constant: 4)
+        telegramTextTrailingToMic = textBackground.trailingAnchor.constraint(equalTo: micButton.leadingAnchor, constant: -4)
+        telegramTextTrailingToSend = textBackground.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -4)
 
         NSLayoutConstraint.activate([
             topLine.topAnchor.constraint(equalTo: topAnchor),
@@ -198,10 +235,12 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
             replyCloseButton.widthAnchor.constraint(equalToConstant: 28),
             replyCloseButton.heightAnchor.constraint(equalToConstant: 28),
 
-            textBackground.topAnchor.constraint(equalTo: replyBanner.bottomAnchor, constant: 8),
-            textBackground.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            textBackground.trailingAnchor.constraint(equalTo: plusButton.leadingAnchor, constant: -8),
-            textBackground.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            attachButton.bottomAnchor.constraint(equalTo: textBackground.bottomAnchor),
+            attachButton.widthAnchor.constraint(equalToConstant: 36),
+            attachButton.heightAnchor.constraint(equalToConstant: 36),
+
+            textBackground.topAnchor.constraint(equalTo: replyBanner.bottomAnchor, constant: 6),
+            textBackground.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -6),
 
             textView.topAnchor.constraint(equalTo: textBackground.topAnchor),
             textView.leadingAnchor.constraint(equalTo: textBackground.leadingAnchor),
@@ -209,14 +248,101 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
             textView.bottomAnchor.constraint(equalTo: textBackground.bottomAnchor),
             textHeight,
 
-            placeholderLabel.leadingAnchor.constraint(equalTo: textBackground.leadingAnchor, constant: 10),
+            placeholderLabel.leadingAnchor.constraint(equalTo: textBackground.leadingAnchor, constant: 12),
             placeholderLabel.centerYAnchor.constraint(equalTo: textBackground.centerYAnchor),
 
-            plusButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            plusButton.bottomAnchor.constraint(equalTo: textBackground.bottomAnchor),
-            plusButton.widthAnchor.constraint(equalToConstant: 36),
-            plusButton.heightAnchor.constraint(equalToConstant: 36),
+            micButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            micButton.bottomAnchor.constraint(equalTo: textBackground.bottomAnchor),
+            micButton.widthAnchor.constraint(equalToConstant: 36),
+            micButton.heightAnchor.constraint(equalToConstant: 36),
+
+            sendButton.centerXAnchor.constraint(equalTo: micButton.centerXAnchor),
+            sendButton.centerYAnchor.constraint(equalTo: micButton.centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 36),
+            sendButton.heightAnchor.constraint(equalToConstant: 36),
         ])
+    }
+
+    func applyChatStyle() {
+        let style = chatStyle
+        backgroundColor = style.inputBarBackgroundColor
+        textBackground.backgroundColor = style.inputFieldBackgroundColor
+        textBackground.layer.cornerRadius = style.inputFieldCornerRadius
+        textBackground.layer.shadowOpacity = 0
+        textBackground.layer.borderWidth = 0
+
+        textView.tintColor = style.accentColor
+        placeholderLabel.text = style.inputPlaceholder
+
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: style == .telegram ? 20 : 22, weight: .regular)
+        let sendConfig = UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
+        sendButton.setImage(
+            UIImage(systemName: style.sendActionSystemName, withConfiguration: sendConfig),
+            for: .normal
+        )
+        sendButton.tintColor = style.accentColor
+
+        // Reset mode-specific constraints.
+        wechatTextLeading?.isActive = false
+        wechatTextTrailing?.isActive = false
+        wechatAttachTrailing?.isActive = false
+        telegramAttachLeading?.isActive = false
+        telegramTextLeading?.isActive = false
+        telegramTextTrailingToMic?.isActive = false
+        telegramTextTrailingToSend?.isActive = false
+
+        if style == .telegram {
+            topLine.isHidden = true
+            // Input bar sits on the same blue-gray canvas as the chat (not a white strip).
+            backgroundColor = style.chatBackgroundColor
+            attachButton.setImage(
+                UIImage(systemName: style.leadingActionSystemName, withConfiguration: iconConfig),
+                for: .normal
+            )
+            attachButton.tintColor = .secondaryLabel
+            micButton.setImage(
+                UIImage(systemName: "mic", withConfiguration: iconConfig),
+                for: .normal
+            )
+            micButton.tintColor = .secondaryLabel
+            micButton.isHidden = false
+
+            telegramAttachLeading?.isActive = true
+            telegramTextLeading?.isActive = true
+        } else {
+            topLine.isHidden = false
+            attachButton.setImage(
+                UIImage(systemName: style.trailingActionSystemName, withConfiguration: iconConfig),
+                for: .normal
+            )
+            attachButton.tintColor = .secondaryLabel
+            micButton.isHidden = true
+            sendButton.isHidden = true
+
+            wechatTextLeading?.isActive = true
+            wechatTextTrailing?.isActive = true
+            wechatAttachTrailing?.isActive = true
+        }
+
+        updateTrailingButtons()
+    }
+
+    private func updateTrailingButtons() {
+        let hasText = !(textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard chatStyle == .telegram else { return }
+
+        telegramTextTrailingToMic?.isActive = false
+        telegramTextTrailingToSend?.isActive = false
+
+        if hasText {
+            micButton.isHidden = true
+            sendButton.isHidden = false
+            telegramTextTrailingToSend?.isActive = true
+        } else {
+            micButton.isHidden = false
+            sendButton.isHidden = true
+            telegramTextTrailingToMic?.isActive = true
+        }
     }
 
     private func sendTapped() {
@@ -233,8 +359,9 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) {
         placeholderLabel.isHidden = !(textView.text ?? "").isEmpty
+        updateTrailingButtons()
 
-        let width = max(textView.bounds.width, UIScreen.main.bounds.width - 70)
+        let width = max(textView.bounds.width, UIScreen.main.bounds.width - 90)
         let size = textView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let target = min(max(size.height, minTextHeight), maxTextHeight)
         textView.isScrollEnabled = size.height > maxTextHeight
@@ -245,7 +372,6 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-        // Return / 发送 key → send message (do not insert newline).
         if text == "\n" {
             sendTapped()
             return false

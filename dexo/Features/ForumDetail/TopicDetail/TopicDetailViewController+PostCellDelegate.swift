@@ -114,6 +114,26 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post) {
+        performAuthenticated { [weak self] in
+            guard let self else { return }
+            Task {
+                do {
+                    let normalized = direction.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if normalized.isEmpty || normalized == "none" {
+                        try await self.api.removePostVotingVote(postId: post.id)
+                    } else {
+                        try await self.api.castPostVotingVote(postId: post.id, direction: normalized)
+                    }
+                    await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
+                    self.reloadPostCell(postId: post.id)
+                } catch {
+                    self.showPostActionError(error)
+                }
+            }
+        }
+    }
+
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
             self?.presentBoostInput(for: post)
