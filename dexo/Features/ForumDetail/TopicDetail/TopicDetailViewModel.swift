@@ -1306,25 +1306,29 @@ final class TopicDetailViewModel: DexoObservableObject {
         }
     }
 
+    /// Updates reaction fields in place. Default skips `notifyChanged` so the VC can
+    /// `reloadPostCell` only — avoids full snapshot + scroll chrome refresh on every like.
     func updatePostReaction(
         postId: Int,
         reactions: [DiscourseTopicDetail.Reaction],
         reactionUsersCount: Int?,
-        currentUserReaction: DiscourseTopicDetail.Reaction?
+        currentUserReaction: DiscourseTopicDetail.Reaction?,
+        notify: Bool = false
     ) {
         guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
         topic?.postStream.posts[index].reactions = reactions
         topic?.postStream.posts[index].reactionUsersCount = reactionUsersCount ?? reactions.reduce(0) { $0 + $1.count }
         topic?.postStream.posts[index].currentUserReaction = currentUserReaction
         topic?.postStream.posts[index].currentUserUsedMainReaction = currentUserReaction?.id == "heart"
-        notifyChanged()
+        if notify { notifyChanged() }
     }
 
-    func updatePostBookmark(postId: Int, bookmarked: Bool, bookmarkId: Int?) {
+    /// Updates bookmark fields in place. Default skips full UI notify; pair with `reloadPostCell`.
+    func updatePostBookmark(postId: Int, bookmarked: Bool, bookmarkId: Int?, notify: Bool = false) {
         guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
         topic?.postStream.posts[index].bookmarked = bookmarked
         topic?.postStream.posts[index].bookmarkId = bookmarked ? bookmarkId : nil
-        notifyChanged()
+        if notify { notifyChanged() }
     }
 
     func updateSharedIssue(count: Int, userCreated: Bool) {
@@ -1333,7 +1337,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         notifyChanged()
     }
 
-    func appendPostBoost(postId: Int, boost: DiscourseTopicDetail.Boost) {
+    func appendPostBoost(postId: Int, boost: DiscourseTopicDetail.Boost, notify: Bool = false) {
         guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
         var boosts = topic?.postStream.posts[index].boosts ?? []
         if !boosts.contains(where: { $0.id == boost.id }) {
@@ -1352,10 +1356,10 @@ final class TopicDetailViewModel: DexoObservableObject {
             // create response often marks own boost canDelete=true even if username missing
             topic?.postStream.posts[index].canBoost = false
         }
-        notifyChanged()
+        if notify { notifyChanged() }
     }
 
-    func removePostBoost(postId: Int, boostId: Int) {
+    func removePostBoost(postId: Int, boostId: Int, notify: Bool = false) {
         guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
         var boosts = topic?.postStream.posts[index].boosts ?? []
         let removed = boosts.contains(where: { $0.id == boostId })
@@ -1365,7 +1369,7 @@ final class TopicDetailViewModel: DexoObservableObject {
             // Deleting own boost typically restores ability to boost again.
             topic?.postStream.posts[index].canBoost = true
         }
-        notifyChanged()
+        if notify { notifyChanged() }
     }
 
     func submitPollVote(postId: Int, pollName: String, optionIds: [String]) async throws {

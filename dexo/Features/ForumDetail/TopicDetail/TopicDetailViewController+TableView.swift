@@ -3,15 +3,20 @@ import UIKit
 // MARK: - UITableViewDelegate
 
 extension TopicDetailViewController: UITableViewDelegate {
+    private static let scrollChromeMinInterval: TimeInterval = 0.12
+
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         UITableView.automaticDimension
     }
 
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        if let postId = dataSource.itemIdentifier(for: indexPath),
-           let cached = postRowHeightCache[postId],
-           cached > 1 {
-            return cached
+        if let postId = dataSource.itemIdentifier(for: indexPath) {
+            if let cached = postRowHeightCache[postId], cached > 1 {
+                return cached
+            }
+            if let estimated = postRowEstimatedHeightCache[postId], estimated > 1 {
+                return estimated
+            }
         }
         // Tall first posts (code blocks) need a higher estimate so the table does not
         // park the next floor under unfinished content during the first layout pass.
@@ -21,12 +26,36 @@ extension TopicDetailViewController: UITableViewDelegate {
         return 220
     }
 
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        tableView.dexo_setScrollBusy(true)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            tableView.dexo_setScrollBusy(false)
+            flushScrollChrome(force: true)
+        }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        tableView.dexo_setScrollBusy(false)
+        flushScrollChrome(force: true)
+    }
+
+    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+        tableView.dexo_setScrollBusy(false)
+        flushScrollChrome(force: true)
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         readingTracker.scrolled()
-        updateVisibleReadingPosts()
-        updateBottomBarProgress()
+        // Progress / reading visibility: throttle while flinging to keep main thread free.
+        flushScrollChrome(force: false)
 
-        guard let header = tableView.tableHeaderView else { return }
+        guard let header = tableView.tableHeaderView else {
+            handleLoadEarlierIfNeeded(scrollView)
+            return
+        }
         let headerBottom = header.frame.maxY
         let offsetY = scrollView.contentOffset.y + scrollView.safeAreaInsets.top
         let shouldShowCollapsedTitle = offsetY >= headerBottom
@@ -35,6 +64,20 @@ extension TopicDetailViewController: UITableViewDelegate {
             navigationItem.titleView = shouldShowCollapsedTitle ? navTitleLabel : nil
         }
 
+        handleLoadEarlierIfNeeded(scrollView)
+    }
+
+    private func flushScrollChrome(force: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if !force, now - lastScrollChromeUpdateUptime < Self.scrollChromeMinInterval {
+            return
+        }
+        lastScrollChromeUpdateUptime = now
+        updateVisibleReadingPosts()
+        updateBottomBarProgress()
+    }
+
+    private func handleLoadEarlierIfNeeded(_ scrollView: UIScrollView) {
         let currentOffset = scrollView.contentOffset.y
         let isScrollingUp = currentOffset < lastScrollOffset
         lastScrollOffset = currentOffset
@@ -72,35 +115,51 @@ extension TopicDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        // Nudge self-sizing once on screen — skip when we already have a solid measured height
-        // so image/Web loads don't re-trigger beginUpdates on every reappearance.
+        let scrollBusy = tableView.dexo_isScrollBusy
+            || tableView.isDragging
+            || tableView.isDecelerating
+
+        if let native = cell as? PostNativeCell {
+            if scrollBusy {
+                // Keep first paint cheap while flinging; finish on settle.
+                native.setScrollMediaPaused(true)
+            } else {
+                native.completeProgressiveContentIfNeeded(force: true)
+                native.setScrollMediaPaused(false)
+            }
+        }
+
+        // Height reconcile only when idle and we lack a solid measured cache.
+        // Mid-scroll reconcile → beginUpdates is the main long-thread jank source.
         if let postId = dataSource.itemIdentifier(for: indexPath),
            let cached = postRowHeightCache[postId],
-           cached > 1,
-           abs(cell.frame.height - cached) < 3 {
-            // Height stable; still warm nearby media.
-        } else {
+           cached > 1 {
+            // Have a measured height — skip unless the cell is wildly off and we're idle.
+            if !scrollBusy, abs(cell.frame.height - cached) > 12 {
+                (cell as? PostNativeCell)?.requestHeightReconciliation()
+            }
+        } else if !scrollBusy {
+            // First paint without cache: one deferred measure when settled.
             (cell as? PostNativeCell)?.requestHeightReconciliation()
         }
 
         // Prefetch content images for this row + a few ahead (smoother first paint).
+        // Skip aggressive ahead-prefetch while flinging — decode competes with scroll.
         var displayedPostId: Int?
         if let postId = dataSource.itemIdentifier(for: indexPath) {
             displayedPostId = postId
-            var ahead: [Int] = [postId]
-            let total = tableView.numberOfRows(inSection: 0)
-            for offset in 1...3 {
-                let next = indexPath.row + offset
-                guard next < total,
-                      let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0))
-                else { break }
-                ahead.append(id)
+            if !scrollBusy {
+                var ahead: [Int] = [postId]
+                let total = tableView.numberOfRows(inSection: 0)
+                for offset in 1...3 {
+                    let next = indexPath.row + offset
+                    guard next < total,
+                          let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0))
+                    else { break }
+                    ahead.append(id)
+                }
+                prefetchContentImages(forPostIds: ahead)
             }
-            prefetchContentImages(forPostIds: ahead)
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleReadingPosts()
         }
 
         // Next-window readiness: keep ~one page ahead of the visible stream index.
@@ -130,15 +189,12 @@ extension TopicDetailViewController: UITableViewDelegate {
             let height = cell.frame.height
             if height > 1 {
                 postRowHeightCache[postId] = height
+                postRowEstimatedHeightCache[postId] = height
             }
         }
         // Cancel off-screen fallback Web renders to cut dual-path jank / CPU.
         if let native = cell as? PostNativeCell {
             native.cancelOffscreenMediaWork()
         }
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleReadingPosts()
-        }
     }
 }
-

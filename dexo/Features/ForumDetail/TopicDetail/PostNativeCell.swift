@@ -54,6 +54,10 @@ final class PostNativeCell: UITableViewCell {
         static let actionButtonWidth: CGFloat = 36
         static let actionSpacing: CGFloat = 2
         static let minimumReplyCardHeight: CGFloat = 80
+        /// Long posts: paint this many blocks first, finish the rest after scroll settles.
+        static let progressiveInitialBlockLimit = 10
+        /// Only split when body is at least this many top-level blocks.
+        static let progressiveMinBlocksToSplit = 14
     }
 
     weak var delegate: PostCellDelegate?
@@ -64,6 +68,14 @@ final class PostNativeCell: UITableViewCell {
     var cookedHTML: String = ""
     var validReactions: [String] = []
     var isBookmarked = false
+
+    // Progressive body (P2): head blocks first, tail after scroll settle.
+    var pendingBodyBlocks: [AnnotatedBlock]?
+    var pendingRenderConfig: NativeRenderConfig?
+    var pendingContentBaseURL: String?
+    var contentFullyRendered = true
+    var progressiveExpandGeneration = 0
+    var isScrollMediaPaused = false
     var cardTopConstraint: NSLayoutConstraint?
     var cardBottomConstraint: NSLayoutConstraint?
     var cardLeadingConstraint: NSLayoutConstraint?
@@ -704,6 +716,12 @@ final class PostNativeCell: UITableViewCell {
 
     func reconcileTableRowHeightIfNeeded() {
         guard bounds.width > 1 else { return }
+        guard let tableView = enclosingTableView() else { return }
+        // While flinging, only mark a pending self-sizing pass — do not layout-fit now.
+        if tableView.dexo_isScrollBusy || tableView.isDragging || tableView.isDecelerating {
+            tableView.dexo_invalidateSelfSizingRows()
+            return
+        }
         layoutIfNeeded()
         let fitted = systemLayoutSizeFitting(
             CGSize(width: bounds.width, height: UIView.layoutFittingCompressedSize.height),
@@ -720,7 +738,6 @@ final class PostNativeCell: UITableViewCell {
             return
         }
         lastReconciledHeight = fitted
-        guard let tableView = enclosingTableView() else { return }
         // Never call beginUpdates directly — races with Diffable snapshot apply /
         // scrollToRow and triggers `_visibleRows` vs `_visibleCells` length traps.
         tableView.dexo_invalidateSelfSizingRows()
@@ -820,13 +837,99 @@ final class PostNativeCell: UITableViewCell {
         configureMoreMenu(isBookmarked: post.bookmarked)
         updateFooterLayout()
 
-        // Render content blocks
-        contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let views = NativeContentRenderer.renderBlocks(annotatedBlocks, config: config, delegate: delegate)
+        configureWhisperAndEdits(for: post)
+        installBodyContent(
+            annotatedBlocks: annotatedBlocks,
+            config: config,
+            baseURL: baseURL,
+            post: post
+        )
+
+        AvatarImageLoader.setImage(
+            on: avatarImageView,
+            template: post.avatarTemplate,
+            baseURL: baseURL,
+            size: currentAvatarTemplateSize
+        )
+        // Self-sizing can lock in a short height on first pass (code blocks / wrapped text).
+        // Reconcile once after the cell lands in the hierarchy so floors stop overlapping.
+        requestHeightReconciliation()
+    }
+
+    /// First paint: limited blocks for long posts; remainder after scroll settles (P2).
+    func installBodyContent(
+        annotatedBlocks: [AnnotatedBlock],
+        config: NativeRenderConfig,
+        baseURL: String,
+        post: DiscourseTopicDetail.Post
+    ) {
+        progressiveExpandGeneration += 1
+        clearContentStackMediaAndViews()
+        pendingBodyBlocks = nil
+        pendingRenderConfig = nil
+        pendingContentBaseURL = nil
+        contentFullyRendered = true
+
+        let shouldSplit = annotatedBlocks.count >= Metrics.progressiveMinBlocksToSplit
+        let head: [AnnotatedBlock]
+        let tail: [AnnotatedBlock]
+        if shouldSplit {
+            head = Array(annotatedBlocks.prefix(Metrics.progressiveInitialBlockLimit))
+            tail = Array(annotatedBlocks.dropFirst(Metrics.progressiveInitialBlockLimit))
+        } else {
+            head = annotatedBlocks
+            tail = []
+        }
+
+        appendRenderedBlocks(head, config: config, baseURL: baseURL)
+
+        if !tail.isEmpty {
+            pendingBodyBlocks = tail
+            pendingRenderConfig = config
+            pendingContentBaseURL = baseURL
+            contentFullyRendered = false
+            let bodyEstimate = TopicDetailRowHeightEstimator.estimate(
+                blocks: tail,
+                isFirstPost: false,
+                contentWidth: config.contentWidth
+            )
+            // Estimate includes reply chrome; strip most of it for a tail spacer only.
+            let tailHeight = max(bodyEstimate - 90, CGFloat(tail.count) * 22)
+            let placeholder = ProgressiveTailPlaceholderView(
+                estimatedHeight: min(tailHeight, 600),
+                remainingBlockCount: tail.count
+            )
+            contentStackView.addArrangedSubview(placeholder)
+
+            let table = enclosingTableView()
+            let scrollBusy = table.map { $0.dexo_isScrollBusy || $0.isDragging || $0.isDecelerating } ?? false
+            if !scrollBusy {
+                scheduleProgressiveCompletion()
+            }
+        } else {
+            appendContentTrailers(for: post, config: config, baseURL: baseURL)
+        }
+
+        adjustNativeContentSpacing()
+    }
+
+    func appendRenderedBlocks(
+        _ blocks: [AnnotatedBlock],
+        config: NativeRenderConfig,
+        baseURL: String
+    ) {
+        let views = NativeContentRenderer.renderBlocks(blocks, config: config, delegate: delegate)
         for view in views {
             setupTextViews(in: view, cloudflareBaseURL: baseURL)
             contentStackView.addArrangedSubview(view)
         }
+    }
+
+    func appendContentTrailers(
+        for post: DiscourseTopicDetail.Post,
+        config: NativeRenderConfig,
+        baseURL: String
+    ) {
         if let boostStripView = BoostStripView(boosts: post.boosts, baseURL: baseURL) {
             boostStripView.onRequestDeleteBoost = { [weak self] boost in
                 guard let self, let current = self.currentPost else { return }
@@ -843,19 +946,78 @@ final class PostNativeCell: UITableViewCell {
             }
             contentStackView.addArrangedSubview(relatedLinksView)
         }
-        configureWhisperAndEdits(for: post)
         configureSignature(for: post, config: config)
-        adjustNativeContentSpacing()
+    }
 
-        AvatarImageLoader.setImage(
-            on: avatarImageView,
-            template: post.avatarTemplate,
-            baseURL: baseURL,
-            size: currentAvatarTemplateSize
-        )
-        // Self-sizing can lock in a short height on first pass (code blocks / wrapped text).
-        // Reconcile once after the cell lands in the hierarchy so floors stop overlapping.
+    func scheduleProgressiveCompletion() {
+        progressiveExpandGeneration += 1
+        let generation = progressiveExpandGeneration
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.progressiveExpandGeneration == generation, self.window != nil else { return }
+            self.completeProgressiveContentIfNeeded(force: true)
+        }
+    }
+
+    /// Finish deferred tail blocks + trailers. Safe to call repeatedly.
+    func completeProgressiveContentIfNeeded(force: Bool) {
+        guard !contentFullyRendered else { return }
+        guard let tail = pendingBodyBlocks,
+              let config = pendingRenderConfig,
+              let baseURL = pendingContentBaseURL,
+              let post = currentPost
+        else {
+            contentFullyRendered = true
+            return
+        }
+
+        if !force {
+            let table = enclosingTableView()
+            if let table, table.dexo_isScrollBusy || table.isDragging || table.isDecelerating {
+                return
+            }
+        }
+
+        progressiveExpandGeneration += 1
+        pendingBodyBlocks = nil
+        pendingRenderConfig = nil
+        pendingContentBaseURL = nil
+        contentFullyRendered = true
+
+        contentStackView.arrangedSubviews
+            .compactMap { $0 as? ProgressiveTailPlaceholderView }
+            .forEach {
+                contentStackView.removeArrangedSubview($0)
+                $0.removeFromSuperview()
+            }
+
+        appendRenderedBlocks(tail, config: config, baseURL: baseURL)
+        appendContentTrailers(for: post, config: config, baseURL: baseURL)
+        adjustNativeContentSpacing()
+        #if DEBUG
+        TopicDetailPerfCounters.progressiveCompletes += 1
+        #endif
         requestHeightReconciliation()
+    }
+
+    /// Pause GIF / animated media while the table is flinging.
+    /// Does not cancel still-image or Fallback Web loads for on-screen rows — those
+    /// resume naturally; full cancel stays in `cancelOffscreenMediaWork` / reuse.
+    func setScrollMediaPaused(_ paused: Bool) {
+        guard isScrollMediaPaused != paused else { return }
+        isScrollMediaPaused = paused
+        #if DEBUG
+        TopicDetailPerfCounters.mediaPauseToggles += 1
+        #endif
+        for view in contentStackView.arrangedSubviews {
+            CookedInlineImageLoader.setAnimatedMediaPaused(paused, in: view)
+        }
+    }
+
+    func clearContentStackMediaAndViews() {
+        for view in contentStackView.arrangedSubviews {
+            cancelContentMediaLoads(in: view)
+        }
+        contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
 
     func adjustNativeContentSpacing() {
@@ -1097,6 +1259,7 @@ final class PostNativeCell: UITableViewCell {
     /// Stop in-flight media / web fallback work when the row leaves the viewport.
     /// Keeps dual-path (Native + Fallback Web snapshot) from competing with scroll.
     func cancelOffscreenMediaWork() {
+        setScrollMediaPaused(true)
         contentStackView.arrangedSubviews.forEach { cancelContentMediaLoads(in: $0) }
     }
 
@@ -1105,11 +1268,14 @@ final class PostNativeCell: UITableViewCell {
         heightReconcileGeneration += 1
         lastReconciledHeight = 0
         needsHeightReconciliation = false
+        progressiveExpandGeneration += 1
+        pendingBodyBlocks = nil
+        pendingRenderConfig = nil
+        pendingContentBaseURL = nil
+        contentFullyRendered = true
+        isScrollMediaPaused = false
         // Cancel block-level image loads and fallback renders
-        for view in contentStackView.arrangedSubviews {
-            cancelContentMediaLoads(in: view)
-        }
-        contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        clearContentStackMediaAndViews()
         delegate = nil
         postId = 0
         postLink = nil
@@ -1190,5 +1356,46 @@ final class PostNativeCell: UITableViewCell {
         let relative = RelativeDateTimeFormatter()
         relative.unitsStyle = .abbreviated
         return relative.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - Progressive tail placeholder (P2)
+
+/// Reserves vertical space for deferred blocks so completing progressive content
+/// does not collapse the row under the scroll position as hard as a zero-height tail.
+final class ProgressiveTailPlaceholderView: UIView {
+    init(estimatedHeight: CGFloat, remainingBlockCount: Int) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+        backgroundColor = .clear
+
+        let height = heightAnchor.constraint(equalToConstant: max(estimatedHeight, 36))
+        height.priority = .defaultHigh
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .left
+        label.text = String(
+            format: String(localized: "topic.progressive.more_blocks", defaultValue: "另有 %lld 段内容…"),
+            locale: .current,
+            remainingBlockCount
+        )
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            height,
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            label.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -6),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }

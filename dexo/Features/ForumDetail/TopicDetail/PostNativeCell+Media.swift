@@ -28,9 +28,11 @@ enum CookedInlineImageLoader {
         }
 
         for entry in entries {
-            ForumImageLoader.loadImage(
-                with: entry.url,
-                cloudflareBaseURL: cloudflareBaseURL
+            // Same pipeline as TappableImageContainer — avoids SD failed-URL blacklist
+            // trapping inline emoji/images until process death.
+            ExternalImageFetcher.fetch(
+                url: entry.url,
+                refererBaseURL: cloudflareBaseURL
             ) { [weak textView] image in
                 guard let textView, let image else { return }
                 entry.attachment.image = image
@@ -63,6 +65,25 @@ enum CookedInlineImageLoader {
         }
         for subview in view.subviews {
             cancelMediaLoads(in: subview)
+        }
+    }
+
+    /// Pause/resume animated media (GIF) while scrolling — FluxDo-style scroll busy.
+    static func setAnimatedMediaPaused(_ paused: Bool, in view: UIView) {
+        if let container = view as? TappableImageContainer {
+            if paused {
+                container.stopAnimating()
+            } else {
+                container.startAnimating()
+            }
+        }
+        if let stack = view as? UIStackView {
+            for arranged in stack.arrangedSubviews {
+                setAnimatedMediaPaused(paused, in: arranged)
+            }
+        }
+        for subview in view.subviews {
+            setAnimatedMediaPaused(paused, in: subview)
         }
     }
 }
