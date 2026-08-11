@@ -130,6 +130,31 @@ struct DiscourseTopicList: Decodable {
             )
         }
 
+        /// Force a watermark (used by mark-unread; may lower last_read / raise unread).
+        func forcingReadProgress(highestSeen: Int) -> Topic {
+            let clamped = max(0, highestSeen)
+            let highest = highestPostNumber ?? postsCount
+            return Topic(
+                id: id,
+                fancyTitle: fancyTitle,
+                title: title,
+                postsCount: postsCount,
+                replyCount: replyCount,
+                views: views,
+                categoryId: categoryId,
+                createdAt: createdAt,
+                lastPostedAt: lastPostedAt,
+                pinned: pinned,
+                excerpt: excerpt,
+                posters: posters,
+                tags: tags,
+                unseen: clamped <= 0,
+                unreadPosts: max(highest - clamped, 0),
+                lastReadPostNumber: clamped > 0 ? clamped : nil,
+                highestPostNumber: highestPostNumber
+            )
+        }
+
         private init(
             id: Int,
             fancyTitle: String,

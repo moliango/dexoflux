@@ -412,7 +412,8 @@ enum ForumNotificationRoutePresenter {
 
 @MainActor
 final class ForumNotificationCoordinator: DexoObservableObject {
-    private static let foregroundRefreshInterval: TimeInterval = 60
+    /// FluxDo-style snappier unread badge while app is active.
+    private static let foregroundRefreshInterval: TimeInterval = 15
 
     private let api: DiscourseAPI
     private let deliveryStore: ForumNotificationDeliveryStore

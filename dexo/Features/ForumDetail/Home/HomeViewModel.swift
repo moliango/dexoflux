@@ -162,21 +162,26 @@ final class HomeViewModel: DexoObservableObject {
 
     @discardableResult
     func updateTopicReadProgress(topicId: Int, highestSeen: Int, notify: Bool = true) -> Bool {
-        guard highestSeen > 0,
-              let index = topics.firstIndex(where: { $0.id == topicId })
+        guard let index = topics.firstIndex(where: { $0.id == topicId })
         else { return false }
 
         let current = topics[index]
-        guard highestSeen > (current.lastReadPostNumber ?? 0) || current.unseen else {
+        let previous = current.lastReadPostNumber ?? 0
+        // Allow mark-unread (decrease / zero) as well as normal advance.
+        if highestSeen > 0, highestSeen > previous || current.unseen {
+            topics[index] = current.updatingReadProgress(highestSeen: highestSeen)
+            TopicReadProgressStore.shared.record(
+                topicId: topicId,
+                highestSeen: highestSeen,
+                baseURL: api.baseURL,
+                username: AuthManager.shared.username(for: api.baseURL)
+            )
+        } else if highestSeen < previous || (highestSeen == 0 && (previous > 0 || !current.unseen)) {
+            topics[index] = current.forcingReadProgress(highestSeen: highestSeen)
+            // Store already wrote override via forceSet/stepBack/clear; don't re-record.
+        } else {
             return false
         }
-        topics[index] = current.updatingReadProgress(highestSeen: highestSeen)
-        TopicReadProgressStore.shared.record(
-            topicId: topicId,
-            highestSeen: highestSeen,
-            baseURL: api.baseURL,
-            username: AuthManager.shared.username(for: api.baseURL)
-        )
         // Callers that only need a single-row reconfigure pass `notify: false` (Phase 7).
         if notify {
             notifyChanged()

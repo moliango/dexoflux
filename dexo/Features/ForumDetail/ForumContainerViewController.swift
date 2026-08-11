@@ -291,7 +291,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
                 api: api,
                 topicId: topicId,
                 initialFloor: route.postNumber,
-                initialPostId: route.postId
+                initialPostId: route.postId,
+                preferNested: true
             ),
             animated: true
         )

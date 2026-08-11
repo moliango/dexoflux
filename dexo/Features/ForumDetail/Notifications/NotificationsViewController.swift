@@ -369,7 +369,8 @@ final class NotificationsViewController: ObservableViewController {
                 api: api,
                 topicId: topicId,
                 initialFloor: postNumber,
-                initialPostId: postId
+                initialPostId: postId,
+                preferNested: true
             )
             navigationController?.pushViewController(detailVC, animated: true)
         }
