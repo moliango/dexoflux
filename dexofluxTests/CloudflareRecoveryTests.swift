@@ -184,6 +184,13 @@ final class CloudflareRecoveryTests: XCTestCase {
         XCTAssertFalse(CloudflareImageGate.shouldBlockNetworkLoad(url: avatar, cloudflareBaseURL: base))
     }
 
+    func testChallengeSourceControlsImageGatePause() {
+        XCTAssertTrue(DiscourseAPI.shouldPauseImageGate(forChallengeSource: "image.avatar"))
+        XCTAssertTrue(DiscourseAPI.shouldPauseImageGate(forChallengeSource: "api.foreground"))
+        XCTAssertFalse(DiscourseAPI.shouldPauseImageGate(forChallengeSource: "metaverse.oauth"))
+        XCTAssertFalse(DiscourseAPI.shouldPauseImageGate(forChallengeSource: "extension.cdk"))
+    }
+
     func testImageGateCoalescesRepeatedChallengePostsWithinCooldown() throws {
         CloudflareImageGate.resetForTests()
         let base = "https://linux.do"

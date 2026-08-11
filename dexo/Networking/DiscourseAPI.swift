@@ -431,8 +431,12 @@ final class DiscourseAPI {
             )
             return
         }
-        // Stop main-domain image storms while clearance is recovered (API or image path).
-        CloudflareImageGate.pause(baseURL: baseURL)
+        // Only pause the image pipeline for image/API forum traffic.
+        // metaverse.oauth (cdk/credit.linux.do) is a separate CF zone — pausing it
+        // used to spam "image gate pause" logs and did not help OAuth recovery.
+        if Self.shouldPauseImageGate(forChallengeSource: source) {
+            CloudflareImageGate.pause(baseURL: baseURL)
+        }
         if shouldNotify {
             markCloudflareForegroundGate(baseURL: baseURL)
         }
@@ -452,6 +456,23 @@ final class DiscourseAPI {
             object: nil,
             userInfo: userInfo
         )
+    }
+
+    /// Image gate is for forum avatar/upload storms — not extension OAuth hosts
+    /// and not best-effort background POSTs (timings) that CF often challenges
+    /// without meaning the cookie jar is dead.
+    nonisolated static func shouldPauseImageGate(forChallengeSource source: String) -> Bool {
+        // Background / non-critical API must never freeze avatars for 60s.
+        if source == "api.topicTimings" || source.hasPrefix("api.background.") {
+            return false
+        }
+        if source.hasPrefix("image.") { return true }
+        // Real forum API challenges (topic/list/user) can pause images.
+        if source.hasPrefix("api.") { return true }
+        // Explicit non-image sources that must not touch the image gate.
+        if source.hasPrefix("metaverse.") { return false }
+        if source.hasPrefix("extension.") { return false }
+        return false
     }
 
     static func clearCloudflareForegroundGate(baseURL: String) {

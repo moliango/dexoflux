@@ -104,7 +104,14 @@ extension DiscourseAPI {
                 "Discourse-Track-View-Topic-Id": "\(id)",
             ]
         }
-        return try await request(route: .topic(id: id, trackVisit: trackVisit), headers: headers)
+        let detail: DiscourseTopicDetail = try await request(
+            route: .topic(id: id, trackVisit: trackVisit),
+            headers: headers
+        )
+        // Successful topic JSON means the main forum zone is healthy — lift a
+        // stale image-gate pause left by best-effort POSTs (e.g. timings CF blip).
+        CloudflareImageGate.resume(baseURL: baseURL)
+        return detail
     }
 
     func fetchTopicPosts(topicId: Int, postIds: [Int]) async throws -> DiscourseTopicPostsResponse {
