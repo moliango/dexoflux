@@ -59,6 +59,82 @@ enum LinuxDoExtensionError: LocalizedError {
     }
 }
 
+/// Per-host circuit breaker for cdk/credit CF challenges.
+/// Pull-to-refresh used to re-hit `/oauth/user-info` every time and trip the shield in a loop
+/// even when `cf_clearance` was already present (stale / UA-bound).
+enum LinuxDoExtensionCFGate {
+    private static let lock = NSLock()
+    private static var challengedUntilByHost: [String: Date] = [:]
+    private static var lastReportAtByHost: [String: Date] = [:]
+    private static var lastUserInfoAtByHost: [String: Date] = [:]
+
+    /// After a real CF challenge, block network to this host for this long.
+    private static let challengeCooldown: TimeInterval = 90
+    /// Don't re-log / re-report CF more often than this.
+    private static let reportCooldown: TimeInterval = 30
+    /// Min interval between successful user-info refreshes per host.
+    private static let userInfoMinInterval: TimeInterval = 45
+
+    private static func hostKey(for url: URL) -> String {
+        (url.host ?? url.absoluteString).lowercased()
+    }
+
+    static func isInChallengeCooldown(for url: URL, now: Date = Date()) -> Bool {
+        let key = hostKey(for: url)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let until = challengedUntilByHost[key] else { return false }
+        if now < until { return true }
+        challengedUntilByHost[key] = nil
+        return false
+    }
+
+    static func markChallenged(for url: URL, now: Date = Date()) {
+        let key = hostKey(for: url)
+        lock.lock()
+        challengedUntilByHost[key] = now.addingTimeInterval(challengeCooldown)
+        lock.unlock()
+    }
+
+    static func clearChallenge(for url: URL) {
+        let key = hostKey(for: url)
+        lock.lock()
+        challengedUntilByHost[key] = nil
+        lock.unlock()
+    }
+
+    /// Returns true if this CF event should be reported to DiscourseAPI (once per cooldown).
+    static func shouldReportChallenge(for url: URL, now: Date = Date()) -> Bool {
+        let key = hostKey(for: url)
+        lock.lock()
+        defer { lock.unlock() }
+        if let last = lastReportAtByHost[key], now.timeIntervalSince(last) < reportCooldown {
+            return false
+        }
+        lastReportAtByHost[key] = now
+        return true
+    }
+
+    static func shouldSkipUserInfoRefresh(for url: URL, now: Date = Date()) -> Bool {
+        if isInChallengeCooldown(for: url, now: now) { return true }
+        let key = hostKey(for: url)
+        lock.lock()
+        defer { lock.unlock() }
+        if let last = lastUserInfoAtByHost[key], now.timeIntervalSince(last) < userInfoMinInterval {
+            return true
+        }
+        return false
+    }
+
+    static func markUserInfoSuccess(for url: URL, now: Date = Date()) {
+        let key = hostKey(for: url)
+        lock.lock()
+        lastUserInfoAtByHost[key] = now
+        challengedUntilByHost[key] = nil
+        lock.unlock()
+    }
+}
+
 final class LinuxDoExtensionHTTPClient {
     struct Response {
         let data: Data
@@ -97,13 +173,29 @@ final class LinuxDoExtensionHTTPClient {
         headers: [String: String] = [:],
         followRedirects: Bool = true
     ) async throws -> Response {
+        // Soft circuit: do not hammer a host that just returned cf-mitigated=challenge.
+        if LinuxDoExtensionCFGate.isInChallengeCooldown(for: url) {
+            guard let challengedBase = Self.originURL(for: url) else {
+                throw LinuxDoExtensionError.invalidResponse
+            }
+            throw LinuxDoExtensionError.cloudflare(challengedBase, url)
+        }
+
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json, text/html;q=0.9, */*;q=0.8", forHTTPHeaderField: "Accept")
-        if let userAgent = WebCookieStore.shared.userAgent {
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        // CF clearance is UA-bound — must match the WebView that solved the challenge.
+        let userAgent = WebCookieStore.shared.userAgent
+            ?? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let origin = Self.originURL(for: url)?.absoluteString {
+            request.setValue(origin + "/", forHTTPHeaderField: "Referer")
+            request.setValue(origin, forHTTPHeaderField: "Origin")
         }
-        let cookieHeader = WebCookieStore.shared.cookieHeader(for: url)
+
+        // Cookies for the request host + parent .linux.do clearance when missing on subdomain.
+        let cookieHeader = Self.cookieHeaderForExtensionRequest(url: url)
         if !cookieHeader.isEmpty {
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
@@ -123,6 +215,7 @@ final class LinuxDoExtensionHTTPClient {
         let configuration = URLSessionConfiguration.default
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         if let proxy = LightweightDohProxyService.shared.connectionProxyDictionary(for: forumBaseURL) {
             configuration.connectionProxyDictionary = proxy
         }
@@ -150,25 +243,27 @@ final class LinuxDoExtensionHTTPClient {
                 || bodyText.localizedCaseInsensitiveContains("LINUX DO Connect")
                 || bodyText.localizedCaseInsensitiveContains("获取你的用户基本信息")
             if !isOAuthConsentPage {
-                guard let scheme = url.scheme, let host = url.host else {
+                guard let challengedBaseURL = Self.originURL(for: url) else {
                     throw LinuxDoExtensionError.invalidResponse
                 }
-                var components = URLComponents()
-                components.scheme = scheme
-                components.host = host
-                components.port = url.port
-                guard let challengedBaseURL = components.url else {
-                    throw LinuxDoExtensionError.invalidResponse
+                LinuxDoExtensionCFGate.markChallenged(for: url)
+                // Report at most once per cooldown — pull-to-refresh was flooding CF logs.
+                if LinuxDoExtensionCFGate.shouldReportChallenge(for: url) {
+                    DiscourseAPI.handleCloudflareChallengeDetected(
+                        baseURL: challengedBaseURL.absoluteString,
+                        responseURL: http.url,
+                        source: "metaverse.oauth",
+                        routePath: url.path,
+                        method: method,
+                        detection: detection,
+                        shouldNotify: false
+                    )
+                } else {
+                    DohDebugLog.record(
+                        "metaverse CF coalesced host=\(url.host ?? "?") path=\(url.path) \(detection.logSummary)",
+                        subsystem: "CF"
+                    )
                 }
-                DiscourseAPI.handleCloudflareChallengeDetected(
-                    baseURL: challengedBaseURL.absoluteString,
-                    responseURL: http.url,
-                    source: "metaverse.oauth",
-                    routePath: url.path,
-                    method: "GET",
-                    detection: detection,
-                    shouldNotify: false
-                )
                 throw LinuxDoExtensionError.cloudflare(challengedBaseURL, http.url)
             }
         }
@@ -178,6 +273,41 @@ final class LinuxDoExtensionHTTPClient {
             throw LinuxDoExtensionError.http(http.statusCode, message)
         }
         return Response(data: data, http: http)
+    }
+
+    /// Build Cookie header for extension hosts. Subdomains (cdk/credit) often need
+    /// parent `linux.do` cf_clearance when the host-only cookie is stale/missing.
+    private static func cookieHeaderForExtensionRequest(url: URL) -> String {
+        var parts: [String] = []
+        var seen = Set<String>()
+        func appendCookies(from probe: URL) {
+            for cookie in WebCookieStore.shared.cookies(for: probe) {
+                let token = "\(cookie.name)=\(cookie.value)"
+                guard seen.insert(cookie.name).inserted else { continue }
+                parts.append(token)
+            }
+        }
+        appendCookies(from: url)
+        if let host = url.host?.lowercased(),
+           host.hasSuffix(".linux.do"),
+           host != "linux.do",
+           let parent = URL(string: "https://linux.do") {
+            // Prefer keeping host cookies; only fill missing names from parent.
+            for cookie in WebCookieStore.shared.cookies(for: parent) {
+                guard seen.insert(cookie.name).inserted else { continue }
+                parts.append("\(cookie.name)=\(cookie.value)")
+            }
+        }
+        return parts.joined(separator: "; ")
+    }
+
+    private static func originURL(for url: URL) -> URL? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = url.port
+        return components.url
     }
 
     private static func escape(_ value: String) -> String {
@@ -328,8 +458,14 @@ final class LinuxDoExtensionOAuthCoordinator {
     }
 
     func fetchUserInfo() async throws -> LinuxDoExtensionUserInfo {
-        let data = try await client.request(service.baseURL.appendingPathComponent("api/v1/oauth/user-info"))
-        return try JSONDecoder().decode(LinuxDoExtensionEnvelope<LinuxDoExtensionUserInfo>.self, from: data).data
+        let infoURL = service.baseURL.appendingPathComponent("api/v1/oauth/user-info")
+        if LinuxDoExtensionCFGate.isInChallengeCooldown(for: infoURL) {
+            throw LinuxDoExtensionError.cloudflare(service.baseURL, infoURL)
+        }
+        let data = try await client.request(infoURL)
+        let info = try JSONDecoder().decode(LinuxDoExtensionEnvelope<LinuxDoExtensionUserInfo>.self, from: data).data
+        LinuxDoExtensionCFGate.markUserInfoSuccess(for: infoURL)
+        return info
     }
 
     func logout() async throws {
@@ -515,16 +651,39 @@ final class MetaverseServicesViewController: UITableViewController {
         showEnabledActions(visibleServices[indexPath.row], source: tableView.cellForRow(at: indexPath))
     }
 
-    @objc private func refreshServices() { Task { await refreshEnabledServices() } }
-    private func refreshEnabledServices() async {
+    @objc private func refreshServices() { Task { await refreshEnabledServices(forceNetwork: true) } }
+    private func refreshEnabledServices(forceNetwork: Bool = false) async {
         for service in visibleServices where cache.isEnabled(service) {
+            let infoURL = service.baseURL.appendingPathComponent("api/v1/oauth/user-info")
+            // Keep showing cached balance while CF cooldown is active — do not re-trip the shield.
+            if LinuxDoExtensionCFGate.isInChallengeCooldown(for: infoURL) {
+                DohDebugLog.record(
+                    "metaverse user-info skipped (CF cooldown) host=\(service.baseURL.host ?? "?")",
+                    subsystem: "CF"
+                )
+                continue
+            }
+            // Automatic refresh (view load): also skip if we fetched recently.
+            // Pull-to-refresh (forceNetwork) still goes through unless CF-blocked above.
+            if !forceNetwork, LinuxDoExtensionCFGate.shouldSkipUserInfoRefresh(for: infoURL) {
+                continue
+            }
             do {
-                let info = try await LinuxDoExtensionOAuthCoordinator(service: service, forumBaseURL: api.baseURL).fetchUserInfo()
+                let info = try await LinuxDoExtensionOAuthCoordinator(
+                    service: service,
+                    forumBaseURL: api.baseURL
+                ).fetchUserInfo()
                 cache.setUserInfo(info, service: service)
-            } catch { }
+            } catch LinuxDoExtensionError.cloudflare {
+                // Cache stays; user can re-authorize / open dashboard (WebView) to solve CF.
+            } catch {
+                // Keep last good cache on transient errors.
+            }
         }
-        refreshControl?.endRefreshing()
-        tableView.reloadData()
+        await MainActor.run {
+            refreshControl?.endRefreshing()
+            tableView.reloadData()
+        }
     }
 
     @objc private func miniProgramStateDidChange() {
@@ -585,6 +744,8 @@ final class MetaverseServicesViewController: UITableViewController {
             autoDismissOnSuccess: true
         ) { [weak self] in
             guard let self else { return }
+            // Fresh clearance from WebView — open the circuit so authorize can proceed.
+            LinuxDoExtensionCFGate.clearChallenge(for: service.baseURL)
             Task {
                 await self.authorize(
                     service,

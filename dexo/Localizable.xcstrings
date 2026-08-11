@@ -279,6 +279,17 @@
         }
       }
     },
+    "action.reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "发送"
+          }
+        }
+      }
+    },
     "action.reset" : {
       "localizations" : {
         "en" : {
@@ -1803,6 +1814,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登錄後瀏覽分類"
+          }
+        }
+      }
+    },
+    "chat.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无聊天频道（站点可能未开启 Chat）"
+          }
+        }
+      }
+    },
+    "chat.input_placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入消息…"
+          }
+        }
+      }
+    },
+    "chat.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "站内聊天"
+          }
+        }
+      }
+    },
+    "chat.unread_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 条未读"
           }
         }
       }
@@ -5021,6 +5076,17 @@
         }
       }
     },
+    "me.action.chat.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "频道与私聊"
+          }
+        }
+      }
+    },
     "me.action.discourse_history.subtitle" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7869,6 +7935,39 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "全屏查看 Mermaid"
+          }
+        }
+      }
+    },
+    "messages.compose" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "新建私信"
+          }
+        }
+      }
+    },
+    "messages.compose.recipient" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收件人"
+          }
+        }
+      }
+    },
+    "messages.compose.recipient_placeholder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收件人用户名"
           }
         }
       }
@@ -12594,6 +12693,17 @@
         }
       }
     },
+    "post.poll.pie" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "投票饼图"
+          }
+        }
+      }
+    },
     "post.poll.submit" : {
       "localizations" : {
         "en" : {
@@ -14388,6 +14498,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除線文本"
+          }
+        }
+      }
+    },
+    "reply.tool.poll" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "投票"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "每行一个选项，至少两个"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.multiple" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "多选"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.option_a" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选项 A"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.option_b" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选项 B"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.options" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选项 A\n选项 B"
+          }
+        }
+      }
+    },
+    "reply.tool.poll.single" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "单选"
           }
         }
       }
@@ -20488,6 +20675,28 @@
         }
       }
     },
+    "settings.reading.instant_render" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编辑器即时渲染"
+          }
+        }
+      }
+    },
+    "settings.reading.instant_render.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入时即时显示 Markdown 样式（默认关闭）"
+          }
+        }
+      }
+    },
     "settings.reading.nested" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -20789,6 +20998,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "帖子閱讀和滾動偏好"
+          }
+        }
+      }
+    },
+    "settings.reading.suggested_topics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "相关话题推荐"
+          }
+        }
+      }
+    },
+    "settings.reading.suggested_topics.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "读到话题底部时展示相关话题"
           }
         }
       }
@@ -21989,6 +22220,296 @@
         }
       }
     },
+    "telegram_chat.admin_badge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理员"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理員"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理員"
+          }
+        }
+      }
+    },
+    "telegram_chat.input_placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Message"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发消息…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送訊息…"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送訊息…"
+          }
+        }
+      }
+    },
+    "telegram_chat.reply" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
+          }
+        }
+      }
+    },
+    "telegram_chat.reply_floor_fmt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply to #%d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回复 #%d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆 #%d"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆 #%d"
+          }
+        }
+      }
+    },
+    "telegram_chat.today" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        }
+      }
+    },
+    "telegram_chat.voice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音"
+          }
+        }
+      }
+    },
+    "telegram_chat.yesterday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        }
+      }
+    },
+    "telegram_list.no_messages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无消息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫無訊息"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫無訊息"
+          }
+        }
+      }
+    },
+    "telegram_list.replies_fmt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d replies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 条回复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 則回覆"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 則回覆"
+          }
+        }
+      }
+    },
+    "telegram_list.yesterday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        }
+      }
+    },
     "topic_detail.action.bookmark" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -22984,6 +23505,105 @@
         }
       }
     },
+    "topic.assign" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指定处理人"
+          }
+        }
+      }
+    },
+    "topic.assign.clear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消指定"
+          }
+        }
+      }
+    },
+    "topic.assign.clear.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已取消指定"
+          }
+        }
+      }
+    },
+    "topic.assign.current" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已指定 @%@"
+          }
+        }
+      }
+    },
+    "topic.assign.pick_user" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指定给"
+          }
+        }
+      }
+    },
+    "topic.assign.pick_user.message" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入用户名"
+          }
+        }
+      }
+    },
+    "topic.assign.pick_user.short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指定他人"
+          }
+        }
+      }
+    },
+    "topic.assign.to_me" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指定给我"
+          }
+        }
+      }
+    },
+    "topic.assign.to_me.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已指定"
+          }
+        }
+      }
+    },
     "topic.bookmark.add" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -23280,6 +23900,17 @@
         }
       }
     },
+    "topic.export.html_all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "HTML · 已加载"
+          }
+        }
+      }
+    },
     "topic.export.loaded_posts" : {
       "localizations" : {
         "en" : {
@@ -23304,6 +23935,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部已載入帖子"
+          }
+        }
+      }
+    },
+    "topic.export.md_all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Markdown · 已加载"
+          }
+        }
+      }
+    },
+    "topic.export.md_op" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Markdown · 仅主帖"
           }
         }
       }
@@ -23364,7 +24017,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "树形视图"
+            "value" : "树形"
           }
         }
       }
@@ -23424,6 +24077,83 @@
         }
       }
     },
+    "topic.mark_unread" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标记未读"
+          }
+        }
+      }
+    },
+    "topic.mark_unread.clear.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已清空阅读进度"
+          }
+        }
+      }
+    },
+    "topic.mark_unread.clear.short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清空进度"
+          }
+        }
+      }
+    },
+    "topic.mark_unread.step_back.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已回退一层阅读进度"
+          }
+        }
+      }
+    },
+    "topic.mark_unread.step_back.short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "回退一层"
+          }
+        }
+      }
+    },
+    "topic.menu.section.assign" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指定"
+          }
+        }
+      }
+    },
+    "topic.menu.section.reading" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "阅读"
+          }
+        }
+      }
+    },
     "topic.more" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -23431,6 +24161,50 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "更多操作"
+          }
+        }
+      }
+    },
+    "topic.notification.muted" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "静音"
+          }
+        }
+      }
+    },
+    "topic.notification.regular" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正常"
+          }
+        }
+      }
+    },
+    "topic.notification.tracking" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "跟踪"
+          }
+        }
+      }
+    },
+    "topic.notification.watching" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关注"
           }
         }
       }
@@ -23497,6 +24271,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "在浏览器打开"
+          }
+        }
+      }
+    },
+    "topic.progressive.more_blocks" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "另有 %lld 段内容…"
           }
         }
       }
@@ -23573,7 +24358,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "分享链接"
+            "value" : "分享"
           }
         }
       }
@@ -23585,6 +24370,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "生成分享图片"
+          }
+        }
+      }
+    },
+    "topic.suggested.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "相关话题"
           }
         }
       }
@@ -25267,6 +26063,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主題"
+          }
+        }
+      }
+    },
+    "user.watch.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无动态"
+          }
+        }
+      }
+    },
+    "user.watch.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "发帖、回复与互动"
+          }
+        }
+      }
+    },
+    "user.watch.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "追觅 @%@"
+          }
+        }
+      }
+    },
+    "user.watch.title_short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "追觅动态"
           }
         }
       }
