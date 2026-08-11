@@ -177,12 +177,40 @@ extension DiscourseAPI {
         return (try? JSONDecoder().decode(DiscoursePollVoteResponse.self, from: data)) ?? DiscoursePollVoteResponse()
     }
 
+    /// Assign topic to a user (discourse-assign plugin). `username` nil = claim for current user when supported.
+    func assignTopic(topicId: Int, username: String?) async throws {
+        var parameters: Parameters = [
+            "target_type": "Topic",
+            "target_id": topicId,
+        ]
+        if let username, !username.isEmpty {
+            parameters["username"] = username
+        }
+        try await requestVoid(route: .assignTopic, parameters: parameters)
+    }
+
+    func unassignTopic(topicId: Int) async throws {
+        try await requestVoid(
+            route: .unassignTopic,
+            parameters: [
+                "target_type": "Topic",
+                "target_id": topicId,
+            ]
+        )
+    }
+
+    /// Best-effort read progress report. CF 403 here must NOT pause the image gate
+    /// (that freezes avatars for 60s while the user is still browsing).
     func sendTopicTimings(topicId: Int, topicTime: Int, timings: [Int: Int]) async -> Int? {
         let url = baseURL + "/topics/timings"
         guard URL(string: url).map({ discourseRequestHasAuthCredentials(baseURL: baseURL, url: $0) }) == true else {
             return nil
         }
         guard topicId > 0, topicTime > 0, !timings.isEmpty else {
+            return nil
+        }
+        // Back off after a recent CF challenge so we don't keep re-arming recovery noise.
+        if Self.isTopicTimingsCoolingDown(baseURL: baseURL) {
             return nil
         }
 
@@ -218,6 +246,13 @@ extension DiscourseAPI {
             WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: responseURL)
         }
         if let detection = Self.cloudflareChallengeDetection(response.response, data: response.data) {
+            // Log only — never pause image gate / never foreground CF sheet for timings.
+            Self.armTopicTimingsCooldown(baseURL: baseURL)
+            DohDebugLog.record(
+                "topic timings CF challenge ignored (no image gate) base=\(baseURL) \(detection.logSummary)",
+                subsystem: "CF"
+            )
+            // Still run handle with a source that shouldPauseImageGate rejects, notify=false.
             Self.handleCloudflareChallengeDetected(
                 baseURL: baseURL,
                 responseURL: response.response?.url,
@@ -238,6 +273,33 @@ extension DiscourseAPI {
         #endif
 
         return response.response?.statusCode
+    }
+
+    // MARK: - Topic timings CF cooldown (best-effort path)
+
+    private static let topicTimingsCooldownLock = NSLock()
+    private static var topicTimingsCooldownUntilByBase: [String: Date] = [:]
+    private static let topicTimingsCooldownDuration: TimeInterval = 120
+
+    nonisolated private static func normalizedTimingsBase(_ baseURL: String) -> String {
+        baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    }
+
+    nonisolated static func armTopicTimingsCooldown(baseURL: String) {
+        let key = normalizedTimingsBase(baseURL)
+        topicTimingsCooldownLock.lock()
+        topicTimingsCooldownUntilByBase[key] = Date().addingTimeInterval(topicTimingsCooldownDuration)
+        topicTimingsCooldownLock.unlock()
+    }
+
+    nonisolated static func isTopicTimingsCoolingDown(baseURL: String, now: Date = Date()) -> Bool {
+        let key = normalizedTimingsBase(baseURL)
+        topicTimingsCooldownLock.lock()
+        defer { topicTimingsCooldownLock.unlock() }
+        guard let until = topicTimingsCooldownUntilByBase[key] else { return false }
+        if now < until { return true }
+        topicTimingsCooldownUntilByBase.removeValue(forKey: key)
+        return false
     }
 
     func markNotificationsRead(parameters: Parameters?) async throws {

@@ -443,6 +443,9 @@ private final class PollBlockView: UIView {
         ])
 
         stack.addArrangedSubview(makeHeader())
+        if let pie = makePieChartIfNeeded() {
+            stack.addArrangedSubview(pie)
+        }
         for option in poll.options {
             let control = PollOptionControl(option: option, config: config)
             control.addTarget(self, action: #selector(optionTapped(_:)), for: .touchUpInside)
@@ -517,6 +520,33 @@ private final class PollBlockView: UIView {
         label.numberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }
+
+    /// FluxDo-aligned pie when results are visible (closed poll or options already have %).
+    private func makePieChartIfNeeded() -> UIView? {
+        let slices: [(CGFloat, UIColor)] = poll.options.enumerated().compactMap { index, option in
+            let fraction: CGFloat
+            if let percentageText = option.percentageText {
+                let allowed = CharacterSet(charactersIn: "0123456789.")
+                let number = String(percentageText.unicodeScalars.filter { allowed.contains($0) })
+                guard let value = Double(number), value > 0 else { return nil }
+                fraction = CGFloat(min(max(value / 100, 0), 1))
+            } else if let votes = option.voteCount, votes > 0 {
+                let total = max(poll.options.compactMap(\.voteCount).reduce(0, +), 1)
+                fraction = CGFloat(votes) / CGFloat(total)
+            } else {
+                return nil
+            }
+            guard fraction > 0 else { return nil }
+            let hue = CGFloat((index * 47) % 360) / 360
+            return (fraction, UIColor(hue: hue, saturation: 0.55, brightness: 0.85, alpha: 1))
+        }
+        guard slices.count >= 2, slices.map(\.0).reduce(0, +) > 0.01 else { return nil }
+
+        let chart = PollPieChartView(slices: slices)
+        chart.translatesAutoresizingMaskIntoConstraints = false
+        chart.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        return chart
     }
 
     private func makeSubmitButton() -> UIButton {
@@ -716,6 +746,60 @@ private final class PollOptionControl: UIControl {
         let number = String(percentageText.unicodeScalars.filter { allowed.contains($0) })
         guard let value = Float(number) else { return nil }
         return min(max(value / 100, 0), 1)
+    }
+}
+
+private final class PollPieChartView: UIView {
+    private let slices: [(CGFloat, UIColor)]
+
+    init(slices: [(CGFloat, UIColor)]) {
+        self.slices = slices
+        super.init(frame: .zero)
+        backgroundColor = .clear
+        isAccessibilityElement = true
+        accessibilityLabel = String(localized: "post.poll.pie", defaultValue: "投票饼图")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let total = max(slices.map(\.0).reduce(0, +), 0.0001)
+        let side = min(rect.width, rect.height) - 8
+        let box = CGRect(
+            x: (rect.width - side) / 2,
+            y: (rect.height - side) / 2,
+            width: side,
+            height: side
+        )
+        var start = -CGFloat.pi / 2
+        for (fraction, color) in slices {
+            let angle = CGFloat.pi * 2 * (fraction / total)
+            context.setFillColor(color.cgColor)
+            context.move(to: CGPoint(x: box.midX, y: box.midY))
+            context.addArc(
+                center: CGPoint(x: box.midX, y: box.midY),
+                radius: side / 2,
+                startAngle: start,
+                endAngle: start + angle,
+                clockwise: false
+            )
+            context.closePath()
+            context.fillPath()
+            start += angle
+        }
+        // Donut hole for a lighter look.
+        let hole = side * 0.42
+        context.setFillColor(UIColor.systemBackground.cgColor)
+        context.fillEllipse(in: CGRect(
+            x: box.midX - hole / 2,
+            y: box.midY - hole / 2,
+            width: hole,
+            height: hole
+        ))
     }
 }
 

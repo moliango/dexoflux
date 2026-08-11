@@ -34,6 +34,8 @@ struct DiscourseTopicDetail: Decodable {
     let canEdit: Bool
     /// Server last-read floor; used to resume / jump-to-unread (Phase 1).
     let lastReadPostNumber: Int?
+    /// Suggested / related topics shown at the end of a thread (FluxDo parity).
+    let suggestedTopics: [SuggestedTopic]
 
     enum CodingKeys: String, CodingKey {
         case id, title, tags, bookmarked, views
@@ -51,7 +53,29 @@ struct DiscourseTopicDetail: Decodable {
         case sharedIssueCount = "shared_issue_count"
         case userCreatedSharedIssue = "user_created_shared_issue"
         case lastReadPostNumber = "last_read_post_number"
+        case suggestedTopics = "suggested_topics"
+        case relatedTopics = "related_topics"
         case details
+    }
+
+    struct SuggestedTopic: Decodable, Equatable {
+        let id: Int
+        let title: String
+        let fancyTitle: String?
+        let postsCount: Int?
+        let replyCount: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case id, title
+            case fancyTitle = "fancy_title"
+            case postsCount = "posts_count"
+            case replyCount = "reply_count"
+        }
+
+        var displayTitle: String {
+            let fancy = fancyTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return fancy.isEmpty ? title : fancy
+        }
     }
 
     init(from decoder: Decoder) throws {
@@ -75,27 +99,60 @@ struct DiscourseTopicDetail: Decodable {
         sharedIssueCount = container.decodeLossyInt(forKey: .sharedIssueCount) ?? 0
         userCreatedSharedIssue = (try? container.decodeIfPresent(Bool.self, forKey: .userCreatedSharedIssue)) ?? false
         lastReadPostNumber = container.decodeLossyInt(forKey: .lastReadPostNumber)
+        let suggested = (try? container.decodeIfPresent([SuggestedTopic].self, forKey: .suggestedTopics)) ?? []
+        let related = (try? container.decodeIfPresent([SuggestedTopic].self, forKey: .relatedTopics)) ?? []
+        // Prefer suggested; fall back to related; de-dupe by id.
+        var merged: [SuggestedTopic] = []
+        var seen = Set<Int>()
+        for item in suggested + related where item.id > 0 && seen.insert(item.id).inserted {
+            merged.append(item)
+        }
+        suggestedTopics = merged
         let details = try? container.decodeIfPresent(Details.self, forKey: .details)
         notificationLevel = NotificationLevel(rawValue: details?.notificationLevel ?? 1) ?? .regular
         canEdit = details?.canEdit ?? false
+        canAssign = details?.canAssign ?? false
+        assignedToUsername = details?.assignedToUser?.username
+            ?? details?.assignedToUser?.name
         injectGrantedBadges()
     }
 
     private struct Details: Decodable {
         let notificationLevel: Int
         let canEdit: Bool
+        let canAssign: Bool
+        let assignedToUser: AssignedUser?
+
+        struct AssignedUser: Decodable {
+            let username: String?
+            let name: String?
+            let avatarTemplate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case username, name
+                case avatarTemplate = "avatar_template"
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case notificationLevel = "notification_level"
             case canEdit = "can_edit"
+            case canAssign = "can_assign"
+            case assignedToUser = "assigned_to_user"
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             notificationLevel = container.decodeLossyInt(forKey: .notificationLevel) ?? 1
             canEdit = (try? container.decodeIfPresent(Bool.self, forKey: .canEdit)) ?? false
+            canAssign = (try? container.decodeIfPresent(Bool.self, forKey: .canAssign)) ?? false
+            assignedToUser = try? container.decodeIfPresent(AssignedUser.self, forKey: .assignedToUser)
         }
     }
+
+    /// discourse-assign snapshot from topic details.
+    private(set) var canAssign: Bool = false
+    private(set) var assignedToUsername: String?
 
     private mutating func injectGrantedBadges() {
         guard let userBadges,
@@ -406,6 +463,10 @@ struct DiscourseTopicDetail: Decodable {
         let version: Int
         let userSignature: String?
         let wiki: Bool
+        /// discourse-post-voting plugin fields (Q&A topics).
+        var postVotingVoteCount: Int
+        var postVotingUserVotedDirection: String?
+        let postVotingHasVotes: Bool
 
         enum CodingKeys: String, CodingKey {
             case id, name, username, cooked, raw, yours
@@ -443,6 +504,9 @@ struct DiscourseTopicDetail: Decodable {
             case version
             case userSignature = "user_signature"
             case wiki
+            case postVotingVoteCount = "post_voting_vote_count"
+            case postVotingUserVotedDirection = "post_voting_user_voted_direction"
+            case postVotingHasVotes = "post_voting_has_votes"
         }
 
         init(from decoder: Decoder) throws {
@@ -489,10 +553,15 @@ struct DiscourseTopicDetail: Decodable {
             version = container.decodeLossyInt(forKey: .version) ?? 1
             userSignature = try? container.decodeNonEmptyStringIfPresent(forKey: .userSignature)
             wiki = (try? container.decodeIfPresent(Bool.self, forKey: .wiki)) ?? false
+            postVotingVoteCount = container.decodeLossyInt(forKey: .postVotingVoteCount) ?? 0
+            postVotingUserVotedDirection = try? container.decodeNonEmptyStringIfPresent(forKey: .postVotingUserVotedDirection)
+            postVotingHasVotes = (try? container.decodeIfPresent(Bool.self, forKey: .postVotingHasVotes))
+                ?? (postVotingVoteCount != 0 || postVotingUserVotedDirection != nil)
         }
 
         var showEditsIndicator: Bool { version > 1 || wiki }
         var editsCount: Int { version > 1 ? version - 1 : 0 }
+        var isPostVotingAnswer: Bool { postVotingHasVotes || postVotingVoteCount != 0 || postNumber > 1 }
     }
 }
 

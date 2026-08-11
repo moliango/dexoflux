@@ -230,6 +230,14 @@ final class MeViewController: ObservableViewController {
                 isEnabled: isLoggedIn,
                 action: { [weak self] in self?.openMessages() }
             ),
+            .chat: MeActionRow(
+                title: String(localized: "chat.title", defaultValue: "站内聊天"),
+                subtitle: String(localized: "me.action.chat.subtitle", defaultValue: "频道与私聊"),
+                symbolName: "bubble.left.and.bubble.right.fill",
+                tintColor: .systemPurple,
+                isEnabled: isLoggedIn,
+                action: { [weak self] in self?.openChat() }
+            ),
             .browser: MeActionRow(
                 title: String(localized: "me.browser.home", defaultValue: "网页浏览"),
                 subtitle: String(localized: "me.action.browser.subtitle", defaultValue: "收藏、历史与内置浏览器"),
@@ -497,6 +505,14 @@ final class MeViewController: ObservableViewController {
         guard let username = viewModel.currentUser?.username else { return }
         let vc = UserProfileViewController(api: api, username: username)
         navigationController?.pushViewController(vc, animated: true)
+    }
+
+    private func openChat() {
+        guard authGate?.isAuthenticated() == true else {
+            authGate?.requireAuth { [weak self] in self?.openChat() }
+            return
+        }
+        navigationController?.pushViewController(ChatChannelsViewController(api: api), animated: true)
     }
 
     private func openMessages() {

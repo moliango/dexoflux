@@ -72,15 +72,18 @@ enum DiscourseRouter {
     case deleteBoost(boostId: Int)
     case votePoll
     case upload(clientId: String)
+    /// discourse-assign: claim / assign topic (FluxDo parity).
+    case assignTopic
+    case unassignTopic
     
     var method: HTTPMethod {
         switch self {
         case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
-             .topicNotificationLevel, .presenceUpdate, .saveDraft:
+             .topicNotificationLevel, .presenceUpdate, .saveDraft, .assignTopic:
             return .post
         case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
             return .put
-        case .deleteBookmark, .unfollow, .deleteDraft, .clearRecentSearches, .deleteBoost:
+        case .deleteBookmark, .unfollow, .deleteDraft, .clearRecentSearches, .deleteBoost, .unassignTopic:
             return .delete
         default:
             return .get
@@ -244,6 +247,10 @@ enum DiscourseRouter {
             return "/polls/vote"
         case .upload(let clientId):
             return "/uploads.json?client_id=\(clientId)"
+        case .assignTopic:
+            return "/assign/assign"
+        case .unassignTopic:
+            return "/assign/unassign"
         }
     }
 

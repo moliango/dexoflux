@@ -132,6 +132,24 @@ extension AppSettings {
         }
     }
 
+    /// FluxDo: show suggested/related topics at the end of a thread.
+    var showSuggestedTopics: Bool {
+        get { bool(forKey: "showSuggestedTopics", defaultValue: true) }
+        set {
+            defaults.set(newValue, forKey: "showSuggestedTopics")
+            notifyChanged()
+        }
+    }
+
+    /// FluxDo-style instant markdown chrome while typing in composers.
+    var composerInstantRender: Bool {
+        get { bool(forKey: "composerInstantRender", defaultValue: false) }
+        set {
+            defaults.set(newValue, forKey: "composerInstantRender")
+            notifyChanged()
+        }
+    }
+
     enum ContentFontSize: Int, CaseIterable {
         case small = 0
         case standard = 1

@@ -4,19 +4,23 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     var onMessageSent: ((DiscourseCreatePostResponse) -> Void)?
 
     private let api: DiscourseAPI
-    private let recipient: String
+    /// Empty means user must type/search a recipient (new-PM entry).
+    private var recipient: String
+    private let allowsEditingRecipient: Bool
     private var draftSaveTask: Task<Void, Never>?
     private var serverDraftSaveTask: Task<Void, Never>?
 
     private let recipientLabel = UILabel()
+    private let recipientField = UITextField()
     private let titleField = UITextField()
     private let textView = UITextView()
     private let placeholderLabel = UILabel()
     private var isSending = false
 
-    init(api: DiscourseAPI, recipient: String, initialTitle: String = "", initialRaw: String = "") {
+    init(api: DiscourseAPI, recipient: String = "", initialTitle: String = "", initialRaw: String = "") {
         self.api = api
-        self.recipient = recipient
+        self.recipient = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.allowsEditingRecipient = self.recipient.isEmpty
         super.init(nibName: nil, bundle: nil)
         titleField.text = initialTitle
         textView.text = initialRaw
@@ -69,8 +73,27 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             fallback: .systemFont(ofSize: 13, weight: .semibold)
         )
         recipientLabel.textColor = .secondaryLabel
-        recipientLabel.text = "@\(recipient)"
         recipientLabel.adjustsFontForContentSizeCategory = true
+
+        recipientField.translatesAutoresizingMaskIntoConstraints = false
+        recipientField.borderStyle = .roundedRect
+        recipientField.placeholder = String(localized: "messages.compose.recipient_placeholder", defaultValue: "收件人用户名")
+        recipientField.autocapitalizationType = .none
+        recipientField.autocorrectionType = .no
+        recipientField.returnKeyType = .next
+        recipientField.delegate = self
+        recipientField.addTarget(self, action: #selector(inputChanged), for: .editingChanged)
+        recipientField.font = .preferredFont(forTextStyle: .body)
+        recipientField.adjustsFontForContentSizeCategory = true
+        recipientField.isHidden = !allowsEditingRecipient
+
+        if allowsEditingRecipient {
+            recipientLabel.text = String(localized: "messages.compose.recipient", defaultValue: "收件人")
+            recipientField.text = recipient
+        } else {
+            recipientLabel.text = "@\(recipient)"
+            recipientField.isHidden = true
+        }
 
         titleField.translatesAutoresizingMaskIntoConstraints = false
         titleField.borderStyle = .roundedRect
@@ -99,16 +122,26 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         placeholderLabel.adjustsFontForContentSizeCategory = true
 
         view.addSubview(recipientLabel)
+        view.addSubview(recipientField)
         view.addSubview(titleField)
         view.addSubview(textView)
         textView.addSubview(placeholderLabel)
+
+        let titleTop = allowsEditingRecipient
+            ? titleField.topAnchor.constraint(equalTo: recipientField.bottomAnchor, constant: 10)
+            : titleField.topAnchor.constraint(equalTo: recipientLabel.bottomAnchor, constant: 10)
 
         NSLayoutConstraint.activate([
             recipientLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
             recipientLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
             recipientLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
 
-            titleField.topAnchor.constraint(equalTo: recipientLabel.bottomAnchor, constant: 10),
+            recipientField.topAnchor.constraint(equalTo: recipientLabel.bottomAnchor, constant: 8),
+            recipientField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            recipientField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            recipientField.heightAnchor.constraint(equalToConstant: 40),
+
+            titleTop,
             titleField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             titleField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             titleField.heightAnchor.constraint(equalToConstant: 40),
@@ -122,6 +155,15 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             placeholderLabel.leadingAnchor.constraint(equalTo: textView.leadingAnchor, constant: 16),
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -16),
         ])
+    }
+
+    private var resolvedRecipient: String {
+        if allowsEditingRecipient {
+            return (recipientField.text ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        }
+        return recipient
     }
 
     private func restoreDraftIfNeeded() {
@@ -197,9 +239,11 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     }
 
     private func persistLocalDraftOnly() {
+        let to = resolvedRecipient
+        guard !to.isEmpty else { return }
         ComposerLocalDraftStore.savePrivateMessage(
             baseURL: api.baseURL,
-            recipient: recipient,
+            recipient: to,
             title: titleField.text ?? "",
             raw: textView.text ?? ""
         )
@@ -209,7 +253,8 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         let title = titleField.text ?? ""
         let raw = textView.text ?? ""
         let api = self.api
-        let recipient = self.recipient
+        let recipient = resolvedRecipient
+        guard !recipient.isEmpty else { return }
         Task {
             await ComposerServerDraftSync.syncPrivateMessage(
                 api: api,
@@ -223,9 +268,11 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     private func updateSendState() {
         let title = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let raw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        navigationItem.rightBarButtonItem?.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty
+        let to = resolvedRecipient
+        navigationItem.rightBarButtonItem?.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty && !to.isEmpty
         navigationItem.leftBarButtonItem?.isEnabled = !isSending
         titleField.isEnabled = !isSending
+        recipientField.isEnabled = !isSending
         textView.isEditable = !isSending
     }
 
@@ -249,15 +296,17 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     @objc private func sendTapped() {
         let messageTitle = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let raw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !messageTitle.isEmpty, !raw.isEmpty, !isSending else { return }
+        let to = resolvedRecipient
+        guard !messageTitle.isEmpty, !raw.isEmpty, !to.isEmpty, !isSending else { return }
+        recipient = to
 
         isSending = true
         updateSendState()
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let response = try await api.sendPrivateMessage(to: recipient, title: messageTitle, raw: raw)
-                ComposerLocalDraftStore.clearPrivateMessage(baseURL: api.baseURL, recipient: recipient)
+                let response = try await api.sendPrivateMessage(to: to, title: messageTitle, raw: raw)
+                ComposerLocalDraftStore.clearPrivateMessage(baseURL: api.baseURL, recipient: to)
                 let api = self.api
                 Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_private_message") }
                 dismiss(animated: true) { [onMessageSent] in

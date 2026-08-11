@@ -272,11 +272,64 @@ final class ComposerMarkdownCoordinator: NSObject {
             wrapImagesInGrid()
         case .insertBlock:
             presentInsertBlockMenu()
+        case .poll:
+            presentPollBuilder()
         }
 
         if tool.closesPanelAfterAction {
             surface.composerCloseToolPanel(returnToKeyboard: true)
         }
+    }
+
+    private func presentPollBuilder() {
+        guard let surface else { return }
+        let alert = UIAlertController(
+            title: String(localized: "reply.tool.poll", defaultValue: "插入投票"),
+            message: String(localized: "reply.tool.poll.message", defaultValue: "每行一个选项，至少两个"),
+            preferredStyle: .alert
+        )
+        alert.addTextField { field in
+            field.placeholder = String(localized: "reply.tool.poll.options", defaultValue: "选项 A\n选项 B")
+        }
+        let multi = UIAlertAction(
+            title: String(localized: "reply.tool.poll.multiple", defaultValue: "多选"),
+            style: .default
+        ) { [weak self] _ in
+            self?.insertPollBBCode(optionsText: alert.textFields?.first?.text, type: "multiple")
+        }
+        let single = UIAlertAction(
+            title: String(localized: "reply.tool.poll.single", defaultValue: "单选"),
+            style: .default
+        ) { [weak self] _ in
+            self?.insertPollBBCode(optionsText: alert.textFields?.first?.text, type: "regular")
+        }
+        alert.addAction(single)
+        alert.addAction(multi)
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel", defaultValue: "取消"), style: .cancel) { [weak surface] _ in
+            surface?.composerCloseToolPanel(returnToKeyboard: true)
+        })
+        surface.composerHostViewController.present(alert, animated: true)
+    }
+
+    private func insertPollBBCode(optionsText: String?, type: String) {
+        guard let surface else { return }
+        let lines = (optionsText ?? "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let options = lines.count >= 2 ? lines : [
+            String(localized: "reply.tool.poll.option_a", defaultValue: "选项 A"),
+            String(localized: "reply.tool.poll.option_b", defaultValue: "选项 B"),
+        ]
+        let body = options.map { "- \($0)" }.joined(separator: "\n")
+        let bbcode = """
+        [poll type=\(type) results=always public=true chartType=bar]
+        \(body)
+        [/poll]
+
+        """
+        surface.composerInsertRaw(bbcode)
+        surface.composerCloseToolPanel(returnToKeyboard: true)
     }
 
     // MARK: Menus

@@ -12,6 +12,7 @@ struct MeActionRow {
 
 enum MeAccountFunction: String, CaseIterable, Codable, Hashable {
     case messages
+    case chat
     case browser
     case aiModelService
     case badges
@@ -26,6 +27,8 @@ enum MeAccountFunction: String, CaseIterable, Codable, Hashable {
         switch self {
         case .messages:
             return String(localized: "messages.title")
+        case .chat:
+            return String(localized: "chat.title", defaultValue: "站内聊天")
         case .browser:
             return String(localized: "me.browser.home", defaultValue: "网页浏览")
         case .aiModelService:
@@ -50,6 +53,7 @@ enum MeAccountFunction: String, CaseIterable, Codable, Hashable {
     var symbolName: String {
         switch self {
         case .messages: return "envelope.fill"
+        case .chat: return "bubble.left.and.bubble.right.fill"
         case .browser: return "safari.fill"
         case .aiModelService: return "cpu.fill"
         case .badges: return "medal.fill"

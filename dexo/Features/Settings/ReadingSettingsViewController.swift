@@ -5,6 +5,8 @@ final class ReadingSettingsViewController: ObservableViewController {
     private enum ToggleOption: CaseIterable {
         case readingComfort
         case defaultExpandRelatedLinks
+        case showSuggestedTopics
+        case composerInstantRender
         case showUserSignatures
         case hideScrollIndicators
         case bottomBarAutoHide
@@ -18,6 +20,8 @@ final class ReadingSettingsViewController: ObservableViewController {
             switch self {
             case .readingComfort: return String(localized: "settings.reading.comfort")
             case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links")
+            case .showSuggestedTopics: return String(localized: "settings.reading.suggested_topics", defaultValue: "相关话题推荐")
+            case .composerInstantRender: return String(localized: "settings.reading.instant_render", defaultValue: "编辑器即时渲染")
             case .showUserSignatures: return String(localized: "settings.reading.signatures", defaultValue: "显示用户签名")
             case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators")
             case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation")
@@ -33,6 +37,8 @@ final class ReadingSettingsViewController: ObservableViewController {
             switch self {
             case .readingComfort: return String(localized: "settings.reading.comfort.subtitle")
             case .defaultExpandRelatedLinks: return String(localized: "settings.reading.expand_related_links.subtitle")
+            case .showSuggestedTopics: return String(localized: "settings.reading.suggested_topics.subtitle", defaultValue: "读到话题底部时展示相关话题")
+            case .composerInstantRender: return String(localized: "settings.reading.instant_render.subtitle", defaultValue: "输入时即时显示 Markdown 样式（默认关闭）")
             case .showUserSignatures: return String(localized: "settings.reading.signatures.subtitle", defaultValue: "在帖子下方显示签名")
             case .hideScrollIndicators: return String(localized: "settings.reading.hide_scroll_indicators.subtitle")
             case .bottomBarAutoHide: return String(localized: "settings.reading.collapse_navigation.subtitle")
@@ -48,6 +54,8 @@ final class ReadingSettingsViewController: ObservableViewController {
             switch self {
             case .readingComfort: return "wand.and.stars"
             case .defaultExpandRelatedLinks: return "link"
+            case .showSuggestedTopics: return "text.bubble"
+            case .composerInstantRender: return "textformat"
             case .showUserSignatures: return "signature"
             case .hideScrollIndicators: return "scroll"
             case .bottomBarAutoHide: return "arrow.up.and.down"
@@ -168,6 +176,8 @@ final class ReadingSettingsViewController: ObservableViewController {
         readingBody.addArrangedSubview(fontSizeCard)
         readingBody.addArrangedSubview(makeToggleRow(for: .readingComfort))
         readingBody.addArrangedSubview(makeToggleRow(for: .defaultExpandRelatedLinks))
+        readingBody.addArrangedSubview(makeToggleRow(for: .showSuggestedTopics))
+        readingBody.addArrangedSubview(makeToggleRow(for: .composerInstantRender))
         readingBody.addArrangedSubview(makeToggleRow(for: .showUserSignatures))
         readingBody.addArrangedSubview(makeToggleRow(for: .hideScrollIndicators))
         contentStack.addArrangedSubview(verticalSection(
@@ -387,6 +397,10 @@ final class ReadingSettingsViewController: ObservableViewController {
             return settings.readingComfortMode
         case .defaultExpandRelatedLinks:
             return settings.defaultExpandRelatedLinks
+        case .showSuggestedTopics:
+            return settings.showSuggestedTopics
+        case .composerInstantRender:
+            return settings.composerInstantRender
         case .showUserSignatures:
             return settings.showUserSignatures
         case .hideScrollIndicators:
@@ -412,6 +426,10 @@ final class ReadingSettingsViewController: ObservableViewController {
             settings.readingComfortMode = isOn
         case .defaultExpandRelatedLinks:
             settings.defaultExpandRelatedLinks = isOn
+        case .showSuggestedTopics:
+            settings.showSuggestedTopics = isOn
+        case .composerInstantRender:
+            settings.composerInstantRender = isOn
         case .showUserSignatures:
             settings.showUserSignatures = isOn
         case .hideScrollIndicators:

@@ -91,9 +91,35 @@ final class MessagesViewController: ObservableViewController {
         observe(viewModel)
         title = String(localized: "messages.title")
         view.backgroundColor = .systemGroupedBackground
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "square.and.pencil"),
+            style: .plain,
+            target: self,
+            action: #selector(composeTapped)
+        )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = String(
+            localized: "messages.compose",
+            defaultValue: "新建私信"
+        )
 
         setupUI()
         loadMessages()
+    }
+
+    @objc private func composeTapped() {
+        let presentComposer = { [weak self] in
+            guard let self else { return }
+            let composer = PrivateMessageComposerViewController(api: self.api, recipient: "")
+            composer.onMessageSent = { [weak self] _ in
+                self?.loadMessages()
+            }
+            self.present(UINavigationController(rootViewController: composer), animated: true)
+        }
+        if authGate?.isAuthenticated() == true {
+            presentComposer()
+        } else {
+            authGate?.requireAuth(then: presentComposer)
+        }
     }
 
     override func updateUI() {

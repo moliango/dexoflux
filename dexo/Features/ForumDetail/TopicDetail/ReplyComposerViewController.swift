@@ -664,8 +664,9 @@ final class ReplyComposerViewController: UIViewController {
         // Don't fight IME marked text — restyling mid-composition jumps the caret.
         guard textView.markedTextRange == nil else { return }
         sourceRestyleTask?.cancel()
+        let delayNs: UInt64 = AppSettings.shared.composerInstantRender ? 40_000_000 : 220_000_000
         sourceRestyleTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 220_000_000)
+            try? await Task.sleep(nanoseconds: delayNs)
             guard let self, !Task.isCancelled, !self.isApplyingAttributedText, !self.isPreviewingMarkdown else { return }
             guard self.textView.markedTextRange == nil else { return }
             self.restyleSourcePreservingSelection()

@@ -1,3 +1,4 @@
+import AVKit
 import CookedHTML
 import SDWebImage
 import UIKit
@@ -148,11 +149,129 @@ final class VideoCardView: UIView {
 
     @objc private func videoTapped() {
         guard let url = URL(string: videoURL) else { return }
-        delegate?.postCell(didTapLinkURL: url)
+        // Prefer native player with resume; fall back to link open if host missing.
+        guard let host = findViewController() else {
+            delegate?.postCell(didTapLinkURL: url)
+            return
+        }
+        let player = DexoVideoPlayerViewController(url: url, sourceKey: videoURL)
+        host.present(player, animated: true)
     }
 
     func cancelImageLoad() {
         thumbnailImageView.sd_cancelCurrentImageLoad()
+    }
+
+    private func findViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let vc = current as? UIViewController { return vc }
+            responder = current.next
+        }
+        return nil
+    }
+}
+
+/// FluxDo-style in-app video player with position resume.
+final class DexoVideoPlayerViewController: AVPlayerViewController {
+    private let sourceKey: String
+    private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+
+    init(url: URL, sourceKey: String) {
+        self.sourceKey = sourceKey
+        super.init(nibName: nil, bundle: nil)
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        self.player = player
+        if let resume = VideoPlaybackPositionStore.shared.position(for: sourceKey) {
+            let time = CMTime(seconds: resume, preferredTimescale: 600)
+            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        player.play()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        guard let player else { return }
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 2, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            guard let self else { return }
+            let seconds = time.seconds
+            guard seconds.isFinite, seconds > 1 else { return }
+            VideoPlaybackPositionStore.shared.save(url: self.sourceKey, position: seconds)
+        }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            VideoPlaybackPositionStore.shared.clear(url: self.sourceKey)
+        }
+    }
+
+    deinit {
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        if let player, let seconds = player.currentTime().seconds as Double?,
+           seconds.isFinite, seconds > 1 {
+            VideoPlaybackPositionStore.shared.save(url: sourceKey, position: seconds)
+        }
+    }
+}
+
+/// Remember last playback position per URL (FluxDo resume).
+final class VideoPlaybackPositionStore {
+    static let shared = VideoPlaybackPositionStore()
+
+    private let defaults: UserDefaults
+    private let storageKey = "video.playback_position.v1"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func position(for url: String) -> TimeInterval? {
+        let map = load()
+        guard let value = map[normalized(url)], value > 1 else { return nil }
+        return value
+    }
+
+    func save(url: String, position: TimeInterval) {
+        guard position > 1, position.isFinite else { return }
+        var map = load()
+        map[normalized(url)] = position
+        if map.count > 400 {
+            let trimmed = map.sorted { $0.value > $1.value }.prefix(300)
+            map = Dictionary(uniqueKeysWithValues: trimmed.map { ($0.key, $0.value) })
+        }
+        defaults.set(map, forKey: storageKey)
+    }
+
+    func clear(url: String) {
+        var map = load()
+        map.removeValue(forKey: normalized(url))
+        defaults.set(map, forKey: storageKey)
+    }
+
+    private func load() -> [String: Double] {
+        (defaults.dictionary(forKey: storageKey) as? [String: Double]) ?? [:]
+    }
+
+    private func normalized(_ url: String) -> String {
+        url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 

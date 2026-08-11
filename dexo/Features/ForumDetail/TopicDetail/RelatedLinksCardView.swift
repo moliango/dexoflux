@@ -293,3 +293,123 @@ private struct RelatedLink: Hashable {
     let url: String
     let clicks: Int
 }
+
+/// End-of-topic related/suggested topics (FluxDo parity).
+/// Sized via frames for `tableFooterView` — do NOT override intrinsicContentSize with
+/// `systemLayoutSizeFitting(self)` (infinite recursion / EXC_BAD_ACCESS on stack).
+final class SuggestedTopicsFooterView: UIView {
+    var onSelectTopic: ((Int) -> Void)?
+
+    private let titleLabel = UILabel()
+    private let stack = UIStackView()
+    private var topicCount = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // tableFooterView is frame-based; keep autoresizing mask enabled.
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = [.flexibleWidth]
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupUI() {
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 16,
+            weight: .heavy,
+            fallback: .systemFont(ofSize: 16, weight: .heavy)
+        )
+        titleLabel.textColor = .label
+        titleLabel.text = String(localized: "topic.suggested.title", defaultValue: "相关话题")
+
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(titleLabel)
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+
+            stack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            // Pin bottom so Auto Layout can resolve height when we set bounds width.
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+        ])
+    }
+
+    func configure(topics: [DiscourseTopicDetail.SuggestedTopic]) {
+        stack.arrangedSubviews.forEach {
+            stack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        let items = Array(topics.prefix(6))
+        topicCount = items.count
+        isHidden = items.isEmpty
+        guard !items.isEmpty else { return }
+
+        let accent = AppSettings.shared.themeStyle.accentColor
+        for topic in items {
+            var config = UIButton.Configuration.plain()
+            config.title = topic.displayTitle
+            config.baseForegroundColor = .label
+            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+            config.titleLineBreakMode = .byTruncatingTail
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = AppSettings.shared.appInterfaceFont(
+                    ofSize: 15,
+                    weight: .semibold,
+                    fallback: .systemFont(ofSize: 15, weight: .semibold)
+                )
+                return outgoing
+            }
+
+            let button = UIButton(configuration: config)
+            button.tag = topic.id
+            button.contentHorizontalAlignment = .leading
+            button.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
+            button.layer.cornerRadius = 14
+            button.layer.cornerCurve = .continuous
+            button.layer.borderWidth = 1.0 / UIScreen.main.scale
+            button.layer.borderColor = UIColor.separator.withAlphaComponent(0.22).cgColor
+            button.addTarget(self, action: #selector(topicTapped(_:)), for: .touchUpInside)
+            if let replies = topic.replyCount ?? topic.postsCount {
+                button.accessibilityValue = "\(replies)"
+            }
+            let bar = UIView()
+            bar.backgroundColor = accent
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(bar)
+            NSLayoutConstraint.activate([
+                bar.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+                bar.topAnchor.constraint(equalTo: button.topAnchor, constant: 10),
+                bar.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -10),
+                bar.widthAnchor.constraint(equalToConstant: 3),
+                button.heightAnchor.constraint(equalToConstant: 52),
+            ])
+            stack.addArrangedSubview(button)
+        }
+    }
+
+    /// Safe height for `tableFooterView` — never calls `systemLayoutSizeFitting` on self.
+    func preferredHeight(forWidth width: CGFloat) -> CGFloat {
+        guard topicCount > 0, width > 0 else { return 0 }
+        // title(16+22) + gap(12) + rows(52*n + 8*(n-1)) + bottom(20)
+        let rows = CGFloat(topicCount)
+        return 16 + 22 + 12 + rows * 52 + max(0, rows - 1) * 8 + 20
+    }
+
+    @objc private func topicTapped(_ sender: UIButton) {
+        guard sender.tag > 0 else { return }
+        onSelectTopic?(sender.tag)
+    }
+}

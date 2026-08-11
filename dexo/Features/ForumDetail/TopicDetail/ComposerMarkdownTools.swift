@@ -20,6 +20,7 @@ enum ComposerMarkdownTool: CaseIterable {
     case insertBlock
     case spoiler
     case imageGrid
+    case poll
     case aiReview
 
     var title: String {
@@ -42,6 +43,7 @@ enum ComposerMarkdownTool: CaseIterable {
         case .insertBlock: return "插入块"
         case .spoiler: return "剧透"
         case .imageGrid: return "图片网格"
+        case .poll: return String(localized: "reply.tool.poll", defaultValue: "投票")
         case .aiReview: return String(localized: "reply.tool.ai_review", defaultValue: "AI 预审")
         }
     }
@@ -66,13 +68,14 @@ enum ComposerMarkdownTool: CaseIterable {
         case .insertBlock: return "square.plus"
         case .spoiler: return "eye.slash"
         case .imageGrid: return "rectangle.grid.2x2"
+        case .poll: return "chart.bar.doc.horizontal"
         case .aiReview: return "sparkles"
         }
     }
 
     var closesPanelAfterAction: Bool {
         switch self {
-        case .image, .attachment, .media, .heading, .callout, .template, .insertBlock, .aiReview:
+        case .image, .attachment, .media, .heading, .callout, .template, .insertBlock, .poll, .aiReview:
             return false
         default:
             return true
