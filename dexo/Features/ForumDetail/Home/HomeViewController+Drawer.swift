@@ -13,12 +13,11 @@ extension HomeViewController {
         updateCategoryButton()
         updateCategoryTabs()
         updateFloatingActionButton(animated: false)
-        incomingTopicsButton.applyThemeStyle()
-        incomingTopicsInlineButton.applyThemeStyle()
+        applyIncomingTopicsBannerLayout()
         updateIncomingTopicsHeader()
         updateTableInsets()
         applyTopicSnapshot(animatingDifferences: false)
-        if usesXiaohongshuCardLayout || usesWeChatListLayout {
+        if usesXiaohongshuCardLayout || usesChatHomeListLayout {
             tableView.beginUpdates()
             tableView.endUpdates()
         }

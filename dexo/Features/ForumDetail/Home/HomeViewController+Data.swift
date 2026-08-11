@@ -46,7 +46,7 @@ extension HomeViewController {
             }
         } else {
             if layoutChanged, !itemIdentifiers.isEmpty, currentIds == itemIdentifiers {
-                // Same topic ids but different cell class (TopicCell ↔ WeChat list).
+                // Same topic ids but different cell class (TopicCell ↔ chat session list).
                 snapshot.reloadItems(itemIdentifiers)
             } else if !idsNeedingReconfigure.isEmpty {
                 snapshot.reconfigureItems(idsNeedingReconfigure)

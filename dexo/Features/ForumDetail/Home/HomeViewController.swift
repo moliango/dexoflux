@@ -14,6 +14,8 @@ final class HomeViewController: ObservableViewController {
     static let categoryRowHeight: CGFloat = 36
     static let filterRowHeight: CGFloat = 36
     static let incomingTopicsBannerHeight: CGFloat = 64
+    /// Compact chat-theme banner host height (Telegram pill / WeChat tip bar).
+    static let incomingTopicsBannerHeightChat: CGFloat = 52
     /// Category chip row → filter row (matches `filterTopToCategoryConstraint` constant).
     static let categoryToFilterSpacing: CGFloat = 6
     /// Filter row → search row (matches `searchBelowFilterConstraint` constant).
@@ -75,6 +77,18 @@ final class HomeViewController: ObservableViewController {
     var isIncomingTopicsBannerVisible = false
     var isIncomingTopicsInlineBannerVisible = false
     var incomingTopicsUsesTopSpace = false
+    /// Floating banner layout (theme-adaptive margins / height / centering).
+    var incomingTopicsHeaderHeightConstraint: NSLayoutConstraint?
+    var incomingTopicsButtonHeightConstraint: NSLayoutConstraint?
+    var incomingTopicsButtonLeadingConstraint: NSLayoutConstraint?
+    var incomingTopicsButtonTrailingConstraint: NSLayoutConstraint?
+    var incomingTopicsButtonCenterXConstraint: NSLayoutConstraint?
+    var incomingTopicsButtonMaxWidthConstraint: NSLayoutConstraint?
+    var incomingTopicsInlineButtonHeightConstraint: NSLayoutConstraint?
+    var incomingTopicsInlineButtonLeadingConstraint: NSLayoutConstraint?
+    var incomingTopicsInlineButtonTrailingConstraint: NSLayoutConstraint?
+    var incomingTopicsInlineButtonCenterXConstraint: NSLayoutConstraint?
+    var incomingTopicsInlineButtonMaxWidthConstraint: NSLayoutConstraint?
     var isTopRefreshGeometryLocked = false
     var topRefreshGeometryLockID = 0
     /// 刷新/回弹窗口：冻结滚动驱动的 tab bar 显隐，避免和 contentOffset 抖动打架。
@@ -305,6 +319,7 @@ final class HomeViewController: ObservableViewController {
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
         tv.register(XiaohongshuTopicGridCell.self, forCellReuseIdentifier: XiaohongshuTopicGridCell.reuseIdentifier)
         tv.register(WeChatTopicListCell.self, forCellReuseIdentifier: WeChatTopicListCell.reuseIdentifier)
+        tv.register(TelegramTopicListCell.self, forCellReuseIdentifier: TelegramTopicListCell.reuseIdentifier)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -339,7 +354,31 @@ final class HomeViewController: ObservableViewController {
             return cell
         }
 
-        if self.usesWeChatListLayout,
+        if self.homeListLayoutKind == .telegram,
+           let cell = tableView.dequeueReusableCell(
+                withIdentifier: TelegramTopicListCell.reuseIdentifier,
+                for: indexPath
+           ) as? TelegramTopicListCell,
+           let topic = self.viewModel.topics.first(where: { $0.id == topicId }) {
+            let baseURL = self.api.baseURL
+            let avatarURL = AvatarImageLoader.url(
+                from: self.viewModel.avatarTemplate(for: topic),
+                baseURL: baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            )
+            let category = self.viewModel.category(for: topic)
+            cell.configure(
+                with: topic,
+                avatarURL: avatarURL,
+                avatarUserId: self.viewModel.avatarUserId(for: topic),
+                categoryName: self.viewModel.categoryDisplayName(for: category),
+                tags: topic.tags ?? [],
+                categoryBaseURL: baseURL
+            )
+            return cell
+        }
+
+        if self.homeListLayoutKind == .weChat,
            let cell = tableView.dequeueReusableCell(
                 withIdentifier: WeChatTopicListCell.reuseIdentifier,
                 for: indexPath
@@ -395,21 +434,28 @@ final class HomeViewController: ObservableViewController {
         AppSettings.shared.themeStyle == .xiaohongshu
     }
 
-    /// WeChat list layout: full-bleed rows via `WeChatTopicListCell` (not TopicCell cards).
-    var usesWeChatListLayout: Bool {
-        AppSettings.shared.themeStyle == .weChat
+    /// Chat session-list layout (WeChat / Telegram) via `WeChatTopicListCell`.
+    var usesChatHomeListLayout: Bool {
+        AppSettings.shared.themeStyle.usesChatHomeList
     }
+
+    /// Legacy alias used by older call sites; prefer `usesChatHomeListLayout`.
+    var usesWeChatListLayout: Bool { usesChatHomeListLayout }
 
     enum HomeListLayoutKind: Equatable {
         case standard
         case xiaohongshu
         case weChat
+        case telegram
     }
 
     var homeListLayoutKind: HomeListLayoutKind {
         if usesXiaohongshuCardLayout { return .xiaohongshu }
-        if usesWeChatListLayout { return .weChat }
-        return .standard
+        switch AppSettings.shared.themeStyle {
+        case .weChat: return .weChat
+        case .telegram: return .telegram
+        default: return .standard
+        }
     }
 
     /// Last applied list layout — when this changes, force cell-class swap.
@@ -838,17 +884,12 @@ final class HomeViewController: ObservableViewController {
             incomingTopicsHeaderView.topAnchor.constraint(equalTo: offlineIndicatorView.bottomAnchor, constant: 6),
             incomingTopicsHeaderView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             incomingTopicsHeaderView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            incomingTopicsHeaderView.heightAnchor.constraint(equalToConstant: Self.incomingTopicsBannerHeight),
 
-            incomingTopicsButton.topAnchor.constraint(equalTo: incomingTopicsHeaderView.topAnchor, constant: 6),
-            incomingTopicsButton.leadingAnchor.constraint(equalTo: incomingTopicsHeaderView.leadingAnchor, constant: 18),
-            incomingTopicsButton.trailingAnchor.constraint(equalTo: incomingTopicsHeaderView.trailingAnchor, constant: -18),
-            incomingTopicsButton.heightAnchor.constraint(equalToConstant: 52),
+            incomingTopicsButton.topAnchor.constraint(equalTo: incomingTopicsHeaderView.topAnchor, constant: 4),
+            incomingTopicsButton.centerYAnchor.constraint(equalTo: incomingTopicsHeaderView.centerYAnchor),
 
-            incomingTopicsInlineButton.topAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.topAnchor, constant: 6),
-            incomingTopicsInlineButton.leadingAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.leadingAnchor, constant: 18),
-            incomingTopicsInlineButton.trailingAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.trailingAnchor, constant: -18),
-            incomingTopicsInlineButton.heightAnchor.constraint(equalToConstant: 52),
+            incomingTopicsInlineButton.topAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.topAnchor, constant: 4),
+            incomingTopicsInlineButton.centerYAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.centerYAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -886,6 +927,8 @@ final class HomeViewController: ObservableViewController {
         ])
         headerHeightConstraint = headerContainer.heightAnchor.constraint(equalToConstant: expandedHeaderHeight)
         headerHeightConstraint?.isActive = true
+        installIncomingTopicsBannerLayoutConstraints()
+        applyIncomingTopicsBannerLayout()
 
         searchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
         compactSearchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)

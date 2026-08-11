@@ -2,10 +2,10 @@ import SDWebImage
 import UIKit
 
 /// WeChat-style full-bleed list row for Home when `ThemeStyle.weChat` is active.
-/// Separate from `TopicCell` / Xiaohongshu grid — same integration pattern as grid layout.
+/// Telegram uses a separate `TelegramTopicListCell` — do not recolor this for TG.
 final class WeChatTopicListCell: UITableViewCell {
     static let reuseIdentifier = "WeChatTopicListCell"
-    static let estimatedHeight: CGFloat = 90
+    static let estimatedHeight: CGFloat = 76
 
     private var currentAvatarURL: URL?
     private var renderedTitle: String?
@@ -16,7 +16,7 @@ final class WeChatTopicListCell: UITableViewCell {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
         iv.clipsToBounds = true
-        iv.layer.cornerRadius = 4 // WeChat chat-list style square-ish avatar
+        iv.layer.cornerRadius = 6
         iv.layer.cornerCurve = .continuous
         iv.backgroundColor = .secondarySystemFill
         iv.translatesAutoresizingMaskIntoConstraints = false
@@ -26,7 +26,6 @@ final class WeChatTopicListCell: UITableViewCell {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16, weight: .medium)
-        // Forum titles are long; 2 lines keeps WeChat density while showing more text.
         label.numberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -68,7 +67,7 @@ final class WeChatTopicListCell: UITableViewCell {
 
     private let separator: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor.separator.withAlphaComponent(0.35)
+        view.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -82,7 +81,6 @@ final class WeChatTopicListCell: UITableViewCell {
         return stack
     }()
 
-    /// Time + reply count on the trailing edge; keeps title column as wide as possible.
     private let metaColumn: UIStackView = {
         let stack = UIStackView()
         stack.axis = .vertical
@@ -180,7 +178,7 @@ final class WeChatTopicListCell: UITableViewCell {
         let theme = AppSettings.shared.themeStyle
         contentView.backgroundColor = theme.topicCardBackgroundColor
         backgroundColor = theme.topicListBackgroundColor
-        separator.backgroundColor = UIColor.separator.withAlphaComponent(theme == .weChat ? 0.28 : 0.35)
+        separator.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
 
         let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
         let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
@@ -202,7 +200,6 @@ final class WeChatTopicListCell: UITableViewCell {
         renderedTitle = plain
         applyTitle(plain)
 
-        // Subtitle: category · first tag · or excerpt snippet
         var parts: [String] = []
         if let categoryName, !categoryName.isEmpty {
             parts.append(categoryName)
@@ -227,7 +224,6 @@ final class WeChatTopicListCell: UITableViewCell {
         }
 
         currentAvatarURL = avatarURL
-        // Slightly rounded square like WeChat session list
         avatarImageView.layer.cornerRadius = 6
         AvatarImageLoader.setImage(
             on: avatarImageView,

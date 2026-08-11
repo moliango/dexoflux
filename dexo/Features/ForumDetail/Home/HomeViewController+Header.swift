@@ -136,24 +136,54 @@ extension HomeViewController {
             tableView.estimatedRowHeight = AppSettings.shared.xiaohongshuCardsStaggered
                 ? XiaohongshuTopicGridCell.staggeredEstimatedHeight
                 : XiaohongshuTopicGridCell.estimatedHeight
-        } else if usesWeChatListLayout {
+        } else if homeListLayoutKind == .telegram {
+            tableView.estimatedRowHeight = TelegramTopicListCell.estimatedHeight
+        } else if homeListLayoutKind == .weChat {
             tableView.estimatedRowHeight = WeChatTopicListCell.estimatedHeight
         } else {
             tableView.estimatedRowHeight = TopicCell.estimatedHeight
         }
         headerContainer.backgroundColor = pageBackground
         if var config = searchButton.configuration {
-            config.background.backgroundColor = themeStyle.topicChipBackgroundColor
-                ?? .secondarySystemGroupedBackground
+            if themeStyle == .telegram {
+                // Telegram search capsule: light gray pill on white list.
+                config.background.backgroundColor = UIColor { trait in
+                    trait.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.14, green: 0.17, blue: 0.20, alpha: 1)
+                        : UIColor(red: 0.94, green: 0.95, blue: 0.96, alpha: 1)
+                }
+                config.baseForegroundColor = .secondaryLabel
+                config.cornerStyle = .capsule
+            } else {
+                config.background.backgroundColor = themeStyle.topicChipBackgroundColor
+                    ?? .secondarySystemGroupedBackground
+            }
             searchButton.configuration = config
         }
-        floatingActionButton.backgroundColor = themeStyle.accentColor
-        floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
+        if themeStyle == .telegram {
+            // Official Telegram compose FAB: white disc + blue pencil, soft black shadow.
+            floatingActionButton.backgroundColor = UIColor { trait in
+                trait.userInterfaceStyle == .dark
+                    ? UIColor(red: 0.14, green: 0.17, blue: 0.21, alpha: 1)
+                    : .white
+            }
+            floatingActionButton.tintColor = themeStyle.accentColor
+            floatingActionButton.layer.shadowColor = UIColor.black.cgColor
+            floatingActionButton.layer.shadowOpacity = 0.18
+            floatingActionButton.layer.shadowRadius = 8
+            floatingActionButton.layer.shadowOffset = CGSize(width: 0, height: 3)
+        } else {
+            floatingActionButton.backgroundColor = themeStyle.accentColor
+            floatingActionButton.tintColor = .white
+            floatingActionButton.layer.shadowColor = themeStyle.accentColor.cgColor
+            floatingActionButton.layer.shadowOpacity = 0.22
+            floatingActionButton.layer.shadowRadius = 10
+            floatingActionButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        }
         createMenuContainer.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
         configureCreateMenuButton(createTopicMenuButton, accentColor: themeStyle.accentColor)
         configureCreateMenuButton(draftsMenuButton, accentColor: themeStyle.accentColor)
-        incomingTopicsButton.applyThemeStyle()
-        incomingTopicsInlineButton.applyThemeStyle()
+        applyIncomingTopicsBannerLayout()
         loadingSkeletonView.applyThemeStyle()
         loadingSkeletonTopConstraint?.constant = tableTopSpacing
         emptyStateView.applyThemeStyle()

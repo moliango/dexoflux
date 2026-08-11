@@ -4,6 +4,187 @@ import UIKit
 
 // MARK: - IncomingTopics
 extension HomeViewController {
+    /// Host height used for floating inset + inline table header.
+    var incomingTopicsBannerHostHeight: CGFloat {
+        switch AppSettings.shared.themeStyle {
+        case .telegram, .weChat:
+            return Self.incomingTopicsBannerHeightChat
+        default:
+            return Self.incomingTopicsBannerHeight
+        }
+    }
+
+    func installIncomingTopicsBannerLayoutConstraints() {
+        let headerHeight = incomingTopicsHeaderView.heightAnchor.constraint(
+            equalToConstant: Self.incomingTopicsBannerHeight
+        )
+        let buttonHeight = incomingTopicsButton.heightAnchor.constraint(equalToConstant: 52)
+        let buttonLeading = incomingTopicsButton.leadingAnchor.constraint(
+            equalTo: incomingTopicsHeaderView.leadingAnchor,
+            constant: 18
+        )
+        let buttonTrailing = incomingTopicsButton.trailingAnchor.constraint(
+            equalTo: incomingTopicsHeaderView.trailingAnchor,
+            constant: -18
+        )
+        let buttonCenterX = incomingTopicsButton.centerXAnchor.constraint(
+            equalTo: incomingTopicsHeaderView.centerXAnchor
+        )
+        let buttonMaxWidth = incomingTopicsButton.widthAnchor.constraint(
+            lessThanOrEqualTo: incomingTopicsHeaderView.widthAnchor,
+            constant: -48
+        )
+        buttonCenterX.isActive = false
+        buttonMaxWidth.isActive = false
+
+        let inlineHeight = incomingTopicsInlineButton.heightAnchor.constraint(equalToConstant: 52)
+        let inlineLeading = incomingTopicsInlineButton.leadingAnchor.constraint(
+            equalTo: incomingTopicsInlineHeaderView.leadingAnchor,
+            constant: 18
+        )
+        let inlineTrailing = incomingTopicsInlineButton.trailingAnchor.constraint(
+            equalTo: incomingTopicsInlineHeaderView.trailingAnchor,
+            constant: -18
+        )
+        let inlineCenterX = incomingTopicsInlineButton.centerXAnchor.constraint(
+            equalTo: incomingTopicsInlineHeaderView.centerXAnchor
+        )
+        let inlineMaxWidth = incomingTopicsInlineButton.widthAnchor.constraint(
+            lessThanOrEqualTo: incomingTopicsInlineHeaderView.widthAnchor,
+            constant: -48
+        )
+        inlineCenterX.isActive = false
+        inlineMaxWidth.isActive = false
+
+        incomingTopicsHeaderHeightConstraint = headerHeight
+        incomingTopicsButtonHeightConstraint = buttonHeight
+        incomingTopicsButtonLeadingConstraint = buttonLeading
+        incomingTopicsButtonTrailingConstraint = buttonTrailing
+        incomingTopicsButtonCenterXConstraint = buttonCenterX
+        incomingTopicsButtonMaxWidthConstraint = buttonMaxWidth
+        incomingTopicsInlineButtonHeightConstraint = inlineHeight
+        incomingTopicsInlineButtonLeadingConstraint = inlineLeading
+        incomingTopicsInlineButtonTrailingConstraint = inlineTrailing
+        incomingTopicsInlineButtonCenterXConstraint = inlineCenterX
+        incomingTopicsInlineButtonMaxWidthConstraint = inlineMaxWidth
+
+        NSLayoutConstraint.activate([
+            headerHeight,
+            buttonHeight, buttonLeading, buttonTrailing,
+            inlineHeight, inlineLeading, inlineTrailing,
+        ])
+    }
+
+    /// Telegram: centered blue pill. WeChat: list-edge flat bar. Default: wide card.
+    func applyIncomingTopicsBannerLayout() {
+        let theme = AppSettings.shared.themeStyle
+        let hostHeight = incomingTopicsBannerHostHeight
+
+        incomingTopicsHeaderHeightConstraint?.constant = hostHeight
+        incomingTopicsInlineHeaderView.frame.size.height = isIncomingTopicsInlineBannerVisible
+            ? hostHeight
+            : incomingTopicsInlineHeaderView.frame.height
+
+        switch theme {
+        case .telegram:
+            // Compact centered capsule — width from intrinsicContentSize.
+            incomingTopicsButtonHeightConstraint?.constant = 40
+            incomingTopicsInlineButtonHeightConstraint?.constant = 40
+            incomingTopicsButtonLeadingConstraint?.isActive = false
+            incomingTopicsButtonTrailingConstraint?.isActive = false
+            incomingTopicsButtonCenterXConstraint?.isActive = true
+            incomingTopicsButtonMaxWidthConstraint?.constant = -64
+            incomingTopicsButtonMaxWidthConstraint?.isActive = true
+            ensureTelegramBannerWidthConstraints()
+
+            incomingTopicsInlineButtonLeadingConstraint?.isActive = false
+            incomingTopicsInlineButtonTrailingConstraint?.isActive = false
+            incomingTopicsInlineButtonCenterXConstraint?.isActive = true
+            incomingTopicsInlineButtonMaxWidthConstraint?.constant = -64
+            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = true
+            ensureTelegramInlineBannerWidthConstraints()
+
+        case .weChat:
+            // Match WeChat list side inset (16) — flat tip bar.
+            incomingTopicsButtonHeightConstraint?.constant = 44
+            incomingTopicsInlineButtonHeightConstraint?.constant = 44
+            tearDownTelegramBannerWidthConstraints()
+            incomingTopicsButtonCenterXConstraint?.isActive = false
+            incomingTopicsButtonMaxWidthConstraint?.isActive = false
+            incomingTopicsButtonLeadingConstraint?.constant = 16
+            incomingTopicsButtonTrailingConstraint?.constant = -16
+            incomingTopicsButtonLeadingConstraint?.isActive = true
+            incomingTopicsButtonTrailingConstraint?.isActive = true
+
+            incomingTopicsInlineButtonCenterXConstraint?.isActive = false
+            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = false
+            incomingTopicsInlineButtonLeadingConstraint?.constant = 16
+            incomingTopicsInlineButtonTrailingConstraint?.constant = -16
+            incomingTopicsInlineButtonLeadingConstraint?.isActive = true
+            incomingTopicsInlineButtonTrailingConstraint?.isActive = true
+
+        default:
+            incomingTopicsButtonHeightConstraint?.constant = 52
+            incomingTopicsInlineButtonHeightConstraint?.constant = 52
+            tearDownTelegramBannerWidthConstraints()
+            incomingTopicsButtonCenterXConstraint?.isActive = false
+            incomingTopicsButtonMaxWidthConstraint?.isActive = false
+            incomingTopicsButtonLeadingConstraint?.constant = 18
+            incomingTopicsButtonTrailingConstraint?.constant = -18
+            incomingTopicsButtonLeadingConstraint?.isActive = true
+            incomingTopicsButtonTrailingConstraint?.isActive = true
+
+            incomingTopicsInlineButtonCenterXConstraint?.isActive = false
+            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = false
+            incomingTopicsInlineButtonLeadingConstraint?.constant = 18
+            incomingTopicsInlineButtonTrailingConstraint?.constant = -18
+            incomingTopicsInlineButtonLeadingConstraint?.isActive = true
+            incomingTopicsInlineButtonTrailingConstraint?.isActive = true
+        }
+
+        incomingTopicsButton.applyThemeStyle()
+        incomingTopicsInlineButton.applyThemeStyle()
+        updateIncomingTopicsInlineHeaderFrame()
+        if isIncomingTopicsBannerVisible, incomingTopicsUsesTopSpace {
+            updateTableInsets()
+        }
+    }
+
+    private func ensureTelegramBannerWidthConstraints() {
+        if incomingTopicsButton.constraints.contains(where: { $0.identifier == "tgBannerMinWidth" }) {
+            return
+        }
+        let minW = incomingTopicsButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 200)
+        minW.identifier = "tgBannerMinWidth"
+        minW.priority = .defaultHigh
+        minW.isActive = true
+        // Hug content: lower horizontal compression so title defines width under max.
+        incomingTopicsButton.setContentHuggingPriority(.required, for: .horizontal)
+        incomingTopicsButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    private func ensureTelegramInlineBannerWidthConstraints() {
+        if incomingTopicsInlineButton.constraints.contains(where: { $0.identifier == "tgInlineBannerMinWidth" }) {
+            return
+        }
+        let minW = incomingTopicsInlineButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 200)
+        minW.identifier = "tgInlineBannerMinWidth"
+        minW.priority = .defaultHigh
+        minW.isActive = true
+        incomingTopicsInlineButton.setContentHuggingPriority(.required, for: .horizontal)
+        incomingTopicsInlineButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    private func tearDownTelegramBannerWidthConstraints() {
+        for button in [incomingTopicsButton, incomingTopicsInlineButton] {
+            button.constraints
+                .filter { $0.identifier == "tgBannerMinWidth" || $0.identifier == "tgInlineBannerMinWidth" }
+                .forEach { $0.isActive = false }
+            button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            button.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        }
+    }
+
     func updateCategoryButton() {
         let selected = viewModel.selectedCategory()
         let title = viewModel.categoryDisplayName(for: selected) ?? String(localized: "home.filter.categories")
@@ -145,7 +326,9 @@ extension HomeViewController {
 
     func updateIncomingTopicsInlineHeaderFrame() {
         let headerView = isIncomingTopicsInlineBannerVisible ? incomingTopicsInlineHeaderView : emptyTableHeaderView
-        let height = isIncomingTopicsInlineBannerVisible ? Self.incomingTopicsBannerHeight : CGFloat.leastNormalMagnitude
+        let height = isIncomingTopicsInlineBannerVisible
+            ? incomingTopicsBannerHostHeight
+            : CGFloat.leastNormalMagnitude
         let nextFrame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: height)
         let needsFrameUpdate = headerView.frame.size != nextFrame.size
         if needsFrameUpdate {
@@ -164,7 +347,7 @@ extension HomeViewController {
 
     func updateTableInsets() {
         let incomingTopicsTopSpace = isIncomingTopicsBannerVisible && incomingTopicsUsesTopSpace
-            ? Self.incomingTopicsBannerHeight
+            ? incomingTopicsBannerHostHeight
             : 0
         // Offline strip sits under the header; include its laid-out height.
         let offlineHeight = offlineIndicatorView.isHidden ? 0 : offlineIndicatorView.bounds.height

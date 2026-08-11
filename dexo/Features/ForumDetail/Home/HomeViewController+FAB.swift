@@ -78,18 +78,20 @@ extension HomeViewController {
     func updateFloatingActionButton(animated: Bool) {
         let symbolName: String
         let accessibilityLabel: String
+        let isTelegram = AppSettings.shared.themeStyle == .telegram
         switch (fabMode, isCreateMenuVisible) {
         case (.create, true):
             symbolName = "xmark"
             accessibilityLabel = String(localized: "common.close", defaultValue: "关闭")
         case (.create, false):
-            symbolName = "plus"
+            // Telegram uses pencil compose; other themes keep plus.
+            symbolName = isTelegram ? "square.and.pencil" : "plus"
             accessibilityLabel = String(localized: "new_topic.title")
         case (.refresh, _):
             symbolName = "arrow.clockwise"
             accessibilityLabel = String(localized: "action.refresh")
         }
-        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        let config = UIImage.SymbolConfiguration(pointSize: isTelegram ? 20 : 24, weight: .semibold)
         let image = UIImage(systemName: symbolName, withConfiguration: config)
         let updates = {
             self.floatingActionButton.setImage(image, for: .normal)

@@ -178,9 +178,10 @@ final class ForumTabBarController: UITabBarController {
         let settings = AppSettings.shared
         let themeStyle = settings.themeStyle
         view.backgroundColor = themeStyle.topicListBackgroundColor
+
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        // WeChat: solid gray chrome; other themed styles use content surface; default uses system.
+
         if themeStyle.prefersOpaqueChrome {
             appearance.backgroundColor = themeStyle.chromeBackgroundColor
             appearance.shadowColor = UIColor.separator.withAlphaComponent(0.45)
@@ -191,6 +192,7 @@ final class ForumTabBarController: UITabBarController {
             appearance.backgroundColor = themeStyle.contentBackgroundColor
             appearance.shadowColor = UIColor.separator.withAlphaComponent(0.35)
         }
+
         let normalTitleAttributes: [NSAttributedString.Key: Any] = [
             .font: settings.tabBarItemFont(selected: false),
             .foregroundColor: UIColor.secondaryLabel,
@@ -209,10 +211,21 @@ final class ForumTabBarController: UITabBarController {
             itemAppearance.normal.iconColor = UIColor.secondaryLabel.withAlphaComponent(0.78)
             itemAppearance.selected.iconColor = themeStyle.accentColor
         }
-        tabBar.standardAppearance = appearance
-        tabBar.scrollEdgeAppearance = appearance
-        tabBar.backgroundColor = appearance.backgroundColor
-        tabBar.barTintColor = appearance.backgroundColor
+
+        // Spring animation for smooth global theme switch
+        let newColor = appearance.backgroundColor
+        let animator = DexoMotion.propertyAnimator(
+            duration: DexoMotion.standard,
+            timingParameters: DexoMotion.softSpring
+        )
+        animator.addAnimations {
+            self.tabBar.standardAppearance = appearance
+            self.tabBar.scrollEdgeAppearance = appearance
+            self.tabBar.backgroundColor = newColor
+            self.tabBar.barTintColor = newColor
+        }
+        animator.startAnimation()
+
         tabBar.tintColor = themeStyle.accentColor
         tabBar.unselectedItemTintColor = UIColor.secondaryLabel.withAlphaComponent(0.78)
         tabBar.isOpaque = true
