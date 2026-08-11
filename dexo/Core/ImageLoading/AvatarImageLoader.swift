@@ -38,9 +38,21 @@ enum AvatarImageLoader {
         var stores = 0
     }
 
-    /// Shared SD load options: prefer sync cache hits so history/bookmarks paint
-    /// immediately from home-warmed entries without a network round-trip.
+    /// Shared SD load options for avatars / list chrome.
+    /// No `.retryFailed` here: a CF challenge HTML response must not be hammered by every
+    /// avatar cell. Topic body images use `contentOptions` / user tap uses `forceRetryOptions`.
     static let options: SDWebImageOptions = [
+        .continueInBackground,
+        .scaleDownLargeImages,
+        .highPriority,
+        .queryMemoryDataSync,
+        .queryDiskDataSync,
+    ]
+
+    /// Topic cooked images (visible content). Allow one automatic retry after a transient
+    /// failure so a single CF blip / timeout does not leave a permanent blank tile for the
+    /// rest of the process (killing the app was the only previous recovery).
+    static let contentOptions: SDWebImageOptions = [
         .retryFailed,
         .continueInBackground,
         .scaleDownLargeImages,
@@ -48,6 +60,39 @@ enum AvatarImageLoader {
         .queryMemoryDataSync,
         .queryDiskDataSync,
     ]
+
+    /// Explicit user tap-to-retry: clear failed-URL blacklist + skip stale cache entry.
+    static let forceRetryOptions: SDWebImageOptions = [
+        .retryFailed,
+        .refreshCached,
+        .continueInBackground,
+        .scaleDownLargeImages,
+        .highPriority,
+    ]
+
+    /// Prefetch options: cache-first, lower priority so visible cells win the downloader slots.
+    static let prefetchOptions: SDWebImageOptions = [
+        .continueInBackground,
+        .scaleDownLargeImages,
+        .lowPriority,
+        .queryMemoryDataSync,
+        .queryDiskDataSync,
+    ]
+
+    /// Drop SDWebImage's process-local failed-URL entry so a later load can try again.
+    static func clearFailedLoad(for url: URL) {
+        SDWebImageManager.shared.removeFailedURL(url)
+    }
+
+    /// Clear failed-URL entries whose host matches this forum (after CF resume / re-login).
+    static func clearFailedLoads(matchingBaseURL baseURL: String) {
+        guard let host = URL(string: baseURL)?.host?.lowercased(), !host.isEmpty else { return }
+        // SDWebImage only exposes remove-one / remove-all; wipe all failed URLs after
+        // clearance recovery so every host can recover without tracking the full set.
+        _ = host
+        SDWebImageManager.shared.removeAllFailedURLs()
+        DohDebugLog.record("cleared SD failed image URLs after recovery base=\(baseURL)", subsystem: "Avatar")
+    }
 
     static func configureGlobalImageLoading() {
         // Ensure Caches is a real directory and SD disk root is pinned before shared init.
@@ -203,14 +248,36 @@ enum AvatarImageLoader {
     }
 
     static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
-        // Skip main-domain network prefetch while CF gate is paused.
-        let networkURLs = urls.filter {
+        // 1) Already in memory/disk → zero network, zero CF risk.
+        // 2) CF gate / missing clearance on main host → cache-only.
+        // 3) Cap main-domain prefetch so avatar storms don't trip the shield.
+        let uncached = urls.filter { !isImageCached(for: $0) }
+        let networkURLs = uncached.filter {
             !CloudflareImageGate.shouldBlockNetworkLoad(url: $0, cloudflareBaseURL: cloudflareBaseURL)
+                && !CloudflareImageGate.shouldSkipPrefetchWithoutClearance(
+                    url: $0,
+                    cloudflareBaseURL: cloudflareBaseURL
+                )
         }
         let uniqueURLs = uniqueUnprefetchedURLs(networkURLs)
         guard !uniqueURLs.isEmpty else { return }
 
-        let grouped = Dictionary(grouping: uniqueURLs) {
+        let mainDomain = uniqueURLs.filter {
+            CloudflareImageGate.isMainDomain($0, cloudflareBaseURL: cloudflareBaseURL)
+                || isForumCDN($0)
+        }
+        let external = uniqueURLs.filter { url in
+            !CloudflareImageGate.isMainDomain(url, cloudflareBaseURL: cloudflareBaseURL) && !isForumCDN(url)
+        }
+
+        // Main host + forum CDN share CF risk — keep prefetch burst small.
+        let mainCap = max(AppSettings.shared.avatarLoadingProfile.maxConcurrentPrefetchCount * 3, 4)
+        let externalCap = 12
+        let cappedMain = Array(mainDomain.prefix(mainCap))
+        let cappedExternal = Array(external.prefix(externalCap))
+        let batch = cappedMain + cappedExternal
+
+        let grouped = Dictionary(grouping: batch) {
             requestHeaderSignature(for: $0, cloudflareBaseURL: cloudflareBaseURL)
         }
         for urls in grouped.values {
@@ -226,12 +293,37 @@ enum AvatarImageLoader {
 
             SDWebImagePrefetcher.shared.prefetchURLs(
                 urls,
-                options: options,
+                options: prefetchOptions,
                 context: requestContext,
                 progress: nil,
                 completed: nil
             )
         }
+    }
+
+    /// True when process memory or SD disk already has this URL (no network needed).
+    static func isImageCached(for url: URL) -> Bool {
+        if inMemoryCache.object(forKey: url as NSURL) != nil {
+            return true
+        }
+        let key = url.absoluteString
+        if SDImageCache.shared.diskImageDataExists(withKey: key) {
+            return true
+        }
+        // Some loads store under SD's default key variants — last resort decode check.
+        return SDImageCache.shared.imageFromCache(forKey: key) != nil
+    }
+
+    /// Write a successful network decode into the process cache so later cells
+    /// and CF-gated loads paint without another disk hit.
+    static func storeProcessCache(_ image: UIImage, for url: URL) {
+        inMemoryCache.setObject(image, forKey: url as NSURL, cost: image.avatarCacheCost)
+    }
+
+    /// linux.do upload CDN — treat like main host for prefetch caps / cookie path.
+    static func isForumCDN(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host.contains("ldstatic.com") || host.contains("linuxdo-uploads")
     }
 
     static func credentialsDidChange(for baseURL: String, retrying retryURLs: [URL] = []) {
@@ -244,6 +336,10 @@ enum AvatarImageLoader {
             return urlHost != host && !urlHost.hasSuffix(".\(host)")
         }
         prefetchLock.unlock()
+        // New cookies / CF clearance: drop SD failed-URL blacklist so content can recover
+        // without force-quitting the app.
+        clearFailedLoads(matchingBaseURL: baseURL)
+        CloudflareImageGate.resume(baseURL: baseURL)
     }
 
     private static func uniqueUnprefetchedURLs(_ urls: [URL]) -> [URL] {
@@ -304,6 +400,11 @@ enum AvatarImageLoader {
 
     /// Memory first, then SD disk — used for fast path and CF-gated cache-only loads.
     static func cachedImageIfAvailable(for url: URL) -> UIImage? {
+        cachedImage(for: url)
+    }
+
+    /// Decode from cache without network (nil if miss).
+    static func imageFromLocalCache(for url: URL) -> UIImage? {
         cachedImage(for: url)
     }
 
@@ -459,8 +560,11 @@ enum AvatarImageLoader {
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         }
 
-        if isMainDomain(url, baseURL: cloudflareBaseURL) {
-            let cookieHeader = WebCookieStore.shared.cookieHeader(for: url)
+        // Main host + forum upload CDN both need the forum session/CF cookies.
+        // Cookie jar is keyed by forum origin — never by ldstatic.com itself.
+        if needsForumCookies(url, baseURL: cloudflareBaseURL) {
+            let cookieURL = forumCookieURL(for: url, baseURL: cloudflareBaseURL) ?? url
+            let cookieHeader = WebCookieStore.shared.cookieHeader(for: cookieURL)
             if !cookieHeader.isEmpty {
                 headers["Cookie"] = cookieHeader
             }
@@ -491,9 +595,30 @@ enum AvatarImageLoader {
         return false
     }
 
+    /// Forum origin or upload CDN — both share CF clearance from the forum jar.
+    static func needsForumCookies(_ url: URL, baseURL: String?) -> Bool {
+        isMainDomain(url, baseURL: baseURL) || isForumCDN(url)
+    }
+
+    /// Prefer the forum base URL when asking the cookie store (CDN host has no jar entries).
+    static func forumCookieURL(for url: URL, baseURL: String?) -> URL? {
+        if let baseURL, let base = URL(string: baseURL), base.host != nil {
+            return base
+        }
+        if isMainDomain(url, baseURL: nil) {
+            return url
+        }
+        // CDN without explicit base — fall back to linux.do origin.
+        if isForumCDN(url) {
+            return URL(string: "https://linux.do")
+        }
+        return url
+    }
+
     private static func refererHeader(for url: URL, baseURL: String?) -> String? {
-        // Always attach forum origin as Referer for non-main hosts (image beds / badge APIs).
-        guard !isMainDomain(url, baseURL: baseURL) else { return nil }
+        // Main host: browser-like same-origin requests omit Referer.
+        // CDN + external beds: send forum origin (required by many upload CDNs / image beds).
+        if isMainDomain(url, baseURL: baseURL) { return nil }
         guard let baseURL, let base = URL(string: baseURL), base.scheme != nil, base.host != nil else {
             return "https://linux.do/"
         }
@@ -511,22 +636,34 @@ enum ForumImageLoader {
     static func loadImage(
         with url: URL,
         cloudflareBaseURL: String? = nil,
+        forceRetry: Bool = false,
         completed: @escaping (UIImage?) -> Void
     ) -> SDWebImageOperation? {
-        if let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
+        if !forceRetry, let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
             completed(cached)
             return nil
         }
-        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
+        if forceRetry {
+            AvatarImageLoader.clearFailedLoad(for: url)
+        }
+        // User tap may proceed even while CF gate is paused — explicit intent.
+        if !forceRetry,
+           CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
             completed(nil)
             return nil
         }
+        let options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         return SDWebImageManager.shared.loadImage(
             with: url,
-            options: AvatarImageLoader.options,
+            options: options,
             context: AvatarImageLoader.context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil
-        ) { image, _, _, _, _, _ in
+        ) { image, _, _, _, _, finishedURL in
+            if let image, let finishedURL {
+                AvatarImageLoader.storeProcessCache(image, for: finishedURL)
+            } else if let image {
+                AvatarImageLoader.storeProcessCache(image, for: url)
+            }
             completed(image)
         }
     }
@@ -536,6 +673,7 @@ enum ForumImageLoader {
         url: URL?,
         placeholder: UIImage? = nil,
         cloudflareBaseURL: String? = nil,
+        forceRetry: Bool = false,
         completed: SDExternalCompletionBlock? = nil
     ) {
         guard let url else {
@@ -544,29 +682,43 @@ enum ForumImageLoader {
             return
         }
 
-        if let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
+        if !forceRetry, let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
             imageView.sd_cancelCurrentImageLoad()
             imageView.image = cached
             completed?(cached, nil, .none, url)
             return
         }
 
-        if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
+        if forceRetry {
+            imageView.sd_cancelCurrentImageLoad()
+            AvatarImageLoader.clearFailedLoad(for: url)
+        }
+
+        if !forceRetry,
+           CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
             imageView.sd_cancelCurrentImageLoad()
             if imageView.image == nil {
                 imageView.image = placeholder
             }
+            // Nil completion paints the tap-to-retry chrome; do NOT leave the URL
+            // permanently blacklisted — we never started an SD load.
             completed?(nil, nil, .none, url)
             return
         }
 
+        let options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         imageView.sd_setImage(
             with: url,
             placeholderImage: placeholder,
-            options: AvatarImageLoader.options,
+            options: options,
             context: AvatarImageLoader.context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil,
-            completed: completed
+            completed: { image, error, cacheType, imageURL in
+                if let image, let imageURL {
+                    AvatarImageLoader.storeProcessCache(image, for: imageURL)
+                }
+                completed?(image, error, cacheType, imageURL)
+            }
         )
     }
 
@@ -598,9 +750,9 @@ enum CloudflareImageGate {
     private static var lastPostedAtByBase: [String: Date] = [:]
 
     /// Don't re-post challenge from images more often than this.
-    private static let imagePostCooldown: TimeInterval = 12
+    private static let imagePostCooldown: TimeInterval = 20
     /// Safety auto-resume if verification-completed never arrives.
-    private static let defaultPauseDuration: TimeInterval = 45
+    private static let defaultPauseDuration: TimeInterval = 60
 
     static func normalizedKey(_ baseURL: String) -> String {
         CloudflareVerificationPolicy.normalizedBaseKey(baseURL)
@@ -624,6 +776,11 @@ enum CloudflareImageGate {
         pause(baseURL: baseURL.absoluteString, duration: duration)
     }
 
+    /// Posted on the main queue when a forum base leaves the image-download pause.
+    /// Topic image cells observe this to auto-retry blank / failed tiles.
+    static let didResumeNotification = Notification.Name("CloudflareImageGate.didResume")
+    static let resumedBaseURLKey = "baseURL"
+
     /// Clear pause so uncached avatars/uploads can hit the network again.
     static func resume(baseURL: String) {
         let key = normalizedKey(baseURL)
@@ -633,6 +790,15 @@ enum CloudflareImageGate {
         lock.unlock()
         if hadPause {
             DohDebugLog.record("image gate resume base=\(key)", subsystem: "CF")
+            // Failed URL blacklist often holds CF-challenge misses from the pause window.
+            AvatarImageLoader.clearFailedLoads(matchingBaseURL: baseURL)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: didResumeNotification,
+                    object: nil,
+                    userInfo: [resumedBaseURLKey: baseURL]
+                )
+            }
         }
     }
 
@@ -643,12 +809,30 @@ enum CloudflareImageGate {
     static func isPaused(baseURL: String, now: Date = Date()) -> Bool {
         let key = normalizedKey(baseURL)
         lock.lock()
-        defer { lock.unlock() }
-        guard let until = pausedUntilByBase[key] else { return false }
-        if now < until {
-            return true
+        let expiredBase: String?
+        if let until = pausedUntilByBase[key] {
+            if now < until {
+                lock.unlock()
+                return true
+            }
+            pausedUntilByBase[key] = nil
+            expiredBase = key
+        } else {
+            expiredBase = nil
         }
-        pausedUntilByBase[key] = nil
+        lock.unlock()
+        // Auto-expiry must mirror explicit resume: clear failed URLs + wake blank tiles.
+        if let expiredBase {
+            DohDebugLog.record("image gate auto-expired base=\(expiredBase)", subsystem: "CF")
+            AvatarImageLoader.clearFailedLoads(matchingBaseURL: baseURL)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: didResumeNotification,
+                    object: nil,
+                    userInfo: [resumedBaseURLKey: baseURL]
+                )
+            }
+        }
         return false
     }
 
@@ -656,9 +840,13 @@ enum CloudflareImageGate {
         isPaused(baseURL: baseURL.absoluteString, now: now)
     }
 
-    /// True when `url` is a main-forum host asset and downloads for that forum are paused.
+    /// True when network load would be wasteful or likely to trip CF.
+    /// - Main host while gate paused
+    /// - Forum CDN while matching forum gate paused
     static func shouldBlockNetworkLoad(url: URL, cloudflareBaseURL: String?, now: Date = Date()) -> Bool {
-        guard isMainDomain(url, cloudflareBaseURL: cloudflareBaseURL) else { return false }
+        let main = isMainDomain(url, cloudflareBaseURL: cloudflareBaseURL)
+        let cdn = AvatarImageLoader.isForumCDN(url)
+        guard main || cdn else { return false }
 
         if let cloudflareBaseURL, isPaused(baseURL: cloudflareBaseURL, now: now) {
             return true
@@ -669,8 +857,32 @@ enum CloudflareImageGate {
         if let host = url.host?.lowercased(), !host.isEmpty {
             if isPaused(baseURL: "https://\(host)", now: now) { return true }
             if isPaused(baseURL: "http://\(host)", now: now) { return true }
+            // CDN pause often keys off forum base — also check linux.do family.
+            if cdn, host.contains("ldstatic") || host.contains("linuxdo") {
+                if isPaused(baseURL: "https://linux.do", now: now) { return true }
+            }
         }
         return false
+    }
+
+    /// Prefetch-only: skip speculative main-host downloads when we have no CF/session
+    /// cookie yet. Visible cells still load (user needs the image); background warm-up waits.
+    static func shouldSkipPrefetchWithoutClearance(url: URL, cloudflareBaseURL: String?) -> Bool {
+        let main = isMainDomain(url, cloudflareBaseURL: cloudflareBaseURL)
+        let cdn = AvatarImageLoader.isForumCDN(url)
+        guard main || cdn else { return false }
+        let probe: URL = {
+            if let cloudflareBaseURL, let base = URL(string: cloudflareBaseURL) { return base }
+            return originString(for: url).flatMap(URL.init(string:)) ?? url
+        }()
+        if WebCookieStore.shared.hasCookie(named: "cf_clearance", for: probe) {
+            return false
+        }
+        if WebCookieStore.shared.hasDiscourseWebSessionCookie(for: probe) {
+            return false
+        }
+        let host = (probe.host ?? url.host)?.lowercased() ?? ""
+        return host == "linux.do" || host.hasSuffix(".linux.do")
     }
 
     /// Image response hit a CF challenge: pause downloads and notify recovery at most once per cooldown.

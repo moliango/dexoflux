@@ -42,7 +42,7 @@ enum DexoFeedback {
         }
     }
 
-    // MARK: - Loading HUD
+    // MARK: - Loading HUD (improved with rotating spinner)
 
     @MainActor
     static func presentLoadingHUD(_ message: String?, on host: UIViewController) {

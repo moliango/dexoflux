@@ -30,6 +30,11 @@ final class TappableImageContainer: UIView {
     private let loadContainerWidth: CGFloat
     private let loadHasOriginalSize: Bool
     private var didFailLoad = false
+    /// True only after a real bitmap was painted (not the retry glyph).
+    private var hasDisplayedImage = false
+    private var loadGeneration = 0
+    private var loadTimeoutWorkItem: DispatchWorkItem?
+    private var gateResumeObserver: NSObjectProtocol?
 
     init(
         url: URL,
@@ -50,6 +55,27 @@ final class TappableImageContainer: UIView {
         translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(imageView)
+
+        gateResumeObserver = NotificationCenter.default.addObserver(
+            forName: CloudflareImageGate.didResumeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, self.didFailLoad else { return }
+            if let base = note.userInfo?[CloudflareImageGate.resumedBaseURLKey] as? String,
+               let referer = self.refererBaseURL {
+                let a = CloudflareImageGate.normalizedKey(base)
+                let b = CloudflareImageGate.normalizedKey(referer)
+                // Only auto-retry when the resumed forum matches this image's forum.
+                guard a == b || a.contains(b) || b.contains(a) else { return }
+            }
+            self.loadImage(
+                url: self.sourceURL,
+                containerWidth: self.loadContainerWidth,
+                hasOriginalSize: self.loadHasOriginalSize,
+                forceRetry: true
+            )
+        }
 
         let displayWidth: CGFloat
         let displayHeight: CGFloat
@@ -126,107 +152,138 @@ final class TappableImageContainer: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func loadImage(url: URL, containerWidth: CGFloat, hasOriginalSize: Bool) {
+    deinit {
+        loadTimeoutWorkItem?.cancel()
+        if let gateResumeObserver {
+            NotificationCenter.default.removeObserver(gateResumeObserver)
+        }
+    }
+
+    private func loadImage(
+        url: URL,
+        containerWidth: CGFloat,
+        hasOriginalSize: Bool,
+        forceRetry: Bool = false
+    ) {
+        loadTimeoutWorkItem?.cancel()
+        loadGeneration += 1
+        let generation = loadGeneration
+
         didFailLoad = false
+        hasDisplayedImage = false
         imageView.backgroundColor = .secondarySystemFill
         imageView.contentMode = .scaleAspectFill
         imageView.tintColor = nil
+        imageView.sd_cancelCurrentImageLoad()
         imageView.image = nil
 
-        let apply: (UIImage?) -> Void = { [weak self] image in
-            guard let self else { return }
-            guard let image else {
-                self.didFailLoad = true
-                self.imageView.backgroundColor = .tertiarySystemFill
-                self.imageView.contentMode = .center
-                let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
-                self.imageView.image = UIImage(
-                    systemName: "arrow.clockwise.circle",
-                    withConfiguration: config
-                )
-                self.imageView.tintColor = .tertiaryLabel
-                self.accessibilityLabel = String(
-                    localized: "topic.image.load_failed",
-                    defaultValue: "图片加载失败，点按重试"
-                )
-                // Tiny Discourse thumbs (e.g. 690x48) leave an untappable sliver — give room to retry.
-                if self.imageHeightConstraint.constant < 72 {
-                    self.imageHeightConstraint.constant = 72
-                    self.invalidateIntrinsicContentSize()
-                    self.superview?.setNeedsLayout()
-                    self.notifyPostCellHeightChanged()
-                }
-                return
-            }
-            self.didFailLoad = false
-            self.accessibilityLabel = nil
-            self.imageView.backgroundColor = .clear
-            // Fit full bitmap in the bubble — avoid scaleAspectFill cropping a wide
-            // screenshot into a thin strip when Discourse attrs lie (e.g. 690x48).
-            self.imageView.contentMode = .scaleAspectFit
-            self.imageView.tintColor = nil
-            self.imageView.image = image
-            if image.size.width > 1, image.size.height > 1 {
-                let targetWidth = max(
-                    self.imageWidthConstraint.isActive ? self.imageWidthConstraint.constant : containerWidth,
-                    1
-                )
-                let newHeight = image.size.height * (targetWidth / image.size.width)
-                let delta = abs(newHeight - self.imageHeightConstraint.constant)
-                let relative = delta / max(self.imageHeightConstraint.constant, 1)
-                // Missing attrs, or attrs off by >12% / 8pt → trust the real pixels.
-                if !hasOriginalSize || (delta > 8 && relative > 0.12) {
-                    self.imageHeightConstraint.constant = max(newHeight, 24)
-                    self.invalidateIntrinsicContentSize()
-                    self.superview?.setNeedsLayout()
-                    self.notifyPostCellHeightChanged()
-                }
-            }
+        // If nothing arrives in time, flip to tap-to-retry instead of an endless gray tile
+        // (which made taps open the gallery / do nothing).
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.loadGeneration == generation, !self.hasDisplayedImage else { return }
+            self.applyLoadResult(
+                nil,
+                generation: generation,
+                containerWidth: containerWidth,
+                hasOriginalSize: hasOriginalSize
+            )
         }
+        loadTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 18, execute: timeout)
 
-        // Prefer FluxDo-style URLSession fetch for third-party hosts (badge / image beds).
-        // Keep SDWebImage for forum hosts (secure-uploads + CF cookie semantics).
-        if shouldUseExternalFetcher(for: url) {
-            ExternalImageFetcher.fetch(url: url, refererBaseURL: refererBaseURL, completion: apply)
+        // Topic body images always use ExternalImageFetcher:
+        // - attaches forum cookies for main host + upload CDN
+        // - never hits SDWebImage's process-local failed-URL blacklist
+        // - forceRetry bypasses CF gate + URLCache + stuck inflight coalescing
+        ExternalImageFetcher.fetch(
+            url: url,
+            refererBaseURL: refererBaseURL,
+            forceRetry: forceRetry
+        ) { [weak self] image in
+            self?.applyLoadResult(
+                image,
+                generation: generation,
+                containerWidth: containerWidth,
+                hasOriginalSize: hasOriginalSize
+            )
+        }
+    }
+
+    private func applyLoadResult(
+        _ image: UIImage?,
+        generation: Int,
+        containerWidth: CGFloat,
+        hasOriginalSize: Bool
+    ) {
+        guard generation == loadGeneration else { return }
+        loadTimeoutWorkItem?.cancel()
+        loadTimeoutWorkItem = nil
+
+        guard let image else {
+            didFailLoad = true
+            hasDisplayedImage = false
+            imageView.backgroundColor = .tertiarySystemFill
+            imageView.contentMode = .center
+            let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
+            imageView.image = UIImage(
+                systemName: "arrow.clockwise.circle",
+                withConfiguration: config
+            )
+            imageView.tintColor = .tertiaryLabel
+            accessibilityLabel = String(
+                localized: "topic.image.load_failed",
+                defaultValue: "图片加载失败，点按重试"
+            )
+            if imageHeightConstraint.constant < 72 {
+                imageHeightConstraint.constant = 72
+                invalidateIntrinsicContentSize()
+                superview?.setNeedsLayout()
+                notifyPostCellHeightChanged()
+            }
             return
         }
 
-        ForumImageLoader.setImage(
-            on: imageView,
-            url: url,
-            cloudflareBaseURL: refererBaseURL
-        ) { image, _, _, _ in
-            apply(image)
-        }
-    }
-
-    private func shouldUseExternalFetcher(for url: URL) -> Bool {
-        guard let host = url.host?.lowercased(), !host.isEmpty else { return true }
-        if let base = refererBaseURL,
-           let baseHost = URL(string: base)?.host?.lowercased(),
-           !baseHost.isEmpty {
-            if host == baseHost || host.hasSuffix("." + baseHost) {
-                return false
+        didFailLoad = false
+        hasDisplayedImage = true
+        accessibilityLabel = nil
+        imageView.backgroundColor = .clear
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = nil
+        imageView.image = image
+        if image.size.width > 1, image.size.height > 1 {
+            let targetWidth = max(
+                imageWidthConstraint.isActive ? imageWidthConstraint.constant : containerWidth,
+                1
+            )
+            let newHeight = image.size.height * (targetWidth / image.size.width)
+            let current = max(imageHeightConstraint.constant, 1)
+            let delta = abs(newHeight - current)
+            let relative = delta / current
+            let shouldResize: Bool
+            if hasOriginalSize {
+                shouldResize = delta > 14 && relative > 0.18
+            } else {
+                shouldResize = delta > 12 && relative > 0.10
+            }
+            if shouldResize {
+                imageHeightConstraint.constant = max(newHeight, 24)
+                invalidateIntrinsicContentSize()
+                superview?.setNeedsLayout()
+                notifyPostCellHeightChanged()
             }
         }
-        if host == "linux.do" || host.hasSuffix(".linux.do") {
-            return false
-        }
-        // Forum CDN still works better with SDWebImage cookie path when needed.
-        if host.contains("ldstatic.com") {
-            return true
-        }
-        return true
     }
 
     @objc private func imageTapped() {
-        // Failed load → tap retries instead of opening the gallery (Phase 1).
-        if didFailLoad {
+        // No successful bitmap yet (failed, loading, or timed out) → force network retry.
+        // Previously only `didFailLoad` retried; gray "still loading" tiles opened gallery.
+        if didFailLoad || !hasDisplayedImage {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             loadImage(
                 url: sourceURL,
                 containerWidth: loadContainerWidth,
-                hasOriginalSize: loadHasOriginalSize
+                hasOriginalSize: loadHasOriginalSize,
+                forceRetry: true
             )
             return
         }
@@ -236,6 +293,9 @@ final class TappableImageContainer: UIView {
     }
 
     func cancelImageLoad() {
+        loadTimeoutWorkItem?.cancel()
+        loadTimeoutWorkItem = nil
+        loadGeneration += 1
         imageView.sd_cancelCurrentImageLoad()
     }
 
@@ -262,17 +322,23 @@ final class TappableImageContainer: UIView {
 
     // MARK: - GIF Animation Control
 
+    private var animationsSuspended = false
+
     func startAnimating() {
+        animationsSuspended = false
+        imageView.autoPlayAnimatedImage = true
         imageView.startAnimating()
     }
 
     func stopAnimating() {
+        animationsSuspended = true
+        imageView.autoPlayAnimatedImage = false
         imageView.stopAnimating()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil {
+        if window != nil, !animationsSuspended {
             imageView.startAnimating()
         } else {
             imageView.stopAnimating()
