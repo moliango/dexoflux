@@ -628,11 +628,12 @@ final class PluginCenterViewController: UIViewController {
             guard let self else { return }
             let name = alert?.textFields?.first?.text ?? metadata.name
             do {
+                // Logo is optional: custom programs may be saved without an icon.
                 let programID = try self.store.addCustomProgram(
                     name: name,
                     url: metadata.sourceURL,
                     categoryID: MiniProgramCategoryID.other,
-                    icon: .system(symbolName: "globe")
+                    icon: .none
                 )
                 if let logoData,
                    let path = try? MiniProgramIconStore.shared.saveIconData(logoData, programID: programID) {

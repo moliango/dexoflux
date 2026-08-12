@@ -26,6 +26,7 @@ final class AppearanceSettingsViewController: ObservableViewController {
     private let miniProgramRow = ReadingToggleRowView()
     private let categoryDrawerSwipeRow = ReadingToggleRowView()
     private let xiaohongshuStaggeredCardsRow = ReadingToggleRowView()
+    private let chatTopicDetailRow = ReadingToggleRowView()
     private let themeTaxonomyColorsRow = ReadingToggleRowView()
     private var renderedLanguage: AppSettings.AppLanguage?
     private var renderedThemeStyle: AppSettings.ThemeStyle?
@@ -160,6 +161,20 @@ final class AppearanceSettingsViewController: ObservableViewController {
             accentColor: accentColor,
             backgroundColor: cardBackground
         )
+        chatTopicDetailRow.configure(
+            title: String(
+                localized: "settings.appearance.chat_topic_detail",
+                defaultValue: "聊天式话题详情"
+            ),
+            subtitle: String(
+                localized: "settings.appearance.chat_topic_detail.subtitle",
+                defaultValue: "开启后使用气泡会话布局；关闭则使用经典楼层详情（默认与主题配套）"
+            ),
+            symbolName: "bubble.left.and.bubble.right.fill",
+            isOn: settings.chatTopicDetailEnabled,
+            accentColor: accentColor,
+            backgroundColor: cardBackground
+        )
         themeTaxonomyColorsRow.configure(
             title: String(
                 localized: "settings.appearance.theme_taxonomy_colors",
@@ -223,6 +238,12 @@ final class AppearanceSettingsViewController: ObservableViewController {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             updateUI()
         }
+        chatTopicDetailRow.onValueChanged = { [weak self] isOn in
+            guard let self else { return }
+            settings.chatTopicDetailEnabled = isOn
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            updateUI()
+        }
         themeTaxonomyColorsRow.onValueChanged = { [weak self] isOn in
             guard let self else { return }
             settings.themeTaxonomyColorsEnabled = isOn
@@ -275,6 +296,9 @@ final class AppearanceSettingsViewController: ObservableViewController {
         styleBody.addArrangedSubview(themeTaxonomyColorsRow)
         if settings.themeStyle == .xiaohongshu {
             styleBody.addArrangedSubview(xiaohongshuStaggeredCardsRow)
+        }
+        if settings.themeStyle.usesChatTopicDetail {
+            styleBody.addArrangedSubview(chatTopicDetailRow)
         }
         contentStack.addArrangedSubview(verticalSection(
             title: String(localized: "settings.appearance.theme_colors"),

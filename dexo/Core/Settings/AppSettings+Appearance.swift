@@ -108,7 +108,8 @@ extension AppSettings {
             }
         }
 
-        /// Chat-bubble Topic Detail (WeChat / Telegram).
+        /// Theme *pairs* with chat-bubble Topic Detail (WeChat / Telegram).
+        /// Effective UI still respects `AppSettings.chatTopicDetailEnabled`.
         var usesChatTopicDetail: Bool {
             switch self {
             case .weChat, .telegram: return true
@@ -116,7 +117,7 @@ extension AppSettings {
             }
         }
 
-        /// Full-bleed session-list Home rows.
+        /// Full-bleed session-list rows (Home, notifications, history, bookmarks).
         var usesChatHomeList: Bool {
             switch self {
             case .weChat, .telegram: return true
@@ -560,6 +561,25 @@ extension AppSettings {
             defaults.set(newValue, forKey: "xiaohongshuCardsStaggered")
             notifyChanged()
         }
+    }
+
+    /// When the active theme supports chat Topic Detail (WeChat / Telegram), whether to
+    /// actually open the chat-bubble surface. Default **on** (theme-matched). Off → classic
+    /// `TopicDetailViewController`. Ignored for non-chat themes.
+    var chatTopicDetailEnabled: Bool {
+        get {
+            guard themeStyle.usesChatTopicDetail else { return false }
+            return bool(forKey: "chatTopicDetailEnabled", defaultValue: true)
+        }
+        set {
+            defaults.set(newValue, forKey: "chatTopicDetailEnabled")
+            notifyChanged()
+        }
+    }
+
+    /// Effective Topic Detail surface: theme capability ∧ user preference.
+    var prefersChatTopicDetail: Bool {
+        themeStyle.usesChatTopicDetail && chatTopicDetailEnabled
     }
 
     /// When true, category/tag chips use the active theme palettes.

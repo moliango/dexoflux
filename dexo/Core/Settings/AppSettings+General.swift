@@ -44,7 +44,9 @@ extension AppSettings {
         }
     }
 
-    func makePreferencesBackupData() throws -> Data {
+    func makePreferencesBackupData(
+        miniProgramStore: MiniProgramStore = .shared
+    ) throws -> Data {
         let file = PreferencesBackupFile(
             format: Self.preferencesBackupFormat,
             version: 1,
@@ -59,6 +61,8 @@ extension AppSettings {
                 pluginDockVerticalPosition: pluginDockVerticalPosition,
                 autoCheckForUpdates: autoCheckForUpdates,
                 xiaohongshuCardsStaggered: xiaohongshuCardsStaggered,
+                // Persist raw preference (not theme-gated effective value).
+                chatTopicDetailEnabled: bool(forKey: "chatTopicDetailEnabled", defaultValue: true),
                 themeTaxonomyColorsEnabled: themeTaxonomyColorsEnabled,
                 autoOpenLastForum: autoOpenLastForum,
                 lastOpenedForumId: lastOpenedForumId,
@@ -81,7 +85,9 @@ extension AppSettings {
                 dohCustomURL: dohCustomURL,
                 clearImageCacheOnLaunch: clearImageCacheOnLaunch,
                 avatarCacheSizeLimit: avatarCacheSizeLimit.rawValue
-            )
+            ),
+            // Custom mini-programs may omit icons; local logos are embedded when available.
+            miniProgramCatalog: miniProgramStore.makeCatalogExportPayload()
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -89,7 +95,10 @@ extension AppSettings {
         return try encoder.encode(file)
     }
 
-    func importPreferencesBackupData(_ data: Data) throws {
+    func importPreferencesBackupData(
+        _ data: Data,
+        miniProgramStore: MiniProgramStore = .shared
+    ) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let file = try decoder.decode(PreferencesBackupFile.self, from: data)
@@ -128,6 +137,10 @@ extension AppSettings {
         }
         if let value = preferences.xiaohongshuCardsStaggered {
             xiaohongshuCardsStaggered = value
+        }
+        if let value = preferences.chatTopicDetailEnabled {
+            // Persist raw key so default/on-off is preserved even if theme changes later.
+            defaults.set(value, forKey: "chatTopicDetailEnabled")
         }
         if let value = preferences.themeTaxonomyColorsEnabled {
             themeTaxonomyColorsEnabled = value
@@ -205,6 +218,9 @@ extension AppSettings {
            let value = AvatarCacheSizeLimit(rawValue: rawValue) {
             avatarCacheSizeLimit = value
         }
+        if let catalog = file.miniProgramCatalog {
+            miniProgramStore.importCatalogExportPayload(catalog)
+        }
         applyLanguage()
         applyAppearance()
         notifyChanged()
@@ -228,6 +244,34 @@ extension AppSettings {
         let version: Int
         let exportedAt: Date
         let preferences: PreferencesBackupPayload
+        /// Optional so older backups without a mini-program catalog still import.
+        let miniProgramCatalog: MiniProgramCatalogExportPayload?
+
+        init(
+            format: String,
+            version: Int,
+            exportedAt: Date,
+            preferences: PreferencesBackupPayload,
+            miniProgramCatalog: MiniProgramCatalogExportPayload? = nil
+        ) {
+            self.format = format
+            self.version = version
+            self.exportedAt = exportedAt
+            self.preferences = preferences
+            self.miniProgramCatalog = miniProgramCatalog
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            format = try container.decode(String.self, forKey: .format)
+            version = try container.decode(Int.self, forKey: .version)
+            exportedAt = try container.decode(Date.self, forKey: .exportedAt)
+            preferences = try container.decode(PreferencesBackupPayload.self, forKey: .preferences)
+            miniProgramCatalog = try container.decodeIfPresent(
+                MiniProgramCatalogExportPayload.self,
+                forKey: .miniProgramCatalog
+            )
+        }
     }
 
     struct PreferencesBackupPayload: Codable {
@@ -240,6 +284,7 @@ extension AppSettings {
         let pluginDockVerticalPosition: Double?
         let autoCheckForUpdates: Bool?
         let xiaohongshuCardsStaggered: Bool?
+        let chatTopicDetailEnabled: Bool?
         let themeTaxonomyColorsEnabled: Bool?
         let autoOpenLastForum: Bool?
         let lastOpenedForumId: Int64?
