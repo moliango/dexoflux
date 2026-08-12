@@ -176,9 +176,11 @@ struct DiscourseUserBadgesResponse: Decodable {
             DiscourseUserBadge(
                 id: raw.id,
                 badgeId: raw.badgeId,
+                userId: 0,
                 grantedAt: raw.grantedAt,
                 topicId: raw.topicId,
                 topicTitle: raw.topicTitle ?? raw.topicId.flatMap { topicMap[$0] },
+                postNumber: nil,
                 count: raw.count,
                 badge: raw.badge ?? badgeMap[raw.badgeId]
             )
@@ -222,7 +224,7 @@ struct DiscourseUserBadgesResponse: Decodable {
     }
 }
 
-struct DiscourseBadge: Codable {
+struct DiscourseBadge: Codable, Hashable {
     let id: Int
     let name: String
     let description: String?
@@ -230,18 +232,58 @@ struct DiscourseBadge: Codable {
     let imageURL: String?
     let icon: String?
     let slug: String?
+    let grantCount: Int
+    let longDescription: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, icon, slug
         case badgeTypeId = "badge_type_id"
         case imageURL = "image_url"
+        case grantCount = "grant_count"
+        case longDescription = "long_description"
+    }
+
+    init(
+        id: Int,
+        name: String,
+        description: String? = nil,
+        badgeTypeId: Int,
+        imageURL: String? = nil,
+        icon: String? = nil,
+        slug: String? = nil,
+        grantCount: Int = 0,
+        longDescription: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.badgeTypeId = badgeTypeId
+        self.imageURL = imageURL
+        self.icon = icon
+        self.slug = slug
+        self.grantCount = grantCount
+        self.longDescription = longDescription
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? container.decode(Int.self, forKey: .id)) ?? 0
+        name = (try? container.decode(String.self, forKey: .name)) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        badgeTypeId = (try? container.decode(Int.self, forKey: .badgeTypeId)) ?? 3
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+        icon = try container.decodeIfPresent(String.self, forKey: .icon)
+        slug = try container.decodeIfPresent(String.self, forKey: .slug)
+        grantCount = (try? container.decode(Int.self, forKey: .grantCount)) ?? 0
+        longDescription = try container.decodeIfPresent(String.self, forKey: .longDescription)
     }
 
     var type: BadgeType {
         BadgeType(rawValue: badgeTypeId) ?? .bronze
     }
 
-    enum BadgeType: Int {
+
+    enum BadgeType: Int, Hashable {
         case gold = 1
         case silver = 2
         case bronze = 3
@@ -254,24 +296,171 @@ struct DiscourseBadge: Codable {
             }
         }
 
+        /// FluxDo-style premium medal chrome (light / dark).
         var color: UIColor {
             switch self {
-            case .gold: return .systemYellow
-            case .silver: return .systemGray
-            case .bronze: return .systemOrange
+            case .gold:
+                return UIColor { traits in
+                    traits.userInterfaceStyle == .dark
+                        ? UIColor(red: 1.0, green: 0.843, blue: 0.0, alpha: 1) // #FFD700
+                        : UIColor(red: 0.961, green: 0.620, blue: 0.043, alpha: 1) // #F59E0B
+                }
+            case .silver:
+                return UIColor { traits in
+                    traits.userInterfaceStyle == .dark
+                        ? UIColor(red: 0.878, green: 0.878, blue: 0.878, alpha: 1) // #E0E0E0
+                        : UIColor(red: 0.471, green: 0.565, blue: 0.612, alpha: 1) // #78909C
+                }
+            case .bronze:
+                return UIColor { traits in
+                    traits.userInterfaceStyle == .dark
+                        ? UIColor(red: 1.0, green: 0.671, blue: 0.569, alpha: 1) // #FFAB91
+                        : UIColor(red: 0.631, green: 0.533, blue: 0.498, alpha: 1) // #A1887F
+                }
             }
         }
     }
 }
 
-struct DiscourseUserBadge: Identifiable {
+struct DiscourseUserBadge: Identifiable, Hashable {
     let id: Int
     let badgeId: Int
+    let userId: Int
     let grantedAt: String?
     let topicId: Int?
     let topicTitle: String?
+    let postNumber: Int?
     let count: Int
     let badge: DiscourseBadge?
+}
+
+struct DiscourseBadgeUser: Decodable, Hashable, Identifiable {
+    let id: Int
+    let username: String
+    let name: String?
+    let avatarTemplate: String?
+    let admin: Bool?
+    let moderator: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, username, name, admin, moderator
+        case avatarTemplate = "avatar_template"
+    }
+}
+
+struct DiscourseBadgeDetailResponse: Decodable {
+    let badge: DiscourseBadge
+    let userBadges: [DiscourseUserBadge]
+    let users: [DiscourseBadgeUser]
+    let totalCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case badge
+        case badges
+        case users
+        case topics
+        case userBadges = "user_badges"
+        case userBadgeInfo = "user_badge_info"
+    }
+
+    private struct UserBadgeInfo: Decodable {
+        let userBadges: [RawGrant]?
+        let grantCount: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case userBadges = "user_badges"
+            case grantCount = "grant_count"
+        }
+    }
+
+    private struct RawGrant: Decodable {
+        let id: Int
+        let badgeId: Int
+        let userId: Int
+        let grantedAt: String?
+        let topicId: Int?
+        let topicTitle: String?
+        let postNumber: Int?
+        let count: Int
+        let badge: DiscourseBadge?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case badgeId = "badge_id"
+            case userId = "user_id"
+            case grantedAt = "granted_at"
+            case topicId = "topic_id"
+            case topicTitle = "topic_title"
+            case postNumber = "post_number"
+            case count
+            case badge
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = (try? container.decode(Int.self, forKey: .id)) ?? 0
+            badgeId = (try? container.decode(Int.self, forKey: .badgeId)) ?? 0
+            userId = (try? container.decode(Int.self, forKey: .userId)) ?? 0
+            grantedAt = try container.decodeIfPresent(String.self, forKey: .grantedAt)
+            topicId = try container.decodeIfPresent(Int.self, forKey: .topicId)
+            topicTitle = try container.decodeIfPresent(String.self, forKey: .topicTitle)
+            postNumber = try container.decodeIfPresent(Int.self, forKey: .postNumber)
+            count = (try? container.decode(Int.self, forKey: .count)) ?? 1
+            badge = try container.decodeIfPresent(DiscourseBadge.self, forKey: .badge)
+        }
+    }
+
+    private struct TopicStub: Decodable {
+        let id: Int
+        let title: String
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let badges = (try? container.decode([DiscourseBadge].self, forKey: .badges)) ?? []
+        let badgeMap = Dictionary(uniqueKeysWithValues: badges.map { ($0.id, $0) })
+        users = (try? container.decode([DiscourseBadgeUser].self, forKey: .users)) ?? []
+
+        let topics = (try? container.decode([TopicStub].self, forKey: .topics)) ?? []
+        let topicMap = Dictionary(uniqueKeysWithValues: topics.map { ($0.id, $0.title) })
+
+        let rawGrants: [RawGrant]
+        let infoCount: Int?
+        if let info = try? container.decode(UserBadgeInfo.self, forKey: .userBadgeInfo) {
+            rawGrants = info.userBadges ?? []
+            infoCount = info.grantCount
+        } else {
+            rawGrants = (try? container.decode([RawGrant].self, forKey: .userBadges)) ?? []
+            infoCount = nil
+        }
+
+        userBadges = rawGrants.map { raw in
+            DiscourseUserBadge(
+                id: raw.id,
+                badgeId: raw.badgeId,
+                userId: raw.userId,
+                grantedAt: raw.grantedAt,
+                topicId: raw.topicId,
+                topicTitle: raw.topicTitle ?? raw.topicId.flatMap { topicMap[$0] },
+                postNumber: raw.postNumber,
+                count: raw.count,
+                badge: raw.badge ?? badgeMap[raw.badgeId]
+            )
+        }
+
+        if let decoded = try? container.decode(DiscourseBadge.self, forKey: .badge) {
+            badge = decoded
+        } else if let first = userBadges.first?.badge {
+            badge = first
+        } else if let first = badges.first {
+            badge = first
+        } else {
+            badge = DiscourseBadge(id: 0, name: String(localized: "badges.unknown"), badgeTypeId: 3)
+        }
+
+        totalCount = infoCount ?? badge.grantCount
+    }
 }
 
 struct DiscoursePendingInvitesResponse: Decodable {

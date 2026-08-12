@@ -59,6 +59,8 @@ enum DiscourseRouter {
     case deleteDraft(key: String, sequence: Int)
     case createdTopics(username: String, page: Int)
     case userBadges(username: String)
+    case badge(id: Int)
+    case badgeUsers(badgeId: Int, username: String?)
     case pendingInvites(username: String)
     case pendingPosts(username: String)
     case postRevision(postId: Int, revision: String)
@@ -220,6 +222,14 @@ enum DiscourseRouter {
             return "/topics/created-by/\(Self.pathComponent(username)).json?page=\(page)"
         case .userBadges(let username):
             return "/user-badges/\(username.lowercased()).json?grouped=true"
+        case .badge(let id):
+            return "/badges/\(id).json"
+        case .badgeUsers(let badgeId, let username):
+            var path = "/user_badges.json?badge_id=\(badgeId)"
+            if let username, !username.isEmpty {
+                path += "&username=\(Self.queryValue(username))"
+            }
+            return path
         case .pendingInvites(let username):
             return "/u/\(username)/invited/pending"
         case .pendingPosts(let username):

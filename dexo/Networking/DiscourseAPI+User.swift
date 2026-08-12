@@ -177,6 +177,20 @@ extension DiscourseAPI {
         try await request(route: .userBadges(username: username))
     }
 
+    /// Single badge metadata (`GET /badges/:id.json`).
+    func fetchBadge(id: Int) async throws -> DiscourseBadge {
+        struct Envelope: Decodable {
+            let badge: DiscourseBadge
+        }
+        let envelope: Envelope = try await request(route: .badge(id: id))
+        return envelope.badge
+    }
+
+    /// Grantees for a badge (`GET /user_badges.json?badge_id=`), FluxDo parity.
+    func fetchBadgeUsers(badgeId: Int, username: String? = nil) async throws -> DiscourseBadgeDetailResponse {
+        try await request(route: .badgeUsers(badgeId: badgeId, username: username))
+    }
+
     /// Site-wide badge catalog (`/badges.json`) for notification icon / type chrome.
     func fetchAllBadges() async throws -> [DiscourseBadge] {
         let url = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/badges.json"
