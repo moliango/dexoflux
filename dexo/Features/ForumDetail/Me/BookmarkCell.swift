@@ -165,6 +165,10 @@ final class BookmarkCell: UITableViewCell {
         CookedContentPipeline.plainTextPreview(fromCooked: html)
     }
 
+    static func formatDatePublic(_ isoString: String) -> String {
+        formatDate(isoString)
+    }
+
     private static func formatDate(_ isoString: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

@@ -15,13 +15,13 @@ final class ReadLaterViewController: ObservableViewController {
     private lazy var tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .plain)
         table.translatesAutoresizingMaskIntoConstraints = false
-        table.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        TopicListCellFactory.registerCells(on: table)
         table.dataSource = self
         table.delegate = self
         table.separatorStyle = .none
         table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = TopicCell.estimatedHeight
+        table.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         table.showsVerticalScrollIndicator = !AppSettings.shared.hideScrollIndicators
         table.refreshControl = refreshControl
         return table
@@ -165,6 +165,7 @@ final class ReadLaterViewController: ObservableViewController {
         let theme = AppSettings.shared.themeStyle
         view.backgroundColor = theme.topicListBackgroundColor
         tableView.backgroundColor = theme.topicListBackgroundColor
+        tableView.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         view.tintColor = theme.accentColor
     }
 
@@ -317,42 +318,45 @@ extension ReadLaterViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let entry = entries[indexPath.row]
-        guard let cell = tableView.dequeueReusableCell(
-            withIdentifier: TopicCell.reuseIdentifier,
-            for: indexPath
-        ) as? TopicCell else {
-            return UITableViewCell()
-        }
+        let topic: DiscourseTopicList.Topic
+        let categoryName: String?
+        let categoryColor: UIColor?
+        let avatar: URL?
+        let avatarUser: Int?
 
-        if let topic = topicsById[entry.topicId] {
-            let category = topic.categoryId.flatMap { categoriesById[$0] }
-            cell.configure(
-                with: topic,
-                avatarURL: avatarURL(for: topic),
-                avatarUserId: avatarUserId(for: topic),
-                categoryName: category?.name,
-                categoryColor: Self.color(fromHex: category?.color),
-                tags: topic.tags ?? [],
-                categoryPresentation: nil,
-                categoryBaseURL: api.baseURL
-            )
+        if let hydrated = topicsById[entry.topicId] {
+            topic = hydrated
+            let category = hydrated.categoryId.flatMap { categoriesById[$0] }
+            categoryName = category?.name
+            categoryColor = Self.color(fromHex: category?.color)
+            avatar = avatarURL(for: hydrated)
+            avatarUser = avatarUserId(for: hydrated)
         } else {
             // Local-only fallback until network hydrate finishes (or after CF).
-            let placeholder = DiscourseTopicList.Topic.readLaterPlaceholder(
+            topic = DiscourseTopicList.Topic.readLaterPlaceholder(
                 id: entry.topicId,
                 title: entry.title,
                 lastReadPostNumber: entry.lastReadPostNumber
             )
-            cell.configure(
-                with: placeholder,
-                avatarURL: nil,
-                categoryName: nil,
-                categoryColor: nil,
-                tags: [],
+            categoryName = nil
+            categoryColor = nil
+            avatar = nil
+            avatarUser = nil
+        }
+
+        return TopicListCellFactory.makeTopicCell(
+            tableView: tableView,
+            indexPath: indexPath,
+            context: TopicListTopicContext(
+                topic: topic,
+                avatarURL: avatar,
+                avatarUserId: avatarUser,
+                categoryName: categoryName,
+                categoryColor: categoryColor,
+                tags: topic.tags ?? [],
                 categoryBaseURL: api.baseURL
             )
-        }
-        return cell
+        )
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -386,20 +390,31 @@ extension ReadLaterViewController: UITableViewDataSource, UITableViewDelegate {
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         let entry = entries[indexPath.row]
+        // Leading action order: first = full-swipe (左滑删除).
         let remove = UIContextualAction(
             style: .destructive,
             title: String(localized: "me.read_later.remove", defaultValue: "移除")
         ) { [weak self] _, _, completion in
+            guard let self else {
+                completion(false)
+                return
+            }
             TopicReadLaterStore.shared.remove(
                 topicId: entry.topicId,
                 baseURL: entry.baseURL,
                 username: entry.username
             )
             LocalReminderScheduler.cancel(kind: .readLater, topicId: entry.topicId, baseURL: entry.baseURL)
-            Task { await self?.reload(forceNetwork: false) }
+            self.entries = TopicReadLaterStore.shared.entries(
+                baseURL: self.api.baseURL,
+                username: AuthManager.shared.username(for: self.api.baseURL)
+            )
+            tableView.deleteRows(at: [indexPath], with: .automatic)
+            self.updateStateChrome()
             completion(true)
         }
-        remove.image = UIImage(systemName: "trash")
+        remove.image = UIImage(systemName: "trash.fill")
+        remove.backgroundColor = .systemRed
 
         let remind = UIContextualAction(
             style: .normal,
@@ -409,8 +424,18 @@ extension ReadLaterViewController: UITableViewDataSource, UITableViewDelegate {
             completion(true)
         }
         remind.image = UIImage(systemName: "alarm")
-        remind.backgroundColor = .systemPurple
-        return UISwipeActionsConfiguration(actions: [remove, remind])
+        remind.backgroundColor = AppSettings.shared.themeStyle.accentColor
+        let config = UISwipeActionsConfiguration(actions: [remove, remind])
+        config.performsFirstActionWithFullSwipe = true
+        return config
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        // Mirror trailing so both directions can remove (one-handed).
+        self.tableView(tableView, trailingSwipeActionsConfigurationForRowAt: indexPath)
     }
 
     private func presentReminderPicker(for entry: TopicReadLaterStore.Entry) {

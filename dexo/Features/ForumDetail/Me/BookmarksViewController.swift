@@ -8,13 +8,14 @@ final class BookmarksViewController: ObservableViewController {
     private lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
+        TopicListCellFactory.registerCells(on: tv)
         tv.register(BookmarkCell.self, forCellReuseIdentifier: BookmarkCell.reuseIdentifier)
         tv.delegate = self
         tv.dataSource = self
         tv.separatorStyle = .none
         tv.backgroundColor = .clear
         tv.rowHeight = UITableView.automaticDimension
-        tv.estimatedRowHeight = BookmarkCell.estimatedHeight
+        tv.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         tv.showsVerticalScrollIndicator = false
         return tv
     }()
@@ -196,6 +197,7 @@ final class BookmarksViewController: ObservableViewController {
         let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
+        tableView.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         view.tintColor = themeStyle.accentColor
         refreshControl.tintColor = themeStyle.accentColor
         activityIndicator.color = themeStyle.accentColor
@@ -258,10 +260,41 @@ extension BookmarksViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(withIdentifier: BookmarkCell.reuseIdentifier, for: indexPath) as? BookmarkCell else {
+        let bookmark = viewModel.bookmarks[indexPath.row]
+        let layout = TopicListLayoutKind.current
+        if layout.usesChatSessionRows {
+            let excerpt = bookmark.excerpt
+                .map { CookedContentPipeline.plainTextPreview(fromCooked: $0) }
+                .flatMap { text -> String? in
+                    let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return t.isEmpty ? nil : t
+                }
+            let time: String? = {
+                guard let createdAt = bookmark.createdAt else { return nil }
+                return BookmarkCell.formatDatePublic(createdAt)
+            }()
+            let item = TopicListSessionItem(
+                title: bookmark.title ?? bookmark.name ?? "#\(bookmark.id)",
+                subtitle: excerpt ?? bookmark.name,
+                timeText: time,
+                avatarTemplate: bookmark.avatarTemplate,
+                isEmphasized: false,
+                badgeText: nil,
+                baseURL: api.baseURL
+            )
+            return TopicListCellFactory.makeSessionCell(
+                tableView: tableView,
+                indexPath: indexPath,
+                item: item,
+                layout: layout
+            )
+        }
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: BookmarkCell.reuseIdentifier,
+            for: indexPath
+        ) as? BookmarkCell else {
             return UITableViewCell()
         }
-        let bookmark = viewModel.bookmarks[indexPath.row]
         cell.configure(with: bookmark, baseURL: api.baseURL)
         return cell
     }
@@ -295,7 +328,42 @@ extension BookmarksViewController: UITableViewDelegate {
         }
         remind.image = UIImage(systemName: "alarm")
         remind.backgroundColor = .systemPurple
-        return UISwipeActionsConfiguration(actions: [remind])
+
+        let toMini = UIContextualAction(
+            style: .normal,
+            title: String(localized: "mini_program.convert_from_bookmark", defaultValue: "转小程序")
+        ) { [weak self] _, _, completion in
+            self?.convertBookmarkToMiniProgram(bookmark)
+            completion(true)
+        }
+        toMini.image = UIImage(systemName: "app.badge.fill")
+        toMini.backgroundColor = .systemGreen
+
+        return UISwipeActionsConfiguration(actions: [toMini, remind])
+    }
+
+    private func convertBookmarkToMiniProgram(_ bookmark: DiscourseBookmark) {
+        guard let topicId = bookmark.topicId else { return }
+        let base = api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(base)/t/\(topicId)") else { return }
+        let name = bookmark.title ?? bookmark.name ?? "Topic \(topicId)"
+        do {
+            let store = MiniProgramStore.shared
+            let programID = try store.addCustomProgram(
+                name: name,
+                url: url,
+                categoryID: MiniProgramCategoryID.other,
+                icon: .none
+            )
+            store.addFavorite(programID)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            DexoFeedback.presentToast(
+                String(localized: "mini_program.added", defaultValue: "已添加到小程序"),
+                on: self
+            )
+        } catch {
+            DexoFeedback.presentToast(error.localizedDescription, on: self)
+        }
     }
 
     private func presentBookmarkReminder(topicId: Int, title: String) {

@@ -162,12 +162,12 @@ final class BrowsingHistoryViewController: ObservableViewController {
     private lazy var tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .plain)
         table.translatesAutoresizingMaskIntoConstraints = false
-        table.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        TopicListCellFactory.registerCells(on: table)
         table.delegate = self
         table.separatorStyle = .none
         table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = TopicCell.estimatedHeight
+        table.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         table.showsVerticalScrollIndicator = false
         return table
     }()
@@ -175,7 +175,6 @@ final class BrowsingHistoryViewController: ObservableViewController {
     private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = {
         UITableViewDiffableDataSource<Int, Int>(tableView: tableView) { [weak self] tableView, indexPath, topicId in
             guard let self,
-                  let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
                   let topic = self.viewModel.topics.first(where: { $0.id == topicId })
             else {
                 return UITableViewCell()
@@ -189,16 +188,19 @@ final class BrowsingHistoryViewController: ObservableViewController {
             )
             let category = self.viewModel.category(for: topic)
             let categoryColor = category.flatMap { Self.color(fromHex: $0.color) }
-            cell.configure(
-                with: topic,
-                avatarURL: avatarURL,
-                avatarUserId: self.viewModel.avatarUserId(for: topic),
-                categoryName: self.viewModel.categoryDisplayName(for: category),
-                categoryColor: categoryColor,
-                tags: topic.tags ?? [],
-                categoryBaseURL: baseURL
+            return TopicListCellFactory.makeTopicCell(
+                tableView: tableView,
+                indexPath: indexPath,
+                context: TopicListTopicContext(
+                    topic: topic,
+                    avatarURL: avatarURL,
+                    avatarUserId: self.viewModel.avatarUserId(for: topic),
+                    categoryName: self.viewModel.categoryDisplayName(for: category),
+                    categoryColor: categoryColor,
+                    tags: topic.tags ?? [],
+                    categoryBaseURL: baseURL
+                )
             )
-            return cell
         }
     }()
 
@@ -395,6 +397,8 @@ final class BrowsingHistoryViewController: ObservableViewController {
     }
 
     private func applyThemeStyle() {
+        tableView.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
+
         let themeStyle = AppSettings.shared.themeStyle
         let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground

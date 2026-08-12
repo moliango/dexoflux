@@ -495,6 +495,11 @@ final class InAppBrowserViewController: UIViewController {
         webView.goBack()
         return true
     }
+
+    /// Current page for mini-program host bookmark / share.
+    var currentPageURL: URL? { webView.url }
+    var currentPageTitle: String? { webView.title }
+    var browserHistoryStore: BrowserHistoryStore { store }
     @objc private func forwardTapped() { webView.goForward() }
     @objc private func reloadTapped() {
         if webView.isLoading {
@@ -569,6 +574,11 @@ final class InAppBrowserViewController: UIViewController {
                 : String(localized: "me.browser.add_bookmark", defaultValue: "收藏此页"),
             style: .default
         ) { [weak self] _ in self?.bookmarkTapped() })
+        
+        menu.addAction(UIAlertAction(title: String(localized: "mini_program.add_as_program", defaultValue: "添加到小程序"), style: .default) { [weak self] _ in
+            self?.addCurrentPageAsMiniProgram()
+        })
+        
         menu.addAction(UIAlertAction(title: String(localized: "me.browser.copy_url", defaultValue: "复制链接"), style: .default) { [weak self] _ in
             UIPasteboard.general.url = self?.webView.url
         })
@@ -580,6 +590,59 @@ final class InAppBrowserViewController: UIViewController {
         menu.popoverPresentationController?.sourceView = moreButton
         menu.popoverPresentationController?.sourceRect = moreButton.bounds
         present(menu, animated: true)
+    }
+
+    @objc private func addCurrentPageAsMiniProgram() {
+        guard let url = webView.url else { return }
+        Task { @MainActor in
+            let service = MiniProgramMetadataService()
+            let metadata = await service.fetch(url: url)
+            let logoData = try? await service.fetchLogoImageData(for: metadata.sourceURL)
+
+            let alert = UIAlertController(
+                title: String(localized: "mini_program.add_as_program.title", defaultValue: "添加到小程序"),
+                message: metadata.sourceURL.host ?? metadata.name,
+                preferredStyle: .alert
+            )
+            alert.addTextField { field in
+                field.placeholder = String(localized: "mini_program.name", defaultValue: "名称")
+                field.text = metadata.name
+            }
+            alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+            alert.addAction(UIAlertAction(title: String(localized: "common.done"), style: .default) { [weak self] _ in
+                guard let self else { return }
+                let name = alert.textFields?.first?.text ?? metadata.name
+                do {
+                    let programStore = MiniProgramStore.shared
+                    let programID = try programStore.addCustomProgram(
+                        name: name,
+                        url: metadata.sourceURL,
+                        categoryID: MiniProgramCategoryID.other,
+                        icon: .none
+                    )
+                    if let logoData,
+                       let path = try? MiniProgramIconStore.shared.saveIconData(logoData, programID: programID) {
+                        try? programStore.updateCustomProgram(
+                            id: programID,
+                            name: name,
+                            url: metadata.sourceURL,
+                            categoryID: MiniProgramCategoryID.other,
+                            icon: .local(relativePath: path),
+                            isVisible: true
+                        )
+                    }
+                    programStore.addFavorite(programID)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    DexoFeedback.presentToast(
+                        String(localized: "mini_program.added", defaultValue: "已添加到小程序"),
+                        on: self
+                    )
+                } catch {
+                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                }
+            })
+            self.present(alert, animated: true)
+        }
     }
 }
 
@@ -1049,6 +1112,48 @@ final class BrowserLibraryViewController: UIViewController {
         }
     }
 
+    private func convertBookmarkToMiniProgram(_ record: BrowserPageRecord) {
+        guard let url = URL(string: record.urlString) else {
+            showError(BrowserHistoryStoreError.unsupportedURL)
+            return
+        }
+        let name = record.title
+        do {
+            let programStore = MiniProgramStore.shared
+            let programID = try programStore.addCustomProgram(
+                name: name,
+                url: url,
+                categoryID: MiniProgramCategoryID.other,
+                icon: .none
+            )
+            programStore.addFavorite(programID)
+            Task { @MainActor in
+                let service = MiniProgramMetadataService()
+                if let logoData = try? await service.fetchLogoImageData(for: url),
+                   let path = try? MiniProgramIconStore.shared.saveIconData(logoData, programID: programID) {
+                    try? programStore.updateCustomProgram(
+                        id: programID,
+                        name: name,
+                        url: url,
+                        categoryID: MiniProgramCategoryID.other,
+                        icon: .local(relativePath: path),
+                        isVisible: true
+                    )
+                }
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            let alert = UIAlertController(
+                title: String(localized: "mini_program.added", defaultValue: "已添加到小程序"),
+                message: name,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
+            present(alert, animated: true)
+        } catch {
+            showError(error)
+        }
+    }
+
     private func showError(_ error: Error) {
         let alert = UIAlertController(title: nil, message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
@@ -1115,6 +1220,17 @@ extension BrowserLibraryViewController: UITableViewDelegate {
             rename.backgroundColor = .systemBlue
             rename.image = UIImage(systemName: "pencil")
             actions.append(rename)
+
+            let toMini = UIContextualAction(
+                style: .normal,
+                title: String(localized: "mini_program.convert_from_bookmark", defaultValue: "转小程序")
+            ) { [weak self] _, _, completion in
+                self?.convertBookmarkToMiniProgram(record)
+                completion(true)
+            }
+            toMini.backgroundColor = .systemGreen
+            toMini.image = UIImage(systemName: "app.badge.fill")
+            actions.insert(toMini, at: 0)
         }
         return UISwipeActionsConfiguration(actions: actions)
     }
