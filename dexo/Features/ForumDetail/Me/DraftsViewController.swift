@@ -5,7 +5,7 @@ fileprivate enum DraftsListSection: Int, CaseIterable {
     case cloud = 1
 }
 
-final class DraftsViewController: UIViewController {
+final class DraftsViewController: ObservableViewController {
     private let api: DiscourseAPI
     private var localDrafts: [ComposerLocalDraftStore.ListedDraft] = []
     private var drafts: [DiscourseDraft] = []
@@ -16,13 +16,17 @@ final class DraftsViewController: UIViewController {
     private var errorMessage: String?
 
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .insetGrouped)
+        let tableView = UITableView(frame: .zero, style: .plain)
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.separatorStyle = .none
+        tableView.backgroundColor = .clear
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 82
-        tableView.showsVerticalScrollIndicator = false
+        tableView.estimatedRowHeight = DraftCell.estimatedHeight
+        tableView.showsVerticalScrollIndicator = !AppSettings.shared.hideScrollIndicators
+        TopicListCellFactory.registerCells(on: tableView)
+        tableView.register(DraftCell.self, forCellReuseIdentifier: DraftCell.reuseIdentifier)
         return tableView
     }()
 
@@ -31,6 +35,14 @@ final class DraftsViewController: UIViewController {
         indicator.translatesAutoresizingMaskIntoConstraints = false
         indicator.hidesWhenStopped = true
         return indicator
+    }()
+
+    private let stateIconView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = .tertiaryLabel
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
     }()
 
     private let stateLabel: UILabel = {
@@ -52,7 +64,7 @@ final class DraftsViewController: UIViewController {
     }()
 
     private lazy var stateStackView: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [stateLabel, retryButton])
+        let stack = UIStackView(arrangedSubviews: [stateIconView, stateLabel, retryButton])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
         stack.alignment = .center
@@ -79,8 +91,9 @@ final class DraftsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        observe(AppSettings.shared)
         title = String(localized: "me.drafts", defaultValue: "草稿")
-        view.backgroundColor = .systemGroupedBackground
+        applyThemeStyle()
         tableView.refreshControl = refreshControl
         retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
 
@@ -100,9 +113,36 @@ final class DraftsViewController: UIViewController {
             stateStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             stateStackView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
             stateStackView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+
+            stateIconView.widthAnchor.constraint(equalToConstant: 48),
+            stateIconView.heightAnchor.constraint(equalToConstant: 48),
         ])
 
         Task { await loadDrafts(reset: true) }
+    }
+
+    override func updateUI() {
+        applyThemeStyle()
+        tableView.reloadData()
+    }
+
+    private func applyThemeStyle() {
+        let theme = AppSettings.shared.themeStyle
+        let pageBackground = theme.topicListBackgroundColor
+        view.backgroundColor = pageBackground
+        tableView.backgroundColor = pageBackground
+        tableView.estimatedRowHeight = TopicListLayoutKind.current.usesChatSessionRows
+            ? TopicListCellFactory.estimatedRowHeight
+            : DraftCell.estimatedHeight
+        tableView.showsVerticalScrollIndicator = !AppSettings.shared.hideScrollIndicators
+        view.tintColor = theme.accentColor
+        refreshControl.tintColor = theme.accentColor
+        activityIndicator.color = theme.accentColor
+        stateIconView.tintColor = theme.accentColor.withAlphaComponent(0.78)
+        retryButton.tintColor = theme.accentColor
+        stateLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 15, weight: .regular)
+        )
     }
 
     private func loadDrafts(reset: Bool) async {
@@ -161,25 +201,47 @@ final class DraftsViewController: UIViewController {
         tableView.isUserInteractionEnabled = !isOpeningDraft
 
         if let errorMessage, !hasDrafts {
-            stateLabel.text = errorMessage
+            configureState(
+                iconName: "exclamationmark.triangle",
+                text: errorMessage
+            )
         } else if !hasDrafts, !isLoading {
-            stateLabel.text = String(localized: "me.drafts.empty", defaultValue: "没有本地或云端草稿\n在发帖/回帖时输入内容会自动保存")
+            configureState(
+                iconName: "doc.text",
+                text: String(
+                    localized: "me.drafts.empty",
+                    defaultValue: "没有本地或云端草稿\n在发帖/回帖时输入内容会自动保存"
+                )
+            )
         }
 
         if isLoadingMore {
             let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.color = AppSettings.shared.themeStyle.accentColor
             spinner.frame = CGRect(x: 0, y: 0, width: 0, height: 48)
             spinner.startAnimating()
             tableView.tableFooterView = spinner
         } else if errorMessage != nil && hasDrafts {
             let button = UIButton(type: .system)
             button.frame = CGRect(x: 0, y: 0, width: 0, height: 52)
-            button.setTitle(String(localized: "me.topic_list.load_more_failed", defaultValue: "加载更多失败，点击重试"), for: .normal)
+            button.tintColor = AppSettings.shared.themeStyle.accentColor
+            button.setTitle(
+                String(localized: "me.topic_list.load_more_failed", defaultValue: "加载更多失败，点击重试"),
+                for: .normal
+            )
             button.addTarget(self, action: #selector(loadMoreRetryTapped), for: .touchUpInside)
             tableView.tableFooterView = button
         } else {
             tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
         }
+    }
+
+    private func configureState(iconName: String, text: String) {
+        stateIconView.image = UIImage(
+            systemName: iconName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 42, weight: .regular)
+        )
+        stateLabel.text = text
     }
 
     private static func uniqueDrafts(_ drafts: [DiscourseDraft]) -> [DiscourseDraft] {
@@ -351,7 +413,6 @@ final class DraftsViewController: UIViewController {
         present(alert, animated: true)
     }
 
-
     private func confirmDeleteLocal(_ draft: ComposerLocalDraftStore.ListedDraft) {
         let alert = UIAlertController(
             title: String(localized: "me.drafts.delete.title", defaultValue: "删除草稿？"),
@@ -487,8 +548,127 @@ final class DraftsViewController: UIViewController {
         alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
         present(alert, animated: true)
     }
-}
 
+    // MARK: - Presentation helpers
+
+    private func displayTitle(for draft: DiscourseDraft) -> String {
+        if let title = draft.data.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        if let title = draft.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return kindTitle(for: draft.destination)
+    }
+
+    private func displayExcerpt(for draft: DiscourseDraft) -> String? {
+        let raw = draft.data.reply ?? draft.excerpt ?? ""
+        let excerpt = raw
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return excerpt.isEmpty ? nil : excerpt
+    }
+
+    private func displaySubtitle(for draft: DiscourseDraft) -> String {
+        let time = UserProfileFormatting.relativeDate(draft.updatedAt)
+        if let excerpt = displayExcerpt(for: draft) {
+            return "\(String(excerpt.prefix(120))) · \(time)"
+        }
+        return time
+    }
+
+    private func kindTitle(for destination: DiscourseDraftDestination) -> String {
+        switch destination {
+        case .newTopic:
+            return String(localized: "me.drafts.new_topic", defaultValue: "新主题草稿")
+        case .topicReply:
+            return String(localized: "me.drafts.reply", defaultValue: "回复草稿")
+        case .privateMessage:
+            return String(localized: "me.drafts.private_message", defaultValue: "私信草稿")
+        case .unsupported:
+            return String(localized: "me.drafts.unknown", defaultValue: "未识别草稿")
+        }
+    }
+
+    private func kindTitle(forLocal kind: ComposerLocalDraftStore.ListedKind) -> String {
+        switch kind {
+        case .newTopic:
+            return String(localized: "me.drafts.new_topic", defaultValue: "新主题草稿")
+        case .reply:
+            return String(localized: "me.drafts.reply", defaultValue: "回复草稿")
+        case .privateMessage:
+            return String(localized: "me.drafts.private_message", defaultValue: "私信草稿")
+        }
+    }
+
+    private func symbolName(for destination: DiscourseDraftDestination) -> String {
+        switch destination {
+        case .newTopic: return "square.and.pencil"
+        case .topicReply: return "arrowshape.turn.up.left.fill"
+        case .privateMessage: return "envelope.fill"
+        case .unsupported: return "questionmark.folder.fill"
+        }
+    }
+
+    private func symbolName(forLocal kind: ComposerLocalDraftStore.ListedKind) -> String {
+        switch kind {
+        case .newTopic: return "iphone"
+        case .reply: return "arrowshape.turn.up.left"
+        case .privateMessage: return "envelope"
+        }
+    }
+
+    private func tintColor(for destination: DiscourseDraftDestination) -> UIColor {
+        let accent = AppSettings.shared.themeStyle.accentColor
+        switch destination {
+        case .newTopic: return accent
+        case .topicReply: return .systemGreen
+        case .privateMessage: return .systemIndigo
+        case .unsupported: return .systemOrange
+        }
+    }
+
+    private func tintColor(forLocal kind: ComposerLocalDraftStore.ListedKind) -> UIColor {
+        let accent = AppSettings.shared.themeStyle.accentColor
+        switch kind {
+        case .newTopic: return accent
+        case .reply: return .systemGreen
+        case .privateMessage: return .systemIndigo
+        }
+    }
+
+    private func isoString(from date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    private func sessionItem(forLocal draft: ComposerLocalDraftStore.ListedDraft) -> TopicListSessionItem {
+        let time = UserProfileFormatting.relativeDate(isoString(from: draft.updatedAt))
+        let preview = draft.preview
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return TopicListSessionItem(
+            title: draft.title ?? String(localized: "me.drafts.local", defaultValue: "本地草稿"),
+            subtitle: preview.isEmpty
+                ? kindTitle(forLocal: draft.kind)
+                : "\(kindTitle(forLocal: draft.kind)) · \(String(preview.prefix(100)))",
+            timeText: time,
+            isEmphasized: false,
+            badgeText: String(localized: "me.drafts.badge.local", defaultValue: "本机"),
+            baseURL: api.baseURL
+        )
+    }
+
+    private func sessionItem(for draft: DiscourseDraft) -> TopicListSessionItem {
+        TopicListSessionItem(
+            title: displayTitle(for: draft),
+            subtitle: displaySubtitle(for: draft),
+            timeText: UserProfileFormatting.relativeDate(draft.updatedAt),
+            isEmphasized: false,
+            badgeText: kindTitle(for: draft.destination),
+            baseURL: api.baseURL
+        )
+    }
+}
 
 extension DraftsViewController: UITableViewDataSource {
     func numberOfSections(in tableView: UITableView) -> Int {
@@ -510,104 +690,99 @@ extension DraftsViewController: UITableViewDataSource {
                 ? nil
                 : String(localized: "me.drafts.section.local", defaultValue: "本机草稿")
         case .cloud:
-            return drafts.isEmpty && localDrafts.isEmpty
-                ? nil
-                : String(localized: "me.drafts.section.cloud", defaultValue: "云端草稿（与网页 / FluxDo 同步）")
+            // Keep section header only when both sections have content, or cloud alone.
+            if drafts.isEmpty { return nil }
+            return String(localized: "me.drafts.section.cloud", defaultValue: "云端草稿（与网页 / FluxDo 同步）")
         case .none:
             return nil
         }
     }
 
+    func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        guard let header = view as? UITableViewHeaderFooterView else { return }
+        let theme = AppSettings.shared.themeStyle
+        header.textLabel?.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 13, weight: .semibold)
+        )
+        header.textLabel?.textColor = .secondaryLabel
+        header.contentConfiguration = nil
+        header.backgroundConfiguration = UIBackgroundConfiguration.clear()
+        header.tintColor = theme.topicListBackgroundColor
+    }
+
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
+        let layout = TopicListLayoutKind.current
         switch DraftsListSection(rawValue: indexPath.section) {
         case .local:
             let draft = localDrafts[indexPath.row]
-            content.image = UIImage(systemName: symbolName(forLocal: draft.kind))
-            content.imageProperties.tintColor = .systemTeal
-            content.text = draft.title ?? String(localized: "me.drafts.local", defaultValue: "本地草稿")
-            let time = UserProfileFormatting.relativeDate(isoString(from: draft.updatedAt))
-            let excerpt = draft.preview
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            content.secondaryText = excerpt.isEmpty ? time : "\(String(excerpt.prefix(120))) · \(time)"
+            if layout.usesChatSessionRows {
+                return TopicListCellFactory.makeSessionCell(
+                    tableView: tableView,
+                    indexPath: indexPath,
+                    item: sessionItem(forLocal: draft),
+                    layout: layout
+                )
+            }
+            return makeCardCell(
+                tableView: tableView,
+                indexPath: indexPath,
+                title: draft.title ?? String(localized: "me.drafts.local", defaultValue: "本地草稿"),
+                excerpt: draft.preview,
+                timeText: UserProfileFormatting.relativeDate(isoString(from: draft.updatedAt)),
+                kindTitle: kindTitle(forLocal: draft.kind),
+                symbolName: symbolName(forLocal: draft.kind),
+                accent: tintColor(forLocal: draft.kind)
+            )
         case .cloud:
             let draft = drafts[indexPath.row]
-            content.image = UIImage(systemName: symbolName(for: draft.destination))
-            content.imageProperties.tintColor = tintColor(for: draft.destination)
-            content.text = displayTitle(for: draft)
-            content.secondaryText = displaySubtitle(for: draft)
+            if layout.usesChatSessionRows {
+                return TopicListCellFactory.makeSessionCell(
+                    tableView: tableView,
+                    indexPath: indexPath,
+                    item: sessionItem(for: draft),
+                    layout: layout
+                )
+            }
+            return makeCardCell(
+                tableView: tableView,
+                indexPath: indexPath,
+                title: displayTitle(for: draft),
+                excerpt: displayExcerpt(for: draft),
+                timeText: UserProfileFormatting.relativeDate(draft.updatedAt),
+                kindTitle: kindTitle(for: draft.destination),
+                symbolName: symbolName(for: draft.destination),
+                accent: tintColor(for: draft.destination)
+            )
         case .none:
-            break
+            return UITableViewCell()
         }
-        content.secondaryTextProperties.color = .secondaryLabel
-        content.secondaryTextProperties.numberOfLines = 2
-        content.textProperties.font = .systemFont(ofSize: 15, weight: .semibold)
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
+    }
+
+    private func makeCardCell(
+        tableView: UITableView,
+        indexPath: IndexPath,
+        title: String,
+        excerpt: String?,
+        timeText: String?,
+        kindTitle: String,
+        symbolName: String,
+        accent: UIColor
+    ) -> UITableViewCell {
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: DraftCell.reuseIdentifier,
+            for: indexPath
+        ) as? DraftCell else {
+            return UITableViewCell()
+        }
+        cell.configure(
+            title: title,
+            excerpt: excerpt,
+            timeText: timeText,
+            kindTitle: kindTitle,
+            symbolName: symbolName,
+            accent: accent
+        )
         return cell
-    }
-
-    private func isoString(from date: Date) -> String {
-        ISO8601DateFormatter().string(from: date)
-    }
-
-    private func displayTitle(for draft: DiscourseDraft) -> String {
-        if let title = draft.data.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        if let title = draft.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        switch draft.destination {
-        case .newTopic:
-            return String(localized: "me.drafts.new_topic", defaultValue: "新主题草稿")
-        case .topicReply:
-            return String(localized: "me.drafts.reply", defaultValue: "回复草稿")
-        case .privateMessage:
-            return String(localized: "me.drafts.private_message", defaultValue: "私信草稿")
-        case .unsupported:
-            return String(localized: "me.drafts.unknown", defaultValue: "未识别草稿")
-        }
-    }
-
-    private func displaySubtitle(for draft: DiscourseDraft) -> String {
-        let raw = draft.data.reply ?? draft.excerpt ?? ""
-        let excerpt = raw
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let time = UserProfileFormatting.relativeDate(draft.updatedAt)
-        if excerpt.isEmpty {
-            return time
-        }
-        return "\(String(excerpt.prefix(120))) · \(time)"
-    }
-
-    private func symbolName(for destination: DiscourseDraftDestination) -> String {
-        switch destination {
-        case .newTopic: return "square.and.pencil"
-        case .topicReply: return "arrowshape.turn.up.left.fill"
-        case .privateMessage: return "envelope.fill"
-        case .unsupported: return "questionmark.folder.fill"
-        }
-    }
-
-    private func symbolName(forLocal kind: ComposerLocalDraftStore.ListedKind) -> String {
-        switch kind {
-        case .newTopic: return "iphone"
-        case .reply: return "iphone.and.arrow.forward"
-        case .privateMessage: return "iphone.badge.play"
-        }
-    }
-
-    private func tintColor(for destination: DiscourseDraftDestination) -> UIColor {
-        switch destination {
-        case .newTopic: return .systemBlue
-        case .topicReply: return .systemGreen
-        case .privateMessage: return .systemIndigo
-        case .unsupported: return .systemOrange
-        }
     }
 }
 
@@ -656,7 +831,6 @@ extension DraftsViewController: UITableViewDelegate {
         Task { await loadDrafts(reset: false) }
     }
 }
-
 
 private enum DraftOpenError: LocalizedError {
     case missingRecipient
