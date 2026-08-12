@@ -17,6 +17,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.backgroundColor = DexoLaunchAppearance.backgroundColor
         AppSettings.shared.applyAppearance()
         let defaultForum = DatabaseManager.shared.defaultForum()
+        DohDebugLog.record(
+            "scene willConnect forum=\(defaultForum.baseURL) theme=\(AppSettings.shared.themeStyle.rawValue)",
+            subsystem: "Launch"
+        )
         window.rootViewController = ForumContainerViewController(forum: defaultForum, showsDismissButton: false)
         window.makeKeyAndVisible()
 
