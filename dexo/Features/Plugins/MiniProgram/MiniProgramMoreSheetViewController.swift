@@ -7,6 +7,8 @@ final class MiniProgramMoreSheetViewController: UIViewController {
         case floatWindow
         case reenter
         case copyLink
+        /// Save / remove current page in internal browser bookmarks.
+        case bookmark
         /// Toggle page lock (anti shake / pinch zoom).
         case toggleInteractionLock
     }
@@ -17,6 +19,8 @@ final class MiniProgramMoreSheetViewController: UIViewController {
     private let currentProgram: MiniProgramDescriptor
     /// Whether the host currently locks bounce + zoom.
     private let isInteractionLocked: Bool
+    /// Whether the current embedded page is already bookmarked.
+    private let isPageBookmarked: Bool
     private var panelBottomConstraint: NSLayoutConstraint?
 
     private let dimmingView: UIView = {
@@ -47,9 +51,14 @@ final class MiniProgramMoreSheetViewController: UIViewController {
         return stack
     }()
 
-    init(currentProgram: MiniProgramDescriptor, isInteractionLocked: Bool = false) {
+    init(
+        currentProgram: MiniProgramDescriptor,
+        isInteractionLocked: Bool = false,
+        isPageBookmarked: Bool = false
+    ) {
         self.currentProgram = currentProgram
         self.isInteractionLocked = isInteractionLocked
+        self.isPageBookmarked = isPageBookmarked
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -223,6 +232,11 @@ final class MiniProgramMoreSheetViewController: UIViewController {
             ? String(localized: "mini_program.action.unlock", defaultValue: "不锁定")
             : String(localized: "mini_program.action.lock", defaultValue: "锁定")
 
+        let bookmarkSymbol = isPageBookmarked ? "bookmark.fill" : "bookmark"
+        let bookmarkTitle = isPageBookmarked
+            ? String(localized: "me.browser.remove_bookmark", defaultValue: "取消收藏")
+            : String(localized: "me.browser.add_bookmark", defaultValue: "收藏此页")
+
         let items: [(Action, String, String)] = [
             (
                 .floatWindow,
@@ -238,6 +252,11 @@ final class MiniProgramMoreSheetViewController: UIViewController {
                 .copyLink,
                 "link",
                 String(localized: "mini_program.action.copy_link", defaultValue: "复制链接")
+            ),
+            (
+                .bookmark,
+                bookmarkSymbol,
+                bookmarkTitle
             ),
             (
                 .toggleInteractionLock,

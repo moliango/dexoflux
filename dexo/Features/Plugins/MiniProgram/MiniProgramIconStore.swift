@@ -38,6 +38,12 @@ final class MiniProgramIconStore {
         return UIImage(contentsOfFile: url.path)
     }
 
+    /// Raw file bytes for export packages. Returns nil when the logo file is missing.
+    func data(relativePath: String) -> Data? {
+        let url = baseDirectory.appendingPathComponent(relativePath)
+        return try? Data(contentsOf: url)
+    }
+
     private func sanitizedFileName(_ value: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
         let scalars = value.unicodeScalars.map { scalar in

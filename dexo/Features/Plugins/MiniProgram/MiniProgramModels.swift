@@ -16,6 +16,7 @@ enum MiniProgramCategoryID {
 }
 
 enum MiniProgramIcon: Codable, Equatable, Hashable {
+    case none
     case system(symbolName: String)
     case remote(URL)
     case local(relativePath: String)
@@ -26,6 +27,7 @@ enum MiniProgramIcon: Codable, Equatable, Hashable {
     }
 
     private enum Kind: String, Codable {
+        case none
         case system
         case remote
         case local
@@ -33,21 +35,33 @@ enum MiniProgramIcon: Codable, Equatable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let kind = try container.decode(Kind.self, forKey: .kind)
-        let value = try container.decode(String.self, forKey: .value)
+        // Older / partial exports may omit kind entirely for custom programs.
+        guard let kind = try container.decodeIfPresent(Kind.self, forKey: .kind) else {
+            self = .none
+            return
+        }
+        let value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
         switch kind {
+        case .none:
+            self = .none
         case .system:
-            self = .system(symbolName: value)
+            self = value.isEmpty ? .none : .system(symbolName: value)
         case .remote:
-            self = .remote(URL(string: value) ?? URL(string: "https://invalid.local")!)
+            if let url = URL(string: value), !value.isEmpty {
+                self = .remote(url)
+            } else {
+                self = .none
+            }
         case .local:
-            self = .local(relativePath: value)
+            self = value.isEmpty ? .none : .local(relativePath: value)
         }
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .none:
+            try container.encode(Kind.none, forKey: .kind)
         case .system(let symbolName):
             try container.encode(Kind.system, forKey: .kind)
             try container.encode(symbolName, forKey: .value)
@@ -72,6 +86,7 @@ struct MiniProgramRecord: Codable, Equatable, Hashable, Identifiable {
     var displayName: String
     var urlString: String?
     var categoryID: String
+    /// Custom programs may have no icon (export/import must tolerate this).
     var icon: MiniProgramIcon
     var isVisible: Bool
     var order: Int
@@ -82,6 +97,81 @@ struct MiniProgramRecord: Codable, Equatable, Hashable, Identifiable {
 
     var normalizedURLString: String? {
         urlString
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, displayName, urlString, categoryID, icon, isVisible, order
+    }
+
+    init(
+        id: String,
+        kind: ProgramKind,
+        displayName: String,
+        urlString: String?,
+        categoryID: String,
+        icon: MiniProgramIcon,
+        isVisible: Bool,
+        order: Int
+    ) {
+        self.id = id
+        self.kind = kind
+        self.displayName = displayName
+        self.urlString = urlString
+        self.categoryID = categoryID
+        self.icon = icon
+        self.isVisible = isVisible
+        self.order = order
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(ProgramKind.self, forKey: .kind)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        urlString = try container.decodeIfPresent(String.self, forKey: .urlString)
+        categoryID = try container.decode(String.self, forKey: .categoryID)
+        // Missing icon is valid for custom URL programs in export packages.
+        icon = try container.decodeIfPresent(MiniProgramIcon.self, forKey: .icon) ?? .none
+        isVisible = try container.decodeIfPresent(Bool.self, forKey: .isVisible) ?? true
+        order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 0
+    }
+}
+
+/// Portable mini-program catalog for preferences backup / share packages.
+/// Custom programs are allowed to omit icons; local logos may be embedded as base64.
+struct MiniProgramCatalogExportPayload: Codable, Equatable {
+    var version: Int
+    var programs: [MiniProgramRecord]
+    var categories: [MiniProgramCategory]
+    var recentProgramIDs: [String]
+    var favoriteProgramIDs: [String]
+    /// Base64 image data for local icons, keyed by program id. Absent when no logo.
+    var iconAssets: [String: String]
+
+    init(
+        version: Int,
+        programs: [MiniProgramRecord],
+        categories: [MiniProgramCategory],
+        recentProgramIDs: [String],
+        favoriteProgramIDs: [String] = [],
+        iconAssets: [String: String] = [:]
+    ) {
+        self.version = version
+        self.programs = programs
+        self.categories = categories
+        self.recentProgramIDs = recentProgramIDs
+        self.favoriteProgramIDs = favoriteProgramIDs
+        self.iconAssets = iconAssets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        programs = try container.decodeIfPresent([MiniProgramRecord].self, forKey: .programs) ?? []
+        categories = try container.decodeIfPresent([MiniProgramCategory].self, forKey: .categories) ?? []
+        recentProgramIDs = try container.decodeIfPresent([String].self, forKey: .recentProgramIDs) ?? []
+        favoriteProgramIDs = try container.decodeIfPresent([String].self, forKey: .favoriteProgramIDs) ?? []
+        iconAssets = try container.decodeIfPresent([String: String].self, forKey: .iconAssets) ?? [:]
     }
 }
 

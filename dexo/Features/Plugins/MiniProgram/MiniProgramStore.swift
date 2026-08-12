@@ -161,12 +161,83 @@ final class MiniProgramStore {
         save()
     }
 
+    /// Snapshot of the catalog suitable for preferences backup / share packages.
+    /// Local logos are embedded as base64 when readable; missing logos stay as `.none`.
+    func makeCatalogExportPayload(
+        iconDataProvider: (String) -> Data? = { relativePath in
+            MiniProgramIconStore.shared.data(relativePath: relativePath)
+        }
+    ) -> MiniProgramCatalogExportPayload {
+        var programs = allPrograms()
+        var iconAssets: [String: String] = [:]
+
+        for index in programs.indices {
+            switch programs[index].icon {
+            case .local(let relativePath):
+                if let data = iconDataProvider(relativePath), !data.isEmpty {
+                    iconAssets[programs[index].id] = data.base64EncodedString()
+                    // Keep a stable portable marker; import rewrites to a real path.
+                    programs[index].icon = .local(relativePath: relativePath)
+                } else {
+                    // Local file gone or unreadable — export without icon rather than failing.
+                    programs[index].icon = .none
+                }
+            case .none, .system, .remote:
+                break
+            }
+        }
+
+        return MiniProgramCatalogExportPayload(
+            version: Self.currentVersion,
+            programs: programs,
+            categories: allCategories(),
+            recentProgramIDs: snapshot.recentProgramIDs,
+            favoriteProgramIDs: snapshot.favoriteProgramIDs,
+            iconAssets: iconAssets
+        )
+    }
+
+    /// Replaces the catalog from an export package. Custom programs may omit icons.
+    /// Built-ins missing from the package are re-seeded by normalization.
+    func importCatalogExportPayload(
+        _ payload: MiniProgramCatalogExportPayload,
+        iconSaver: (Data, String) throws -> String = { data, programID in
+            try MiniProgramIconStore.shared.saveIconData(data, programID: programID)
+        }
+    ) {
+        var programs = payload.programs
+        for index in programs.indices {
+            let programID = programs[index].id
+            if let base64 = payload.iconAssets[programID],
+               let data = Data(base64Encoded: base64),
+               !data.isEmpty,
+               let path = try? iconSaver(data, programID) {
+                programs[index].icon = .local(relativePath: path)
+                continue
+            }
+
+            // Drop dangling local paths that have no embedded asset.
+            if case .local = programs[index].icon, payload.iconAssets[programID] == nil {
+                programs[index].icon = .none
+            }
+        }
+
+        snapshot = Self.normalized(MiniProgramCatalogSnapshot(
+            version: payload.version,
+            programs: programs,
+            categories: payload.categories,
+            recentProgramIDs: payload.recentProgramIDs,
+            favoriteProgramIDs: payload.favoriteProgramIDs
+        ))
+        save()
+    }
+
     @discardableResult
     func addCustomProgram(
         name: String,
         url: URL,
         categoryID: String,
-        icon: MiniProgramIcon
+        icon: MiniProgramIcon = .none
     ) throws -> String {
         guard let normalizedURL = Self.normalizedURLString(url) else {
             throw MiniProgramStoreError.invalidURL

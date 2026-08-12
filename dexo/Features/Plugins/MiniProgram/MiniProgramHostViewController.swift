@@ -269,7 +269,8 @@ final class MiniProgramHostViewController: UIViewController {
     private func presentMoreSheet() {
         let sheet = MiniProgramMoreSheetViewController(
             currentProgram: program,
-            isInteractionLocked: isInteractionLocked
+            isInteractionLocked: isInteractionLocked,
+            isPageBookmarked: isCurrentPageBookmarked()
         )
         sheet.onAction = { [weak self] action in
             guard let self else { return }
@@ -280,6 +281,8 @@ final class MiniProgramHostViewController: UIViewController {
                 self.reenterProgram()
             case .copyLink:
                 self.copyLink()
+            case .bookmark:
+                self.toggleCurrentPageBookmark()
             case .toggleInteractionLock:
                 self.toggleInteractionLock()
             }
@@ -330,6 +333,63 @@ final class MiniProgramHostViewController: UIViewController {
         UIPasteboard.general.string = link.absoluteString
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         presentToast(String(localized: "mini_program.copy_link.done", defaultValue: "链接已复制"))
+    }
+
+    private func currentEmbeddedBrowser() -> InAppBrowserViewController? {
+        var stack: [UIViewController] = [content]
+        var visited = Set<ObjectIdentifier>()
+        while let vc = stack.popLast() {
+            let id = ObjectIdentifier(vc)
+            guard visited.insert(id).inserted else { continue }
+            if let browser = vc as? InAppBrowserViewController {
+                return browser
+            }
+            if let nav = vc as? UINavigationController {
+                stack.append(contentsOf: nav.viewControllers)
+            }
+            if let tab = vc as? UITabBarController {
+                stack.append(contentsOf: tab.viewControllers ?? [])
+            }
+            stack.append(contentsOf: vc.children)
+        }
+        return nil
+    }
+
+    private func currentPageBookmarkTarget() -> (url: URL, title: String?, store: BrowserHistoryStore)? {
+        if let browser = currentEmbeddedBrowser(), let url = browser.currentPageURL {
+            return (url, browser.currentPageTitle, browser.browserHistoryStore)
+        }
+        // Fallback: program entry URL when content is not a browser.
+        if let link = MiniProgramFactory.linkURL(for: program) {
+            let store = BrowserHistoryStore.shared(baseURL: api.baseURL, username: username)
+            return (link, program.displayName, store)
+        }
+        return nil
+    }
+
+    private func isCurrentPageBookmarked() -> Bool {
+        guard let target = currentPageBookmarkTarget() else { return false }
+        return target.store.isBookmarked(target.url)
+    }
+
+    private func toggleCurrentPageBookmark() {
+        guard let target = currentPageBookmarkTarget() else {
+            presentToast(String(localized: "mini_program.bookmark.unavailable", defaultValue: "当前页无法收藏"))
+            return
+        }
+        do {
+            if target.store.isBookmarked(target.url) {
+                try target.store.removeBookmark(url: target.url)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                presentToast(String(localized: "me.browser.bookmark_removed", defaultValue: "已取消收藏"))
+            } else {
+                try target.store.addBookmark(url: target.url, title: target.title)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                presentToast(String(localized: "me.browser.bookmark_added", defaultValue: "已收藏"))
+            }
+        } catch {
+            presentToast(error.localizedDescription)
+        }
     }
 
     private func toggleInteractionLock() {

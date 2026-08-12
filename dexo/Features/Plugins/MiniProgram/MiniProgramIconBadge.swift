@@ -95,6 +95,13 @@ enum MiniProgramIconBadge {
         }
 
         switch record.icon {
+        case .none:
+            // Custom programs may intentionally have no logo (export/import without assets).
+            let colors = palette(for: programID)
+            return {
+                drawGradient(in: rect, colors: colors)
+                drawSymbol("app.fill", in: rect, pointSize: rect.width * 0.42, color: .white)
+            }
         case .system(let symbolName):
             let colors = palette(for: programID)
             return {
