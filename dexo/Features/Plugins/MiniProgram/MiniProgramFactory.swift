@@ -39,44 +39,60 @@ enum MiniProgramFactory {
         username: String?
     ) -> UIViewController? {
         switch programID {
-        case MiniProgramID.ldc, MiniProgramID.cdk:
+        case MiniProgramID.metaverse:
             guard let username else { return nil }
             let root = MetaverseServicesViewController(api: api, username: username)
             let navigation = UINavigationController(rootViewController: root)
             navigation.setNavigationBarHidden(false, animated: false)
             return navigation
+        case MiniProgramID.ldc:
+            return makeBrowserHost(
+                api: api,
+                username: username,
+                url: URL(string: "https://credit.linux.do/home")!
+            )
+        case MiniProgramID.cdk:
+            return makeBrowserHost(
+                api: api,
+                username: username,
+                url: URL(string: "https://cdk.linux.do/dashboard")!
+            )
         case MiniProgramID.newAPICheckIn:
             // Tab bar root already embeds a UINavigationController per tab.
             return NewAPICheckInRuntime.shared.makeViewController()
         case MiniProgramID.ldcStore:
-            let browser = InAppBrowserViewController(
+            return makeBrowserHost(
                 api: api,
                 username: username,
-                initialURL: URL(string: "https://ldcstore.com/"),
-                hidesHostTabBarAtRoot: false,
-                hidesBrowserControlBar: true
+                url: URL(string: "https://ldcstore.com/")!
             )
-            // Browser can push history pages through its own navigationController.
-            let navigation = UINavigationController(rootViewController: browser)
-            navigation.setNavigationBarHidden(true, animated: false)
-            return navigation
         default:
             guard let record = MiniProgramStore.shared.program(id: programID),
                   record.isVisible,
                   let urlString = record.urlString,
                   let url = URL(string: urlString)
             else { return nil }
-            let browser = InAppBrowserViewController(
-                api: api,
-                username: username,
-                initialURL: url,
-                hidesHostTabBarAtRoot: false,
-                hidesBrowserControlBar: true
-            )
-            let navigation = UINavigationController(rootViewController: browser)
-            navigation.setNavigationBarHidden(true, animated: false)
-            return navigation
+            return makeBrowserHost(api: api, username: username, url: url)
         }
+    }
+
+    @MainActor
+    private static func makeBrowserHost(
+        api: DiscourseAPI,
+        username: String?,
+        url: URL
+    ) -> UIViewController {
+        let browser = InAppBrowserViewController(
+            api: api,
+            username: username,
+            initialURL: url,
+            hidesHostTabBarAtRoot: false,
+            hidesBrowserControlBar: true
+        )
+        // Browser can push history pages through its own navigationController.
+        let navigation = UINavigationController(rootViewController: browser)
+        navigation.setNavigationBarHidden(true, animated: false)
+        return navigation
     }
 
     @MainActor
@@ -137,6 +153,10 @@ enum MiniProgramFactory {
             return url
         }
         switch program.id {
+        case MiniProgramID.ldc:
+            return URL(string: "https://credit.linux.do/home")
+        case MiniProgramID.cdk:
+            return URL(string: "https://cdk.linux.do/dashboard")
         case MiniProgramID.ldcStore:
             return URL(string: "https://ldcstore.com/")
         default:

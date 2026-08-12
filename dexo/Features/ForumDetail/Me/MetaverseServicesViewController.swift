@@ -687,7 +687,9 @@ final class MetaverseServicesViewController: UITableViewController {
     }
 
     @objc private func miniProgramStateDidChange() {
-        guard !visibleServices.isEmpty else {
+        // Metaverse hub stays open for auth / credentials even when LDC & CDK are hidden.
+        // Only dismiss if the Metaverse mini-program itself was turned off.
+        if MiniProgramStore.shared.program(id: MiniProgramID.metaverse)?.isVisible == false {
             navigationController?.popViewController(animated: true)
             return
         }

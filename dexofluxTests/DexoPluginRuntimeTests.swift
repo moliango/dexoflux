@@ -175,6 +175,7 @@ final class DexoPluginRuntimeTests: XCTestCase {
 
         let firstPartyIDs = MiniProgramStore(defaults: defaults).visiblePrograms().map(\.id)
         XCTAssertEqual(firstPartyIDs, [
+            MiniProgramID.metaverse,
             MiniProgramID.ldc,
             MiniProgramID.cdk,
             MiniProgramID.newAPICheckIn,

@@ -70,6 +70,14 @@ enum MiniProgramIconBadge {
                     drawSymbol("shippingbox.fill", in: rect, pointSize: rect.width * 0.46, color: .white)
                 }
             }
+        case MiniProgramID.metaverse:
+            return {
+                drawGradient(in: rect, colors: [
+                    UIColor(red: 0.45, green: 0.30, blue: 0.95, alpha: 1),
+                    UIColor(red: 0.20, green: 0.55, blue: 0.95, alpha: 1),
+                ])
+                drawSymbol("globe.asia.australia.fill", in: rect, pointSize: rect.width * 0.42, color: .white)
+            }
         case MiniProgramID.ldc:
             return {
                 drawGradient(in: rect, colors: [

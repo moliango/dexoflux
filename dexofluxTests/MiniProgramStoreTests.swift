@@ -7,17 +7,22 @@ final class MiniProgramStoreTests: XCTestCase {
         let store = makeStore()
 
         XCTAssertEqual(store.visiblePrograms().map(\.id), [
+            MiniProgramID.metaverse,
             MiniProgramID.ldc,
             MiniProgramID.cdk,
             MiniProgramID.newAPICheckIn,
             MiniProgramID.ldcStore,
         ])
         XCTAssertEqual(store.visiblePrograms().map(\.displayName), [
+            "元宇宙",
             "LDC",
             "CDK",
             "NewAPI 签到",
             "LD 士多",
         ])
+        XCTAssertEqual(store.program(id: MiniProgramID.ldc)?.urlString, "https://credit.linux.do/home")
+        XCTAssertEqual(store.program(id: MiniProgramID.cdk)?.urlString, "https://cdk.linux.do/dashboard")
+        XCTAssertNil(store.program(id: MiniProgramID.metaverse)?.urlString)
         XCTAssertTrue(store.visiblePrograms().allSatisfy(\.isBuiltIn))
     }
 

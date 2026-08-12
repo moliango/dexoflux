@@ -1,6 +1,7 @@
 import Foundation
 
 enum MiniProgramID {
+    static let metaverse = "builtin.metaverse"
     static let ldc = "builtin.ldc"
     static let cdk = "builtin.cdk"
     static let newAPICheckIn = "builtin.newapi-check-in"

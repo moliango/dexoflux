@@ -441,6 +441,7 @@ private extension MiniProgramStore {
     }
 
     static func mergeBuiltInPrograms(into snapshot: inout MiniProgramCatalogSnapshot) {
+        let builtInsByID = Dictionary(uniqueKeysWithValues: builtInPrograms.map { ($0.id, $0) })
         let existingIDs = Set(snapshot.programs.map(\.id))
         var order = (snapshot.programs.map(\.order).max() ?? -1) + 1
         for program in builtInPrograms where !existingIDs.contains(program.id) {
@@ -448,6 +449,17 @@ private extension MiniProgramStore {
             inserted.order = order
             snapshot.programs.append(inserted)
             order += 1
+        }
+        // Keep built-in URLs / names / icons in sync without clobbering visibility/order.
+        for index in snapshot.programs.indices {
+            guard let template = builtInsByID[snapshot.programs[index].id] else { continue }
+            snapshot.programs[index].kind = .builtIn
+            snapshot.programs[index].displayName = template.displayName
+            snapshot.programs[index].urlString = template.urlString
+            snapshot.programs[index].icon = template.icon
+            if snapshot.programs[index].categoryID.isEmpty {
+                snapshot.programs[index].categoryID = template.categoryID
+            }
         }
     }
 
@@ -499,24 +511,34 @@ private extension MiniProgramStore {
 
     static let builtInPrograms: [MiniProgramRecord] = [
         MiniProgramRecord(
+            id: MiniProgramID.metaverse,
+            kind: .builtIn,
+            displayName: "元宇宙",
+            urlString: nil,
+            categoryID: MiniProgramCategoryID.community,
+            icon: .system(symbolName: "globe.asia.australia.fill"),
+            isVisible: true,
+            order: 0
+        ),
+        MiniProgramRecord(
             id: MiniProgramID.ldc,
             kind: .builtIn,
             displayName: "LDC",
-            urlString: nil,
+            urlString: "https://credit.linux.do/home",
             categoryID: MiniProgramCategoryID.community,
             icon: .system(symbolName: "sparkles.rectangle.stack.fill"),
             isVisible: true,
-            order: 0
+            order: 1
         ),
         MiniProgramRecord(
             id: MiniProgramID.cdk,
             kind: .builtIn,
             displayName: "CDK",
-            urlString: nil,
+            urlString: "https://cdk.linux.do/dashboard",
             categoryID: MiniProgramCategoryID.community,
             icon: .system(symbolName: "ticket.fill"),
             isVisible: true,
-            order: 1
+            order: 2
         ),
         MiniProgramRecord(
             id: MiniProgramID.newAPICheckIn,
@@ -526,7 +548,7 @@ private extension MiniProgramStore {
             categoryID: MiniProgramCategoryID.tools,
             icon: .system(symbolName: "checkmark.circle.fill"),
             isVisible: true,
-            order: 2
+            order: 3
         ),
         MiniProgramRecord(
             id: MiniProgramID.ldcStore,
@@ -536,7 +558,7 @@ private extension MiniProgramStore {
             categoryID: MiniProgramCategoryID.community,
             icon: .system(symbolName: "bag.fill"),
             isVisible: true,
-            order: 3
+            order: 4
         ),
     ]
 }
