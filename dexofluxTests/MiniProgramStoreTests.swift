@@ -170,6 +170,115 @@ final class MiniProgramStoreTests: XCTestCase {
         XCTAssertEqual(notificationCount, 1)
     }
 
+    func testCustomProgramCanBeAddedWithoutIcon() throws {
+        let store = makeStore()
+        let id = try store.addCustomProgram(
+            name: "No Logo",
+            url: XCTUnwrap(URL(string: "https://nologo.example.com")),
+            categoryID: MiniProgramCategoryID.other
+        )
+        // Qualify MiniProgramIcon.none — bare `.none` is Optional.none in XCTAssertEqual.
+        XCTAssertEqual(store.program(id: id)?.icon, MiniProgramIcon.none)
+    }
+
+    func testCatalogExportAllowsCustomProgramsWithoutIcons() throws {
+        let store = makeStore()
+        let id = try store.addCustomProgram(
+            name: "Bare",
+            url: XCTUnwrap(URL(string: "https://bare.example.com/app")),
+            categoryID: MiniProgramCategoryID.tools,
+            icon: MiniProgramIcon.none
+        )
+
+        let payload = store.makeCatalogExportPayload(iconDataProvider: { _ in nil })
+        let exported = try XCTUnwrap(payload.programs.first { $0.id == id })
+        XCTAssertEqual(exported.icon, MiniProgramIcon.none)
+        XCTAssertTrue(payload.iconAssets[id] == nil)
+
+        // Missing local logo file also becomes `.none` instead of failing export.
+        try store.updateCustomProgram(
+            id: id,
+            name: "Bare",
+            url: XCTUnwrap(URL(string: "https://bare.example.com/app")),
+            categoryID: MiniProgramCategoryID.tools,
+            icon: .local(relativePath: "MiniProgramIcons/missing.png"),
+            isVisible: true
+        )
+        let withoutAsset = store.makeCatalogExportPayload(iconDataProvider: { _ in nil })
+        XCTAssertEqual(withoutAsset.programs.first { $0.id == id }?.icon, MiniProgramIcon.none)
+    }
+
+    func testCatalogImportRestoresCustomProgramWithoutIconAndOptionalAsset() throws {
+        let source = makeStore()
+        let bareID = try source.addCustomProgram(
+            name: "Bare",
+            url: XCTUnwrap(URL(string: "https://bare.example.com")),
+            categoryID: MiniProgramCategoryID.other,
+            icon: MiniProgramIcon.none
+        )
+        let withLogoID = try source.addCustomProgram(
+            name: "With Logo",
+            url: XCTUnwrap(URL(string: "https://logo.example.com")),
+            categoryID: MiniProgramCategoryID.ai,
+            icon: .local(relativePath: "MiniProgramIcons/with-logo.png")
+        )
+        source.setProgram(MiniProgramID.ldc, isVisible: false)
+
+        let pngBytes = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")!
+        let payload = source.makeCatalogExportPayload { relativePath in
+            relativePath.contains("with-logo") ? pngBytes : nil
+        }
+
+        XCTAssertEqual(payload.programs.first { $0.id == bareID }?.icon, MiniProgramIcon.none)
+        XCTAssertNotNil(payload.iconAssets[withLogoID])
+
+        var savedIcons: [String: Data] = [:]
+        let destination = makeStore()
+        destination.importCatalogExportPayload(payload) { data, programID in
+            savedIcons[programID] = data
+            return "MiniProgramIcons/\(programID).png"
+        }
+
+        XCTAssertEqual(destination.program(id: bareID)?.displayName, "Bare")
+        XCTAssertEqual(destination.program(id: bareID)?.icon, MiniProgramIcon.none)
+        XCTAssertEqual(destination.program(id: bareID)?.normalizedURLString, "https://bare.example.com")
+        XCTAssertEqual(destination.program(id: withLogoID)?.icon, .local(relativePath: "MiniProgramIcons/\(withLogoID).png"))
+        XCTAssertEqual(savedIcons[withLogoID], pngBytes)
+        XCTAssertEqual(destination.program(id: MiniProgramID.ldc)?.isVisible, false)
+    }
+
+    func testCatalogExportJSONDecodesProgramsWithMissingIconField() throws {
+        let json = """
+        {
+          "version": 1,
+          "programs": [
+            {
+              "id": "custom.no-icon",
+              "kind": "url",
+              "displayName": "No Icon",
+              "urlString": "https://no-icon.example.com",
+              "categoryID": "other",
+              "isVisible": true,
+              "order": 0
+            }
+          ],
+          "categories": [],
+          "recentProgramIDs": [],
+          "favoriteProgramIDs": [],
+          "iconAssets": {}
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(MiniProgramCatalogExportPayload.self, from: json)
+        XCTAssertEqual(payload.programs.count, 1)
+        XCTAssertEqual(payload.programs[0].icon, MiniProgramIcon.none)
+
+        let store = makeStore()
+        store.importCatalogExportPayload(payload)
+        XCTAssertEqual(store.program(id: "custom.no-icon")?.icon, MiniProgramIcon.none)
+        XCTAssertEqual(store.program(id: "custom.no-icon")?.displayName, "No Icon")
+    }
+
     private func makeStore() -> MiniProgramStore {
         MiniProgramStore(defaults: makeDefaults())
     }
