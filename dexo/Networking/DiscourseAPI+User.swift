@@ -177,6 +177,19 @@ extension DiscourseAPI {
         try await request(route: .userBadges(username: username))
     }
 
+    /// Site-wide badge catalog (`/badges.json`) for notification icon / type chrome.
+    func fetchAllBadges() async throws -> [DiscourseBadge] {
+        let url = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/badges.json"
+        let response = await session.request(url, method: .get).serializingData().response
+        if let error = response.error { throw error }
+        guard let data = response.data, !data.isEmpty else { return [] }
+        struct Envelope: Decodable {
+            let badges: [DiscourseBadge]?
+        }
+        let envelope = try JSONDecoder().decode(Envelope.self, from: data)
+        return envelope.badges ?? []
+    }
+
     func fetchPendingPosts(username: String) async throws -> [DiscoursePendingPost] {
         let response: DiscoursePendingPostsResponse = try await request(route: .pendingPosts(username: username))
         return response.pendingPosts
