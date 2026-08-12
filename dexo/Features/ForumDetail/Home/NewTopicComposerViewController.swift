@@ -367,6 +367,8 @@ final class NewTopicComposerViewController: UIViewController {
         super.viewWillDisappear(animated)
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
+        // Successful create already cleared drafts — don't re-save the posted body on dismiss.
+        guard !isSubmitting else { return }
         persistLocalDraftImmediately()
     }
 
@@ -755,6 +757,8 @@ final class NewTopicComposerViewController: UIViewController {
         else { return }
 
         isSubmitting = true
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
         closePanel(returnToKeyboard: false)
         setSubmissionControlsEnabled(false)
         Task {
@@ -765,6 +769,9 @@ final class NewTopicComposerViewController: UIViewController {
                     categoryId: submission.categoryId,
                     tags: submission.tags
                 )
+                ComposerLocalDraftStore.clearNewTopic(baseURL: api.baseURL)
+                let api = self.api
+                await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_topic")
                 if response.isEnqueued {
                     presentQueuedAlert()
                     return
@@ -776,9 +783,6 @@ final class NewTopicComposerViewController: UIViewController {
                         userInfo: [NSLocalizedDescriptionKey: String(localized: "new_topic.create.missing_topic")]
                     )
                 }
-                ComposerLocalDraftStore.clearNewTopic(baseURL: api.baseURL)
-                let api = self.api
-                Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_topic") }
                 dismiss(animated: true) { [weak self] in self?.onTopicCreated?(topicId) }
             } catch {
                 isSubmitting = false

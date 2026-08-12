@@ -32,7 +32,6 @@ extension HomeViewController {
 
     func setupCategoryDrawer() {
         categoryDrawer.translatesAutoresizingMaskIntoConstraints = false
-        categoryDrawer.isHidden = true
         view.addSubview(categoryDrawer)
         NSLayoutConstraint.activate([
             categoryDrawer.topAnchor.constraint(equalTo: view.topAnchor),

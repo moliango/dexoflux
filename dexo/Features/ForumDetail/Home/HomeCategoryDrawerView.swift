@@ -130,13 +130,19 @@ final class HomeCategoryDrawerView: UIView {
     private var panelLeadingConstraint: NSLayoutConstraint?
     private var searchHeightConstraint: NSLayoutConstraint?
     private var tagGroupHeightConstraint: NSLayoutConstraint?
+    private var tableTopToSearchConstraint: NSLayoutConstraint?
+    private var tableTopToTagGroupConstraint: NSLayoutConstraint?
     private var isOpen: Bool { progress > 0.001 }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        isHidden = true
-        isUserInteractionEnabled = false
         setupUI()
+        applyClosedInteractionState()
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard isUserInteractionEnabled, progress > 0.001 else { return nil }
+        return super.hitTest(point, with: event)
     }
 
     @available(*, unavailable)
@@ -197,7 +203,7 @@ final class HomeCategoryDrawerView: UIView {
     }
 
     func prepareForInteractiveOpen() {
-        isHidden = false
+        accessibilityElementsHidden = false
         isUserInteractionEnabled = true
         setProgress(max(progress, 0.001), animated: false)
     }
@@ -274,7 +280,6 @@ final class HomeCategoryDrawerView: UIView {
             tagGroupStack.trailingAnchor.constraint(equalTo: tagGroupScrollView.trailingAnchor, constant: -12),
             tagGroupStack.heightAnchor.constraint(equalTo: tagGroupScrollView.heightAnchor),
 
-            tableView.topAnchor.constraint(equalTo: tagGroupScrollView.bottomAnchor, constant: 4),
             tableView.leadingAnchor.constraint(equalTo: panelView.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: panelView.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: panelView.bottomAnchor),
@@ -284,6 +289,11 @@ final class HomeCategoryDrawerView: UIView {
             emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: panelView.leadingAnchor, constant: 24),
             emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: panelView.trailingAnchor, constant: -24),
         ])
+
+        tableTopToSearchConstraint = tableView.topAnchor.constraint(equalTo: searchContainer.bottomAnchor, constant: 4)
+        tableTopToTagGroupConstraint = tableView.topAnchor.constraint(equalTo: tagGroupScrollView.bottomAnchor, constant: 4)
+        tableTopToSearchConstraint?.isActive = true
+        tableTopToTagGroupConstraint?.isActive = false
 
         segmentControl.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
         editButton.addTarget(self, action: #selector(editTapped), for: .touchUpInside)
@@ -336,20 +346,24 @@ final class HomeCategoryDrawerView: UIView {
         let showTags = mode == .tags
         editButton.isHidden = showTags
         searchContainer.isHidden = !showTags
-        tagGroupScrollView.isHidden = !showTags
-        searchHeightConstraint?.constant = showTags ? 36 : 0
         let groups = filteredTagGroups()
         let showChips = showTags && shouldShowGroupLabels(groups)
-        tagGroupHeightConstraint?.constant = showChips ? 34 : 0
         tagGroupScrollView.isHidden = !showChips
+        searchHeightConstraint?.constant = showTags ? 36 : 0
+        tagGroupHeightConstraint?.constant = showChips ? 34 : 0
+
+        tableTopToSearchConstraint?.isActive = !showTags
+        tableTopToTagGroupConstraint?.isActive = showTags
     }
 
     private func setProgress(_ value: CGFloat, animated: Bool) {
         let clamped = value.clamped(to: 0...1)
         let wasOpen = isOpen
         progress = clamped
-        isHidden = false
-        isUserInteractionEnabled = true
+        isUserInteractionEnabled = clamped > 0.001
+        if clamped > 0.001 {
+            accessibilityElementsHidden = false
+        }
 
         let updates = {
             self.panelLeadingConstraint?.constant = -self.panelWidth * (1 - clamped)
@@ -367,21 +381,28 @@ final class HomeCategoryDrawerView: UIView {
                 animations: updates
             ) { _ in
                 if self.progress <= 0.001 {
-                    self.isHidden = true
-                    self.isUserInteractionEnabled = false
+                    self.applyClosedInteractionState()
                 }
             }
         } else {
             updates()
             if progress <= 0.001 {
-                isHidden = true
-                isUserInteractionEnabled = false
+                applyClosedInteractionState()
             }
         }
 
         if wasOpen != isOpen {
             onOpenChanged?(isOpen)
         }
+    }
+
+    private func applyClosedInteractionState() {
+        // Never toggle `isHidden` on the root overlay: UIKit may inject a temporary
+        // height == 0 constraint and break the panel's vertical chain (Home white screen).
+        isHidden = false
+        isUserInteractionEnabled = false
+        dimmingView.alpha = 0
+        accessibilityElementsHidden = true
     }
 
     private func filteredTagGroups() -> [DiscourseSiteTagGroup] {
@@ -462,6 +483,7 @@ final class HomeCategoryDrawerView: UIView {
     }
 
     private func reloadVisibleContent() {
+        guard window != nil else { return }
         tableView.reloadData()
         switch mode {
         case .categories:

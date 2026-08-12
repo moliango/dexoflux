@@ -55,6 +55,16 @@ extension HomeViewController {
         let collapsed = isSearchRowCollapsed
         let targetSearchHeight = collapsed ? 0 : Self.searchRowExpandedHeight
         let targetHeaderHeight = collapsed ? collapsedHeaderHeight : expandedHeaderHeight
+
+        // Layout / no-op callers: avoid flipping isHidden + layoutIfNeeded when already settled.
+        if !animated,
+           searchRowMorphAnimator == nil,
+           abs((searchRowHeightConstraint?.constant ?? -1) - targetSearchHeight) <= 0.5,
+           abs((headerHeightConstraint?.constant ?? -1) - targetHeaderHeight) <= 0.5,
+           !searchChromeNeedsHeal() {
+            return
+        }
+
         let targetBarAlpha: CGFloat = collapsed ? 0 : 1
         let targetIconAlpha: CGFloat = collapsed ? 1 : 0
 
@@ -117,8 +127,10 @@ extension HomeViewController {
     /// Idempotent end-state (safe after races / layout).
     func applySearchRowChromeFinalState() {
         let collapsed = isSearchRowCollapsed
-        searchRowHeightConstraint?.constant = collapsed ? 0 : Self.searchRowExpandedHeight
-        headerHeightConstraint?.constant = collapsed ? collapsedHeaderHeight : expandedHeaderHeight
+        let targetHeaderHeight = collapsed ? collapsedHeaderHeight : expandedHeaderHeight
+        let targetSearchHeight = collapsed ? 0 : Self.searchRowExpandedHeight
+        searchRowHeightConstraint?.constant = targetSearchHeight
+        headerHeightConstraint?.constant = targetHeaderHeight
 
         searchRowStackView.transform = .identity
         compactSearchButton.transform = .identity
@@ -147,7 +159,10 @@ extension HomeViewController {
             compactSearchButton.isHidden = true
         }
 
-        view.layoutIfNeeded()
+        // Avoid nested layout while already inside `viewDidLayoutSubviews`.
+        if view.window != nil {
+            view.layoutIfNeeded()
+        }
         updateTableInsets()
     }
 

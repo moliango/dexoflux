@@ -16,9 +16,11 @@ extension HomeViewController {
 
     func installIncomingTopicsBannerLayoutConstraints() {
         let headerHeight = incomingTopicsHeaderView.heightAnchor.constraint(
-            equalToConstant: Self.incomingTopicsBannerHeight
+            equalToConstant: incomingTopicsBannerHostHeight
         )
-        let buttonHeight = incomingTopicsButton.heightAnchor.constraint(equalToConstant: 52)
+        let buttonHeight = incomingTopicsButton.heightAnchor.constraint(
+            equalToConstant: incomingTopicsBannerHostHeight
+        )
         let buttonLeading = incomingTopicsButton.leadingAnchor.constraint(
             equalTo: incomingTopicsHeaderView.leadingAnchor,
             constant: 18
@@ -37,7 +39,9 @@ extension HomeViewController {
         buttonCenterX.isActive = false
         buttonMaxWidth.isActive = false
 
-        let inlineHeight = incomingTopicsInlineButton.heightAnchor.constraint(equalToConstant: 52)
+        let inlineHeight = incomingTopicsInlineButton.heightAnchor.constraint(
+            equalToConstant: incomingTopicsBannerHostHeight
+        )
         let inlineLeading = incomingTopicsInlineButton.leadingAnchor.constraint(
             equalTo: incomingTopicsInlineHeaderView.leadingAnchor,
             constant: 18

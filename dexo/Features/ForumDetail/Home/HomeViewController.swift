@@ -105,7 +105,7 @@ final class HomeViewController: ObservableViewController {
     /// (CACurrentMediaTime). Hide is still allowed. Prevents bounce-reveal.
     var tabBarShowSuppressedUntil: CFTimeInterval = 0
     var loadingSkeletonTopConstraint: NSLayoutConstraint?
-    let categoryDrawer = HomeCategoryDrawerView()
+    let categoryDrawer = HomeCategoryDrawerView(frame: .zero)
     var categoryDrawerEdgePan: UIScreenEdgePanGestureRecognizer?
     var didLoadCategoryDrawerTags = false
     /// Observation of app-wide `ConnectivityService` (FluxDo-aligned).
@@ -792,17 +792,23 @@ final class HomeViewController: ObservableViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutCategorySelectionIndicators()
-        updateHeaderHeight(animated: false)
+        // Never call `updateHeaderHeight` here — it flips compact-search visibility and
+        // calls `layoutIfNeeded`, which re-enters this method and pegs CPU at 100%.
+        reassertHeaderHeightIfNeeded()
 
         hideHomeScrollIndicators()
         updateIncomingTopicsInlineHeaderFrame()
         updateIncomingTopicsHeader()
         updateTableInsets()
-        floatingActionButtonBottomConstraint?.constant = -currentBottomChromeHeight - 20
+        let fabBottom = -currentBottomChromeHeight - 20
+        if abs((floatingActionButtonBottomConstraint?.constant ?? 0) - fabBottom) > 0.5 {
+            floatingActionButtonBottomConstraint?.constant = fabBottom
+        }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        DohDebugLog.record("home viewDidLoad begin", subsystem: "Launch")
         observe(viewModel)
         // Keep the home bell badge in sync with coordinator refresh / mark-read (Phase 3).
         observe(notificationCoordinator)
@@ -885,10 +891,8 @@ final class HomeViewController: ObservableViewController {
             incomingTopicsHeaderView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             incomingTopicsHeaderView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            incomingTopicsButton.topAnchor.constraint(equalTo: incomingTopicsHeaderView.topAnchor, constant: 4),
             incomingTopicsButton.centerYAnchor.constraint(equalTo: incomingTopicsHeaderView.centerYAnchor),
 
-            incomingTopicsInlineButton.topAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.topAnchor, constant: 4),
             incomingTopicsInlineButton.centerYAnchor.constraint(equalTo: incomingTopicsInlineHeaderView.centerYAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -962,6 +966,10 @@ final class HomeViewController: ObservableViewController {
             updateUI()
         }
         reloadTopics()
+        DohDebugLog.record(
+            "home viewDidLoad end topics=\(viewModel.topics.count) theme=\(AppSettings.shared.themeStyle.rawValue)",
+            subsystem: "Launch"
+        )
         Task {
             await api.loadOrFetchEmojiMap()
         }

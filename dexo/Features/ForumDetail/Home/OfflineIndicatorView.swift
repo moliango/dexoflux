@@ -5,6 +5,7 @@ import UIKit
 final class OfflineIndicatorView: UIView {
     var onRetry: (() -> Void)?
 
+    /// Must fit icon/button (~28) without fighting the height constraint.
     private static let expandedHeight: CGFloat = 36
     private var heightConstraint: NSLayoutConstraint?
 
@@ -31,7 +32,8 @@ final class OfflineIndicatorView: UIView {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         config.baseForegroundColor = .secondaryLabel
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
+        // Compact insets so the control fits inside `expandedHeight` without Autolayout fights.
+        config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.accessibilityLabel = String(localized: "action.refresh", defaultValue: "刷新")
@@ -60,16 +62,18 @@ final class OfflineIndicatorView: UIView {
         rowStack.addArrangedSubview(retryButton)
         addSubview(rowStack)
 
+        // Center the row vertically instead of pinning top+bottom with padding.
+        // Collapsed height is 0 — top/bottom padding (4+4) would be unsatisfiable and
+        // spam `Unable to simultaneously satisfy constraints` on every home launch.
         NSLayoutConstraint.activate([
-            rowStack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            rowStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             rowStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             rowStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            rowStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
             iconView.widthAnchor.constraint(equalToConstant: 16),
             iconView.heightAnchor.constraint(equalToConstant: 16),
-            retryButton.widthAnchor.constraint(equalToConstant: 32),
-            retryButton.heightAnchor.constraint(equalToConstant: 32),
+            retryButton.widthAnchor.constraint(equalToConstant: 28),
+            retryButton.heightAnchor.constraint(equalToConstant: 28),
         ])
 
         let height = heightAnchor.constraint(equalToConstant: 0)
