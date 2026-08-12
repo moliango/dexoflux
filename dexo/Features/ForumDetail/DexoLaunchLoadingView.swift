@@ -61,6 +61,7 @@ final class DexoLaunchLoadingView: UIView {
     }
 
     func startPresenting() {
+        guard self.window != nil else { return }
         alpha = 1
         rootStackView.alpha = 0
         rootStackView.transform = CGAffineTransform(translationX: 0, y: 16).scaledBy(x: 0.96, y: 0.96)
@@ -180,7 +181,7 @@ final class DexoLaunchLoadingView: UIView {
     }
 
     private func startLoadingDots() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        guard self.window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
         for (index, dot) in dotViews.enumerated() {
             let animation = CABasicAnimation(keyPath: "opacity")
             animation.fromValue = 0.25
@@ -199,7 +200,7 @@ final class DexoLaunchLoadingView: UIView {
     }
 
     private func startLogoBreathing() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        guard self.window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
         let animation = CABasicAnimation(keyPath: "transform.scale")
         animation.fromValue = 1
         animation.toValue = 1.025

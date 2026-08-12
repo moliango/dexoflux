@@ -127,6 +127,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DexoLaunchAppearance.backgroundColor
+        DohDebugLog.record("forum container viewDidLoad base=\(forum.baseURL)", subsystem: "Launch")
 
         authManager.restoreAuthState(for: forum)
         if authManager.hasWebSession(for: forum.baseURL) {
@@ -135,6 +136,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
         startObservingHomeInitialContent()
         setupTabBar()
+        DohDebugLog.record(
+            "forum tab bar installed tabs=\(tabBarViewController?.navigationControllers.count ?? 0) selected=\(tabBarViewController?.selectedIndex ?? -1)",
+            subsystem: "Launch"
+        )
         setupAuthSyncOverlay()
         setupCloudflareShieldButton()
         setupLaunchLoadingOverlay()
@@ -286,13 +291,14 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             return
         }
         tabBarViewController.selectedIndex = 0
+        // Same as in-app notifications list: deep-link floor/post without forcing nested
+        // tree (avoids blank first paint while /n/topic is loading or unavailable).
         navigationController.pushViewController(
             TopicDetailFactory.make(
                 api: api,
                 topicId: topicId,
                 initialFloor: route.postNumber,
-                initialPostId: route.postId,
-                preferNested: true
+                initialPostId: route.postId
             ),
             animated: true
         )
@@ -399,11 +405,21 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func scheduleLaunchOverlayFallbackDismiss() {
         launchOverlayFallbackTask?.cancel()
+        // Use GCD deadline in addition to Task sleep — more reliable if cooperative
+        // tasks are delayed while the first frame is still installing tabs.
+        let deadline = DispatchTime.now() + .milliseconds(Int(Self.launchOverlayMaximumDurationNanoseconds / 1_000_000))
+        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
+            guard let self, !self.launchOverlayDismissed else { return }
+            DohDebugLog.record("launch overlay fallback dismiss", subsystem: "Launch")
+            self.dismissLaunchLoadingOverlayRespectingMinimumDuration()
+        }
         launchOverlayFallbackTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.launchOverlayMaximumDurationNanoseconds)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self?.dismissLaunchLoadingOverlayRespectingMinimumDuration()
+                guard let self, !self.launchOverlayDismissed else { return }
+                DohDebugLog.record("launch overlay task dismiss", subsystem: "Launch")
+                self.dismissLaunchLoadingOverlayRespectingMinimumDuration()
             }
         }
     }
@@ -428,8 +444,11 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
         let dismiss = { [weak self] in
             guard let self else { return }
+            DohDebugLog.record("launch overlay dismissing", subsystem: "Launch")
             self.launchLoadingView.dismiss {
                 self.launchLoadingView.removeFromSuperview()
+                // Leave cream launch color only while the splash covers the UI.
+                self.view.backgroundColor = AppSettings.shared.themeStyle.topicListBackgroundColor
                 self.presentPendingAppUpdateIfPossible()
             }
         }

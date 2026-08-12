@@ -57,7 +57,11 @@ final class LightweightDohProxyService {
         lock.unlock()
 
         if shouldEnable {
-            _ = ensureRunning()
+            // Never block AppDelegate/main: LocalConnectProxy.start() waits on a
+            // semaphore for NWListener.ready (up to 2s) and can stall first paint.
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                _ = self?.ensureRunning()
+            }
         } else {
             stop()
         }

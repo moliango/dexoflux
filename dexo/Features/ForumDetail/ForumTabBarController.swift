@@ -409,30 +409,66 @@ final class ForumTabBarController: UITabBarController {
     /// a short "above bar" frame from an older layout pass.
     private func fillSelectedContentUnderTabBar() {
         scrollExpandedLayoutSnapshots.removeAll()
-        guard let selectedViewController else { return }
         let bounds = view.bounds
-        if let container = selectedViewController.view.superview, container !== view {
-            container.frame = bounds
-            container.clipsToBounds = true
-            selectedViewController.view.frame = container.bounds
-        } else {
-            selectedViewController.view.frame = bounds
+        // Normalize *all* tab containers. Scroll-hide expand can leave a non-selected
+        // tab with clipsToBounds=false / oversized frame; that peeks as a gray edge
+        // strip on 通知 / 我的 / 浏览历史 / 书签 ("上去了一块").
+        for controller in viewControllers ?? [] {
+            normalizeTabContentFrame(controller, bounds: bounds, isSelected: controller === selectedViewController)
         }
-        selectedViewController.view.clipsToBounds = true
-        selectedViewController.view.setNeedsLayout()
+    }
 
-        if let navigationController = selectedViewController as? UINavigationController,
-           let visibleView = navigationController.visibleViewController?.view {
-            let navBounds = navigationController.view.bounds
-            if let wrapperView = visibleView.superview, wrapperView !== navigationController.view {
-                wrapperView.frame = navBounds
-                wrapperView.clipsToBounds = true
-                visibleView.frame = wrapperView.bounds
-            } else {
-                visibleView.frame = navBounds
+    private func normalizeTabContentFrame(
+        _ viewController: UIViewController,
+        bounds: CGRect,
+        isSelected: Bool
+    ) {
+        var didChangeFrame = false
+        if let container = viewController.view.superview, container !== view {
+            if container.frame != bounds {
+                container.frame = bounds
+                didChangeFrame = true
             }
-            visibleView.clipsToBounds = true
+            container.clipsToBounds = true
+            if viewController.view.frame != container.bounds {
+                viewController.view.frame = container.bounds
+                didChangeFrame = true
+            }
+        } else if viewController.view.frame != bounds {
+            viewController.view.frame = bounds
+            didChangeFrame = true
+        }
+        viewController.view.clipsToBounds = true
+
+        guard isSelected,
+              let navigationController = viewController as? UINavigationController,
+              let visibleView = navigationController.visibleViewController?.view
+        else {
+            if didChangeFrame {
+                viewController.view.setNeedsLayout()
+            }
+            return
+        }
+
+        let navBounds = navigationController.view.bounds
+        if let wrapperView = visibleView.superview, wrapperView !== navigationController.view {
+            if wrapperView.frame != navBounds {
+                wrapperView.frame = navBounds
+                didChangeFrame = true
+            }
+            wrapperView.clipsToBounds = true
+            if visibleView.frame != wrapperView.bounds {
+                visibleView.frame = wrapperView.bounds
+                didChangeFrame = true
+            }
+        } else if visibleView.frame != navBounds {
+            visibleView.frame = navBounds
+            didChangeFrame = true
+        }
+        visibleView.clipsToBounds = true
+        if didChangeFrame {
             visibleView.setNeedsLayout()
+            viewController.view.setNeedsLayout()
         }
     }
 
@@ -444,6 +480,11 @@ final class ForumTabBarController: UITabBarController {
 
     private func expandSelectedContentIntoTabBarArea() {
         guard let selectedView = selectedViewController?.view else { return }
+        // Keep non-selected tabs clipped so they never leak a gray edge over siblings.
+        for controller in viewControllers ?? [] where controller !== selectedViewController {
+            controller.view.clipsToBounds = true
+            controller.view.superview?.clipsToBounds = true
+        }
         if let contentContainer = selectedView.superview {
             storeScrollExpandedLayoutSnapshot(for: contentContainer)
             storeScrollExpandedLayoutSnapshot(for: selectedView)
@@ -463,6 +504,7 @@ final class ForumTabBarController: UITabBarController {
            let visibleView = navigationController.visibleViewController?.view {
             expandNavigationContentView(visibleView, in: navigationController.view.bounds)
         }
+        view.bringSubviewToFront(tabBar)
     }
 
     private func expandNavigationContentView(_ contentView: UIView, in bounds: CGRect) {
@@ -637,6 +679,12 @@ private extension ForumTabBarController {
         tabIdentifiers = identifiers
         visibleTabItemIDs = AppSettings.shared.forumVisibleConfiguredTabItemIDs
 
+        // Always install classic viewControllers first. On some real devices, setting only
+        // `tabs` (iOS 18 UITab API) never materializes the selected content VC — Home never
+        // reaches viewDidLoad, launch overlay never gets initialContentReady, and the user
+        // is left on the cream LaunchBackground ("stuck on splash").
+        viewControllers = controllers
+
         if #available(iOS 18.0, *) {
             let existingTabs = Dictionary(uniqueKeysWithValues: zip(previousIdentifiers, tabs))
             self.tabs = zip(specs, controllers).map { spec, navigationController in
@@ -665,8 +713,6 @@ private extension ForumTabBarController {
                     navigationController
                 }
             }
-        } else {
-            viewControllers = controllers
         }
 
         let selectedIdentifier = preferredIdentifier ?? "home"
@@ -951,6 +997,17 @@ private extension ForumTabBarController {
         if #available(iOS 18.0, *), index < tabs.count {
             tabs[index].badgeValue = badgeValue
         }
+    }
+}
+
+extension ForumTabBarController: UITabBarControllerDelegate {
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        // Drop scroll-hide residue so non-home tabs never inherit Home's expanded chrome.
+        isTabBarHiddenByScroll = false
+        isAnimatingScrollTabBar = false
+        scrollTabBarAnimationID += 1
+        applyCurrentTabBarLayout()
+        view.bringSubviewToFront(tabBar)
     }
 }
 
