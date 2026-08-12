@@ -174,6 +174,11 @@ struct DiscourseNotification: Decodable, Identifiable {
             return String(localized: "notifications.action.posted \(displayActor)")
         case 11, 39:
             return String(localized: "notifications.action.linked \(displayActor)")
+        case 12:
+            if let badgeName = data.badgeName, !badgeName.isEmpty {
+                return String(localized: "notifications.action.badge_granted \(badgeName)")
+            }
+            return String(localized: "notifications.action.badge")
         case 24:
             return String(localized: "notifications.action.bookmark")
         case 25:
@@ -391,6 +396,7 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
     case replies
     case mentions
     case messages
+    case badges
     case system
 
     var title: String {
@@ -405,6 +411,8 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
             return String(localized: "notifications.filter.mentions", defaultValue: "@我")
         case .messages:
             return String(localized: "notifications.filter.messages", defaultValue: "私信")
+        case .badges:
+            return String(localized: "notifications.filter.badges", defaultValue: "勋章")
         case .system:
             return String(localized: "notifications.filter.system", defaultValue: "系统")
         }
@@ -424,8 +432,12 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
         case .messages:
             // private message (+ group message type 7 if present)
             return [6, 7].contains(notification.notificationType)
+        case .badges:
+            // granted badge (Discourse notification_type = 12)
+            return notification.notificationType == 12
         case .system:
-            // everything else: likes, badges, bookmarks, reactions, boosts, links, ...
+            // Catch-all for non-chat/social buckets. Keep badges here too so users
+            // who stay on「系统」still see medal grants;「勋章」is a focused shortcut.
             return ![1, 2, 3, 6, 7, 9].contains(notification.notificationType)
         }
     }

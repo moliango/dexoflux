@@ -13,12 +13,20 @@ final class NotificationsViewController: ObservableViewController {
 
 
 
+    private let filterContainerView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .clear
+        return view
+    }()
+
     private let filterScrollView: UIScrollView = {
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsHorizontalScrollIndicator = false
         scroll.alwaysBounceHorizontal = true
         scroll.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        scroll.contentInsetAdjustmentBehavior = .never
         return scroll
     }()
 
@@ -26,7 +34,8 @@ final class NotificationsViewController: ObservableViewController {
         let stack = UIStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
-        stack.alignment = .center
+        stack.alignment = .fill
+        stack.distribution = .fill
         stack.spacing = 8
         return stack
     }()
@@ -34,13 +43,14 @@ final class NotificationsViewController: ObservableViewController {
     private lazy var tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .plain)
         table.translatesAutoresizingMaskIntoConstraints = false
+        TopicListCellFactory.registerCells(on: table)
         table.register(NotificationCell.self, forCellReuseIdentifier: NotificationCell.reuseIdentifier)
         table.dataSource = self
         table.delegate = self
         table.separatorStyle = .none
         table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = 84
+        table.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         table.refreshControl = refreshControl
         return table
     }()
@@ -133,29 +143,35 @@ final class NotificationsViewController: ObservableViewController {
         navigationItem.rightBarButtonItem?.accessibilityLabel = String(localized: "notifications.mark_all_read")
 
         buildFilterChips()
+        filterContainerView.addSubview(filterScrollView)
         filterScrollView.addSubview(filterStackView)
-        view.addSubview(filterScrollView)
+        view.addSubview(filterContainerView)
         view.addSubview(tableView)
         view.addSubview(skeletonView)
         view.addSubview(stateStackView)
         NSLayoutConstraint.activate([
-            filterScrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            filterScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            filterScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            filterScrollView.heightAnchor.constraint(equalToConstant: 48),
+            filterContainerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            filterContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            filterContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            filterContainerView.heightAnchor.constraint(equalToConstant: 52),
 
-            filterStackView.topAnchor.constraint(equalTo: filterScrollView.topAnchor, constant: 8),
-            filterStackView.bottomAnchor.constraint(equalTo: filterScrollView.bottomAnchor, constant: -8),
+            filterScrollView.topAnchor.constraint(equalTo: filterContainerView.topAnchor),
+            filterScrollView.leadingAnchor.constraint(equalTo: filterContainerView.leadingAnchor),
+            filterScrollView.trailingAnchor.constraint(equalTo: filterContainerView.trailingAnchor),
+            filterScrollView.bottomAnchor.constraint(equalTo: filterContainerView.bottomAnchor),
+
+            filterStackView.topAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.topAnchor, constant: 8),
+            filterStackView.bottomAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.bottomAnchor, constant: -8),
             filterStackView.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor),
             filterStackView.trailingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.trailingAnchor),
-            filterStackView.heightAnchor.constraint(equalTo: filterScrollView.frameLayoutGuide.heightAnchor, constant: -16),
+            filterStackView.heightAnchor.constraint(equalToConstant: 36),
 
-            tableView.topAnchor.constraint(equalTo: filterScrollView.bottomAnchor),
+            tableView.topAnchor.constraint(equalTo: filterContainerView.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            skeletonView.topAnchor.constraint(equalTo: filterScrollView.bottomAnchor),
+            skeletonView.topAnchor.constraint(equalTo: filterContainerView.bottomAnchor),
             skeletonView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             skeletonView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             skeletonView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -178,8 +194,22 @@ final class NotificationsViewController: ObservableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         configureCloseButtonIfNeeded()
+        // Tab root can appear before first layout; rebuild chips so categories never go blank.
+        if filterButtons.isEmpty || filterStackView.arrangedSubviews.isEmpty {
+            buildFilterChips()
+        } else {
+            refreshFilterChipStyles()
+        }
+        filterContainerView.isHidden = viewModel.requiresLogin
+        view.bringSubviewToFront(filterContainerView)
         Task {
+            async let catalog = BadgeCatalogStore.ensureLoaded(using: self.api)
             await viewModel.loadNotifications()
+            _ = await catalog
+            self.refreshFilterChipStyles()
+            if !self.viewModel.notifications.isEmpty {
+                self.tableView.reloadData()
+            }
         }
     }
 
@@ -192,7 +222,8 @@ final class NotificationsViewController: ObservableViewController {
         let hasFiltered = !filtered.isEmpty
         let showSkeleton = viewModel.isLoading && sourceEmpty
         skeletonView.isHidden = !showSkeleton
-        filterScrollView.isHidden = viewModel.requiresLogin
+        filterContainerView.isHidden = viewModel.requiresLogin
+        filterScrollView.isHidden = false
         tableView.isHidden = !hasFiltered || showSkeleton
         stateStackView.isHidden = hasFiltered || showSkeleton
         // Keep mark-all enabled if any unread exists (global), not just current filter.
@@ -237,7 +268,9 @@ final class NotificationsViewController: ObservableViewController {
         let themeStyle = AppSettings.shared.themeStyle
         let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground
+        filterContainerView.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
+        tableView.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         view.tintColor = themeStyle.accentColor
         refreshControl.tintColor = themeStyle.accentColor
         skeletonView.applyThemeStyle()
@@ -291,7 +324,10 @@ final class NotificationsViewController: ObservableViewController {
         for filter in NotificationListFilter.allCases {
             var config = UIButton.Configuration.plain()
             config.cornerStyle = .capsule
-            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14)
+            config.title = filter.title
+            config.baseForegroundColor = .secondaryLabel
+            config.background.backgroundColor = UIColor.secondarySystemFill
             config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
                 var outgoing = incoming
                 outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -299,6 +335,8 @@ final class NotificationsViewController: ObservableViewController {
             }
             let button = UIButton(configuration: config)
             button.tag = filter.rawValue
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
             button.addTarget(self, action: #selector(filterChipTapped(_:)), for: .touchUpInside)
             filterButtons[filter] = button
             filterStackView.addArrangedSubview(button)
@@ -365,12 +403,15 @@ final class NotificationsViewController: ObservableViewController {
                 onTopicSelected(topicId, postNumber, postId)
             }
         } else {
+            // Do not force nested/tree mode from notifications: empty nestedRows before
+            // /n/topic returns paints a blank body (title header only). Flat stream +
+            // deep-link floor/postId is the reliable path; user can still enable tree
+            // via settings / more menu (TopicDetailFactory respects nestedReplyViewEnabled).
             let detailVC = TopicDetailFactory.make(
                 api: api,
                 topicId: topicId,
                 initialFloor: postNumber,
-                initialPostId: postId,
-                preferNested: true
+                initialPostId: postId
             )
             navigationController?.pushViewController(detailVC, animated: true)
         }
@@ -383,10 +424,33 @@ extension NotificationsViewController: UITableViewDataSource, UITableViewDelegat
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(withIdentifier: NotificationCell.reuseIdentifier, for: indexPath) as? NotificationCell else {
+        let notification = filteredNotifications[indexPath.row]
+        let layout = TopicListLayoutKind.current
+        if layout.usesChatSessionRows {
+            let avatarURL = NotificationCell.avatarURL(for: notification, baseURL: api.baseURL)
+            let item = TopicListSessionItem(
+                title: notification.displayTitle,
+                subtitle: notification.displayDescription,
+                timeText: NotificationCell.formatDate(notification.createdAt),
+                avatarURL: avatarURL,
+                isEmphasized: !notification.read,
+                badgeText: nil,
+                baseURL: api.baseURL
+            )
+            return TopicListCellFactory.makeSessionCell(
+                tableView: tableView,
+                indexPath: indexPath,
+                item: item,
+                layout: layout
+            )
+        }
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: NotificationCell.reuseIdentifier,
+            for: indexPath
+        ) as? NotificationCell else {
             return UITableViewCell()
         }
-        cell.configure(with: filteredNotifications[indexPath.row], baseURL: api.baseURL)
+        cell.configure(with: notification, baseURL: api.baseURL)
         return cell
     }
 
@@ -579,6 +643,8 @@ private final class NotificationCell: UITableViewCell {
         super.prepareForReuse()
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
+        badgeIconView.sd_cancelCurrentImageLoad()
+        badgeIconView.image = nil
         titleLabel.text = nil
         descriptionLabel.text = nil
         timeLabel.text = nil
@@ -609,14 +675,105 @@ private final class NotificationCell: UITableViewCell {
             url: Self.avatarURL(for: notification, baseURL: baseURL),
             placeholder: UIImage(systemName: "person.crop.circle")
         )
+
+        // Badge granted: catalog supplies type color + optional image; payload has name.
+        if notification.notificationType == 12 {
+            applyBadgeChrome(
+                badgeId: notification.data.badgeId,
+                badgeName: notification.data.badgeName,
+                isRead: notification.read,
+                baseURL: baseURL,
+                themeStyle: themeStyle
+            )
+        }
     }
 
-    private static func avatarURL(for notification: DiscourseNotification, baseURL: String) -> URL? {
+    private func applyBadgeChrome(
+        badgeId: Int?,
+        badgeName: String?,
+        isRead: Bool,
+        baseURL: String,
+        themeStyle: AppSettings.ThemeStyle
+    ) {
+        let catalogBadge = badgeId.flatMap { BadgeCatalogStore.badge(id: $0, baseURL: baseURL) }
+        let type = catalogBadge?.type ?? .bronze
+        let medalColor = isRead ? UIColor.secondaryLabel : type.color
+        let symbol = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        let fallback = UIImage(systemName: "medal.fill", withConfiguration: symbol)
+
+        badgeIconView.sd_cancelCurrentImageLoad()
+        badgeIconView.tintColor = medalColor
+        badgeContainer.backgroundColor = isRead
+            ? themeStyle.topicChipBackgroundColor
+            : type.color.withAlphaComponent(0.16)
+
+        if let raw = catalogBadge?.imageURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty,
+           let url = Self.resolveURL(raw, baseURL: baseURL) {
+            badgeIconView.sd_setImage(with: url, placeholderImage: fallback)
+            // Keep original badge artwork colors when remote image loads.
+            badgeIconView.tintColor = nil
+        } else {
+            badgeIconView.image = fallback
+        }
+
+        let name = badgeName ?? catalogBadge?.name
+        let typeTitle = catalogBadge?.type.title
+        if let name, !name.isEmpty, let typeTitle {
+            descriptionLabel.text = String(localized: "notifications.action.badge_granted_typed \(typeTitle) \(name)")
+        } else if let name, !name.isEmpty {
+            descriptionLabel.text = String(localized: "notifications.action.badge_granted \(name)")
+        } else {
+            descriptionLabel.text = String(localized: "notifications.action.badge")
+        }
+
+        // Warm catalog if missing so next configure paints real chrome.
+        if catalogBadge == nil, let badgeId {
+            let api = DiscourseAPI(baseURL: baseURL)
+            Task { @MainActor in
+                _ = await BadgeCatalogStore.ensureLoaded(using: api)
+                if let refreshed = BadgeCatalogStore.badge(id: badgeId, baseURL: baseURL) {
+                    // Only refresh if still showing this badge id's placeholder.
+                    let type = refreshed.type
+                    self.badgeIconView.tintColor = isRead ? .secondaryLabel : type.color
+                    self.badgeContainer.backgroundColor = isRead
+                        ? themeStyle.topicChipBackgroundColor
+                        : type.color.withAlphaComponent(0.16)
+                    if let raw = refreshed.imageURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !raw.isEmpty,
+                       let url = Self.resolveURL(raw, baseURL: baseURL) {
+                        self.badgeIconView.sd_setImage(with: url, placeholderImage: fallback)
+                        self.badgeIconView.tintColor = nil
+                    }
+                    let typeTitle = refreshed.type.title
+                    let displayName = name ?? refreshed.name
+                    if !displayName.isEmpty {
+                        self.descriptionLabel.text = String(
+                            localized: "notifications.action.badge_granted_typed \(typeTitle) \(displayName)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private static func resolveURL(_ raw: String, baseURL: String) -> URL? {
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            return URL(string: raw)
+        }
+        let base = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if raw.hasPrefix("/") {
+            return URL(string: base + raw)
+        }
+        return URL(string: base + "/" + raw)
+    }
+
+    static func avatarURL(for notification: DiscourseNotification, baseURL: String) -> URL? {
         guard let template = notification.actingUserAvatarTemplate ?? notification.data.avatarTemplate else { return nil }
         return AvatarImageLoader.url(from: template, baseURL: baseURL, size: 96)
     }
 
-    private static func formatDate(_ string: String) -> String {
+    static func formatDate(_ string: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = formatter.date(from: string) ?? ISO8601DateFormatter().date(from: string)
@@ -643,7 +800,7 @@ private final class NotificationCell: UITableViewCell {
         case 11, 39:
             return "link"
         case 12:
-            return "seal.fill"
+            return "medal.fill"
         case 15:
             return "person.2.fill"
         case 17:
