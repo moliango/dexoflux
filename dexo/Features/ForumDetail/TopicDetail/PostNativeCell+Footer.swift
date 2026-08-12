@@ -16,6 +16,41 @@ extension PostNativeCell {
         showRepliesButton.clipsToBounds = true
     }
 
+    /// FluxDo expand control under a nested node: ⊕ N 条回复 / ⊖ 收起.
+    func configureNestedExpandButton(row: NestedDisplayRow) {
+        let count = max(row.directReplyCount, row.loadedChildCount)
+        let accent = AppSettings.shared.themeStyle.accentColor
+        var config = UIButton.Configuration.plain()
+        if row.isExpanded {
+            config.image = UIImage(
+                systemName: "minus.circle.fill",
+                withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .medium)
+            )
+            config.title = String(localized: "topic.nested.collapse", defaultValue: "收起")
+        } else {
+            config.image = UIImage(
+                systemName: "plus.circle.fill",
+                withConfiguration: Self.actionSymbolConfig(pointSize: 13, weight: .medium)
+            )
+            // Use format + StaticString key — interpolating into `localized:defaultValue:`
+            // yields a runtime String and fails to compile (expects StaticString).
+            config.title = String(
+                format: String(localized: "topic.nested.replies_count", defaultValue: "%d 条回复"),
+                count
+            )
+        }
+        config.imagePadding = 4
+        config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 8)
+        config.baseForegroundColor = accent
+        config.background.backgroundColor = .clear
+        var title = AttributedString(config.title ?? "")
+        title.font = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .medium)
+        config.attributedTitle = title
+        showRepliesButton.configuration = config
+        showRepliesButton.clipsToBounds = true
+        showRepliesButton.accessibilityLabel = config.title
+    }
+
     func configureSharedIssueButton(_ state: SharedIssueState?) {
         guard let state else {
             currentSharedIssueTopicId = nil

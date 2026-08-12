@@ -16,6 +16,15 @@ extension TopicDetailViewController: PostCellDelegate {
     }
 
     func postCell(didTapShowRepliesForPostId postId: Int) {
+        // FluxDo tree: expand/collapse children in place instead of a replies sheet.
+        if viewModel.isNestedViewEnabled,
+           let row = viewModel.nestedRow(forPostId: postId) {
+            let width = max(view.bounds.width - 48, 300)
+            Task {
+                await viewModel.toggleNestedExpand(postNumber: row.postNumber, containerWidth: width)
+            }
+            return
+        }
         let repliesVC = RepliesViewController(api: api, postId: postId, topicId: topicId)
         if let sheet = repliesVC.sheetPresentationController {
             sheet.detents = [.medium(), .large()]

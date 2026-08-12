@@ -191,6 +191,7 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         )
         let block = ContentBlock.list(
             ordered: false,
+            start: 1,
             items: [
                 ListItem(content: [
                     .text("我的帖子已经打上 "),

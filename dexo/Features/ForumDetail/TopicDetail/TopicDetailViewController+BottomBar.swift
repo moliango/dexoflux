@@ -57,8 +57,9 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             viewModel.setFilteringByOP(!viewModel.isFilteringByOP)
             configureTopicActions()
         case .toggleNestedView:
-            AppSettings.shared.nestedReplyViewEnabled.toggle()
-            Task { await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width) }
+            let enabled = !viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            viewModel.setNestedViewEnabled(enabled)
         case .aiAssistant:
             aiAssistantTapped()
         case .readingSettings:

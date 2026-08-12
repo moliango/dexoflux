@@ -104,6 +104,14 @@ extension PostNativeCell {
             loadInlineImages(in: textView, cloudflareBaseURL: cloudflareBaseURL)
             return
         }
+        // Prefer arrangedSubviews so nested list/details stacks are fully wired
+        // even if UIStackView internal chrome sits in `subviews`.
+        if let stack = view as? UIStackView {
+            for arranged in stack.arrangedSubviews {
+                setupTextViews(in: arranged, cloudflareBaseURL: cloudflareBaseURL)
+            }
+            return
+        }
         for subview in view.subviews {
             setupTextViews(in: subview, cloudflareBaseURL: cloudflareBaseURL)
         }

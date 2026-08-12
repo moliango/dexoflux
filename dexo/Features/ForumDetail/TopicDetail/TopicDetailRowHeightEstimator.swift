@@ -48,7 +48,7 @@ enum TopicDetailRowHeightEstimator {
             return 96
         case .video(_, _, _, let width, let height, _, _):
             return estimateImageHeight(width: width, height: height, contentWidth: contentWidth) + 8
-        case .list(_, let items):
+        case .list(_, _, let items):
             return CGFloat(max(items.count, 1)) * 22 + 8
         case .poll:
             return 120

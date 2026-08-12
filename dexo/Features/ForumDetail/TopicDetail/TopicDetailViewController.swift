@@ -85,6 +85,7 @@ final class TopicDetailViewController: ObservableViewController {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(PostNativeCell.self, forCellReuseIdentifier: PostNativeCell.reuseIdentifier)
+        tv.register(NestedSortBarCell.self, forCellReuseIdentifier: NestedSortBarCell.reuseIdentifier)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -94,35 +95,57 @@ final class TopicDetailViewController: ObservableViewController {
         return tv
     }()
 
-    lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, postId in
-        guard let self,
-              let post = self.viewModel.posts.first(where: { $0.id == postId })
-        else {
+    lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = .init(tableView: tableView) { [weak self] tableView, indexPath, itemId in
+        guard let self else { return UITableViewCell() }
+
+        if itemId == TopicDetailListItem.nestedSortBarID {
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: NestedSortBarCell.reuseIdentifier,
+                for: indexPath
+            ) as? NestedSortBarCell else {
+                return UITableViewCell()
+            }
+            cell.configure(selected: self.viewModel.nestedSort)
+            cell.onSelectSort = { [weak self] sort in
+                self?.viewModel.setNestedSort(sort)
+            }
+            return cell
+        }
+
+        guard let post = self.viewModel.post(byId: itemId) else {
             return UITableViewCell()
         }
 
-        guard let annotatedBlocks = self.viewModel.parsedBlocks[postId],
+        guard let annotatedBlocks = self.viewModel.parsedBlocks[itemId],
               let cell = tableView.dequeueReusableCell(withIdentifier: PostNativeCell.reuseIdentifier, for: indexPath) as? PostNativeCell
         else {
             return UITableViewCell()
         }
+        let nestedRow = self.viewModel.isNestedViewEnabled
+            ? self.viewModel.nestedRow(forPostId: itemId)
+            : nil
         let visiblePosts = self.viewModel.visiblePosts
         let floorNumber: Int
-        if self.viewModel.isFilteringByOP {
-            floorNumber = (visiblePosts.firstIndex(where: { $0.id == postId }) ?? 0) + 1
+        if self.viewModel.isNestedViewEnabled {
+            // Keep Discourse post_number so jump / share links stay stable in tree mode.
+            floorNumber = post.postNumber
+        } else if self.viewModel.isFilteringByOP {
+            floorNumber = (visiblePosts.firstIndex(where: { $0.id == itemId }) ?? 0) + 1
         } else {
             // Use stream-based floor number when not filtering
             let allPostIds = self.viewModel.allPostIds
-            if let streamIndex = allPostIds.firstIndex(of: postId) {
+            if let streamIndex = allPostIds.firstIndex(of: itemId) {
                 floorNumber = streamIndex + 1
             } else {
-                floorNumber = (visiblePosts.firstIndex(where: { $0.id == postId }) ?? 0) + 1
+                floorNumber = (visiblePosts.firstIndex(where: { $0.id == itemId }) ?? 0) + 1
             }
         }
         let postLink = "\(self.baseURL)/t/\(self.topicId)/\(post.postNumber)"
         let renderContentWidth = PostNativeCell.renderContentWidth(
             for: tableView.bounds.width,
-            isFirstPost: floorNumber == 1
+            isFirstPost: floorNumber == 1,
+            nestedDepth: nestedRow?.depth ?? 0,
+            isNestedTree: nestedRow != nil
         )
         let galleryImageURLs = TopicImageGallerySources.urls(from: annotatedBlocks)
         let config = NativeRenderConfig.default(
@@ -133,7 +156,7 @@ final class TopicDetailViewController: ObservableViewController {
             topicTagNames: Set(self.viewModel.topic?.tags.map(\.name) ?? []),
             topicCategoryPresentation: self.viewModel.categoryPresentation
         )
-        let hasUnsupported = self.viewModel.unsupportedPostIds.contains(postId)
+        let hasUnsupported = self.viewModel.unsupportedPostIds.contains(itemId)
 
         cell.configure(
             with: post,
@@ -147,6 +170,7 @@ final class TopicDetailViewController: ObservableViewController {
             cookedHTML: post.cooked,
             validReactions: self.viewModel.topic?.validReactions ?? [],
             sharedIssue: self.sharedIssueState(forFloorNumber: floorNumber),
+            nestedPresentation: nestedRow
         )
         return cell
     }
@@ -432,11 +456,11 @@ final class TopicDetailViewController: ObservableViewController {
                 viewModel.setNestedViewEnabled(true)
             }
             await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
-            // Nested load can fail on some sites — fall back to flat stream.
-            if preferNestedOnLoad, viewModel.isNestedViewEnabled, viewModel.nestedRows.isEmpty, viewModel.errorMessage != nil {
-                viewModel.setNestedViewEnabled(false)
+            // Nested load can fail silently (plugin missing / empty tree / unparsed nodes).
+            // Always abandon tree when nothing can paint — do not require errorMessage.
+            if viewModel.isNestedViewEnabled {
+                viewModel.abandonNestedIfUnrenderable()
                 viewModel.errorMessage = nil
-                await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
             }
             // Prefer list hint; fall back to detail payload when present.
             if let detailLastRead = viewModel.topic?.lastReadPostNumber {
@@ -629,25 +653,63 @@ final class TopicDetailViewController: ObservableViewController {
 
         // Show posts — all visible posts that have parsed blocks
         if viewModel.isReady {
+            // Last-chance guard: nested tree with zero paintable rows → blank body under header.
+            // notify: false — we are already inside updateUI; avoid re-entrant notifyChanged.
+            _ = viewModel.abandonNestedIfUnrenderable(notify: false)
+
             let shouldAnimateInitialContent = !hasPresentedInitialContent && tableView.isHidden
             if shouldAnimateInitialContent {
                 prepareInitialContentTransition()
             }
             tableView.isHidden = false
+            // Never leave alpha at 0 if a prior transition was interrupted.
+            if tableView.alpha < 0.01, hasPresentedInitialContent {
+                tableView.alpha = 1
+                tableView.transform = .identity
+            }
             var seen = Set<Int>()
-            let sourcePosts: [DiscourseTopicDetail.Post] = {
-                if viewModel.isNestedViewEnabled {
-                    return NestedReplyOrdering.ordered(viewModel.visiblePosts).map { $0.post }
-                }
-                return viewModel.visiblePosts
-            }()
-            let readyIds = sourcePosts.compactMap { post -> Int? in
+            // Nested mode already returns rows in API tree order (OP → roots → expanded children).
+            // Do NOT re-run NestedReplyOrdering — that scrambles FluxDo sort and collapses depth.
+            let sourcePosts = viewModel.visiblePosts
+            var readyIds = sourcePosts.compactMap { post -> Int? in
                 guard viewModel.parsedBlocks[post.id] != nil,
                       seen.insert(post.id).inserted else { return nil }
                 return post.id
             }
-            prefetchContentImages(forPostIds: readyIds)
-            warmEstimatedRowHeights(forPostIds: readyIds)
+            // If nested filtering still produced nothing but flat stream is parsed, force flat ids.
+            if readyIds.isEmpty {
+                seen.removeAll(keepingCapacity: true)
+                let flatFallback = viewModel.posts.compactMap { post -> Int? in
+                    guard viewModel.parsedBlocks[post.id] != nil,
+                          seen.insert(post.id).inserted else { return nil }
+                    return post.id
+                }
+                if !flatFallback.isEmpty {
+                    // Silent — already inside updateUI.
+                    viewModel.forceDisableNested(notify: false)
+                    readyIds = flatFallback
+                    DohDebugLog.record(
+                        "topic snapshot flat fallback ids=\(readyIds.count)",
+                        subsystem: "topic.firstpaint"
+                    )
+                }
+            }
+            // Sort chips only when the tree actually has rows (not during flat fallback).
+            if viewModel.isNestedViewEnabled,
+               !viewModel.nestedRows.isEmpty,
+               !readyIds.isEmpty {
+                // FluxDo: sort chips sit directly under the OP.
+                let sortBar = TopicDetailListItem.nestedSortBarID
+                if let opIndex = readyIds.firstIndex(where: { id in
+                    viewModel.post(byId: id)?.postNumber == 1
+                }) {
+                    readyIds.insert(sortBar, at: opIndex + 1)
+                } else {
+                    readyIds.insert(sortBar, at: min(1, readyIds.count))
+                }
+            }
+            prefetchContentImages(forPostIds: readyIds.filter { $0 != TopicDetailListItem.nestedSortBarID })
+            warmEstimatedRowHeights(forPostIds: readyIds.filter { $0 != TopicDetailListItem.nestedSortBarID })
             let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
             applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
             if shouldReloadVisibleContent {
@@ -1082,8 +1144,10 @@ final class TopicDetailViewController: ObservableViewController {
     func updateVisibleReadingPosts() {
         guard isViewLoaded, view.window != nil, !isApplyingPostSnapshot else { return }
         let postNumbers = (tableView.indexPathsForVisibleRows ?? []).compactMap { indexPath -> Int? in
-            guard let postId = dataSource.itemIdentifier(for: indexPath) else { return nil }
-            return viewModel.posts.first(where: { $0.id == postId })?.postNumber
+            guard let postId = dataSource.itemIdentifier(for: indexPath),
+                  postId != TopicDetailListItem.nestedSortBarID
+            else { return nil }
+            return viewModel.post(byId: postId)?.postNumber
         }
         readingTracker.setVisiblePostNumbers(Set(postNumbers))
     }
@@ -1109,16 +1173,27 @@ final class TopicDetailViewController: ObservableViewController {
     func warmEstimatedRowHeights(forPostIds postIds: [Int]) {
         let tableWidth = tableView.bounds.width > 1 ? tableView.bounds.width : view.bounds.width
         for postId in postIds {
+            if postId == TopicDetailListItem.nestedSortBarID {
+                postRowEstimatedHeightCache[postId] = 48
+                continue
+            }
             if let measured = postRowHeightCache[postId], measured > 1 { continue }
             if let existing = postRowEstimatedHeightCache[postId], existing > 1 { continue }
             guard let blocks = viewModel.parsedBlocks[postId] else { continue }
+            let nestedRow = viewModel.isNestedViewEnabled ? viewModel.nestedRow(forPostId: postId) : nil
             let isFirst: Bool = {
+                if let post = viewModel.post(byId: postId), post.postNumber == 1 { return true }
                 if let streamIndex = viewModel.allPostIds.firstIndex(of: postId) {
                     return streamIndex == 0
                 }
                 return postIds.first == postId
             }()
-            let contentWidth = PostNativeCell.renderContentWidth(for: tableWidth, isFirstPost: isFirst)
+            let contentWidth = PostNativeCell.renderContentWidth(
+                for: tableWidth,
+                isFirstPost: isFirst,
+                nestedDepth: nestedRow?.depth ?? 0,
+                isNestedTree: nestedRow != nil
+            )
             postRowEstimatedHeightCache[postId] = TopicDetailRowHeightEstimator.estimate(
                 blocks: blocks,
                 isFirstPost: isFirst,

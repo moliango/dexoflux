@@ -415,7 +415,7 @@ enum ShareImageBodyComposer {
                 )
             }
 
-        case .list(_, let items):
+        case .list(_, _, let items):
             for item in items {
                 // Flatten list item to plain text then strip residual MD (`**…`).
                 // Attributed walk kept raw `**` for uncooked checklist forms on linux.do.

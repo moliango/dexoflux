@@ -11,6 +11,9 @@ extension TopicDetailViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         if let postId = dataSource.itemIdentifier(for: indexPath) {
+            if postId == TopicDetailListItem.nestedSortBarID {
+                return 48
+            }
             if let cached = postRowHeightCache[postId], cached > 1 {
                 return cached
             }
@@ -91,6 +94,7 @@ extension TopicDetailViewController: UITableViewDelegate {
         // and within 200pt of the top — prevents false triggers after jump
         guard isScrollingUp,
               !suppressLoadEarlier,
+              !viewModel.isNestedViewEnabled,
               viewModel.canLoadEarlier,
               !isLoadingEarlierLocally
         else { return }
@@ -146,7 +150,8 @@ extension TopicDetailViewController: UITableViewDelegate {
         // Prefetch content images for this row + a few ahead (smoother first paint).
         // Skip aggressive ahead-prefetch while flinging — decode competes with scroll.
         var displayedPostId: Int?
-        if let postId = dataSource.itemIdentifier(for: indexPath) {
+        if let postId = dataSource.itemIdentifier(for: indexPath),
+           postId != TopicDetailListItem.nestedSortBarID {
             displayedPostId = postId
             if !scrollBusy {
                 var ahead: [Int] = [postId]
@@ -154,13 +159,17 @@ extension TopicDetailViewController: UITableViewDelegate {
                 for offset in 1...3 {
                     let next = indexPath.row + offset
                     guard next < total,
-                          let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0))
+                          let id = dataSource.itemIdentifier(for: IndexPath(row: next, section: 0)),
+                          id != TopicDetailListItem.nestedSortBarID
                     else { break }
                     ahead.append(id)
                 }
                 prefetchContentImages(forPostIds: ahead)
             }
         }
+
+        // Flat stream pagination only — nested tree uses /n/topic roots + expand children.
+        guard !viewModel.isNestedViewEnabled else { return }
 
         // Next-window readiness: keep ~one page ahead of the visible stream index.
         // Backup: also fire near the end of the current table snapshot.

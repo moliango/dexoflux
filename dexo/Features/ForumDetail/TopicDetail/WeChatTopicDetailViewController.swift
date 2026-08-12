@@ -65,7 +65,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = {
         UITableViewDiffableDataSource<Int, Int>(tableView: tableView) { [weak self] tableView, indexPath, postId in
             guard let self,
-                  let post = self.viewModel.posts.first(where: { $0.id == postId }),
+                  let post = self.viewModel.post(byId: postId),
                   let cell = tableView.dequeueReusableCell(
                     withIdentifier: WeChatChatPostCell.reuseIdentifier,
                     for: indexPath
@@ -419,10 +419,10 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
         let width = max(view.bounds.width, UIScreen.main.bounds.width)
         await viewModel.loadTopic(id: topicId, containerWidth: width)
-        if preferNestedOnLoad, viewModel.isNestedViewEnabled, viewModel.nestedRows.isEmpty, viewModel.errorMessage != nil {
-            viewModel.setNestedViewEnabled(false)
+        // Nested may fail without errorMessage (catch path clears it). Exit tree if unrenderable.
+        if viewModel.isNestedViewEnabled {
+            viewModel.abandonNestedIfUnrenderable()
             viewModel.errorMessage = nil
-            await viewModel.loadTopic(id: topicId, containerWidth: width)
         }
         // Merge server detail last_read with constructor hint / local store.
         if let detailLast = viewModel.topic?.lastReadPostNumber {
@@ -458,18 +458,27 @@ final class WeChatTopicDetailViewController: ObservableViewController {
     func applySnapshot() {
         // Only show posts that finished HTML parse — same gate as classic Topic Detail.
         // (Cell still has plain-text fallback if blocks are empty.)
+        _ = viewModel.abandonNestedIfUnrenderable(notify: false)
         var seen = Set<Int>()
-        let sourcePosts: [DiscourseTopicDetail.Post] = {
-            if viewModel.isNestedViewEnabled {
-                return NestedReplyOrdering.ordered(viewModel.visiblePosts).map(\.post)
-            }
-            return viewModel.visiblePosts
-        }()
-        let ids = sourcePosts.compactMap { post -> Int? in
+        // Nested API rows already carry tree order; NestedReplyOrdering would scramble sort.
+        var ids = viewModel.visiblePosts.compactMap { post -> Int? in
             guard viewModel.parsedBlocks[post.id] != nil,
                   seen.insert(post.id).inserted
             else { return nil }
             return post.id
+        }
+        // Title-only white body: nested produced nothing paintable — force flat stream ids.
+        if ids.isEmpty {
+            seen.removeAll(keepingCapacity: true)
+            let flat = viewModel.posts.compactMap { post -> Int? in
+                guard viewModel.parsedBlocks[post.id] != nil,
+                      seen.insert(post.id).inserted else { return nil }
+                return post.id
+            }
+            if !flat.isEmpty {
+                viewModel.forceDisableNested(notify: false)
+                ids = flat
+            }
         }
         let current = dataSource.snapshot().itemIdentifiers
         guard ids != current else {

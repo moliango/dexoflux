@@ -153,14 +153,14 @@ enum TopicDetailPollResultMerger {
                 summary: summary,
                 content: mergeInitialPollState(blocks: content, pollResults: pollResults, pollsVotes: pollsVotes)
             )
-        case .list(let ordered, let items):
+        case .list(let ordered, let start, let items):
             let mergedItems = items.map { item in
                 ListItem(
                     content: item.content,
                     children: mergeInitialPollState(blocks: item.children, pollResults: pollResults, pollsVotes: pollsVotes)
                 )
             }
-            return .list(ordered: ordered, items: mergedItems)
+            return .list(ordered: ordered, start: start, items: mergedItems)
         case .table(let headers, let rows):
             return .table(
                 headers: headers.map { mergeInitialPollState(blocks: $0, pollResults: pollResults, pollsVotes: pollsVotes) },
@@ -219,14 +219,14 @@ enum TopicDetailPollResultMerger {
                 summary: summary,
                 content: merge(blocks: content, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds)
             )
-        case .list(let ordered, let items):
+        case .list(let ordered, let start, let items):
             let mergedItems = items.map { item in
                 ListItem(
                     content: item.content,
                     children: merge(blocks: item.children, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds)
                 )
             }
-            return .list(ordered: ordered, items: mergedItems)
+            return .list(ordered: ordered, start: start, items: mergedItems)
         case .table(let headers, let rows):
             return .table(
                 headers: headers.map { merge(blocks: $0, voteResponse: voteResponse, submittedOptionIds: submittedOptionIds) },
@@ -482,10 +482,13 @@ final class TopicDetailViewModel: DexoObservableObject {
     private var nestedRoots: [DiscourseNestedNode] = []
     private var nestedOpPost: DiscourseTopicDetail.Post?
     private var nestedExpandedPostNumbers = Set<Int>()
-    private var nestedSort = "old"
+    /// FluxDo sort chips under OP: top / new / old.
+    private(set) var nestedSort: NestedReplySort = .old
     private var nestedHasMoreRoots = false
     private var nestedPage = 0
     private var nestedTopicId: Int?
+    /// Posts loaded only via nested API (may not yet be in flat `post_stream.posts`).
+    private var nestedPostById: [Int: DiscourseTopicDetail.Post] = [:]
     var isLoadingNested = false
     var isJumping = false
     var jumpTargetFloor: Int?
@@ -525,8 +528,23 @@ final class TopicDetailViewModel: DexoObservableObject {
 
     var visiblePosts: [DiscourseTopicDetail.Post] {
         if isNestedViewEnabled {
-            return nestedVisiblePosts()
+            let nested = nestedVisiblePosts()
+            // While /n/topic is in flight (or returns an empty tree), keep the flat
+            // stream on screen so notification / deep-link opens never paint a blank body.
+            // Also: nested rows that resolve but have zero parsed blocks would paint a
+            // title-only "white screen" — fall back to flat whenever flat can render.
+            if !nested.isEmpty {
+                let nestedCanPaint = nested.contains { parsedBlocks[$0.id] != nil }
+                if nestedCanPaint || isLoadingNested || parsedBlocks.isEmpty {
+                    return nested
+                }
+            }
         }
+        return flatVisiblePosts()
+    }
+
+    /// Flat stream posts (filters applied). Used as the safe fallback under nested mode.
+    private func flatVisiblePosts() -> [DiscourseTopicDetail.Post] {
         var base = posts.filter { !Self.isSystemActionPost($0) }
         if isFilteringByOP, let op = opUsername {
             base = base.filter { $0.username == op }
@@ -539,18 +557,65 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     private func nestedVisiblePosts() -> [DiscourseTopicDetail.Post] {
-        var byId: [Int: DiscourseTopicDetail.Post] = [:]
-        func collect(_ nodes: [DiscourseNestedNode]) {
-            for n in nodes {
-                byId[n.post.id] = n.post
-                collect(n.children)
-            }
+        nestedRows.compactMap { post(byId: $0.postId) }
+    }
+
+    /// True when nested mode currently has at least one row that can enter the Diffable snapshot.
+    var hasRenderableNestedPosts: Bool {
+        guard isNestedViewEnabled else { return false }
+        return nestedVisiblePosts().contains { parsedBlocks[$0.id] != nil }
+    }
+
+    /// Exit tree mode when it cannot paint (empty tree, unparsed nodes, or jump cleared blocks).
+    /// Returns `true` if nested was turned off so the caller can rebuild the snapshot.
+    /// - Parameter notify: When `false`, clears nested state without `notifyChanged` (safe inside `updateUI`).
+    @MainActor
+    @discardableResult
+    func abandonNestedIfUnrenderable(notify: Bool = true) -> Bool {
+        guard isNestedViewEnabled, !isLoadingNested else { return false }
+        if hasRenderableNestedPosts { return false }
+        let flatCanPaint = flatVisiblePosts().contains { parsedBlocks[$0.id] != nil }
+        // Drop tree whenever flat can show content, or the tree itself is empty.
+        guard flatCanPaint || nestedRows.isEmpty || nestedVisiblePosts().isEmpty else {
+            return false
         }
-        if let op = nestedOpPost { byId[op.id] = op }
-        collect(nestedRoots)
-        // Prefer live topic stream posts when already loaded (reactions etc.).
-        for p in posts { byId[p.id] = p }
-        return nestedRows.compactMap { byId[$0.postId] }
+        DohDebugLog.record(
+            "abandon nested: rows=\(nestedRows.count) nestedVisible=\(nestedVisiblePosts().count) flatParsed=\(flatVisiblePosts().filter { parsedBlocks[$0.id] != nil }.count)",
+            subsystem: "topic.nested"
+        )
+        clearNestedState()
+        if notify {
+            notifyChanged()
+        }
+        return true
+    }
+
+    /// Drop tree mode without fetching / notifying (shared by abandon + jump).
+    private func clearNestedState() {
+        isNestedViewEnabled = false
+        nestedRows = []
+        nestedRoots = []
+        nestedOpPost = nil
+        nestedPostById.removeAll(keepingCapacity: true)
+        nestedExpandedPostNumbers.removeAll()
+    }
+
+    /// Force-exit nested mode (e.g. snapshot safety net inside `updateUI`).
+    @MainActor
+    func forceDisableNested(notify: Bool = true) {
+        guard isNestedViewEnabled else { return }
+        clearNestedState()
+        if notify {
+            notifyChanged()
+        }
+    }
+
+    /// Resolve a post from flat stream or nested cache (tree mode may load posts not in stream window).
+    func post(byId id: Int) -> DiscourseTopicDetail.Post? {
+        if let p = posts.first(where: { $0.id == id }) { return p }
+        if let p = nestedPostById[id] { return p }
+        if let op = nestedOpPost, op.id == id { return op }
+        return nil
     }
 
     func nestedRow(forPostId postId: Int) -> NestedDisplayRow? {
@@ -562,11 +627,14 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     var canLoadMore: Bool {
-        !allPostIds.isEmpty && loadedRangeEnd < allPostIds.count
+        // Nested tree pages roots via /n/topic, not the flat post_stream window.
+        guard !isNestedViewEnabled else { return false }
+        return !allPostIds.isEmpty && loadedRangeEnd < allPostIds.count
     }
 
     var canLoadEarlier: Bool {
-        loadedRangeStart > 0
+        guard !isNestedViewEnabled else { return false }
+        return loadedRangeStart > 0
     }
 
     var totalFloors: Int {
@@ -634,12 +702,22 @@ final class TopicDetailViewModel: DexoObservableObject {
                 notifyChanged()
             }
         } else {
-            nestedRows = []
-            nestedRoots = []
-            nestedOpPost = nil
-            nestedExpandedPostNumbers.removeAll()
+            clearNestedState()
+            // clearNestedState already sets isNestedViewEnabled = false; keep flag consistent
+            // when called from setNestedViewEnabled(false) after the flag was set above.
             notifyChanged()
         }
+    }
+
+    /// FluxDo sort chips: reload roots with the chosen order.
+    func setNestedSort(_ sort: NestedReplySort) {
+        guard nestedSort != sort else { return }
+        nestedSort = sort
+        guard isNestedViewEnabled, let topicId = nestedTopicId ?? topic?.id else {
+            notifyChanged()
+            return
+        }
+        Task { await loadNestedRoots(topicId: topicId, trackVisit: false) }
     }
 
     func clearTopicFilters() {
@@ -664,27 +742,42 @@ final class TopicDetailViewModel: DexoObservableObject {
         do {
             let response = try await api.fetchNestedRoots(
                 topicId: topicId,
-                sort: nestedSort,
+                sort: nestedSort.apiValue,
                 page: 0,
                 trackVisit: trackVisit
             )
+            if let sort = response.sort {
+                nestedSort = NestedReplySort.from(apiValue: sort)
+            }
             nestedOpPost = response.opPost ?? firstPost ?? posts.first
             nestedRoots = response.roots
             nestedHasMoreRoots = response.hasMoreRoots
             nestedPage = response.page
             nestedExpandedPostNumbers.removeAll()
-            // Auto-expand first level lightly? FluxDo starts collapsed for deep trees.
+            indexNestedPosts(from: response.roots)
+            if let op = nestedOpPost {
+                nestedPostById[op.id] = op
+            }
+            // FluxDo: roots are always visible; children start collapsed until expanded.
             rebuildNestedRows()
-            // Parse cooked for nested posts so cells can render.
-            let width = 390.0
+            let width = max(UIScreen.main.bounds.width - 48, 300)
             await ensureParsed(for: nestedVisiblePosts(), containerWidth: width)
             isLoadingNested = false
+            // Empty / unparsed tree → flat stream (avoids title-only white body).
+            _ = abandonNestedIfUnrenderable()
             notifyChanged()
         } catch {
             isLoadingNested = false
             // Fallback: client-side tree from loaded posts (plugin may be missing).
             rebuildNestedRowsFromFlatPosts()
+            indexNestedPosts(from: nestedRoots)
+            if let op = nestedOpPost {
+                nestedPostById[op.id] = op
+            }
+            let width = max(UIScreen.main.bounds.width - 48, 300)
+            await ensureParsed(for: nestedVisiblePosts(), containerWidth: width)
             errorMessage = nil
+            _ = abandonNestedIfUnrenderable()
             notifyChanged()
             DohDebugLog.record("nested roots failed: \(error.localizedDescription)", subsystem: "topic.nested")
         }
@@ -707,11 +800,16 @@ final class TopicDetailViewModel: DexoObservableObject {
                 let response = try await api.fetchNestedChildren(
                     topicId: nestedTopicId ?? topic?.id ?? 0,
                     postNumber: postNumber,
-                    sort: nestedSort,
+                    sort: nestedSort.apiValue,
                     page: 0,
                     depth: 1
                 )
-                replaceNestedChildren(postNumber: postNumber, children: response.children, directCount: max(node.directReplyCount, response.children.count))
+                replaceNestedChildren(
+                    postNumber: postNumber,
+                    children: response.children,
+                    directCount: max(node.directReplyCount, response.children.count)
+                )
+                indexNestedPosts(from: response.children)
                 await ensureParsed(for: response.children.map(\.post), containerWidth: containerWidth)
             } catch {
                 DohDebugLog.record("nested children failed: \(error.localizedDescription)", subsystem: "topic.nested")
@@ -720,6 +818,15 @@ final class TopicDetailViewModel: DexoObservableObject {
         nestedExpandedPostNumbers.insert(postNumber)
         rebuildNestedRows()
         notifyChanged()
+    }
+
+    private func indexNestedPosts(from nodes: [DiscourseNestedNode]) {
+        for node in nodes {
+            nestedPostById[node.post.id] = node.post
+            if !node.children.isEmpty {
+                indexNestedPosts(from: node.children)
+            }
+        }
     }
 
     private func rebuildNestedRows() {
@@ -805,7 +912,7 @@ final class TopicDetailViewModel: DexoObservableObject {
         func mapNodes(_ nodes: [DiscourseNestedNode]) -> [DiscourseNestedNode] {
             nodes.map { node in
                 if node.post.postNumber == postNumber {
-                    return node.copyWith(children: children)
+                    return node.copyWith(children: children, directReplyCount: directCount)
                 }
                 return node.copyWith(children: mapNodes(node.children))
             }
@@ -814,29 +921,13 @@ final class TopicDetailViewModel: DexoObservableObject {
     }
 
     private func ensureParsed(for posts: [DiscourseTopicDetail.Post], containerWidth: CGFloat) async {
-        // Reuse existing parse pipeline by merging into topic posts if needed.
-        guard var detail = topic else {
-            // Parse into parsedBlocks directly via existing method if available
-            for post in posts {
-                if parsedBlocks[post.id] == nil {
-                    // trigger standard parse path used elsewhere
-                    _ = post
-                }
-            }
-            return
+        _ = containerWidth
+        let missing = posts.filter { parsedBlocks[$0.id] == nil }
+        guard !missing.isEmpty else { return }
+        for post in missing {
+            nestedPostById[post.id] = post
         }
-        var existing = detail.postStream.posts
-        var seen = Set(existing.map(\.id))
-        for p in posts where seen.insert(p.id).inserted {
-            existing.append(p)
-        }
-        // Can't easily mutate postStream; call internal parse if exists.
-        // Parse via existing pipeline when available.
-        for post in posts {
-            if parsedBlocks[post.id] == nil {
-                // Will be filled when post appears in normal stream; best-effort skip.
-            }
-        }
+        _ = await parseAndStore(posts: missing, generation: parseGeneration)
     }
 
     func loadTopic(id: Int, containerWidth: CGFloat) async {
@@ -974,12 +1065,32 @@ final class TopicDetailViewModel: DexoObservableObject {
             }
 
             // Parse all posts with annotated blocks
-            guard await parseAndStore(posts: postsToRender, generation: generation) else { return }
+            guard await parseAndStore(posts: postsToRender, generation: generation) else {
+                // Generation raced (user left/re-entered) — never leave isLoading stuck.
+                isLoading = false
+                notifyChanged()
+                return
+            }
 
             isReady = true
             acknowledgedStreamCount = allPostIds.count
             pendingNewReplyCount = 0
             scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
+
+            isLoading = false
+            // Publish flat stream first so first paint is never blank under nested mode.
+            notifyChanged()
+            // Nested may have been enabled before topic id existed (preferNestedOnLoad).
+            // Always (re)fetch tree after the flat stream is ready so sort/roots stay in sync.
+            if isNestedViewEnabled {
+                await loadNestedRoots(topicId: id, trackVisit: false)
+                // loadNestedRoots already abandons when unrenderable; belt-and-suspenders.
+                _ = abandonNestedIfUnrenderable()
+                if !isNestedViewEnabled {
+                    notifyChanged()
+                }
+            }
+            return
         } catch {
             #if DEBUG
             print("[TopicDetail] Load failed: \(error)")
@@ -1257,6 +1368,12 @@ final class TopicDetailViewModel: DexoObservableObject {
         firstPost = nil
         parseGeneration += 1
         let generation = parseGeneration
+        // Jump replaces the flat window. Nested rows still point at the old tree; until
+        // we re-parse, nested mode would filter every id out of the snapshot → white body.
+        // Prefer showing the jumped flat window (notification / timeline deep-link).
+        if isNestedViewEnabled {
+            clearNestedState()
+        }
 
         do {
             let response = try await api.fetchTopicPosts(topicId: topicId, postIds: batch)
@@ -1266,6 +1383,7 @@ final class TopicDetailViewModel: DexoObservableObject {
             let sortedPosts = response.postStream.posts.sorted { (idOrder[$0.id] ?? 0) < (idOrder[$1.id] ?? 0) }
 
             topic?.postStream.posts = sortedPosts
+            firstPost = sortedPosts.first { $0.postNumber == 1 } ?? sortedPosts.first
 
             for post in sortedPosts {
                 loadedPostIds.insert(post.id)

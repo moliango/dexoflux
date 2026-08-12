@@ -33,9 +33,12 @@ private class DetailsCardView: UIView {
         self.delegate = delegate
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        backgroundColor = .clear
-        layer.cornerRadius = 0
-        layer.borderWidth = 0
+        // FluxDo-style card shell: muted fill + hairline border; expands in place.
+        backgroundColor = TopicDetailContentStyle.warmMutedBackground.withAlphaComponent(0.35)
+        layer.cornerRadius = 12
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1.0 / UIScreen.main.scale
+        layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
         clipsToBounds = true
 
         innerConfig = NativeRenderConfig(
@@ -44,7 +47,7 @@ private class DetailsCardView: UIView {
             linkColor: config.linkColor,
             codeFont: config.codeFont,
             codeBackgroundColor: config.codeBackgroundColor,
-            contentWidth: max(config.contentWidth - 16, 0),
+            contentWidth: max(config.contentWidth - 24, 0),
             baseURL: config.baseURL,
             postId: config.postId,
             galleryImageURLs: config.galleryImageURLs,
@@ -55,7 +58,7 @@ private class DetailsCardView: UIView {
         // MARK: Header
 
         chevron.image = UIImage(systemName: "chevron.right")
-        chevron.tintColor = AppSettings.shared.themeStyle.accentColor
+        chevron.tintColor = .secondaryLabel
         chevron.contentMode = .scaleAspectFit
         chevron.translatesAutoresizingMaskIntoConstraints = false
 
@@ -78,26 +81,24 @@ private class DetailsCardView: UIView {
         summaryLabel.attributedText = summaryText
 
         headerView.translatesAutoresizingMaskIntoConstraints = false
-        headerView.backgroundColor = TopicDetailContentStyle.warmMutedBackground.withAlphaComponent(0.52)
-        headerView.layer.cornerRadius = 10
-        headerView.layer.cornerCurve = .continuous
+        headerView.backgroundColor = .clear
 
-        let accentBar = UIView()
-        accentBar.backgroundColor = AppSettings.shared.themeStyle.hotTopicColor.withAlphaComponent(0.90)
-        accentBar.layer.cornerRadius = 1.5
-        accentBar.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(chevron)
         headerView.addSubview(summaryLabel)
-        headerView.addSubview(accentBar)
         addSubview(headerView)
 
         dividerView.translatesAutoresizingMaskIntoConstraints = false
-        dividerView.backgroundColor = UIColor.separator.withAlphaComponent(0.22)
+        dividerView.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
         dividerView.isHidden = true
         addSubview(dividerView)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleExpanded))
         headerView.addGestureRecognizer(tap)
+        headerView.isAccessibilityElement = true
+        headerView.accessibilityTraits = .button
+        headerView.accessibilityLabel = summaryText.string.isEmpty
+            ? String(localized: "topic.details.toggle", defaultValue: "折叠内容")
+            : summaryText.string
 
         headerBottomConstraint = headerView.bottomAnchor.constraint(equalTo: bottomAnchor)
 
@@ -112,20 +113,15 @@ private class DetailsCardView: UIView {
             dividerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             dividerView.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
 
-            accentBar.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
-            accentBar.topAnchor.constraint(equalTo: headerView.topAnchor),
-            accentBar.bottomAnchor.constraint(equalTo: headerView.bottomAnchor),
-            accentBar.widthAnchor.constraint(equalToConstant: 4),
-
             chevron.widthAnchor.constraint(equalToConstant: 12),
             chevron.heightAnchor.constraint(equalToConstant: 12),
-            chevron.leadingAnchor.constraint(equalTo: accentBar.trailingAnchor, constant: 12),
+            chevron.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 12),
             chevron.centerYAnchor.constraint(equalTo: summaryLabel.centerYAnchor),
 
-            summaryLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 10),
+            summaryLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 12),
             summaryLabel.leadingAnchor.constraint(equalTo: chevron.trailingAnchor, constant: 8),
             summaryLabel.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -12),
-            summaryLabel.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -10),
+            summaryLabel.bottomAnchor.constraint(equalTo: headerView.bottomAnchor, constant: -12),
         ])
     }
 
@@ -141,22 +137,25 @@ private class DetailsCardView: UIView {
             if contentStack == nil {
                 let stack = UIStackView()
                 stack.axis = .vertical
-                stack.spacing = 6
+                stack.spacing = 8
                 stack.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(stack)
 
                 let views = NativeContentRenderer.renderBlocks(contentBlocks, config: innerConfig, delegate: delegate)
                 for view in views {
+                    // Wire link delegates + inline image loaders for lazy content.
+                    // Block images (TappableImageContainer) self-load; this covers LinkTextView.
+                    prepareLazyContentView(view)
                     stack.addArrangedSubview(view)
                 }
 
                 NSLayoutConstraint.activate([
                     stack.topAnchor.constraint(equalTo: dividerView.bottomAnchor, constant: 10),
-                    stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+                    stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
                     stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
                 ])
 
-                contentBottomConstraint = stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+                contentBottomConstraint = stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
                 contentStack = stack
             }
 
@@ -171,7 +170,11 @@ private class DetailsCardView: UIView {
             dividerView.isHidden = true
         }
 
-        chevron.transform = isExpanded ? CGAffineTransform(rotationAngle: .pi / 2) : .identity
+        UIView.animate(withDuration: 0.18) {
+            self.chevron.transform = self.isExpanded
+                ? CGAffineTransform(rotationAngle: .pi / 2)
+                : .identity
+        }
 
         invalidateIntrinsicContentSize()
         if let cell = findPostNativeCell() {
@@ -180,6 +183,37 @@ private class DetailsCardView: UIView {
             cell.requestHeightReconciliation()
         } else {
             findTableView()?.dexo_invalidateSelfSizingRows()
+        }
+    }
+
+    /// Attach cell text-view wiring that was skipped because details content is lazy.
+    private func prepareLazyContentView(_ view: UIView) {
+        if let cell = findPostNativeCell() {
+            cell.setupTextViews(in: view, cloudflareBaseURL: innerConfig.baseURL)
+            return
+        }
+        // WeChat / Telegram bubbles: load inline attachments without a full cell setup path.
+        prepareInlineImagesRecursively(in: view)
+    }
+
+    private func prepareInlineImagesRecursively(in view: UIView) {
+        if let textView = view as? UITextView {
+            CookedInlineImageLoader.loadImages(
+                in: textView,
+                cloudflareBaseURL: innerConfig.baseURL
+            ) { [weak self] in
+                self?.findWeChatChatPostCell()?.requestHeightReconciliation()
+                    ?? self?.findTableView()?.dexo_invalidateSelfSizingRows()
+            }
+            return
+        }
+        if let stack = view as? UIStackView {
+            for arranged in stack.arrangedSubviews {
+                prepareInlineImagesRecursively(in: arranged)
+            }
+        }
+        for subview in view.subviews {
+            prepareInlineImagesRecursively(in: subview)
         }
     }
 

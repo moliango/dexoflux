@@ -410,6 +410,9 @@ final class ReplyComposerViewController: UIViewController {
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
         sourceRestyleTask?.cancel()
+        // Successful send already cleared local + server drafts. Re-persisting here
+        // would restore the just-posted body the next time the composer opens.
+        guard !isSubmitting else { return }
         persistLocalDraftImmediately()
     }
 
@@ -991,6 +994,10 @@ final class ReplyComposerViewController: UIViewController {
         guard !raw.isEmpty, !isSubmitting else { return }
 
         isSubmitting = true
+        // Stop any in-flight autosave so it cannot re-write the draft after we clear it.
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        sourceRestyleTask?.cancel()
         sendButton.isEnabled = false
         textView.isEditable = false
         closePanel(returnToKeyboard: false)
@@ -1014,7 +1021,9 @@ final class ReplyComposerViewController: UIViewController {
                         replyToPostNumber: replyToPost?.postNumber
                     )
                     let api = self.api
-                    Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: draftKey) }
+                    // Await server draft delete before dismiss so hydrate on next open
+                    // cannot race a late autosave / stale server body.
+                    await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: draftKey)
                     if response.isEnqueued {
                         presentQueuedAlert()
                         return

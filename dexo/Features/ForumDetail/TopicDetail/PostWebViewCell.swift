@@ -35,7 +35,7 @@ private extension ContentBlock {
             return [src]
         case .onebox(_, _, _, let imageURL, _, _, _):
             return [imageURL].compactMap { $0 }
-        case .list(_, let items):
+        case .list(_, _, let items):
             return items.flatMap(\.galleryImageURLStrings)
         case .table(let headers, let rows):
             return headers.flatMap { $0.flatMap(\.galleryImageURLStrings) }

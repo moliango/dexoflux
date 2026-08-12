@@ -40,6 +40,8 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     private var chatStyle: ChatTopicStyle { ChatTopicStyle.current ?? .weChat }
 
     private(set) var replyToPost: DiscourseTopicDetail.Post?
+    /// Chat channel reply target (message id). Independent from topic post reply.
+    private(set) var replyToChatMessageId: Int?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -84,6 +86,7 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     }
 
     func setReplyTarget(_ post: DiscourseTopicDetail.Post?) {
+        replyToChatMessageId = nil
         replyToPost = post
         if let post {
             let name = (post.name?.isEmpty == false ? post.name! : post.username)
@@ -91,26 +94,61 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let clipped = preview.count > 36 ? String(preview.prefix(36)) + "…" : preview
-            replyLabel.text = String(
-                format: String(localized: "wechat_chat.reply_to_fmt", defaultValue: "回复 %@：%@"),
-                name,
-                clipped.isEmpty ? "#\(post.postNumber)" : clipped
+            showReplyBanner(
+                name: name,
+                preview: clipped.isEmpty ? "#\(post.postNumber)" : clipped
             )
-            replyBanner.isHidden = false
-            replyBannerHeightConstraint?.constant = 32
         } else {
-            replyLabel.text = nil
-            replyBanner.isHidden = true
-            replyBannerHeightConstraint?.constant = 0
+            hideReplyBanner()
         }
         onHeightChange?()
+    }
+
+    /// Chat-room reply banner (message id, not topic post).
+    func setChatReplyTarget(messageId: Int, name: String, preview: String) {
+        replyToPost = nil
+        replyToChatMessageId = messageId
+        let clipped = preview.count > 36 ? String(preview.prefix(36)) + "…" : preview
+        showReplyBanner(name: name, preview: clipped.isEmpty ? "#\(messageId)" : clipped)
+        onHeightChange?()
+        focus()
+    }
+
+    func clearReplyTarget() {
+        replyToPost = nil
+        replyToChatMessageId = nil
+        hideReplyBanner()
+        onHeightChange?()
+    }
+
+    func insertText(_ string: String) {
+        guard !string.isEmpty else { return }
+        textView.insertText(string)
+        textViewDidChange(textView)
+        focus()
+    }
+
+    private func showReplyBanner(name: String, preview: String) {
+        replyLabel.text = String(
+            format: String(localized: "wechat_chat.reply_to_fmt", defaultValue: "回复 %@：%@"),
+            name,
+            preview
+        )
+        replyBanner.isHidden = false
+        replyBannerHeightConstraint?.constant = 32
+    }
+
+    private func hideReplyBanner() {
+        replyLabel.text = nil
+        replyBanner.isHidden = true
+        replyBannerHeightConstraint?.constant = 0
     }
 
     func clearAfterSend() {
         isSending = false
         textView.text = ""
         textViewDidChange(textView)
-        setReplyTarget(nil)
+        clearReplyTarget()
         isComposerEnabled = true
     }
 
@@ -151,7 +189,7 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         )
         replyCloseButton.tintColor = .tertiaryLabel
         replyCloseButton.addAction(UIAction { [weak self] _ in
-            self?.setReplyTarget(nil)
+            self?.clearReplyTarget()
         }, for: .touchUpInside)
         replyBanner.addSubview(replyCloseButton)
 

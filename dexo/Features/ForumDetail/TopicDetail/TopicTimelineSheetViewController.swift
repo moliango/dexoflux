@@ -93,7 +93,10 @@ final class TopicTimelineSheetViewController: UIViewController {
 
     /// Content-fitted sheet height used by the presenter detent (excludes home indicator).
     /// grabber+title+track+actions+paddings; keep in sync with viewDidLoad constraints.
-    static let preferredSheetHeight: CGFloat = 320
+    static let preferredSheetHeight: CGFloat = 400
+
+    /// Vertical scrubber height inside the sheet (must match the track constraint).
+    static let trackHeight: CGFloat = 240
 
     init(currentIndex: Int, stream: [Int], title: String?) {
 
@@ -185,7 +188,7 @@ final class TopicTimelineSheetViewController: UIViewController {
             statusLabel.heightAnchor.constraint(equalToConstant: 28),
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
             trackView.widthAnchor.constraint(equalToConstant: 56),
-            trackView.heightAnchor.constraint(equalToConstant: 168),
+            trackView.heightAnchor.constraint(equalToConstant: Self.trackHeight),
 
             buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 18),
             buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
@@ -306,7 +309,7 @@ final class TopicTimelineTrackView: UIControl, UIGestureRecognizerDelegate {
     private let handleSize: CGFloat = 36
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: 64, height: 228)
+        CGSize(width: 64, height: TopicTimelineSheetViewController.trackHeight)
     }
 
     override init(frame: CGRect) {

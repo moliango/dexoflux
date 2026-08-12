@@ -11,8 +11,9 @@ enum TopicDetailFactory {
         forum: ForumInstance? = nil,
         preferNested: Bool = false
     ) -> UIViewController {
-        // WeChat + Telegram share the chat-bubble detail surface (styled via ChatTopicStyle).
-        if AppSettings.shared.themeStyle.usesChatTopicDetail {
+        // WeChat + Telegram default to chat-bubble detail; user can opt into classic via
+        // Appearance →「聊天式话题详情」(`chatTopicDetailEnabled`, default on).
+        if AppSettings.shared.prefersChatTopicDetail {
             let vc = WeChatTopicDetailViewController(
                 api: api,
                 topicId: topicId,

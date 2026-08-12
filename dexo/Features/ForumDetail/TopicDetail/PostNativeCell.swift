@@ -15,21 +15,37 @@ final class PostNativeCell: UITableViewCell {
     static let bottomBarHeight: CGFloat = 36
     static let actionIconPointSize: CGFloat = 12
     static let actionIconCanvasSize = CGSize(width: 22, height: 22)
-    static let boostIconImage: UIImage = {
-        if let image = UIImage(named: "BoostRocket") {
+    static var boostIconImage: UIImage {
+        // 微信和 Telegram 主题使用系统图标，其他主题使用火箭图标
+        let theme = AppSettings.shared.themeStyle
+        let useSystemIcon = theme == .weChat || theme == .telegram
+        if !useSystemIcon, let image = UIImage(named: "BoostRocket") {
             return image.withRenderingMode(.alwaysTemplate)
         }
         return UIImage(
             systemName: "paperplane.fill",
             withConfiguration: actionSymbolConfig(pointSize: actionIconPointSize)
         )?.withRenderingMode(.alwaysTemplate) ?? UIImage()
-    }()
-    static func renderContentWidth(for tableWidth: CGFloat, isFirstPost: Bool) -> CGFloat {
+    }
+    static func renderContentWidth(
+        for tableWidth: CGFloat,
+        isFirstPost: Bool,
+        nestedDepth: Int = 0,
+        isNestedTree: Bool = false
+    ) -> CGFloat {
         // tableView 首次 dequeue 时 bounds 可能仍是 0，回退到屏幕宽度，避免 preferredMeasurementWidth=0 导致正文首行被掩盖。
         let resolvedWidth = tableWidth > 1 ? tableWidth : UIScreen.main.bounds.width
         let contentInset = isFirstPost ? Metrics.firstPostContentInset : 0
-        let cardOuterHorizontal = isFirstPost ? Metrics.cardOuterHorizontal : Metrics.replyCardOuterHorizontal
-        let horizontalInset = (cardOuterHorizontal + Metrics.cardInner + contentInset) * 2
+        let cardOuterHorizontal: CGFloat
+        if isFirstPost {
+            cardOuterHorizontal = Metrics.cardOuterHorizontal
+        } else if isNestedTree {
+            cardOuterHorizontal = Metrics.nestedTreeOuterHorizontal
+        } else {
+            cardOuterHorizontal = Metrics.replyCardOuterHorizontal
+        }
+        let depthInset = CGFloat(max(nestedDepth, 0)) * Metrics.nestedDepthStep
+        let horizontalInset = (cardOuterHorizontal + Metrics.cardInner + contentInset) * 2 + depthInset
         return max(resolvedWidth - horizontalInset, 1)
     }
 
@@ -41,6 +57,8 @@ final class PostNativeCell: UITableViewCell {
         static let cardOuterVertical: CGFloat = 0
         static let cardOuterHorizontal: CGFloat = 0
         static let replyCardOuterHorizontal: CGFloat = 8
+        /// FluxDo mobile nested list outer inset (flat rows, not card chrome).
+        static let nestedTreeOuterHorizontal: CGFloat = 12
         static let cardInner: CGFloat = 16
         static let headerTop: CGFloat = 14
         static let avatarSize: CGFloat = 36
@@ -58,7 +76,12 @@ final class PostNativeCell: UITableViewCell {
         static let progressiveInitialBlockLimit = 10
         /// Only split when body is at least this many top-level blocks.
         static let progressiveMinBlocksToSplit = 14
+        /// FluxDo mobile nested gutter step per depth level.
+        static let nestedDepthStep: CGFloat = 14
     }
+
+    /// Active nested-tree presentation (nil = flat stream).
+    private(set) var nestedPresentation: NestedDisplayRow?
 
     weak var delegate: PostCellDelegate?
     var postId: Int = 0
@@ -766,6 +789,7 @@ final class PostNativeCell: UITableViewCell {
         cookedHTML: String,
         validReactions: [String],
         sharedIssue: SharedIssueState?,
+        nestedPresentation: NestedDisplayRow? = nil
     ) {
         postId = post.id
         self.postLink = postLink
@@ -775,9 +799,15 @@ final class PostNativeCell: UITableViewCell {
         self.validReactions = validReactions
         currentSharedIssueTopicId = sharedIssue?.topicId
         isBookmarked = post.bookmarked
+        self.nestedPresentation = nestedPresentation
         sourceButton.isHidden = !hasUnsupportedBlocks
         applyTypography()
-        applyCardStyle(isFirstPost: floorNumber == 1)
+        let isFirstPost = floorNumber == 1
+        applyCardStyle(
+            isFirstPost: isFirstPost,
+            nestedDepth: nestedPresentation?.depth ?? 0,
+            isNestedTree: nestedPresentation != nil
+        )
 
         nameLabel.text = post.name
         usernameLabel.text = "@\(post.username)"
@@ -797,7 +827,10 @@ final class PostNativeCell: UITableViewCell {
         configureFlairBadge(for: post, baseURL: baseURL)
         configureHeaderBadges(for: post, baseURL: baseURL)
 
-        if let replyUser = post.replyToUser {
+        // Tree mode already shows hierarchy; hide the flat "reply-to" chip on nested rows.
+        if nestedPresentation != nil {
+            replyToLabel.isHidden = true
+        } else if let replyUser = post.replyToUser {
             let replyFont = replyToLabel.font ?? TopicDetailTypography.contentContextFont(
                 offsetFromBody: -3,
                 weight: .regular,
@@ -821,10 +854,19 @@ final class PostNativeCell: UITableViewCell {
             replyToLabel.isHidden = true
         }
 
-        let hasReplies = post.replyCount > 0
-        showRepliesButton.isHidden = !hasReplies
-        if hasReplies {
-            configureRepliesButton(count: post.replyCount)
+        // Nested tree: expand/collapse children in-place (FluxDo). Flat: open replies sheet.
+        // OP never shows expand — FluxDo `hideRepliesButton: true` on OP.
+        if let nested = nestedPresentation, !isFirstPost, nested.directReplyCount > 0 {
+            showRepliesButton.isHidden = false
+            configureNestedExpandButton(row: nested)
+        } else if nestedPresentation != nil {
+            showRepliesButton.isHidden = true
+        } else {
+            let hasReplies = post.replyCount > 0
+            showRepliesButton.isHidden = !hasReplies
+            if hasReplies {
+                configureRepliesButton(count: post.replyCount)
+            }
         }
         configureSharedIssueButton(sharedIssue)
 
@@ -1048,22 +1090,31 @@ final class PostNativeCell: UITableViewCell {
             || view is RelatedLinksCardView
     }
 
-    func applyCardStyle(isFirstPost: Bool) {
-        contentStackView.spacing = isFirstPost ? 5 : 5
-        cardMinHeightConstraint?.constant = isFirstPost ? 0 : Metrics.minimumReplyCardHeight
-        let verticalGap: CGFloat = isFirstPost ? 0 : 4
-        let horizontalGap: CGFloat = isFirstPost ? Metrics.cardOuterHorizontal : Metrics.replyCardOuterHorizontal
+    func applyCardStyle(isFirstPost: Bool, nestedDepth: Int = 0, isNestedTree: Bool = false) {
+        contentStackView.spacing = 5
+        // FluxDo tree rows are flat list items, not elevated reply cards.
+        let useFlatTree = isNestedTree && !isFirstPost
+        cardMinHeightConstraint?.constant = (isFirstPost || useFlatTree) ? 0 : Metrics.minimumReplyCardHeight
+        let verticalGap: CGFloat = isFirstPost ? 0 : (useFlatTree ? 2 : 4)
+        let baseLeading: CGFloat = isFirstPost
+            ? Metrics.cardOuterHorizontal
+            : (useFlatTree ? Metrics.nestedTreeOuterHorizontal : Metrics.replyCardOuterHorizontal)
+        // Roots sit at depth 0 under the sort bar; children step in per level.
+        let depthInset = isFirstPost ? 0 : CGFloat(max(nestedDepth, 0)) * Metrics.nestedDepthStep
+        let horizontalGap = baseLeading + depthInset
         cardTopConstraint?.constant = verticalGap
         cardBottomConstraint?.constant = -verticalGap
         cardLeadingConstraint?.constant = horizontalGap
-        cardTrailingConstraint?.constant = -horizontalGap
+        cardTrailingConstraint?.constant = -(isFirstPost
+            ? Metrics.cardOuterHorizontal
+            : (useFlatTree ? Metrics.nestedTreeOuterHorizontal : Metrics.replyCardOuterHorizontal))
         let contentInset = isFirstPost ? Metrics.firstPostContentInset : 0
         contentStackTopConstraint?.constant = contentInset
         contentStackLeadingConstraint?.constant = contentInset
         contentStackTrailingConstraint?.constant = -contentInset
         contentStackBottomConstraint?.constant = -contentInset
 
-        if isFirstPost {
+        if isFirstPost || useFlatTree {
             cardView.backgroundColor = .clear
             cardView.layer.cornerRadius = 0
             cardView.layer.borderWidth = 0
@@ -1071,7 +1122,7 @@ final class PostNativeCell: UITableViewCell {
             cardView.layer.shadowOpacity = 0
             cardView.layer.shadowOffset = .zero
             cardView.layer.shadowRadius = 0
-            separatorLine.backgroundColor = UIColor.separator.withAlphaComponent(0.25)
+            separatorLine.backgroundColor = UIColor.separator.withAlphaComponent(useFlatTree ? 0.18 : 0.25)
         } else {
             cardView.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
             cardView.layer.cornerRadius = 18
@@ -1274,6 +1325,7 @@ final class PostNativeCell: UITableViewCell {
         pendingContentBaseURL = nil
         contentFullyRendered = true
         isScrollMediaPaused = false
+        nestedPresentation = nil
         // Cancel block-level image loads and fallback renders
         clearContentStackMediaAndViews()
         delegate = nil
