@@ -9,6 +9,11 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
     let slug: String?
     let lastMessageSentAt: String?
     let currentUserMembership: Membership?
+    let iconUploadURL: String?
+    /// Nested upload object used by some Discourse chat serializers.
+    let iconUpload: IconUpload?
+    let chatableType: String?
+    let chatable: Chatable?
 
     struct Membership: Decodable, Equatable {
         let following: Bool?
@@ -22,21 +27,111 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
         }
     }
 
+    struct IconUpload: Decodable, Equatable {
+        let url: String?
+        let origin: String?
+
+        enum CodingKeys: String, CodingKey {
+            case url
+            case origin = "original_url"
+        }
+
+        var resolvedURL: String? {
+            let raw = (url ?? origin)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? nil : raw
+        }
+    }
+
+    /// Category / DirectMessage payload. DM carries peer avatars.
+    struct Chatable: Decodable, Equatable {
+        let users: [ChatUser]?
+        let color: String?
+        let name: String?
+
+        struct ChatUser: Decodable, Equatable {
+            let id: Int?
+            let username: String?
+            let name: String?
+            let avatarTemplate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case id, username, name
+                case avatarTemplate = "avatar_template"
+            }
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, title, slug
         case lastMessageSentAt = "last_message_sent_at"
         case currentUserMembership = "current_user_membership"
+        case iconUploadURL = "icon_upload_url"
+        case iconUpload = "icon_upload"
+        case chatableType = "chatable_type"
+        case chatable
     }
 
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !t.isEmpty { return t }
+        // DM channels often have empty title — use peer usernames.
+        if let users = chatable?.users, !users.isEmpty {
+            let names = users.compactMap { user -> String? in
+                let name = user.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !name.isEmpty { return name }
+                let username = user.username?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return username.isEmpty ? nil : username
+            }
+            if !names.isEmpty {
+                return names.joined(separator: ", ")
+            }
+        }
         let s = slug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return s.isEmpty ? "#\(id)" : s
     }
 
     var unreadCount: Int {
         max(currentUserMembership?.unreadCount ?? 0, 0)
+    }
+
+    /// Best-effort channel avatar: custom icon → first DM peer → nil.
+    func avatarURL(baseURL: String) -> URL? {
+        if let raw = resolvedIconURLString {
+            return Self.absoluteURL(raw, baseURL: baseURL)
+        }
+        if let template = chatable?.users?.first(where: {
+            ($0.avatarTemplate?.isEmpty == false)
+        })?.avatarTemplate {
+            return AvatarImageLoader.url(from: template, baseURL: baseURL, size: 96)
+        }
+        return nil
+    }
+
+    var avatarTemplate: String? {
+        chatable?.users?.first(where: { $0.avatarTemplate?.isEmpty == false })?.avatarTemplate
+    }
+
+    /// Category color (hex without #) for letter-tile fallback when no icon.
+    var accentHexColor: String? {
+        chatable?.color
+    }
+
+    private var resolvedIconURLString: String? {
+        if let raw = iconUploadURL?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            return raw
+        }
+        return iconUpload?.resolvedURL
+    }
+
+    private static func absoluteURL(_ raw: String, baseURL: String) -> URL? {
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            return URL(string: raw)
+        }
+        let base = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if raw.hasPrefix("/") {
+            return URL(string: base + raw)
+        }
+        return URL(string: base + "/" + raw)
     }
 }
 
@@ -72,8 +167,10 @@ struct DiscourseChatMessage: Decodable, Identifiable, Equatable {
     let id: Int
     let message: String?
     let createdAt: String?
-    let user: User?
+    private(set) var user: User?
     let cooked: String?
+    let inReplyToId: Int?
+    let userId: Int?
 
     struct User: Decodable, Equatable {
         let id: Int?
@@ -90,16 +187,47 @@ struct DiscourseChatMessage: Decodable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, message, cooked, user
         case createdAt = "created_at"
+        case inReplyToId = "in_reply_to_id"
+        case userId = "user_id"
+    }
+
+    mutating func resolveUser(from usersById: [Int: User]) {
+        if user?.avatarTemplate?.isEmpty == false { return }
+        let key = user?.id ?? userId
+        guard let key, let resolved = usersById[key] else { return }
+        // Prefer sideloaded user when nested user is missing avatar.
+        if user == nil || (user?.avatarTemplate?.isEmpty != false) {
+            user = resolved
+        }
     }
 
     var displayBody: String {
         let raw = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !raw.isEmpty { return raw }
-        // Strip minimal tags from cooked fallback.
-        let cookedText = (cooked ?? "")
+        if !raw.isEmpty {
+            // Prefer raw when it already carries shortcodes (e.g. `:smile:`).
+            if TitleEmojiRenderer.containsShortcode(raw) {
+                return raw
+            }
+            // Raw may be plain text while cooked still has emoji <img alt=":code:">.
+            if let cooked, cooked.contains("<img") || cooked.contains("<IMG") {
+                let recovered = TitleEmojiRenderer.recoverShortcodesFromHTML(cooked)
+                if TitleEmojiRenderer.containsShortcode(recovered) {
+                    return recovered
+                }
+            }
+            return raw
+        }
+        // Fall back to cooked HTML → shortcodes, then strip remaining tags.
+        let cookedHTML = cooked ?? ""
+        if cookedHTML.contains("<") {
+            let recovered = TitleEmojiRenderer.recoverShortcodesFromHTML(cookedHTML)
+            if TitleEmojiRenderer.containsShortcode(recovered) {
+                return recovered
+            }
+        }
+        return cookedHTML
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cookedText
     }
 }
 
@@ -109,13 +237,27 @@ struct DiscourseChatMessagesResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case messages
         case chatMessages = "chat_messages"
+        case users
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        messages = (try? c.decodeIfPresent([DiscourseChatMessage].self, forKey: .messages))
+        var raw = (try? c.decodeIfPresent([DiscourseChatMessage].self, forKey: .messages))
             ?? (try? c.decodeIfPresent([DiscourseChatMessage].self, forKey: .chatMessages))
             ?? []
+        let users = (try? c.decodeIfPresent([DiscourseChatMessage.User].self, forKey: .users)) ?? []
+        if !users.isEmpty {
+            var byId: [Int: DiscourseChatMessage.User] = [:]
+            for user in users {
+                if let id = user.id {
+                    byId[id] = user
+                }
+            }
+            for index in raw.indices {
+                raw[index].resolveUser(from: byId)
+            }
+        }
+        messages = raw
     }
 }
 
@@ -146,9 +288,12 @@ extension DiscourseAPI {
         return decoded.messages
     }
 
-    func sendChatMessage(channelId: Int, message: String) async throws {
+    func sendChatMessage(channelId: Int, message: String, inReplyToId: Int? = nil) async throws {
         let url = baseURL + "/chat/api/channels/\(channelId)/messages"
-        let parameters: Parameters = ["message": message]
+        var parameters: Parameters = ["message": message]
+        if let inReplyToId {
+            parameters["in_reply_to_id"] = inReplyToId
+        }
         let response = await session.request(
             url,
             method: .post,
