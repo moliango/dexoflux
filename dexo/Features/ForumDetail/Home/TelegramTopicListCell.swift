@@ -386,6 +386,90 @@ final class TelegramTopicListCell: UITableViewCell {
         }
     }
 
+    /// Generic session row (notifications / bookmarks / channels) — same chrome as topic rows.
+    func configure(session item: TopicListSessionItem) {
+        let accent = UIColor(red: 0.20, green: 0.56, blue: 0.93, alpha: 1)
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        let rowBG: UIColor = isDark
+            ? UIColor(red: 0.07, green: 0.09, blue: 0.12, alpha: 1)
+            : .white
+        contentView.backgroundColor = rowBG
+        backgroundColor = rowBG
+        separator.backgroundColor = isDark
+            ? UIColor.white.withAlphaComponent(0.08)
+            : UIColor(red: 0.88, green: 0.89, blue: 0.90, alpha: 1)
+
+        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 17)
+        let previewPoint = AppSettings.shared.effectiveInterfacePointSize(for: 15)
+        let timePoint = AppSettings.shared.effectiveInterfacePointSize(for: 14)
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: titlePoint, weight: item.isEmphasized ? .semibold : .medium)
+        )
+        previewLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: previewPoint, weight: .regular)
+        )
+        timeLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: timePoint, weight: .regular)
+        )
+        titleLabel.textColor = isDark ? .white : UIColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1)
+        previewLabel.textColor = isDark
+            ? UIColor.white.withAlphaComponent(0.55)
+            : UIColor(red: 0.53, green: 0.56, blue: 0.60, alpha: 1)
+        timeLabel.textColor = isDark
+            ? UIColor.white.withAlphaComponent(0.45)
+            : UIColor(red: 0.55, green: 0.58, blue: 0.62, alpha: 1)
+
+        emojiBaseURL = item.baseURL
+        renderedTitle = item.title
+        applyTitle(item.title)
+        verifiedIcon.isHidden = true
+        pinIcon.isHidden = true
+
+        let sub = item.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        previewLabel.text = sub.isEmpty
+            ? String(localized: "telegram_list.no_messages", defaultValue: "暂无消息")
+            : sub
+        previewLabel.numberOfLines = 2
+        timeLabel.text = item.timeText
+
+        if let badge = item.badgeText, !badge.isEmpty {
+            let font = AppSettings.shared.appInterfaceFont(
+                matching: .systemFont(ofSize: 13, weight: .semibold)
+            )
+            badgeLabel.font = font
+            badgeLabel.text = badge
+            badgeLabel.textColor = .white
+            badgeContainer.isHidden = false
+            badgeContainer.backgroundColor = accent
+            let textWidth = ceil((badge as NSString).size(withAttributes: [.font: font]).width)
+            let width = max(Self.badgeHeight, textWidth + Self.badgeHorizontalPadding * 2)
+            badgeWidthConstraint?.constant = width
+            badgeContainer.layer.cornerRadius = Self.badgeHeight / 2
+            badgeContainer.layer.cornerCurve = .circular
+        } else {
+            badgeLabel.text = nil
+            badgeContainer.isHidden = true
+        }
+
+        monogramLabel.text = Self.monogram(from: item.title)
+        monogramLabel.isHidden = false
+        avatarImageView.backgroundColor = Self.avatarColor(for: item.title)
+        avatarImageView.image = nil
+        let resolvedURL = item.avatarURL ?? AvatarImageLoader.url(
+            from: item.avatarTemplate,
+            baseURL: item.baseURL ?? "",
+            size: AvatarImageLoader.primaryAvatarPixelSize
+        )
+        ForumImageLoader.setImage(
+            on: avatarImageView,
+            url: resolvedURL,
+            placeholder: nil,
+            cloudflareBaseURL: item.baseURL
+        ) { [weak self] image, _, _, _ in
+            self?.monogramLabel.isHidden = (image != nil)
+        }
+    }
+
     private func applyTitle(_ title: String) {
         TitleEmojiRenderer.apply(
             title,

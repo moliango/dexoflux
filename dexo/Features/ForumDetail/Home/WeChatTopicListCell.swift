@@ -234,6 +234,62 @@ final class WeChatTopicListCell: UITableViewCell {
         )
     }
 
+    /// Generic session row (notifications / bookmarks / channels) — same chrome as topic rows.
+    func configure(session item: TopicListSessionItem) {
+        let theme = AppSettings.shared.themeStyle
+        contentView.backgroundColor = theme.topicCardBackgroundColor
+        backgroundColor = theme.topicListBackgroundColor
+        separator.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
+
+        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
+        let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
+        titleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: titlePoint, weight: item.isEmphasized ? .semibold : .regular)
+        )
+        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: subPoint, weight: .regular)
+        )
+        timeLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 12, weight: .regular)
+        )
+        replyLabel.font = timeLabel.font
+
+        titleLabel.textColor = item.isEmphasized ? .label : .secondaryLabel
+        emojiBaseURL = item.baseURL
+        renderedTitle = item.title
+        applyTitle(item.title)
+
+        let sub = item.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        subtitleLabel.text = sub.isEmpty ? " " : sub
+        subtitleLabel.textColor = .secondaryLabel
+
+        timeLabel.text = item.timeText
+        if let badge = item.badgeText, !badge.isEmpty {
+            replyLabel.text = badge
+            replyLabel.isHidden = false
+            replyLabel.textColor = theme.accentColor
+        } else {
+            replyLabel.text = nil
+            replyLabel.isHidden = true
+            replyLabel.textColor = .tertiaryLabel
+        }
+
+        let resolvedURL = item.avatarURL ?? AvatarImageLoader.url(
+            from: item.avatarTemplate,
+            baseURL: item.baseURL ?? "",
+            size: AvatarImageLoader.primaryAvatarPixelSize
+        )
+        currentAvatarURL = resolvedURL
+        avatarImageView.layer.cornerRadius = 6
+        AvatarImageLoader.setImage(
+            on: avatarImageView,
+            url: resolvedURL,
+            cloudflareBaseURL: item.baseURL,
+            avatarBaseURL: item.baseURL,
+            userId: nil
+        )
+    }
+
     private func applyTitle(_ title: String) {
         TitleEmojiRenderer.apply(
             title,
