@@ -1818,6 +1818,45 @@
         }
       }
     },
+    "chat.action.reply" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
+          }
+        }
+      }
+    },
+    "chat.channel_subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "频道"
+          }
+        }
+      }
+    },
     "chat.empty" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -1825,17 +1864,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "暂无聊天频道（站点可能未开启 Chat）"
-          }
-        }
-      }
-    },
-    "chat.input_placeholder" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "输入消息…"
           }
         }
       }
@@ -2734,6 +2762,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "人物與身體"
+          }
+        }
+      }
+    },
+    "emoji.picker" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "表情"
           }
         }
       }
@@ -8282,6 +8321,62 @@
         }
       }
     },
+    "mini_program.add_as_program" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add as Mini Program"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到小程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增至小程式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增至小程式"
+          }
+        }
+      }
+    },
+    "mini_program.add_as_program.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add as Mini Program"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到小程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增至小程式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增至小程式"
+          }
+        }
+      }
+    },
     "mini_program.add_url.message" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8304,6 +8399,34 @@
         }
       }
     },
+    "mini_program.added" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added to Mini Programs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加到小程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已新增至小程式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已新增至小程式"
+          }
+        }
+      }
+    },
     "mini_program.all_section" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8311,6 +8434,34 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "全部小程序"
+          }
+        }
+      }
+    },
+    "mini_program.bookmark.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This page cannot be bookmarked"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前页无法收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前頁面無法收藏"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前頁面無法收藏"
           }
         }
       }
@@ -8355,6 +8506,34 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "关闭"
+          }
+        }
+      }
+    },
+    "mini_program.convert_from_bookmark" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Mini Program"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转小程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轉小程式"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轉小程式"
           }
         }
       }
@@ -9283,6 +9462,90 @@
     "NewAPI 签到" : {
 
     },
+    "notifications.action.badge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New badge earned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获得新勋章"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得新勳章"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得新勳章"
+          }
+        }
+      }
+    },
+    "notifications.action.badge_granted %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earned the “%@” badge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获得「%@」勋章"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得「%@」勳章"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得「%@」勳章"
+          }
+        }
+      }
+    },
+    "notifications.action.badge_granted_typed %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earned %@ badge “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获得%@勋章「%@」"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得%@勳章「%@」"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "獲得%@勳章「%@」"
+          }
+        }
+      }
+    },
     "notifications.action.bookmark" : {
       "localizations" : {
         "en" : {
@@ -9677,12 +9940,57 @@
       }
     },
     "notifications.filter.all" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "全部"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部"
+          }
+        }
+      }
+    },
+    "notifications.filter.badges" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badges"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勋章"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勳章"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勳章"
           }
         }
       }
@@ -9699,56 +10007,141 @@
       }
     },
     "notifications.filter.mentions" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "@Me"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "@我"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "@我"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "@我"
           }
         }
       }
     },
     "notifications.filter.messages" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "Messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私信"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私信"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "私信"
           }
         }
       }
     },
     "notifications.filter.replies" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "Replies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "回复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回覆"
           }
         }
       }
     },
     "notifications.filter.system" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "系统"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統"
           }
         }
       }
     },
     "notifications.filter.unread" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
+            "value" : "Unread"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "未读"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未讀"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未讀"
           }
         }
       }
@@ -16488,6 +16881,28 @@
         }
       }
     },
+    "settings.appearance.chat_topic_detail" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "聊天式话题详情"
+          }
+        }
+      }
+    },
+    "settings.appearance.chat_topic_detail.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开启后使用气泡会话布局；关闭则使用经典楼层详情（默认与主题配套）"
+          }
+        }
+      }
+    },
     "settings.appearance.font" : {
       "localizations" : {
         "en" : {
@@ -18488,25 +18903,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Export preferences as a file"
+            "value" : "Export preferences and mini programs as a file"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将偏好设置导出为文件"
+            "value" : "将偏好设置与小程序导出为文件"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將偏好設定匯出為檔案"
+            "value" : "將偏好設定與小程式匯出為檔案"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將偏好設定匯出為檔案"
+            "value" : "將偏好設定與小程式匯出為檔案"
           }
         }
       }
@@ -18669,25 +19084,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preferences imported."
+            "value" : "Preferences and mini programs imported."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偏好设置已导入。"
+            "value" : "偏好设置与小程序已导入。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偏好設定已匯入。"
+            "value" : "偏好設定與小程式已匯入。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偏好設定已匯入。"
+            "value" : "偏好設定與小程式已匯入。"
           }
         }
       }
@@ -18697,25 +19112,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restore preferences from a backup file"
+            "value" : "Restore preferences and mini programs from a backup file"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从备份文件恢复偏好设置"
+            "value" : "从备份文件恢复偏好设置与小程序"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從備份檔案還原偏好設定"
+            "value" : "從備份檔案還原偏好設定與小程式"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從備份檔案還原偏好設定"
+            "value" : "從備份檔案還原偏好設定與小程式"
           }
         }
       }
@@ -23637,6 +24052,17 @@
         }
       }
     },
+    "topic.details.toggle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "折叠内容"
+          }
+        }
+      }
+    },
     "topic.edit" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -24164,6 +24590,37 @@
           }
         }
       }
+    },
+    "topic.nested.collapse" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收起"
+          }
+        }
+      }
+    },
+    "topic.nested.replies_count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d 条回复"
+          }
+        }
+      }
+    },
+    "topic.nested.sort.new" : {
+
+    },
+    "topic.nested.sort.old" : {
+
+    },
+    "topic.nested.sort.top" : {
+
     },
     "topic.notification.muted" : {
       "extractionState" : "extracted_with_value",
