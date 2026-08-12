@@ -408,7 +408,7 @@ final class BlockExtractorTests: XCTestCase {
         XCTAssertEqual(blocks.count, 1)
         if case .spoiler(let inner) = blocks[0] {
             XCTAssertEqual(inner.count, 1)
-            if case .list(let ordered, let items) = inner[0] {
+            if case .list(let ordered, _, let items) = inner[0] {
                 XCTAssertTrue(ordered)
                 XCTAssertEqual(items.count, 2)
             } else {
@@ -535,5 +535,154 @@ final class BlockExtractorTests: XCTestCase {
             "https://linux.do/details.png",
             "https://linux.do/onebox.png",
         ])
+    }
+
+    // MARK: - List item lightbox (FluxDo parity)
+
+    /// Discourse `[details]` screenshot galleries put lightbox wrappers inside `<li>`.
+    /// Those must become real `.image` children — not dropped text-only list items.
+    func testDetailsListWithLightboxImagesBecomeListItemChildren() {
+        let html = """
+        <details>
+          <summary>截图</summary>
+          <ul>
+            <li>
+              <p>PC端</p>
+              <div class="lightbox-wrapper">
+                <a class="lightbox" href="https://cdn.example.com/original/pc.png">
+                  <img src="https://cdn.example.com/optimized/pc_690x400.png" alt="pc" width="690" height="400">
+                  <div class="meta">PC</div>
+                </a>
+              </div>
+            </li>
+            <li>
+              <p>移动端</p>
+              <div class="lightbox-wrapper">
+                <a class="lightbox" href="https://cdn.example.com/original/mobile.png">
+                  <img src="https://cdn.example.com/optimized/mobile_300x600.png" alt="mobile" width="300" height="600">
+                </a>
+              </div>
+            </li>
+          </ul>
+        </details>
+        """
+        let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
+        XCTAssertEqual(blocks.count, 1)
+        guard case .details(let summary, let content) = blocks[0] else {
+            XCTFail("Expected details, got \(blocks[0])")
+            return
+        }
+        XCTAssertEqual(summary, [.text("截图")])
+        XCTAssertEqual(content.count, 1)
+        guard case .list(let ordered, _, let items) = content[0] else {
+            XCTFail("Expected list inside details, got \(content[0])")
+            return
+        }
+        XCTAssertFalse(ordered)
+        XCTAssertEqual(items.count, 2)
+
+        // Item labels stay as text content.
+        XCTAssertEqual(items[0].content, [.text("PC端")])
+        XCTAssertEqual(items[1].content, [.text("移动端")])
+
+        // Screenshots must be block children with resolved src + original href.
+        XCTAssertEqual(items[0].children.count, 1, "PC item should have image child, got \(items[0].children)")
+        XCTAssertEqual(items[1].children.count, 1, "Mobile item should have image child, got \(items[1].children)")
+
+        guard case .image(let pcSrc, _, let pcW, let pcH, let pcHref) = items[0].children[0] else {
+            XCTFail("Expected image child for PC, got \(items[0].children[0])")
+            return
+        }
+        XCTAssertTrue(pcSrc.contains("pc_690x400") || pcSrc.contains("pc.png"), "src=\(pcSrc)")
+        XCTAssertEqual(pcW, 690)
+        XCTAssertEqual(pcH, 400)
+        XCTAssertEqual(pcHref, "https://cdn.example.com/original/pc.png")
+
+        guard case .image(let mobileSrc, _, _, _, let mobileHref) = items[1].children[0] else {
+            XCTFail("Expected image child for mobile, got \(items[1].children[0])")
+            return
+        }
+        XCTAssertTrue(mobileSrc.contains("mobile"), "src=\(mobileSrc)")
+        XCTAssertEqual(mobileHref, "https://cdn.example.com/original/mobile.png")
+
+        // Nested image URLs must surface for gallery / preload collection.
+        let urls = blocks.flatMap(\.imageSourceURLs)
+        XCTAssertTrue(urls.contains { $0.contains("pc_") || $0.contains("pc.png") })
+        XCTAssertTrue(urls.contains { $0.contains("mobile") })
+    }
+
+    func testListItemBareImgBecomesChildImageBlock() {
+        let html = """
+        <ul>
+          <li>Shot<br><img src="/uploads/a.png" width="400" height="300"></li>
+        </ul>
+        """
+        let blocks = CookedHTMLParser.parse(html: html, baseURL: "https://linux.do")
+        guard case .list(_, _, let items) = blocks[0] else {
+            XCTFail("Expected list, got \(blocks[0])")
+            return
+        }
+        XCTAssertEqual(items.count, 1)
+        XCTAssertFalse(items[0].children.isEmpty, "Bare img inside li must become a child block")
+        guard case .image(let src, _, let w, let h, _) = items[0].children[0] else {
+            XCTFail("Expected image child, got \(items[0].children)")
+            return
+        }
+        XCTAssertEqual(src, "https://linux.do/uploads/a.png")
+        XCTAssertEqual(w, 400)
+        XCTAssertEqual(h, 300)
+    }
+
+    /// Discourse splits product lists interrupted by `[details]` into many single-item
+    /// `<ol>` fragments. FluxDo continues 1, 2, 3… — we must too.
+    func testOrderedListsContinueNumberingAcrossDetails() {
+        let html = """
+        <ol><li><p>EZVenera</p></li></ol>
+        <details><summary>截图</summary><p>shot</p></details>
+        <ol><li><p>TTTTV</p></li></ol>
+        <details><summary>截图</summary><p>shot</p></details>
+        <ol><li><p>BiliTune</p></li></ol>
+        <details><summary>截图</summary><p>shot</p></details>
+        <ol><li><p>JavBus</p></li></ol>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        var starts: [Int] = []
+        for block in blocks {
+            if case .list(let ordered, let start, let items) = block, ordered {
+                XCTAssertEqual(items.count, 1)
+                starts.append(start)
+            }
+        }
+        XCTAssertEqual(starts, [1, 2, 3, 4], "Continued numbering across details, got \(starts)")
+    }
+
+    func testOrderedListRespectsExplicitStartAttribute() {
+        let html = """
+        <ol start="5"><li>Fifth</li><li>Sixth</li></ol>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        guard case .list(let ordered, let start, let items) = blocks[0] else {
+            XCTFail("Expected ordered list, got \(blocks[0])")
+            return
+        }
+        XCTAssertTrue(ordered)
+        XCTAssertEqual(start, 5)
+        XCTAssertEqual(items.count, 2)
+    }
+
+    func testOrderedListRestartsAfterParagraph() {
+        let html = """
+        <ol><li>A</li></ol>
+        <p>note between lists</p>
+        <ol><li>B</li></ol>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        var starts: [Int] = []
+        for block in blocks {
+            if case .list(let ordered, let start, _) = block, ordered {
+                starts.append(start)
+            }
+        }
+        XCTAssertEqual(starts, [1, 1], "Paragraph should break continued numbering, got \(starts)")
     }
 }

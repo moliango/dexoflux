@@ -91,7 +91,12 @@ public enum ContentBlock: Sendable, Equatable {
     case image(src: String, alt: String?, width: Int?, height: Int?, href: String? = nil)
     case onebox(sourceURL: String?, title: String?, description: String?, imageURL: String?, imageWidth: Int?, imageHeight: Int?, faviconURL: String? = nil)
     case video(url: String, thumbnailURL: String?, title: String?, width: Int?, height: Int?, videoId: String?, provider: String?)
-    case list(ordered: Bool, items: [ListItem])
+    /// - Parameters:
+    ///   - ordered: `true` for `<ol>`, `false` for `<ul>`.
+    ///   - start: 1-based index for the first item (from `<ol start="N">`, or continued
+    ///     across Discourse list fragments split by `<details>`). Defaults to `1`.
+    ///   - items: list items in document order.
+    case list(ordered: Bool, start: Int, items: [ListItem])
     case poll(PollBlock)
     case table(headers: [[ContentBlock]], rows: [[[ContentBlock]]])
     case details(summary: [InlineNode], content: [ContentBlock])
@@ -121,7 +126,7 @@ public extension ContentBlock {
             return [imageURL, faviconURL].compactMap { $0 }
         case .video(_, let thumbnailURL, _, _, _, _, _):
             return [thumbnailURL].compactMap { $0 }
-        case .list(_, let items):
+        case .list(_, _, let items):
             return items.flatMap(\.imageSourceURLs)
         case .table(let headers, let rows):
             return headers.flatMap(\.imageSourceURLs)

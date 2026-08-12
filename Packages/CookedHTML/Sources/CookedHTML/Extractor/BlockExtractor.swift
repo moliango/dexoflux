@@ -23,6 +23,14 @@ enum BlockExtractor {
         return finalizeBlocks(mergeInlineImageBlocks(blocks))
     }
 
+    /// Extract blocks treating `element` itself as the root node (not only its children).
+    ///
+    /// Used by list-item parsing so wrappers like `div.lightbox-wrapper` run through
+    /// `extractDiv` / `extractParagraph` and become real `.image` blocks.
+    static func extractBlocks(for element: Element, options: ParseOptions) -> [ContentBlock] {
+        finalizeBlocks(mergeInlineImageBlocks(extractNode(element, options: options)))
+    }
+
     /// Extract annotated blocks (block + source HTML) from a parent element's children.
     static func extractAnnotated(from parent: Element, options: ParseOptions) -> [AnnotatedBlock] {
         var raw: [AnnotatedBlock] = []
@@ -572,17 +580,165 @@ enum BlockExtractor {
 
     /// Promote bare auto-linked image URLs and recurse into nested containers.
     private static func finalizeBlocks(_ blocks: [ContentBlock]) -> [ContentBlock] {
-        blocks
-            .flatMap { promoteImageLinks(in: $0) }
-            .compactMap { trimBlock($0) }
+        continueOrderedListNumbering(
+            blocks
+                .flatMap { promoteImageLinks(in: $0) }
+                .compactMap { trimBlock($0) }
+        )
     }
 
     private static func finalizeAnnotatedBlocks(_ blocks: [AnnotatedBlock]) -> [AnnotatedBlock] {
-        blocks.flatMap { annotated in
-            promoteImageLinks(in: annotated.block).compactMap { block in
-                guard let trimmed = trimBlock(block) else { return nil }
-                return AnnotatedBlock(block: trimmed, sourceHTML: annotated.sourceHTML)
+        var promoted: [AnnotatedBlock] = []
+        for annotated in blocks {
+            for block in promoteImageLinks(in: annotated.block) {
+                guard let trimmed = trimBlock(block) else { continue }
+                promoted.append(AnnotatedBlock(block: trimmed, sourceHTML: annotated.sourceHTML))
             }
+        }
+        return continueOrderedListNumbering(annotated: promoted)
+    }
+
+    /// FluxDo parity: Discourse often splits one logical numbered list into many
+    /// single-item `<ol>` fragments separated by `<details>` (screenshot collapsibles).
+    /// Each fragment restarts at 1 in the HTML unless `start` is set — continue the
+    /// visible sequence across transparent interrupters so users see 1, 2, 3… not 1, 1, 1.
+    private static func continueOrderedListNumbering(_ blocks: [ContentBlock]) -> [ContentBlock] {
+        var result: [ContentBlock] = []
+        var nextNumber: Int?
+
+        for block in blocks {
+            let normalized = normalizeNestedOrderedLists(block)
+            switch normalized {
+            case .list(let ordered, let start, let items) where ordered:
+                let effectiveStart: Int
+                if start > 1 {
+                    // Explicit `<ol start="N">` from Discourse — trust it.
+                    effectiveStart = start
+                } else if let nextNumber {
+                    effectiveStart = nextNumber
+                } else {
+                    effectiveStart = max(start, 1)
+                }
+                result.append(.list(ordered: true, start: effectiveStart, items: items))
+                nextNumber = effectiveStart + items.count
+
+            case .details:
+                // Screenshot collapsibles sit between product rows without ending the list.
+                result.append(normalized)
+
+            case .spoiler, .divider:
+                // Decorative / hidden wrappers — keep the sequence alive.
+                result.append(normalized)
+
+            default:
+                if breaksOrderedListSequence(normalized) {
+                    nextNumber = nil
+                }
+                result.append(normalized)
+            }
+        }
+
+        return result
+    }
+
+    private static func continueOrderedListNumbering(annotated blocks: [AnnotatedBlock]) -> [AnnotatedBlock] {
+        var result: [AnnotatedBlock] = []
+        var nextNumber: Int?
+
+        for annotated in blocks {
+            let normalized = normalizeNestedOrderedLists(annotated.block)
+            switch normalized {
+            case .list(let ordered, let start, let items) where ordered:
+                let effectiveStart: Int
+                if start > 1 {
+                    effectiveStart = start
+                } else if let nextNumber {
+                    effectiveStart = nextNumber
+                } else {
+                    effectiveStart = max(start, 1)
+                }
+                result.append(AnnotatedBlock(
+                    block: .list(ordered: true, start: effectiveStart, items: items),
+                    sourceHTML: annotated.sourceHTML
+                ))
+                nextNumber = effectiveStart + items.count
+
+            case .details:
+                result.append(AnnotatedBlock(block: normalized, sourceHTML: annotated.sourceHTML))
+
+            case .spoiler, .divider:
+                result.append(AnnotatedBlock(block: normalized, sourceHTML: annotated.sourceHTML))
+
+            default:
+                if breaksOrderedListSequence(normalized) {
+                    nextNumber = nil
+                }
+                result.append(AnnotatedBlock(block: normalized, sourceHTML: annotated.sourceHTML))
+            }
+        }
+
+        return result
+    }
+
+    /// Recurse into nested containers so continued numbering also works inside quotes etc.
+    private static func normalizeNestedOrderedLists(_ block: ContentBlock) -> ContentBlock {
+        switch block {
+        case .details(let summary, let content):
+            return .details(summary: summary, content: continueOrderedListNumbering(content))
+        case .spoiler(let blocks):
+            return .spoiler(blocks: continueOrderedListNumbering(blocks))
+        case .blockquote(let blocks):
+            return .blockquote(blocks: continueOrderedListNumbering(blocks))
+        case .discourseQuote(
+            let username,
+            let avatarURL,
+            let topicTitle,
+            let topicURL,
+            let categoryName,
+            let categoryURL,
+            let quotePostNumber,
+            let content
+        ):
+            return .discourseQuote(
+                username: username,
+                avatarURL: avatarURL,
+                topicTitle: topicTitle,
+                topicURL: topicURL,
+                categoryName: categoryName,
+                categoryURL: categoryURL,
+                quotePostNumber: quotePostNumber,
+                content: continueOrderedListNumbering(content)
+            )
+        case .list(let ordered, let start, let items):
+            let nestedItems = items.map { item in
+                ListItem(
+                    content: item.content,
+                    children: continueOrderedListNumbering(item.children)
+                )
+            }
+            return .list(ordered: ordered, start: start, items: nestedItems)
+        case .table(let headers, let rows):
+            return .table(
+                headers: headers.map { continueOrderedListNumbering($0) },
+                rows: rows.map { row in row.map { continueOrderedListNumbering($0) } }
+            )
+        default:
+            return block
+        }
+    }
+
+    /// Blocks that end a continued ordered-list sequence (FluxDo restarts after these).
+    private static func breaksOrderedListSequence(_ block: ContentBlock) -> Bool {
+        switch block {
+        case .list(let ordered, _, _) where !ordered:
+            return true
+        case .list:
+            return false
+        case .details, .spoiler, .divider:
+            return false
+        case .paragraph, .heading, .codeBlock, .blockquote, .discourseQuote,
+             .image, .onebox, .video, .poll, .table, .rawHTML:
+            return true
         }
     }
 
@@ -625,14 +781,29 @@ enum BlockExtractor {
         case .spoiler(let blocks):
             return [.spoiler(blocks: blocks.flatMap { promoteImageLinks(in: $0) })]
 
-        case .list(let ordered, let items):
-            let promotedItems = items.map { item in
-                ListItem(
-                    content: item.content,
-                    children: item.children.flatMap { promoteImageLinks(in: $0) }
-                )
+        case .list(let ordered, let start, let items):
+            // Promote bare image URLs / non-emoji imgs out of item text into children
+            // so native list rendering can show full-size TappableImageContainers.
+            let promotedItems = items.map { item -> ListItem in
+                var textContent: [InlineNode] = []
+                var childBlocks: [ContentBlock] = []
+                for block in promoteImageLinks(in: .paragraph(item.content)) {
+                    switch block {
+                    case .paragraph(let inlines):
+                        let trimmed = inlines.trimmedWhitespace()
+                        guard !trimmed.isEmpty else { continue }
+                        if !textContent.isEmpty {
+                            textContent.append(.lineBreak)
+                        }
+                        textContent.append(contentsOf: trimmed)
+                    default:
+                        childBlocks.append(contentsOf: promoteImageLinks(in: block))
+                    }
+                }
+                childBlocks.append(contentsOf: item.children.flatMap { promoteImageLinks(in: $0) })
+                return ListItem(content: textContent, children: childBlocks)
             }
-            return [.list(ordered: ordered, items: promotedItems)]
+            return [.list(ordered: ordered, start: start, items: promotedItems)]
 
         case .table(let headers, let rows):
             let promotedHeaders = headers.map { cell in cell.flatMap { promoteImageLinks(in: $0) } }

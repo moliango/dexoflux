@@ -56,9 +56,10 @@ public enum CookedTextExporter {
                 .joined(separator: " — ")
         case .video(_, _, let title, _, _, _, _):
             return title?.isEmpty == false ? title! : "[video]"
-        case .list(let ordered, let items):
+        case .list(let ordered, let start, let items):
+            let first = max(start, 1)
             return items.enumerated().compactMap { index, item in
-                let prefix = ordered ? "\(index + 1). " : "• "
+                let prefix = ordered ? "\(first + index). " : "• "
                 let line = inlinePlain(item.content)
                 let nested = plainText(from: item.children)
                 if nested.isEmpty { return prefix + line }
@@ -129,9 +130,10 @@ public enum CookedTextExporter {
             return label
         case .video(let url, _, let title, _, _, _, _):
             return "[\(title ?? "video")](\(url))"
-        case .list(let ordered, let items):
+        case .list(let ordered, let start, let items):
+            let first = max(start, 1)
             return items.enumerated().map { index, item in
-                let prefix = ordered ? "\(index + 1). " : "- "
+                let prefix = ordered ? "\(first + index). " : "- "
                 let line = inlinePlain(item.content)
                 let nested = markdown(from: item.children)
                 if nested.isEmpty { return prefix + line }

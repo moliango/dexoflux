@@ -204,8 +204,9 @@ final class IntegrationTests: XCTestCase {
         """
         let blocks = CookedHTMLParser.parse(html: html)
         XCTAssertEqual(blocks.count, 1)
-        if case .list(let ordered, let items) = blocks[0] {
+        if case .list(let ordered, let start, let items) = blocks[0] {
             XCTAssertFalse(ordered)
+            XCTAssertEqual(start, 1)
             XCTAssertEqual(items.count, 3)
         } else {
             XCTFail("Expected list, got \(blocks[0])")
@@ -220,8 +221,9 @@ final class IntegrationTests: XCTestCase {
         </ol>
         """
         let blocks = CookedHTMLParser.parse(html: html)
-        if case .list(let ordered, let items) = blocks[0] {
+        if case .list(let ordered, let start, let items) = blocks[0] {
             XCTAssertTrue(ordered)
+            XCTAssertEqual(start, 1)
             XCTAssertEqual(items.count, 2)
         } else {
             XCTFail("Expected ordered list")
@@ -240,7 +242,7 @@ final class IntegrationTests: XCTestCase {
         </ul>
         """
         let blocks = CookedHTMLParser.parse(html: html)
-        if case .list(_, let items) = blocks[0] {
+        if case .list(_, _, let items) = blocks[0] {
             XCTAssertEqual(items.count, 1)
             XCTAssertFalse(items[0].children.isEmpty, "Expected nested list in children")
         } else {
