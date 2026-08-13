@@ -14,14 +14,27 @@ enum TopicDetailFactory {
         // WeChat + Telegram default to chat-bubble detail; user can opt into classic via
         // Appearance →「聊天式话题详情」(`chatTopicDetailEnabled`, default on).
         if AppSettings.shared.prefersChatTopicDetail {
-            let vc = WeChatTopicDetailViewController(
-                api: api,
-                topicId: topicId,
-                initialFloor: initialFloor,
-                initialPostId: initialPostId,
-                lastReadPostNumber: lastReadPostNumber,
-                forum: forum
-            )
+            let vc: ChatTopicDetailViewController
+            switch AppSettings.shared.themeStyle {
+            case .telegram:
+                vc = TelegramTopicDetailViewController(
+                    api: api,
+                    topicId: topicId,
+                    initialFloor: initialFloor,
+                    initialPostId: initialPostId,
+                    lastReadPostNumber: lastReadPostNumber,
+                    forum: forum
+                )
+            default:
+                vc = WeChatTopicDetailViewController(
+                    api: api,
+                    topicId: topicId,
+                    initialFloor: initialFloor,
+                    initialPostId: initialPostId,
+                    lastReadPostNumber: lastReadPostNumber,
+                    forum: forum
+                )
+            }
             if preferNested || AppSettings.shared.nestedReplyViewEnabled {
                 vc.preferNestedOnLoad = true
             }

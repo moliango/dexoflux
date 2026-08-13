@@ -1034,7 +1034,7 @@ extension ForumTabBarController: UINavigationControllerDelegate {
         TopicDetailTransitionGeometry.normalize(viewController.view)
         let allowsSystemPop = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
-            && !(viewController is WeChatTopicDetailViewController)
+            && !(viewController is ChatTopicDetailViewController)
         navigationController.interactivePopGestureRecognizer?.isEnabled = allowsSystemPop
         if allowsSystemPop {
             popGestureEnablers[ObjectIdentifier(navigationController)]?.attach(to: navigationController)

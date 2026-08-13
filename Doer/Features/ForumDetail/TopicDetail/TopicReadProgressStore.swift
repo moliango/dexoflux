@@ -148,3 +148,32 @@ final class TopicReadProgressStore {
         return "\(normalizedBase)|\(account)|\(topicId)"
     }
 }
+
+/// Where Topic Detail should land after the first load.
+enum TopicDetailOpenAnchor: Equatable {
+    case top
+    case floor(Int)
+    case postId(Int)
+
+    static func resolve(
+        initialPostId: Int?,
+        initialFloor: Int?,
+        lastRead: Int,
+        totalFloors: Int,
+        pinLatestWhenFullyRead: Bool
+    ) -> TopicDetailOpenAnchor {
+        if let initialPostId {
+            return .postId(initialPostId)
+        }
+        if let initialFloor {
+            return .floor(initialFloor)
+        }
+        if lastRead > 0, totalFloors > lastRead {
+            return .floor(min(lastRead + 1, totalFloors))
+        }
+        if pinLatestWhenFullyRead, totalFloors > 0, lastRead >= totalFloors {
+            return .floor(totalFloors)
+        }
+        return .top
+    }
+}

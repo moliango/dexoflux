@@ -266,3 +266,45 @@ enum ChatTopicStyle: Equatable {
     }
 }
 
+enum ChatDateSeparator {
+    static func text(forCreatedAt current: String, previousCreatedAt: String?) -> String? {
+        let currentDay = dayKey(fromISO: current)
+        guard let currentDay else { return nil }
+        if let previousCreatedAt, dayKey(fromISO: previousCreatedAt) == currentDay {
+            return nil
+        }
+        return friendlyDayLabel(fromISO: current)
+    }
+
+    private static func dayKey(fromISO iso: String) -> String? {
+        guard let date = parseISODate(iso) else { return nil }
+        let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        guard let y = comps.year, let m = comps.month, let d = comps.day else { return nil }
+        return "\(y)-\(m)-\(d)"
+    }
+
+    private static func friendlyDayLabel(fromISO iso: String) -> String? {
+        guard let date = parseISODate(iso) else { return nil }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return String(localized: "telegram_chat.today", defaultValue: "今天")
+        }
+        if cal.isDateInYesterday(date) {
+            return String(localized: "telegram_chat.yesterday", defaultValue: "昨天")
+        }
+        let df = DateFormatter()
+        df.locale = .current
+        df.setLocalizedDateFormatFromTemplate("MMMd")
+        return df.string(from: date)
+    }
+
+    private static func parseISODate(_ iso: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = formatter.date(from: iso) { return d }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: iso)
+    }
+}
+
+

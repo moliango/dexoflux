@@ -28,7 +28,7 @@ final class NavigationPopGestureEnabler: NSObject, UIGestureRecognizerDelegate {
         else { return false }
 
         let top = nav.topViewController
-        if top is TopicDetailViewController || top is WeChatTopicDetailViewController {
+        if top is TopicDetailViewController || top is ChatTopicDetailViewController {
             return false
         }
 

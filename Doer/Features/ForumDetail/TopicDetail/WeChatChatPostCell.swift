@@ -12,8 +12,28 @@ protocol WeChatChatPostCellDelegate: AnyObject {
     func weChatChatPostCell(_ cell: WeChatChatPostCell, didTapAvatar username: String)
 }
 
-final class WeChatChatPostCell: UITableViewCell {
+class WeChatChatPostCell: UITableViewCell {
     static let reuseIdentifier = "WeChatChatPostCell"
+
+    func prefersContextMenuForLongPress() -> Bool { false }
+
+    func bubbleLongPressDuration() -> TimeInterval { 0.5 }
+
+    func dateChipCornerRadius() -> CGFloat { 4 }
+
+    func dateChipHeight() -> CGFloat { 20 }
+
+    func dateChipTopInset() -> CGFloat { 10 }
+
+    func dateChipBackgroundColor(isDark: Bool) -> UIColor {
+        isDark
+            ? UIColor.white.withAlphaComponent(0.18)
+            : UIColor.black.withAlphaComponent(0.22)
+    }
+
+    func dateChipTextColor(isDark: Bool) -> UIColor {
+        isDark ? UIColor.white.withAlphaComponent(0.88) : .white
+    }
 
     private enum Metrics {
         static let horizontalInset: CGFloat = 8
@@ -24,7 +44,8 @@ final class WeChatChatPostCell: UITableViewCell {
         static let actionBarHeight: CGFloat = 30
     }
 
-    private var chatStyle: ChatTopicStyle { ChatTopicStyle.current ?? .weChat }
+    private var appliedChatStyle: ChatTopicStyle = .weChat
+    private var chatStyle: ChatTopicStyle { appliedChatStyle }
     private var bubblePadding: CGFloat {
         chatStyle == .telegram ? chatStyle.bubblePadding : Metrics.bubblePadding
     }
@@ -37,6 +58,7 @@ final class WeChatChatPostCell: UITableViewCell {
     private var isMine = false
     private var heightReconcileGeneration = 0
     private var lastReconciledHeight: CGFloat = 0
+    private var didInstallBubbleGestures = false
 
     private let dateChipLabel: UILabel = {
         let label = UILabel()
@@ -44,7 +66,7 @@ final class WeChatChatPostCell: UITableViewCell {
         label.textColor = .secondaryLabel
         label.textAlignment = .center
         label.backgroundColor = UIColor.secondarySystemFill.withAlphaComponent(0.85)
-        label.layer.cornerRadius = 11
+        label.layer.cornerRadius = 4
         label.layer.cornerCurve = .continuous
         label.clipsToBounds = true
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -184,11 +206,22 @@ final class WeChatChatPostCell: UITableViewCell {
         contentView.clipsToBounds = true
         clipsToBounds = true
         setupUI()
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-        longPress.minimumPressDuration = 0.45
-        bubbleView.addGestureRecognizer(longPress)
         let avatarTap = UITapGestureRecognizer(target: self, action: #selector(handleAvatarTap))
         avatarImageView.addGestureRecognizer(avatarTap)
+    }
+
+    func installBubbleGestures() {
+        let bubbleTap = UITapGestureRecognizer(target: self, action: #selector(handleBubbleTap(_:)))
+        bubbleTap.cancelsTouchesInView = false
+        if prefersContextMenuForLongPress() {
+            bubbleView.addInteraction(UIContextMenuInteraction(delegate: self))
+        } else {
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+            longPress.minimumPressDuration = bubbleLongPressDuration()
+            bubbleView.addGestureRecognizer(longPress)
+            bubbleTap.require(toFail: longPress)
+        }
+        bubbleView.addGestureRecognizer(bubbleTap)
     }
 
     @available(*, unavailable)
@@ -397,13 +430,19 @@ final class WeChatChatPostCell: UITableViewCell {
         floorNumber: Int,
         baseURL: String,
         contentDelegate: PostCellDelegate?,
-        dateSeparatorText: String? = nil
+        dateSeparatorText: String? = nil,
+        chatStyle: ChatTopicStyle
     ) {
         currentPost = post
         self.contentDelegate = contentDelegate
         imageBaseURL = baseURL
         isMine = post.yours
-        let style = chatStyle
+        appliedChatStyle = chatStyle
+        if !didInstallBubbleGestures {
+            didInstallBubbleGestures = true
+            installBubbleGestures()
+        }
+        let style = appliedChatStyle
         let isTelegram = style == .telegram
         let pad = bubblePadding
 
@@ -529,8 +568,6 @@ final class WeChatChatPostCell: UITableViewCell {
             size: AvatarImageLoader.primaryAvatarPixelSize
         )
         setNeedsLayout()
-        layoutIfNeeded()
-        requestHeightReconciliation()
     }
 
     private func configureActionBar(for post: DiscourseTopicDetail.Post, style: ChatTopicStyle) {
@@ -624,6 +661,10 @@ final class WeChatChatPostCell: UITableViewCell {
             guard let self else { return }
             self.actionDelegate?.weChatChatPostCell(self, didTapAvatar: username)
         }
+        boostStrip.onBoostChanged = { [weak self] boost in
+            guard let self, let current = self.currentPost else { return }
+            self.contentDelegate?.postCell(didUpdateBoost: boost, forPost: current)
+        }
         boostStrip.translatesAutoresizingMaskIntoConstraints = false
         boostHost.addSubview(boostStrip)
         NSLayoutConstraint.activate([
@@ -636,8 +677,8 @@ final class WeChatChatPostCell: UITableViewCell {
         boostStrip.setContentCompressionResistancePriority(.required, for: .vertical)
 
         boostHost.isHidden = false
-        // BoostStripView intrinsic height is 34.
-        boostHostHeightConstraint?.constant = 34
+        // BoostStripView intrinsic height is BoostChipLayout.stripHeight.
+        boostHostHeightConstraint?.constant = BoostChipLayout.stripHeight
         boostHostTopConstraint?.constant = 4
     }
 
@@ -647,15 +688,12 @@ final class WeChatChatPostCell: UITableViewCell {
             dateChipLabel.text = "  \(text)  "
             dateChipLabel.font = TopicDetailTypography.chromeFont(.dateChip, weight: .medium)
             dateChipLabel.adjustsFontForContentSizeCategory = true
-            dateChipTopConstraint?.constant = 8
-            dateChipHeightConstraint?.constant = 22
+            dateChipLabel.layer.cornerRadius = dateChipCornerRadius()
+            dateChipTopConstraint?.constant = dateChipTopInset()
+            dateChipHeightConstraint?.constant = dateChipHeight()
             let isDark = traitCollection.userInterfaceStyle == .dark
-            dateChipLabel.backgroundColor = isDark
-                ? UIColor.white.withAlphaComponent(0.12)
-                : UIColor.black.withAlphaComponent(0.08)
-            dateChipLabel.textColor = isDark
-                ? UIColor.white.withAlphaComponent(0.75)
-                : UIColor.secondaryLabel
+            dateChipLabel.backgroundColor = dateChipBackgroundColor(isDark: isDark)
+            dateChipLabel.textColor = dateChipTextColor(isDark: isDark)
         } else {
             dateChipLabel.isHidden = true
             dateChipLabel.text = nil
@@ -830,14 +868,10 @@ final class WeChatChatPostCell: UITableViewCell {
         if style == .telegram {
             avatarTopConstraint?.isActive = false
             avatarBottomConstraint?.isActive = showAvatar
-            bubbleView.layer.shadowColor = UIColor.black.cgColor
-            bubbleView.layer.shadowOpacity = 0.08
-            bubbleView.layer.shadowRadius = 2
-            bubbleView.layer.shadowOffset = CGSize(width: 0, height: 1)
-            bubbleView.layer.masksToBounds = false
-            bubbleView.clipsToBounds = false
+            // No layer shadow: unpath'd shadows offscreen-render every frame while scrolling.
+            bubbleView.layer.shadowOpacity = 0
+            bubbleView.clipsToBounds = true
             contentStack.clipsToBounds = true
-            contentStack.layer.cornerRadius = max(style.bubbleCornerRadius - 6, 8)
         } else {
             avatarBottomConstraint?.isActive = false
             avatarTopConstraint?.isActive = true
@@ -977,20 +1011,29 @@ final class WeChatChatPostCell: UITableViewCell {
         actionDelegate?.weChatChatPostCell(self, didRequestBoost: post)
     }
 
+    @objc private func handleBubbleTap(_ gesture: UITapGestureRecognizer) {
+        // FluxDo chat: tap does not open like/reaction menus. Keep long-press + action bar.
+        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .tap) else { return }
+        guard let post = currentPost else { return }
+        presentActionSheet(actions: makeActionMenu(for: post))
+    }
+
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard !prefersContextMenuForLongPress() else { return }
         guard gesture.state == .began, let post = currentPost else { return }
+        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .longPress) else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         presentActionSheet(actions: makeActionMenu(for: post))
     }
 
-    private struct MenuAction {
+    fileprivate struct MenuAction {
         let title: String
         let handler: () -> Void
         let destructive: Bool
         let disabled: Bool
     }
 
-    private func makeActionMenu(for post: DiscourseTopicDetail.Post) -> [MenuAction] {
+    fileprivate func makeActionMenu(for post: DiscourseTopicDetail.Post) -> [MenuAction] {
         var actions: [MenuAction] = []
 
         if !post.yours {
@@ -1108,6 +1151,10 @@ final class WeChatChatPostCell: UITableViewCell {
         return CGSize(width: targetSize.width, height: ceil(fitted.height))
     }
 
+    func handleQuoteSelectedText(_ text: String) {
+        contentDelegate?.postCell(didQuoteSelectedText: text, postId: currentPost?.id)
+    }
+
     func requestHeightReconciliation() {
         heightReconcileGeneration += 1
         let generation = heightReconcileGeneration
@@ -1162,6 +1209,30 @@ final class WeChatChatPostCell: UITableViewCell {
     }
 }
 
+extension WeChatChatPostCell: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard prefersContextMenuForLongPress() else { return nil }
+        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .longPress) else { return nil }
+        guard let post = currentPost else { return nil }
+        let actions = makeActionMenu(for: post).filter { !$0.disabled }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            UIMenu(
+                children: actions.map { action in
+                    UIAction(
+                        title: action.title,
+                        attributes: action.destructive ? .destructive : []
+                    ) { _ in
+                        action.handler()
+                    }
+                }
+            )
+        }
+    }
+}
+
 extension WeChatChatPostCell: UITextViewDelegate {
     func textView(
         _ textView: UITextView,
@@ -1171,5 +1242,20 @@ extension WeChatChatPostCell: UITextViewDelegate {
     ) -> Bool {
         contentDelegate?.postCell(didTapLinkURL: URL)
         return false
+    }
+
+    @available(iOS 16.0, *)
+    func textView(
+        _ textView: UITextView,
+        editMenuForTextIn range: NSRange,
+        suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+        DiscourseQuoteMarkdown.editMenu(
+            for: textView,
+            range: range,
+            suggestedActions: suggestedActions
+        ) { [weak self] selected in
+            self?.contentDelegate?.postCell(didQuoteSelectedText: selected, postId: self?.currentPost?.id)
+        }
     }
 }

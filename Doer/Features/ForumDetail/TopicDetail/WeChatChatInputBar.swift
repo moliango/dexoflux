@@ -41,13 +41,22 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
     private var telegramTextTrailing: NSLayoutConstraint?
 
     private var isSending = false
-    private var chatStyle: ChatTopicStyle { ChatTopicStyle.current ?? .weChat }
+    private var appliedChatStyle: ChatTopicStyle
+    private var chatStyle: ChatTopicStyle { appliedChatStyle }
 
     private(set) var replyToPost: DiscourseTopicDetail.Post?
     /// Chat channel reply target (message id). Independent from topic post reply.
     private(set) var replyToChatMessageId: Int?
 
+    init(chatStyle: ChatTopicStyle) {
+        self.appliedChatStyle = chatStyle
+        super.init(frame: .zero)
+        setup()
+        applyChatStyle()
+    }
+
     override init(frame: CGRect) {
+        self.appliedChatStyle = ChatTopicStyle.current ?? .weChat
         super.init(frame: frame)
         setup()
         applyChatStyle()

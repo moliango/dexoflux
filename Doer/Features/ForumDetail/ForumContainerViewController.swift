@@ -28,6 +28,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var isPresentingCloudflareVerification = false
     private var shouldShowCloudflareShieldButton = false
     private var cloudflareShieldSuppressedUntil: Date?
+    /// After the user closes a CF sheet without passing, don't auto-present again (CDK/LDC loops).
+    private var cloudflareAutoPresentBlockedUntil: Date?
     private var pendingCloudflareBaseURL: URL?
     private var pendingCloudflareResponseURL: URL?
     private var cloudflareShieldButtonConstraints: [NSLayoutConstraint] = []
@@ -336,6 +338,29 @@ final class ForumContainerViewController: UIViewController, AuthGating {
                 return
             }
             meNav.pushViewController(ReadLaterViewController(api: api), animated: true)
+        case .trustLevel:
+            guard let tabBarViewController else {
+                DoerInAppRouteStore.shared.enqueue(route)
+                return
+            }
+            let meIndex = max(tabBarViewController.navigationControllers.count - 1, 0)
+            tabBarViewController.selectedIndex = meIndex
+            let meNav = tabBarViewController.navigationControllers[meIndex]
+            if meNav.topViewController is TrustRequirementsViewController {
+                return
+            }
+            if let existing = meNav.viewControllers.first(where: { $0 is TrustRequirementsViewController }) {
+                meNav.popToViewController(existing, animated: true)
+                return
+            }
+            let username = authManager.username(for: forum.baseURL) ?? forum.username
+            let trustLevel = username.flatMap {
+                MeProfileCacheStore.cachedProfile(baseURL: forum.baseURL, username: $0)?.userProfile.trustLevel
+            } ?? 0
+            meNav.pushViewController(
+                TrustRequirementsViewController(api: api, username: username, trustLevel: trustLevel),
+                animated: true
+            )
         }
     }
 
@@ -669,6 +694,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             return
         }
         logCloudflareState("shield tapped; presenting foreground verification")
+        cloudflareAutoPresentBlockedUntil = nil
         presentCloudflareVerification(
             baseURL: baseURL,
             responseURL: pendingCloudflareResponseURL
@@ -716,9 +742,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         let responseURL = notification.userInfo?[DiscourseAPI.cloudflareResponseURLUserInfoKey] as? URL
         pendingCloudflareBaseURL = baseURL
         pendingCloudflareResponseURL = responseURL
-        guard !isCloudflareShieldSuppressed() else {
+        guard !isCloudflareShieldSuppressed(), !isCloudflareAutoPresentBlocked() else {
             logCloudflareState("needs-user ignored while shield is suppressed base=\(baseURLString)")
-            setCloudflareShieldButtonVisible(false, animated: true)
+            setCloudflareShieldButtonVisible(!isCloudflareShieldSuppressed(), animated: true)
             return
         }
         guard !isPresentingCloudflareVerification else {
@@ -805,8 +831,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
                     userInfo: [DiscourseAPI.cloudflareBaseURLUserInfoKey: forum.baseURL]
                 )
             )
-        case let wechat as WeChatTopicDetailViewController:
-            wechat.handleCloudflareVerificationCompleted(
+        case let chat as ChatTopicDetailViewController:
+            chat.handleCloudflareVerificationCompleted(
                 Notification(
                     name: DiscourseAPI.cloudflareVerificationCompletedNotification,
                     object: nil,
@@ -951,7 +977,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             }
             let nav = UINavigationController(rootViewController: vc)
             nav.modalPresentationStyle = .pageSheet
-            nav.isModalInPresentation = true
+            nav.isModalInPresentation = false
             if let sheet = nav.sheetPresentationController {
                 sheet.detents = [.large()]
                 sheet.prefersGrabberVisible = true
@@ -963,15 +989,24 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     private func handleCloudflareVerificationClosed() {
         isPresentingCloudflareVerification = false
-        // Always unstick the tab bar when the CF sheet goes away, success or cancel.
         restoreTabBarAfterCloudflareInteraction()
         if let pending = pendingCloudflareBaseURL,
            CloudflareVerificationPolicy.isInVerificationGrace(baseURL: pending) {
             setCloudflareShieldButtonVisible(false, animated: true)
             return
         }
+        cloudflareAutoPresentBlockedUntil = Date().addingTimeInterval(60)
         guard pendingCloudflareBaseURL != nil, !isCloudflareShieldSuppressed() else { return }
         setCloudflareShieldButtonVisible(true, animated: true)
+    }
+
+    private func isCloudflareAutoPresentBlocked(now: Date = Date()) -> Bool {
+        guard let until = cloudflareAutoPresentBlockedUntil else { return false }
+        if now < until {
+            return true
+        }
+        cloudflareAutoPresentBlockedUntil = nil
+        return false
     }
 
     private func restoreTabBarAfterCloudflareInteraction() {

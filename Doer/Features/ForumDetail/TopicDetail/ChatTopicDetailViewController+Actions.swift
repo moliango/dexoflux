@@ -1,6 +1,6 @@
 import UIKit
 
-extension WeChatTopicDetailViewController {
+extension ChatTopicDetailViewController {
     var pluginScope: PluginScope {
         PluginScope(
             baseURL: api.baseURL,
@@ -50,7 +50,9 @@ extension WeChatTopicDetailViewController {
                 for: pluginScope
             ),
             canAssign: topic?.canAssign == true || topic?.assignedToUsername != nil,
-            assignedToUsername: topic?.assignedToUsername
+            assignedToUsername: topic?.assignedToUsername,
+            currentFloor: currentVisibleFloor(),
+            totalFloors: max(viewModel.totalFloors, 1)
         )
         TopicMoreMenuPresenter.present(
             from: self,
@@ -93,6 +95,10 @@ extension WeChatTopicDetailViewController {
                 initialURL: url
             )
             navigationController?.pushViewController(browser, animated: true)
+        case .openTimeline:
+            showTimelineSheet()
+        case .jumpToFloor(let floor):
+            Task { await jumpToFloor(floor) }
         case .readingSettings:
             navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
         case .markUnreadStepBack:

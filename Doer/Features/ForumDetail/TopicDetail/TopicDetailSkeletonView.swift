@@ -53,11 +53,11 @@ final class TopicDetailSkeletonView: DoerSkeletonPlaceholderView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func applyThemeStyle() {
+    func applyThemeStyle(chatStyle: ChatTopicStyle? = nil) {
         let themeStyle = AppSettings.shared.themeStyle
-        // Chat detail (WeChat / Telegram) uses canvas color so skeleton matches the page.
-        let background = ChatTopicStyle.current?.chatBackgroundColor ?? themeStyle.topicListBackgroundColor
-        let block = ChatTopicStyle.current != nil
+        // Chat detail passes the VC's frozen style so skeleton matches the subclass canvas.
+        let background = chatStyle?.chatBackgroundColor ?? themeStyle.topicListBackgroundColor
+        let block = chatStyle != nil
             ? UIColor.label.withAlphaComponent(0.10)
             : themeStyle.accentColor.withAlphaComponent(0.12)
         applySkeletonTheme(backgroundColor: background, blockColor: block)
