@@ -1,12 +1,6 @@
 import UIKit
 import WebKit
 
-/// Shared WebKit process pool so successive browser / mini-program opens
-/// reuse the same cookie jar process instead of starting isolated.
-enum InAppBrowserWebKitRuntime {
-    static let processPool = WKProcessPool()
-}
-
 final class InAppBrowserViewController: UIViewController {
     private let baseURL: URL
     private let store: BrowserHistoryStore
@@ -19,10 +13,9 @@ final class InAppBrowserViewController: UIViewController {
 
     private lazy var webView: WKWebView = {
         let configuration = WKWebViewConfiguration()
-        // Persistent store + shared process pool: custom mini-program sites keep
-        // login cookies / localStorage across close → reopen.
+        // Persistent default store keeps login cookies / localStorage across close → reopen.
+        // WKProcessPool no longer isolates storage on iOS 15+.
         configuration.websiteDataStore = .default()
-        configuration.processPool = InAppBrowserWebKitRuntime.processPool
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.translatesAutoresizingMaskIntoConstraints = false

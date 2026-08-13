@@ -104,7 +104,6 @@ final class WebSessionRefreshService: NSObject {
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
-        configuration.processPool = InAppBrowserWebKitRuntime.processPool
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: configuration)

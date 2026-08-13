@@ -12,10 +12,9 @@ final class WebLoginViewController: UIViewController {
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
-        // Same persistent store + process pool as in-app browser / mini-programs,
+        // Same persistent default store as in-app browser / mini-programs,
         // so a successful login is immediately visible to those WebViews.
         config.websiteDataStore = .default()
-        config.processPool = InAppBrowserWebKitRuntime.processPool
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let wv = WKWebView(frame: .zero, configuration: config)
@@ -273,14 +272,13 @@ final class WebLoginViewController: UIViewController {
         nonisolated func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                cookieStore.getAllCookies { cookies in
-                    guard !self.didCallback else { return }
-                    let relevant = cookies.filter { $0.domain.contains(self.targetHost) }
-                    let hasSession = relevant.contains { $0.name == "_t" }
-                    guard hasSession else { return }
-                    self.didCallback = true
-                    DispatchQueue.main.async { self.onCookiesReady(relevant) }
-                }
+                let cookies = await cookieStore.allCookies()
+                guard !self.didCallback else { return }
+                let relevant = cookies.filter { $0.domain.contains(self.targetHost) }
+                let hasSession = relevant.contains { $0.name == "_t" }
+                guard hasSession else { return }
+                self.didCallback = true
+                self.onCookiesReady(relevant)
             }
         }
 

@@ -373,7 +373,11 @@ final class NewAPICheckInLoginViewController: UIViewController, WKNavigationDele
                 NewAPICheckInLoginSupport.cookieDomain($0.domain, matchesHost: targetHost)
             }
             for cookie in platformCookies {
-                await dataStore.httpCookieStore.delete(cookie)
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    dataStore.httpCookieStore.delete(cookie) {
+                        continuation.resume()
+                    }
+                }
             }
         }
 
