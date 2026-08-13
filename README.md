@@ -1,13 +1,20 @@
 <p align="center">
-  <img src="assets/icon.png" width="128" height="128" alt="DexoFlux App Icon" />
+  <img src="assets/icon.png" width="128" height="128" alt="Doer App Icon" />
 </p>
 
-<h1 align="center">DexoFlux</h1>
+<h1 align="center">Doer</h1>
 
-<p align="center">A native iOS Linux.do forum client, built with UIKit + Swift.</p>
+<p align="center">A native iOS Linux.do client, built with UIKit + Swift.</p>
 
 <p align="center">
   English | <a href="README.zh-CN.md">中文</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/moliango/doer"><img src="https://img.shields.io/badge/GitHub-moliango%2Fdoer-181717?logo=github" alt="GitHub" /></a>
+  <img src="https://img.shields.io/badge/iOS-15.0%2B-blue" alt="iOS 15.0+" />
+  <img src="https://img.shields.io/badge/Swift-5-orange" alt="Swift 5" />
+  <img src="https://img.shields.io/badge/UIKit-native-lightgrey" alt="UIKit" />
 </p>
 
 ## Screenshots
@@ -18,30 +25,34 @@
 
 ## Features
 
-- [x] **Linux.do Browsing** — Browse latest topics, top topics, categories, tags, and search results in a native UIKit experience.
-- [x] **Topic Detail** — Render cooked HTML with native text, images, quotes, code blocks, polls, spoilers, oneboxes, tables, videos, and timeline navigation.
-- [x] **Replies & Reactions** — Reply to topics or posts, like posts, and use Linux.do emoji / boost interactions.
-- [x] **Image Viewer** — Preview topic and comment images with multi-image swipe, image count, share, save, and close controls.
-- [x] **Account & Me** — Profile overview, avatar / username cache, bookmarks, browsing history, notifications, and private messages.
-- [x] **Secure Auth** — Web login, cookie reuse for native requests, and global Cloudflare challenge handling.
-- [x] **Appearance Settings** — Default, eye-care, Xiaohongshu, and Telegram theme colors, plus app icon, custom fonts, global font size, content font size, and tab bar customization.
-- [x] **Data Management** — Cache visibility and cleanup for browsing data, images, cookies, and app storage.
+- [x] **Linux.do browsing** — Latest, top, categories, tags, and search in a native UIKit UI.
+- [x] **Topic detail** — Cooked HTML rendered as native text, images, quotes, code, polls, spoilers, oneboxes, tables, videos, and a timeline jumper.
+- [x] **Replies & reactions** — Reply to topics or floors, like posts, and use Linux.do emoji / Boost.
+- [x] **Image viewer** — Multi-image swipe, count, share, save, and close.
+- [x] **Account & Me** — Profile, badges, bookmarks, drafts, browsing history, notifications, and private messages.
+- [x] **Auth** — Web login, cookie reuse for native requests, and global Cloudflare challenge handling.
+- [x] **Appearance** — Default, eye-care, Xiaohongshu, and Telegram themes, plus fonts, font size, and tab-bar layout.
+- [x] **Plugins** — Mini programs, NewAPI check-in, toolbox, and a plugin dock.
+- [x] **Share & widget** — Share a topic URL into Doer, plus a home-screen quick-launch widget.
+- [x] **Data management** — Inspect and clear browsing data, image cache, cookies, and app storage.
+- [x] **Updates** — In-app check against [GitHub Releases](https://github.com/moliango/doer/releases).
 
 ## Tech Stack
 
 | Component | Detail |
 |-----------|--------|
 | Language | Swift 5 |
-| UI Framework | UIKit |
+| UI Framework | UIKit (no SwiftUI in the main app) |
 | Minimum Target | iOS 15.0 |
+| Bundle ID | `com.naine.doer` |
 | Architecture | MVVM-style view models + `DexoObservableObject` / observable view controllers |
-| Build Tool | [Tuist](https://tuist.dev) |
-| Networking | [Alamofire](https://github.com/Alamofire/Alamofire), custom router, cookie-backed requests, and DoH URLProtocol |
+| Build Tool | [Tuist](https://tuist.dev) via `mise` |
+| Networking | [Alamofire](https://github.com/Alamofire/Alamofire), custom router, cookie-backed requests, DoH URLProtocol |
 | Web Session | `WKWebView` for login, Cloudflare verification, and session refresh |
 | Database | SQLite via [GRDB](https://github.com/groue/GRDB.swift) |
 | HTML Rendering | Local `CookedHTML` package backed by [SwiftSoup](https://github.com/scinfu/SwiftSoup) |
 | Image Loading | [SDWebImage](https://github.com/SDWebImage/SDWebImage) + [SDWebImageSVGCoder](https://github.com/SDWebImage/SDWebImageSVGCoder) |
-| Image Viewer | [Lightbox](https://github.com/hyperoslo/Lightbox) plus custom multi-image preview UI |
+| Image Viewer | [Lightbox](https://github.com/hyperoslo/Lightbox) plus custom multi-image preview |
 | Persistence | Keychain, cookies, local settings, and GRDB-backed models |
 
 ## Getting Started
@@ -49,7 +60,7 @@
 ### Prerequisites
 
 - Xcode 16+
-- [mise](https://mise.jdx.dev) for tool version management
+- [mise](https://mise.jdx.dev) for tool versions
 
 ### Build
 
@@ -64,52 +75,54 @@ make generate
 make clean
 ```
 
-Open the generated `dexoflux.xcodeproj`, select your development team, then build and run.
+Then open **`Doer.xcworkspace`** (not the leftover `.xcodeproj` alone), select the **Doer** scheme and your development team, and run.
+
+The generated workspace is not committed. Run `make generate` again after changing `Project.swift`.
 
 ## Project Structure
 
 ```text
-dexo/
-├── AppDelegate.swift
-├── Core/
-│   ├── Auth/                 # Web login, cookie store, Keychain, session refresh
-│   ├── ImageLoading/         # Avatar and image loading helpers
-│   ├── Observable/           # Observable base controllers and state binding
-│   └── Settings/             # App settings, theme, language, fonts, tab bar preferences
-├── Database/
-│   └── Models/               # GRDB database manager and persisted models
-├── Features/
-│   ├── ForumDetail/
-│   │   ├── Home/             # Topic lists and topic cards
-│   │   ├── Categories/       # Category browsing
-│   │   ├── Tags/             # Tag browsing
-│   │   ├── TopicDetail/      # Native topic detail renderer, replies, image preview, polls
-│   │   ├── Me/               # Profile, bookmarks, history, and account dashboard
-│   │   ├── Notifications/    # Forum notifications
-│   │   ├── Messages/         # Private messages
-│   │   └── Search/           # Search UI and results
-│   ├── Main/                 # Main tab container and entry routing
-│   └── Settings/             # Appearance, reading, data, network, and tab bar settings
-├── Networking/
-│   ├── DoH/                  # DNS-over-HTTPS URLProtocol support
-│   ├── Models/               # API response models
-│   ├── DiscourseAPI.swift    # Linux.do / Discourse API client
-│   └── DiscourseRouter.swift # Route definitions
-├── Assets.xcassets/          # Runtime app assets
-└── Localizable.xcstrings     # Simplified Chinese, Traditional Chinese, and English strings
-
-Packages/
-└── CookedHTML/               # Local HTML parser / native rendering model package
-
-assets/                       # README screenshots and repository images
+.
+├── Project.swift                 # Tuist project: Doer / DoerTests / DoerShare / DoerWidget
+├── Tuist/                        # External Swift packages
+├── dexo/                         # App source
+│   ├── AppDelegate.swift
+│   ├── SceneDelegate.swift
+│   ├── Info.plist
+│   ├── Localizable.xcstrings     # en / zh-Hans / zh-Hant / zh-HK
+│   ├── Assets.xcassets/          # App icon, launch art, runtime images
+│   ├── Core/
+│   │   ├── Auth/                 # Web login, cookie store, Keychain, session refresh
+│   │   ├── ImageLoading/         # Avatar and image helpers
+│   │   ├── Observable/           # Observable base controllers
+│   │   ├── Plugins/              # Plugin registry and built-ins
+│   │   ├── Settings/             # Theme, language, fonts, tab bar, DoH
+│   │   └── Update/               # GitHub release checker
+│   ├── Database/                 # GRDB pool and ForumInstance records
+│   ├── Features/
+│   │   ├── ForumDetail/          # Home, topic, Me, notifications, search, chat
+│   │   ├── ForumList/            # Multi-forum list
+│   │   ├── Settings/             # Appearance, reading, data, network, about
+│   │   ├── Plugins/              # Mini programs, NewAPI check-in, toolbox
+│   │   ├── Notion/               # Notion topic sync
+│   │   └── AIModelService/       # In-app AI providers
+│   └── Networking/               # DiscourseAPI + DiscourseRouter + DoH
+├── Extensions/
+│   ├── DexoShare/                # Share extension → doer://
+│   └── DexoWidget/               # Home-screen widget
+├── Packages/CookedHTML/          # Cooked HTML → native block/inline tree
+├── dexofluxTests/                # Unit tests (DoerTests target)
+├── ci_scripts/                   # Unsigned IPA build
+└── assets/                       # README icon and screenshots
 ```
 
 ## Acknowledgements
 
-DexoFlux is a second-stage project built on the native UIKit foundation of Dexo, while also taking visual and interaction inspiration from FluxDo. Dexo and FluxDo are both excellent apps: Dexo provides a solid native iOS architecture, and FluxDo shows a smoother, more polished direction for forum reading. DexoFlux tries to bring those strengths together and reshape the experience into a Linux.do-focused native client.
+Doer is a native iOS client for Linux.do. The UIKit architecture started from Dexo; several interaction details came from FluxDo. The product name and repository are independent.
 
 ## Project Links
 
-- **[Linux.do](https://linux.do)** — The community DexoFlux is built for.
+- **[moliango/doer](https://github.com/moliango/doer)** — This project.
+- **[Linux.do](https://linux.do)** — The community Doer is built for.
 - **[Eilgnaw/dexo](https://github.com/Eilgnaw/dexo)** — Dexo.
 - **[Lingyan000/fluxdo](https://github.com/Lingyan000/fluxdo)** — FluxDo.

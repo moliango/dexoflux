@@ -1,13 +1,20 @@
 <p align="center">
-  <img src="assets/icon.png" width="128" height="128" alt="DexoFlux App Icon" />
+  <img src="assets/icon.png" width="128" height="128" alt="Doer App Icon" />
 </p>
 
-<h1 align="center">DexoFlux</h1>
+<h1 align="center">Doer</h1>
 
-<p align="center">一个原生 iOS Linux 论坛客户端，使用 UIKit + Swift 构建。</p>
+<p align="center">原生 iOS Linux.do 客户端，使用 UIKit + Swift 构建。</p>
 
 <p align="center">
   <a href="README.md">English</a> | 中文
+</p>
+
+<p align="center">
+  <a href="https://github.com/moliango/doer"><img src="https://img.shields.io/badge/GitHub-moliango%2Fdoer-181717?logo=github" alt="GitHub" /></a>
+  <img src="https://img.shields.io/badge/iOS-15.0%2B-blue" alt="iOS 15.0+" />
+  <img src="https://img.shields.io/badge/Swift-5-orange" alt="Swift 5" />
+  <img src="https://img.shields.io/badge/UIKit-native-lightgrey" alt="UIKit" />
 </p>
 
 ## 截图
@@ -19,29 +26,33 @@
 ## 功能
 
 - [x] **Linux.do 浏览** — 原生浏览最新话题、热门话题、板块、标签和搜索结果。
-- [x] **帖子详情** — 原生渲染 cooked HTML，支持正文、图片、引用、代码块、投票、折叠、Onebox、表格、视频和时间线。
-- [x] **回复与互动** — 支持回复主题、回复楼层、点赞，以及 Linux.do 表情 / boost 互动。
-- [x] **图片查看** — 内容区和评论区多图预览，支持左右滑动、图片数量、分享、保存和关闭。
-- [x] **我的页面** — 个人看板、头像 / 名称缓存、书签、浏览历史、通知和私信。
-- [x] **安全认证** — Web 登录、Cookie 复用原生请求，并支持全局 Cloudflare 盾牌处理。
-- [x] **外观设置** — 默认、小红书、Telegram、护眼主题色，以及应用图标、自定义字体、全局字号、内容区字号和底栏设置。
+- [x] **帖子详情** — 原生渲染 cooked HTML，支持正文、图片、引用、代码块、投票、折叠、Onebox、表格、视频和时间线跳转。
+- [x] **回复与互动** — 回复主题 / 楼层、点赞，以及 Linux.do 表情 / Boost。
+- [x] **图片查看** — 多图预览，支持左右滑动、数量、分享、保存和关闭。
+- [x] **我的页面** — 个人看板、勋章、书签、草稿、浏览历史、通知和私信。
+- [x] **安全认证** — Web 登录、Cookie 复用原生请求，以及全局 Cloudflare 盾牌处理。
+- [x] **外观设置** — 默认、护眼、小红书、Telegram 主题色，以及字体、字号和底栏布局。
+- [x] **插件** — 小程序、NewAPI 签到、工具箱和插件坞。
+- [x] **分享与小组件** — 把话题链接分享进 Doer，以及主屏幕快捷入口。
 - [x] **数据管理** — 查看并清理浏览数据、图片缓存、Cookie 和应用存储。
+- [x] **应用更新** — 对照 [GitHub Releases](https://github.com/moliango/doer/releases) 检查新版本。
 
 ## 技术栈
 
 | 项目 | 说明 |
 |------|------|
 | 语言 | Swift 5 |
-| UI 框架 | UIKit |
+| UI 框架 | UIKit（主 App 不使用 SwiftUI） |
 | 最低版本 | iOS 15.0 |
+| Bundle ID | `com.naine.doer` |
 | 架构 | MVVM 风格 ViewModel + `DexoObservableObject` / 可观察 ViewController |
-| 构建工具 | [Tuist](https://tuist.dev) |
+| 构建工具 | [Tuist](https://tuist.dev)，通过 `mise` 固定版本 |
 | 网络 | [Alamofire](https://github.com/Alamofire/Alamofire)、自定义 Router、Cookie 复用请求、DoH URLProtocol |
 | Web 会话 | `WKWebView` 负责登录、Cloudflare 验证和会话刷新 |
 | 数据库 | SQLite via [GRDB](https://github.com/groue/GRDB.swift) |
 | HTML 渲染 | 本地 `CookedHTML` 包，底层使用 [SwiftSoup](https://github.com/scinfu/SwiftSoup) |
 | 图片加载 | [SDWebImage](https://github.com/SDWebImage/SDWebImage) + [SDWebImageSVGCoder](https://github.com/SDWebImage/SDWebImageSVGCoder) |
-| 图片查看 | [Lightbox](https://github.com/hyperoslo/Lightbox) + 自定义多图预览 UI |
+| 图片查看 | [Lightbox](https://github.com/hyperoslo/Lightbox) + 自定义多图预览 |
 | 持久化 | Keychain、Cookie、本地设置、GRDB 模型 |
 
 ## 快速开始
@@ -64,52 +75,54 @@ make generate
 make clean
 ```
 
-执行完成后打开生成的 `dexoflux.xcodeproj`，选择开发团队后即可编译运行。
+完成后打开 **`Doer.xcworkspace`**（不要只开单独的 `.xcodeproj`），Scheme 选 **Doer**，再选择开发团队即可编译运行。
+
+生成的 workspace 不入库。改过 `Project.swift` 后需要再跑一次 `make generate`。
 
 ## 项目结构
 
 ```text
-dexo/
-├── AppDelegate.swift
-├── Core/
-│   ├── Auth/                 # Web 登录、Cookie、Keychain、会话刷新
-│   ├── ImageLoading/         # 头像和图片加载工具
-│   ├── Observable/           # 可观察基类控制器和状态绑定
-│   └── Settings/             # 应用设置、主题、语言、字体、底栏偏好
-├── Database/
-│   └── Models/               # GRDB 数据库管理和持久化模型
-├── Features/
-│   ├── ForumDetail/
-│   │   ├── Home/             # 话题列表和话题卡片
-│   │   ├── Categories/       # 板块浏览
-│   │   ├── Tags/             # 标签浏览
-│   │   ├── TopicDetail/      # 原生帖子详情渲染、回复、图片预览、投票
-│   │   ├── Me/               # 个人资料、书签、历史和看板
-│   │   ├── Notifications/    # 论坛通知
-│   │   ├── Messages/         # 私信
-│   │   └── Search/           # 搜索和结果页
-│   ├── Main/                 # 主底栏容器和入口路由
-│   └── Settings/             # 外观、阅读、数据、网络、底栏设置
-├── Networking/
-│   ├── DoH/                  # DNS-over-HTTPS URLProtocol 支持
-│   ├── Models/               # API 响应模型
-│   ├── DiscourseAPI.swift    # Linux.do / Discourse API 客户端
-│   └── DiscourseRouter.swift # 路由定义
-├── Assets.xcassets/          # App 运行时资源
-└── Localizable.xcstrings     # 简体中文、繁体中文和英文文案
-
-Packages/
-└── CookedHTML/               # 本地 HTML 解析和原生渲染模型包
-
-assets/                       # README 截图和仓库图片
+.
+├── Project.swift                 # Tuist 工程：Doer / DoerTests / DoerShare / DoerWidget
+├── Tuist/                        # 外部 Swift 依赖
+├── dexo/                         # App 源码
+│   ├── AppDelegate.swift
+│   ├── SceneDelegate.swift
+│   ├── Info.plist
+│   ├── Localizable.xcstrings     # en / zh-Hans / zh-Hant / zh-HK
+│   ├── Assets.xcassets/          # 应用图标、启动图、运行时图片
+│   ├── Core/
+│   │   ├── Auth/                 # Web 登录、Cookie、Keychain、会话刷新
+│   │   ├── ImageLoading/         # 头像和图片加载
+│   │   ├── Observable/           # 可观察基类控制器
+│   │   ├── Plugins/              # 插件注册和内置插件
+│   │   ├── Settings/             # 主题、语言、字体、底栏、DoH
+│   │   └── Update/               # GitHub Release 检查更新
+│   ├── Database/                 # GRDB 和 ForumInstance
+│   ├── Features/
+│   │   ├── ForumDetail/          # 首页、帖子、我的、通知、搜索、聊天
+│   │   ├── ForumList/            # 多论坛列表
+│   │   ├── Settings/             # 外观、阅读、数据、网络、关于
+│   │   ├── Plugins/              # 小程序、NewAPI 签到、工具箱
+│   │   ├── Notion/               # Notion 话题同步
+│   │   └── AIModelService/       # 应用内 AI 服务
+│   └── Networking/               # DiscourseAPI + DiscourseRouter + DoH
+├── Extensions/
+│   ├── DexoShare/                # 分享扩展 → doer://
+│   └── DexoWidget/               # 主屏幕小组件
+├── Packages/CookedHTML/          # cooked HTML → 原生节点树
+├── dexofluxTests/                # 单元测试（DoerTests）
+├── ci_scripts/                   # 未签名 IPA 构建
+└── assets/                       # README 图标和截图
 ```
 
 ## 致谢
 
-DexoFlux 是在 Dexo 的原生 UIKit 基础上继续探索的二开项目，同时参考了 FluxDo 在交互节奏和视觉风格上的方向。Dexo 和 FluxDo 都是很优秀的应用：前者提供了扎实的 iOS 原生架构基础，后者带来了更顺滑、更现代的论坛浏览体验。DexoFlux 希望把两者的优点揉在一起，做成更适合 Linux.do 的原生客户端。
+Doer 是面向 Linux.do 的原生 iOS 客户端。UIKit 架构来自 Dexo，部分交互节奏参考 FluxDo。产品名和仓库已经独立。
 
 ## 项目链接
 
-- **[Linux.do](https://linux.do)** — DexoFlux 面向的社区。
+- **[moliango/doer](https://github.com/moliango/doer)** — 本仓库。
+- **[Linux.do](https://linux.do)** — Doer 面向的社区。
 - **[Eilgnaw/dexo](https://github.com/Eilgnaw/dexo)** — Dexo。
 - **[Lingyan000/fluxdo](https://github.com/Lingyan000/fluxdo)** — FluxDo。

@@ -10,19 +10,18 @@ make generate   # Regenerate Xcode project after changing Project.swift
 make clean      # Clean Tuist build artifacts
 ```
 
-The `.xcodeproj` is not committed. Always run `make generate` after modifying `Project.swift`.
+The generated `Doer.xcworkspace` / `Doer.xcodeproj` are not committed. Always run `make generate` after modifying `Project.swift`, then open `Doer.xcworkspace`.
 
 ## Tests
 
-Only the `CookedHTML` package has tests. There are no app-level tests.
-
 ```bash
 cd Packages/CookedHTML && swift test
+# App unit tests: open Doer.xcworkspace and run the DoerTests scheme
 ```
 
 ## Architecture
 
-Dexo is a native iOS Discourse forum client (UIKit, iOS 15+). No SwiftUI.
+Doer is a native iOS Discourse forum client (UIKit, iOS 15+). No SwiftUI. Source lives under `dexo/`.
 
 **MVVM with iOS 15-compatible observation**
 - ViewModels inherit `DexoObservableObject` and call `notifyChanged()` after UI-relevant state mutations
