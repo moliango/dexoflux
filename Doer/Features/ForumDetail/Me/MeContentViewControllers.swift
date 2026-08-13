@@ -131,6 +131,7 @@ final class PagedTopicListViewController: ObservableViewController {
         let tableView = UITableView(frame: .zero, style: .plain)
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        tableView.register(CompactPinnedTopicCell.self, forCellReuseIdentifier: CompactPinnedTopicCell.reuseIdentifier)
         tableView.dataSource = self
         tableView.delegate = self
         tableView.separatorStyle = .none
@@ -400,16 +401,28 @@ extension PagedTopicListViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let topic = viewModel.topics[indexPath.row]
+        let category = viewModel.category(for: topic)
+        let baseURL = api.baseURL
+        if topic.pinned == true,
+           let cell = tableView.dequeueReusableCell(
+            withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
+            for: indexPath
+           ) as? CompactPinnedTopicCell {
+            cell.configure(
+                with: topic,
+                categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
+                categoryPresentation: nil,
+                categoryBaseURL: baseURL
+            )
+            return cell
+        }
         guard let cell = tableView.dequeueReusableCell(
             withIdentifier: TopicCell.reuseIdentifier,
             for: indexPath
         ) as? TopicCell else {
             return UITableViewCell()
         }
-
-        let topic = viewModel.topics[indexPath.row]
-        let category = viewModel.category(for: topic)
-        let baseURL = api.baseURL
         cell.configure(
             with: topic,
             avatarURL: viewModel.avatarURL(for: topic, baseURL: baseURL),

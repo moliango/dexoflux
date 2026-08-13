@@ -123,6 +123,7 @@ final class TagTopicsViewController: ObservableViewController {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        tv.register(CompactPinnedTopicCell.self, forCellReuseIdentifier: CompactPinnedTopicCell.reuseIdentifier)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -134,8 +135,23 @@ final class TagTopicsViewController: ObservableViewController {
     private lazy var dataSource: UITableViewDiffableDataSource<Int, Int> = {
         UITableViewDiffableDataSource<Int, Int>(tableView: tableView) { [weak self] tableView, indexPath, topicId in
             guard let self,
-                  let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
                   let topic = self.viewModel.topics.first(where: { $0.id == topicId }) else {
+                return UITableViewCell()
+            }
+            if topic.pinned == true,
+               let cell = tableView.dequeueReusableCell(
+                withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
+                for: indexPath
+               ) as? CompactPinnedTopicCell {
+                cell.configure(
+                    with: topic,
+                    categoryColor: nil,
+                    categoryPresentation: nil,
+                    categoryBaseURL: self.api.baseURL
+                )
+                return cell
+            }
+            guard let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell else {
                 return UITableViewCell()
             }
             let avatarURL = AvatarImageLoader.url(

@@ -57,8 +57,14 @@ extension HomeViewController {
 
     func topicSnapshotItemIdentifiers() -> [Int] {
         if usesXiaohongshuCardLayout {
-            let rowCount = Int(ceil(Double(viewModel.topics.count) / 2.0))
-            return (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
+            var seen = Set<Int>()
+            let pinnedIds = viewModel.topics.compactMap { topic -> Int? in
+                guard topic.pinned == true, seen.insert(topic.id).inserted else { return nil }
+                return topic.id
+            }
+            let unpinnedCount = viewModel.topics.filter { $0.pinned != true }.count
+            let rowCount = Int(ceil(Double(unpinnedCount) / 2.0))
+            return pinnedIds + (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
         }
 
         var seen = Set<Int>()

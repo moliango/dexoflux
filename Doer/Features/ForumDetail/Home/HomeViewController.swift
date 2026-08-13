@@ -317,6 +317,7 @@ final class HomeViewController: ObservableViewController {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        tv.register(CompactPinnedTopicCell.self, forCellReuseIdentifier: CompactPinnedTopicCell.reuseIdentifier)
         tv.register(XiaohongshuTopicGridCell.self, forCellReuseIdentifier: XiaohongshuTopicGridCell.reuseIdentifier)
         tv.register(WeChatTopicListCell.self, forCellReuseIdentifier: WeChatTopicListCell.reuseIdentifier)
         tv.register(TelegramTopicListCell.self, forCellReuseIdentifier: TelegramTopicListCell.reuseIdentifier)
@@ -351,6 +352,23 @@ final class HomeViewController: ObservableViewController {
             cell.onTopicSelected = { [weak self] topicId in
                 self?.openTopic(topicId)
             }
+            return cell
+        }
+
+        if let topic = self.viewModel.topics.first(where: { $0.id == topicId }), topic.pinned == true {
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
+                for: indexPath
+            ) as? CompactPinnedTopicCell else {
+                return UITableViewCell()
+            }
+            let category = self.viewModel.category(for: topic)
+            cell.configure(
+                with: topic,
+                categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
+                categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
+                categoryBaseURL: self.api.baseURL
+            )
             return cell
         }
 
@@ -471,13 +489,14 @@ final class HomeViewController: ObservableViewController {
     }
 
     func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
+        let topics = viewModel.topics.filter { $0.pinned != true }
         let leftIndex = rowIndex * 2
-        guard viewModel.topics.indices.contains(leftIndex) else {
+        guard topics.indices.contains(leftIndex) else {
             return (nil, nil)
         }
         let rightIndex = leftIndex + 1
-        let rightTopic = viewModel.topics.indices.contains(rightIndex) ? viewModel.topics[rightIndex] : nil
-        return (viewModel.topics[leftIndex], rightTopic)
+        let rightTopic = topics.indices.contains(rightIndex) ? topics[rightIndex] : nil
+        return (topics[leftIndex], rightTopic)
     }
 
     func xiaohongshuCardModel(for topic: DiscourseTopicList.Topic) -> XiaohongshuTopicCardModel {

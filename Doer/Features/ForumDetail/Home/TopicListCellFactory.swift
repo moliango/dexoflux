@@ -104,6 +104,7 @@ enum TopicListCellFactory {
 
     static func registerCells(on tableView: UITableView) {
         tableView.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
+        tableView.register(CompactPinnedTopicCell.self, forCellReuseIdentifier: CompactPinnedTopicCell.reuseIdentifier)
         tableView.register(WeChatTopicListCell.self, forCellReuseIdentifier: WeChatTopicListCell.reuseIdentifier)
         tableView.register(TelegramTopicListCell.self, forCellReuseIdentifier: TelegramTopicListCell.reuseIdentifier)
     }
@@ -178,6 +179,9 @@ enum TopicListCellFactory {
             )
             return cell
         case .standard, .xiaohongshu:
+            if context.topic.pinned == true {
+                return makePinnedCell(tableView: tableView, indexPath: indexPath, context: context)
+            }
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: TopicCell.reuseIdentifier,
                 for: indexPath
@@ -196,5 +200,25 @@ enum TopicListCellFactory {
             )
             return cell
         }
+    }
+
+    private static func makePinnedCell(
+        tableView: UITableView,
+        indexPath: IndexPath,
+        context: TopicListTopicContext
+    ) -> UITableViewCell {
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
+            for: indexPath
+        ) as? CompactPinnedTopicCell else {
+            return UITableViewCell()
+        }
+        cell.configure(
+            with: context.topic,
+            categoryColor: context.categoryColor,
+            categoryPresentation: context.categoryPresentation,
+            categoryBaseURL: context.categoryBaseURL
+        )
+        return cell
     }
 }
