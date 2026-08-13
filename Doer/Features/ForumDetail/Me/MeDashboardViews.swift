@@ -677,8 +677,19 @@ final class MeActionRowView: UIControl {
 
     private func setup(row: MeActionRow, showsDivider: Bool) {
         isEnabled = row.isEnabled
+        isUserInteractionEnabled = row.isEnabled
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        accessibilityLabel = row.title
+        accessibilityHint = row.subtitle
         alpha = row.isEnabled ? 1 : 0.48
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
+
+        // Visuals live in a non-interactive layer so the UIControl owns the full-row hit target.
+        // UIStackView as a direct subview otherwise swallows taps (only the icon well fired).
+        let contentView = UIView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.isUserInteractionEnabled = false
 
         let iconContainer = UIView()
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -717,16 +728,22 @@ final class MeActionRowView: UIControl {
         divider.backgroundColor = UIColor.separator.withAlphaComponent(0.35)
         divider.isHidden = !showsDivider
 
-        addSubview(iconContainer)
-        addSubview(textStack)
-        addSubview(chevron)
-        addSubview(divider)
+        addSubview(contentView)
+        contentView.addSubview(iconContainer)
+        contentView.addSubview(textStack)
+        contentView.addSubview(chevron)
+        contentView.addSubview(divider)
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(greaterThanOrEqualToConstant: 62),
 
-            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            iconContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
+            contentView.topAnchor.constraint(equalTo: topAnchor),
+            contentView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            iconContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            iconContainer.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             iconContainer.widthAnchor.constraint(equalToConstant: 38),
             iconContainer.heightAnchor.constraint(equalToConstant: 38),
 
@@ -736,18 +753,33 @@ final class MeActionRowView: UIControl {
             iconView.heightAnchor.constraint(equalToConstant: 19),
 
             textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 14),
-            textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            textStack.trailingAnchor.constraint(lessThanOrEqualTo: chevron.leadingAnchor, constant: -12),
+            textStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            textStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            textStack.trailingAnchor.constraint(equalTo: chevron.leadingAnchor, constant: -12),
 
-            chevron.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            chevron.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevron.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            chevron.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             chevron.widthAnchor.constraint(equalToConstant: 10),
 
             divider.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: trailingAnchor),
-            divider.bottomAnchor.constraint(equalTo: bottomAnchor),
+            divider.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            divider.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             divider.heightAnchor.constraint(equalToConstant: 0.5),
         ])
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard isEnabled, isUserInteractionEnabled, !isHidden, alpha > 0.01, self.point(inside: point, with: event) else {
+            return nil
+        }
+        return self
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            guard isEnabled else { return }
+            alpha = isHighlighted ? 0.55 : 1
+        }
     }
 
     @objc private func tapped() {

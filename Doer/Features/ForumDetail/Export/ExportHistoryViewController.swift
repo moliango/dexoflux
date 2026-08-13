@@ -85,6 +85,7 @@ final class ExportHistoryViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        enableInteractiveBackSwipe()
         store.reload()
         reloadData()
     }

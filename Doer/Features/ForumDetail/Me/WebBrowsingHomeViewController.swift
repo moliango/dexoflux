@@ -175,6 +175,7 @@ final class WebBrowsingHomeViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        enableInteractiveBackSwipe()
         store.reload()
         refreshSubtitles()
     }

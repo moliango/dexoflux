@@ -104,6 +104,11 @@ final class UserBadgesViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        enableInteractiveBackSwipe()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "me.badges")

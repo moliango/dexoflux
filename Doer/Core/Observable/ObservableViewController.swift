@@ -241,6 +241,7 @@ class ObservableViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         startObserving()
+        enableInteractiveBackSwipe()
     }
 
     override func viewWillDisappear(_ animated: Bool) {

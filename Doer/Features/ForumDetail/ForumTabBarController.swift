@@ -23,6 +23,7 @@ final class ForumTabBarController: UITabBarController {
     private var visibleTabItemIDs: [String] = []
     private var renderedLanguage = AppSettings.shared.appLanguage
     private var scrollExpandedLayoutSnapshots: [ObjectIdentifier: ScrollExpandedLayoutSnapshot] = [:]
+    private var popGestureEnablers: [ObjectIdentifier: NavigationPopGestureEnabler] = [:]
 
     private var pluginScope: PluginScope {
         PluginScope(
@@ -655,6 +656,9 @@ private extension ForumTabBarController {
                 navigationController = UINavigationController(rootViewController: rootViewController)
             }
             navigationController.delegate = self
+            let enabler = popGestureEnablers[ObjectIdentifier(navigationController)] ?? NavigationPopGestureEnabler()
+            enabler.attach(to: navigationController)
+            popGestureEnablers[ObjectIdentifier(navigationController)] = enabler
             navigationController.tabBarItem.title = spec.title
             if spec.identifier != "me" || renderedMeAvatarKey == nil {
                 navigationController.tabBarItem.image = DexoTabBarIconStyle.image(
@@ -1028,9 +1032,13 @@ extension ForumTabBarController: UINavigationControllerDelegate {
 
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         TopicDetailTransitionGeometry.normalize(viewController.view)
-        navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
+        let allowsSystemPop = navigationController.viewControllers.count > 1
             && !(viewController is TopicDetailViewController)
             && !(viewController is WeChatTopicDetailViewController)
+        navigationController.interactivePopGestureRecognizer?.isEnabled = allowsSystemPop
+        if allowsSystemPop {
+            popGestureEnablers[ObjectIdentifier(navigationController)]?.attach(to: navigationController)
+        }
         if navigationController.viewControllers.count > 1 {
             isTabBarHiddenByScroll = false
         }

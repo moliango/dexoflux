@@ -34,6 +34,7 @@ final class AIModelServiceViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        enableInteractiveBackSwipe()
         Task { await reload() }
     }
 
@@ -184,6 +185,7 @@ final class AIProviderListViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        enableInteractiveBackSwipe()
         Task { await reload() }
     }
 
