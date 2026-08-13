@@ -5,6 +5,7 @@ import WidgetKit
 struct DoerWidgetBundle: WidgetBundle {
     var body: some Widget {
         DoerQuickActionsWidget()
+        TrustLevelWidget()
     }
 }
 

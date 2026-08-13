@@ -81,6 +81,7 @@ final class BackgroundNotificationDeliveryPipeline {
             guard !Task.isCancelled else { return false }
         }
 
+        await TrustLevelWidgetRefresher.refreshIfPossible()
         return result.taskSucceeded
     }
 

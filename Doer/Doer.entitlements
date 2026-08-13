@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Personal Team cannot sign Push Notifications or App Groups.
+     With a paid Apple Developer account restore:
+     aps-environment = development
+     com.apple.security.application-groups = [group.com.naine.doer]
+     and put remote-notification back in Info.plist UIBackgroundModes. -->
+<dict>
+</dict>
+</plist>

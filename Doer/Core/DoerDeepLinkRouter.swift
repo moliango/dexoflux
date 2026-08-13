@@ -7,6 +7,7 @@ enum DoerDeepLinkRouter {
         case topic(topicId: Int, postNumber: Int?, baseURL: String?)
         case readLater
         case notifications
+        case trustLevel
     }
 
     static func destination(from url: URL) -> Destination? {
@@ -55,6 +56,12 @@ enum DoerDeepLinkRouter {
                 ForumNotificationRoutePresenter.presentPendingRouteIfNeeded()
             }
             return true
+        case .trustLevel:
+            Task { @MainActor in
+                DoerInAppRouteStore.shared.enqueue(.trustLevel)
+                DoerInAppRoutePresenter.presentPendingIfNeeded()
+            }
+            return true
         }
     }
 
@@ -79,6 +86,8 @@ enum DoerDeepLinkRouter {
             return .readLater
         case "notifications", "notification":
             return .notifications
+        case "trust", "trust-level", "trustlevel":
+            return .trustLevel
         default:
             // dexo://123/4  bare id
             if let topicId = Int(head ?? ""), topicId > 0 {
@@ -113,6 +122,7 @@ enum DoerDeepLinkRouter {
 
 enum DoerInAppRoute: Equatable {
     case readLater
+    case trustLevel
 }
 
 @MainActor

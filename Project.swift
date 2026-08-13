@@ -38,6 +38,7 @@ let project = Project(
                     "Doer/Assets.xcassets/**",
                     "Doer/AppIcon.icon/**",
                 ]),
+                "Shared/TrustLevelWidgetSnapshot.swift",
             ],
             resources: .resources([
                 .glob(pattern: "Doer/Assets.xcassets/**"),
@@ -45,6 +46,7 @@ let project = Project(
                 .glob(pattern: "Doer/Core/aliases.json"),
                 .glob(pattern: "Doer/Resources/Fonts/**"),
             ]),
+            entitlements: .file(path: "Doer/Doer.entitlements"),
             dependencies: [
                 .external(name: "Alamofire"),
                 .external(name: "GRDB"),
@@ -124,7 +126,11 @@ let project = Project(
             bundleId: "com.naine.doer.widget",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .file(path: "Extensions/DoerWidget/Info.plist"),
-            sources: ["Extensions/DoerWidget/**"],
+            sources: [
+                "Extensions/DoerWidget/**",
+                "Shared/TrustLevelWidgetSnapshot.swift",
+            ],
+            entitlements: .file(path: "Extensions/DoerWidget/DoerWidget.entitlements"),
             dependencies: [],
             settings: .settings(
                 base: [

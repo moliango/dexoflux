@@ -20,6 +20,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         BackgroundNotificationRefreshService.shared.register()
         BackgroundNotificationRefreshService.shared.scheduleIfNeeded()
         UNUserNotificationCenter.current().delegate = self
+        APNsPushRegistration.register()
         AvatarImageLoader.configureGlobalImageLoading()
         // Only wipe caches when the user explicitly enabled "clear on launch".
         // Otherwise process + disk avatar caches persist across launches.
@@ -30,6 +31,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // FluxDo-style connectivity: path monitor + offline retry/backoff.
         ConnectivityService.shared.start()
         return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        APNsPushRegistration.storeDeviceToken(deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        DohDebugLog.record("apns register failed \(error.localizedDescription)", subsystem: "Push")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        APNsPushRegistration.handleRemoteNotification(
+            userInfo: userInfo,
+            fetchCompletionHandler: completionHandler
+        )
     }
 
     // MARK: UISceneSession Lifecycle
