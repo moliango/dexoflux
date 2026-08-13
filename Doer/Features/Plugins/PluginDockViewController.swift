@@ -25,7 +25,7 @@ final class PluginDockViewController: UIViewController {
     private let api: DiscourseAPI
     private let username: String?
     private let settings = AppSettings.shared
-    private let registry = DexoPluginRuntime.shared.registry
+    private let registry = DoerPluginRuntime.shared.registry
     private var settingsObservationToken: AnyCancellable?
     private var pluginStateObservationToken: NSObjectProtocol?
     private var handleCenterYConstraint: NSLayoutConstraint?
@@ -152,7 +152,7 @@ final class PluginDockViewController: UIViewController {
     private func observePluginState() {
         pluginStateObservationToken = NotificationCenter.default.addObserver(
             forName: PluginStateStore.stateDidChangeNotification,
-            object: DexoPluginRuntime.shared.stateStore,
+            object: DoerPluginRuntime.shared.stateStore,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in

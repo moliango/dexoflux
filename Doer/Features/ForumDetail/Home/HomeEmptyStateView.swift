@@ -185,7 +185,7 @@ final class HomeEmptyStateView: UIView {
             }
         }
         if animated {
-            DexoMotion.animate(duration: DexoMotion.short, animations: changes, completion: finish)
+            DoerMotion.animate(duration: DoerMotion.short, animations: changes, completion: finish)
         } else {
             changes()
             finish(.end)

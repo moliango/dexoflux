@@ -1,7 +1,7 @@
 import Foundation
 
 final class PluginStateStore {
-    static let stateDidChangeNotification = Notification.Name("DexoPluginStateDidChange")
+    static let stateDidChangeNotification = Notification.Name("DoerPluginStateDidChange")
     static let pluginIDUserInfoKey = "pluginID"
     static let scopeUserInfoKey = "scope"
     static let enabledUserInfoKey = "enabled"

@@ -1,6 +1,6 @@
 import Foundation
 
-final class UserPostsViewModel: DexoObservableObject {
+final class UserPostsViewModel: DoerObservableObject {
     enum Filter {
         case topics
         case posts

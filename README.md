@@ -45,7 +45,7 @@
 | UI Framework | UIKit (no SwiftUI in the main app) |
 | Minimum Target | iOS 15.0 |
 | Bundle ID | `com.naine.doer` |
-| Architecture | MVVM-style view models + `DexoObservableObject` / observable view controllers |
+| Architecture | MVVM-style view models + `DoerObservableObject` / observable view controllers |
 | Build Tool | [Tuist](https://tuist.dev) via `mise` |
 | Networking | [Alamofire](https://github.com/Alamofire/Alamofire), custom router, cookie-backed requests, DoH URLProtocol |
 | Web Session | `WKWebView` for login, Cloudflare verification, and session refresh |

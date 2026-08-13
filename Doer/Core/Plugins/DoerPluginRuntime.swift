@@ -1,7 +1,7 @@
 import Foundation
 
-final class DexoPluginRuntime {
-    static let shared = DexoPluginRuntime()
+final class DoerPluginRuntime {
+    static let shared = DoerPluginRuntime()
 
     let stateStore: PluginStateStore
     let registry: PluginRegistry

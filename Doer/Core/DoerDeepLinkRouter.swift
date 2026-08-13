@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 /// Parses `doer://` / `dexo://` and forum `https://…/t/…` URLs into in-app routes.
-enum DexoDeepLinkRouter {
+enum DoerDeepLinkRouter {
     enum Destination: Equatable {
         case topic(topicId: Int, postNumber: Int?, baseURL: String?)
         case readLater
@@ -38,8 +38,8 @@ enum DexoDeepLinkRouter {
             return true
         case .readLater:
             Task { @MainActor in
-                DexoInAppRouteStore.shared.enqueue(.readLater)
-                DexoInAppRoutePresenter.presentPendingIfNeeded()
+                DoerInAppRouteStore.shared.enqueue(.readLater)
+                DoerInAppRoutePresenter.presentPendingIfNeeded()
             }
             return true
         case .notifications:
@@ -111,30 +111,30 @@ enum DexoDeepLinkRouter {
     }
 }
 
-enum DexoInAppRoute: Equatable {
+enum DoerInAppRoute: Equatable {
     case readLater
 }
 
 @MainActor
-final class DexoInAppRouteStore: DexoObservableObject {
-    static let shared = DexoInAppRouteStore()
-    private(set) var pending: DexoInAppRoute?
+final class DoerInAppRouteStore: DoerObservableObject {
+    static let shared = DoerInAppRouteStore()
+    private(set) var pending: DoerInAppRoute?
 
     private override init() { super.init() }
 
-    func enqueue(_ route: DexoInAppRoute) {
+    func enqueue(_ route: DoerInAppRoute) {
         pending = route
         notifyChanged()
     }
 
-    func consume() -> DexoInAppRoute? {
+    func consume() -> DoerInAppRoute? {
         defer { pending = nil }
         return pending
     }
 }
 
 @MainActor
-enum DexoInAppRoutePresenter {
+enum DoerInAppRoutePresenter {
     static func presentPendingIfNeeded() {
         guard let window = UIApplication.shared.connectedScenes
             .compactMap({ ($0.delegate as? SceneDelegate)?.window })
@@ -144,11 +144,11 @@ enum DexoInAppRoutePresenter {
     }
 
     static func presentPendingIfNeeded(in window: UIWindow) {
-        guard let route = DexoInAppRouteStore.shared.consume() else { return }
+        guard let route = DoerInAppRouteStore.shared.consume() else { return }
         guard let container = window.rootViewController as? ForumContainerViewController
             ?? window.rootViewController?.children.compactMap({ $0 as? ForumContainerViewController }).first
         else {
-            DexoInAppRouteStore.shared.enqueue(route)
+            DoerInAppRouteStore.shared.enqueue(route)
             return
         }
         container.handleInAppRoute(route)

@@ -337,7 +337,7 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         do {
             messages = try await api.fetchChatMessages(channelId: channel.id)
         } catch {
-            DexoFeedback.presentToast(error.localizedDescription, on: self)
+            DoerFeedback.presentToast(error.localizedDescription, on: self)
             messages = []
         }
         isLoading = false
@@ -361,7 +361,7 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
                 await loadMessages()
                 scrollToBottom(animated: true)
             } catch {
-                DexoFeedback.presentToast(error.localizedDescription, on: self)
+                DoerFeedback.presentToast(error.localizedDescription, on: self)
             }
             isSending = false
             chatInputBar.setSending(false)

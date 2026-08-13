@@ -30,23 +30,23 @@ extension TopicDetailViewController: UITableViewDelegate {
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        tableView.dexo_setScrollBusy(true)
+        tableView.doer_setScrollBusy(true)
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate {
-            tableView.dexo_setScrollBusy(false)
+            tableView.doer_setScrollBusy(false)
             flushScrollChrome(force: true)
         }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        tableView.dexo_setScrollBusy(false)
+        tableView.doer_setScrollBusy(false)
         flushScrollChrome(force: true)
     }
 
     func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
-        tableView.dexo_setScrollBusy(false)
+        tableView.doer_setScrollBusy(false)
         flushScrollChrome(force: true)
     }
 
@@ -113,13 +113,13 @@ extension TopicDetailViewController: UITableViewDelegate {
                     earlierLoadAnchor = nil
                     isLoadingEarlierLocally = false
                 }
-                // updateUI (triggered by DexoObservableObject) will handle position restoration
+                // updateUI (triggered by DoerObservableObject) will handle position restoration
             }
         }
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        let scrollBusy = tableView.dexo_isScrollBusy
+        let scrollBusy = tableView.doer_isScrollBusy
             || tableView.isDragging
             || tableView.isDecelerating
 

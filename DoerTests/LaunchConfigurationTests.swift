@@ -17,7 +17,7 @@ final class LaunchConfigurationTests: XCTestCase {
 
         XCTAssertEqual(
             launchScreen["UIColorName"] as? String,
-            DexoLaunchAppearance.backgroundColorName
+            DoerLaunchAppearance.backgroundColorName
         )
         XCTAssertNil(launchScreen["UIToolbar"])
     }
@@ -31,6 +31,6 @@ final class LaunchConfigurationTests: XCTestCase {
         )
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: assetURL.path))
-        XCTAssertNotNil(UIColor(named: DexoLaunchAppearance.backgroundColorName))
+        XCTAssertNotNil(UIColor(named: DoerLaunchAppearance.backgroundColorName))
     }
 }

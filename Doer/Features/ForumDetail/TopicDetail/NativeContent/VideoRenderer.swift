@@ -154,7 +154,7 @@ final class VideoCardView: UIView {
             delegate?.postCell(didTapLinkURL: url)
             return
         }
-        let player = DexoVideoPlayerViewController(url: url, sourceKey: videoURL)
+        let player = DoerVideoPlayerViewController(url: url, sourceKey: videoURL)
         host.present(player, animated: true)
     }
 
@@ -173,7 +173,7 @@ final class VideoCardView: UIView {
 }
 
 /// FluxDo-style in-app video player with position resume.
-final class DexoVideoPlayerViewController: AVPlayerViewController {
+final class DoerVideoPlayerViewController: AVPlayerViewController {
     private let sourceKey: String
     private var endObserver: NSObjectProtocol?
     private var timeObserver: Any?

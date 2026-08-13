@@ -521,7 +521,7 @@ final class InAppBrowserViewController: UIViewController {
 
     @objc private func bookmarkTapped() {
         guard let url = webView.url ?? initialURL else {
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "mini_program.bookmark.unavailable", defaultValue: "当前页无法收藏"),
                 on: self
             )
@@ -530,20 +530,20 @@ final class InAppBrowserViewController: UIViewController {
         do {
             if store.isBookmarked(url) {
                 try store.removeBookmark(url: url)
-                DexoFeedback.presentToast(
+                DoerFeedback.presentToast(
                     String(localized: "me.browser.bookmark_removed", defaultValue: "已取消收藏"),
                     on: self
                 )
             } else {
                 try store.addBookmark(url: url, title: webView.title)
-                DexoFeedback.presentToast(
+                DoerFeedback.presentToast(
                     String(localized: "me.browser.bookmark_added", defaultValue: "已收藏"),
                     on: self
                 )
             }
             updateControlState()
         } catch {
-            DexoFeedback.presentToast(error.localizedDescription, on: self)
+            DoerFeedback.presentToast(error.localizedDescription, on: self)
         }
     }
 
@@ -633,12 +633,12 @@ final class InAppBrowserViewController: UIViewController {
                     }
                     programStore.addFavorite(programID)
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    DexoFeedback.presentToast(
+                    DoerFeedback.presentToast(
                         String(localized: "mini_program.added", defaultValue: "已添加到小程序"),
                         on: self
                     )
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             })
             self.present(alert, animated: true)

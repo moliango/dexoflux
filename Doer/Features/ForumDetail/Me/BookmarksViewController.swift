@@ -357,12 +357,12 @@ extension BookmarksViewController: UITableViewDelegate {
             )
             store.addFavorite(programID)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "mini_program.added", defaultValue: "已添加到小程序"),
                 on: self
             )
         } catch {
-            DexoFeedback.presentToast(error.localizedDescription, on: self)
+            DoerFeedback.presentToast(error.localizedDescription, on: self)
         }
     }
 

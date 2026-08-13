@@ -339,7 +339,7 @@ struct ForumNotificationRoute: Equatable {
 }
 
 @MainActor
-final class ForumNotificationRouteStore: DexoObservableObject {
+final class ForumNotificationRouteStore: DoerObservableObject {
     static let shared = ForumNotificationRouteStore()
 
     private(set) var pendingRoute: ForumNotificationRoute?
@@ -411,7 +411,7 @@ enum ForumNotificationRoutePresenter {
 }
 
 @MainActor
-final class ForumNotificationCoordinator: DexoObservableObject {
+final class ForumNotificationCoordinator: DoerObservableObject {
     /// FluxDo-style snappier unread badge while app is active.
     private static let foregroundRefreshInterval: TimeInterval = 15
 

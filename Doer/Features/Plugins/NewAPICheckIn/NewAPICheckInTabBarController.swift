@@ -89,7 +89,7 @@ final class NewAPICheckInTabBarController: UITabBarController {
 
 /// Tab visibility — same keys as original NewAPSign TabBarConfig.
 enum NewAPICheckInTabConfig {
-    static let didChangeNotification = Notification.Name("DexoNewAPICheckInTabConfigChanged")
+    static let didChangeNotification = Notification.Name("DoerNewAPICheckInTabConfigChanged")
 
     private static let customKey = "plugin.newapi.tab.show_custom"
     private static let historyKey = "plugin.newapi.tab.show_history"

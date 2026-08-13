@@ -738,8 +738,8 @@ final class PostNativeCell: UITableViewCell {
         guard bounds.width > 1 else { return }
         guard let tableView = enclosingTableView() else { return }
         // While flinging, only mark a pending self-sizing pass — do not layout-fit now.
-        if tableView.dexo_isScrollBusy || tableView.isDragging || tableView.isDecelerating {
-            tableView.dexo_invalidateSelfSizingRows()
+        if tableView.doer_isScrollBusy || tableView.isDragging || tableView.isDecelerating {
+            tableView.doer_invalidateSelfSizingRows()
             return
         }
         layoutIfNeeded()
@@ -760,7 +760,7 @@ final class PostNativeCell: UITableViewCell {
         lastReconciledHeight = fitted
         // Never call beginUpdates directly — races with Diffable snapshot apply /
         // scrollToRow and triggers `_visibleRows` vs `_visibleCells` length traps.
-        tableView.dexo_invalidateSelfSizingRows()
+        tableView.doer_invalidateSelfSizingRows()
     }
 
     func enclosingTableView() -> UITableView? {
@@ -941,7 +941,7 @@ final class PostNativeCell: UITableViewCell {
             contentStackView.addArrangedSubview(placeholder)
 
             let table = enclosingTableView()
-            let scrollBusy = table.map { $0.dexo_isScrollBusy || $0.isDragging || $0.isDecelerating } ?? false
+            let scrollBusy = table.map { $0.doer_isScrollBusy || $0.isDragging || $0.isDecelerating } ?? false
             if !scrollBusy {
                 scheduleProgressiveCompletion()
             }
@@ -1011,7 +1011,7 @@ final class PostNativeCell: UITableViewCell {
 
         if !force {
             let table = enclosingTableView()
-            if let table, table.dexo_isScrollBusy || table.isDragging || table.isDecelerating {
+            if let table, table.doer_isScrollBusy || table.isDragging || table.isDecelerating {
                 return
             }
         }

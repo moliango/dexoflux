@@ -201,9 +201,9 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         let canvas = chatBackgroundColor
 
         if let last = lastCanvasColor, last != canvas {
-            let animator = DexoMotion.propertyAnimator(
-                duration: DexoMotion.standard,
-                timingParameters: DexoMotion.softSpring
+            let animator = DoerMotion.propertyAnimator(
+                duration: DoerMotion.standard,
+                timingParameters: DoerMotion.softSpring
             )
             animator.addAnimations {
                 self.updateCanvasBackground(to: canvas)
@@ -887,7 +887,7 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 )
             }
         } else {
-            DexoSafariPresenter.present(
+            DoerSafariPresenter.present(
                 url: linkURL,
                 from: self,
                 api: api,
@@ -1075,21 +1075,21 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        tableView.dexo_setScrollBusy(true)
+        tableView.doer_setScrollBusy(true)
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate {
-            tableView.dexo_setScrollBusy(false)
+            tableView.doer_setScrollBusy(false)
         }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        tableView.dexo_setScrollBusy(false)
+        tableView.doer_setScrollBusy(false)
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        let scrollBusy = tableView.dexo_isScrollBusy || tableView.isDragging || tableView.isDecelerating
+        let scrollBusy = tableView.doer_isScrollBusy || tableView.isDragging || tableView.isDecelerating
         if !scrollBusy {
             (cell as? WeChatChatPostCell)?.requestHeightReconciliation()
         }
@@ -1125,7 +1125,7 @@ extension WeChatTopicDetailViewController: UITableViewDelegate {
         guard viewModel.isReady else { return }
         readingTracker.scrolled()
         // Throttle visible-post bookkeeping while flinging.
-        if !tableView.dexo_isScrollBusy {
+        if !tableView.doer_isScrollBusy {
             updateVisibleReadingPosts()
         }
         let offsetY = scrollView.contentOffset.y

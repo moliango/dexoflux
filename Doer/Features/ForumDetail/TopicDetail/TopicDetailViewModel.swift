@@ -462,7 +462,7 @@ enum TopicDetailSnapshotPolicy {
     }
 }
 
-final class TopicDetailViewModel: DexoObservableObject {
+final class TopicDetailViewModel: DoerObservableObject {
     var topic: DiscourseTopicDetail?
     private(set) var category: DiscourseCategory?
     private(set) var categoryPresentation: TopicCategoryBadgePresentation?

@@ -1,6 +1,6 @@
 import Foundation
 
-final class CategoriesViewModel: DexoObservableObject {
+final class CategoriesViewModel: DoerObservableObject {
     var categories: [DiscourseCategory] = []
     var isLoading = false
     var errorMessage: String?

@@ -1,6 +1,6 @@
 import Foundation
 
-final class AddForumViewModel: DexoObservableObject {
+final class AddForumViewModel: DoerObservableObject {
     var urlString = ""
     var isLoading = false
     var errorMessage: String?

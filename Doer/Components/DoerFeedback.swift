@@ -1,7 +1,7 @@
 import UIKit
 
 /// Shared toast + loading HUD (Phase 6) — no third-party HUD libs.
-enum DexoFeedback {
+enum DoerFeedback {
     // MARK: - Toast
 
     @MainActor

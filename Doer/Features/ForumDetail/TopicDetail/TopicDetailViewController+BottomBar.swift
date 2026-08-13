@@ -310,7 +310,7 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
     func scrollToPostIdIfVisible(_ postId: Int, animated: Bool) -> Bool {
         // scrollToRow during Diffable apply / self-sizing beginUpdates desyncs
         // _visibleRows vs _visibleCells.
-        guard !isApplyingPostSnapshot, !tableView.dexo_isMutatingData else { return false }
+        guard !isApplyingPostSnapshot, !tableView.doer_isMutatingData else { return false }
         guard tableView.numberOfSections > 0,
               let indexPath = dataSource.indexPath(for: postId)
         else { return false }

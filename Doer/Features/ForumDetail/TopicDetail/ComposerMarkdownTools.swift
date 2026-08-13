@@ -1,6 +1,6 @@
 import UIKit
 
-/// 对齐 FluxDo `editor_tools.dart` 全量工具 + dexo 额外的 AI 预审。
+/// 对齐 FluxDo `editor_tools.dart` 全量工具 + doer 额外的 AI 预审。
 enum ComposerMarkdownTool: CaseIterable {
     case image
     case attachment
@@ -278,7 +278,7 @@ final class ComposerMarkdownPreviewView: UIView {
 // MARK: - Shared markdown renderer (preview + source chrome)
 
 /// Local Discourse-ish markdown approximation for composer preview / source tinting.
-/// FluxDo ships a full cook JS bundle; Dexo stays native UIKit without that dependency.
+/// FluxDo ships a full cook JS bundle; Doer stays native UIKit without that dependency.
 enum ComposerMarkdownRenderer {
     private static let bodyPointSize: CGFloat = 23
     private static let monoPointSize: CGFloat = 18

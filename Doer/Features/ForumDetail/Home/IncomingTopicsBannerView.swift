@@ -55,7 +55,7 @@ final class IncomingTopicsBannerView: UIControl {
 
     override var isHighlighted: Bool {
         didSet {
-            DexoMotion.animate(duration: DexoMotion.quick) {
+            DoerMotion.animate(duration: DoerMotion.quick) {
                 self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
                 self.alpha = self.isHighlighted ? 0.88 : 1
             }

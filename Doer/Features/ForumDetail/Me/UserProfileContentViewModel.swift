@@ -91,7 +91,7 @@ enum UserProfileContentRow {
 }
 
 @MainActor
-final class UserProfileContentViewModel: DexoObservableObject {
+final class UserProfileContentViewModel: DoerObservableObject {
     private(set) var section: UserProfileSection = .summary
     private(set) var rows: [UserProfileContentRow] = []
     private(set) var isLoading = false

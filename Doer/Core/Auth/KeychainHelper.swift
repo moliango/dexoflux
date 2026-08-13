@@ -56,6 +56,7 @@ enum KeychainHelper {
     static func deleteLegacyCredential(for baseURL: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            // Legacy Keychain service — do not rename.
             kSecAttrService as String: "com.eilgnaw.dexo.userApiKey",
             kSecAttrAccount as String: baseURL,
         ]

@@ -1,6 +1,6 @@
 import Foundation
 
-final class ForumListViewModel: DexoObservableObject {
+final class ForumListViewModel: DoerObservableObject {
     var forums: [ForumInstance] = []
     var isLoading = false
     var errorMessage: String?

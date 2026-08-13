@@ -22,7 +22,7 @@ final class SkeletonBlockView: UIView {
 
 import UIKit
 
-final class TopicDetailSkeletonView: DexoSkeletonPlaceholderView {
+final class TopicDetailSkeletonView: DoerSkeletonPlaceholderView {
     private var cardSurfaces: [UIView] = []
 
     override init(frame: CGRect) {

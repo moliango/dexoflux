@@ -112,7 +112,7 @@ final class WebSessionRefreshService: NSObject {
         let delegate = LoadWaiter(timeout: loadTimeout)
         webView.navigationDelegate = delegate
 
-        let refreshURL = URL(string: "/?__dexo_session_refresh=\(Int(Date().timeIntervalSince1970))", relativeTo: baseURL)?.absoluteURL ?? baseURL
+        let refreshURL = URL(string: "/?__doer_session_refresh=\(Int(Date().timeIntervalSince1970))", relativeTo: baseURL)?.absoluteURL ?? baseURL
         var request = URLRequest(url: refreshURL)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
@@ -286,7 +286,7 @@ final class WebSessionRefreshService: NSObject {
             const existing = collectPluginUrlsFromHtml(currentHtml);
             if (existing.length) return existing;
 
-            const response = await fetch('/?__dexo_session_bootstrap=' + Date.now(), {
+            const response = await fetch('/?__doer_session_bootstrap=' + Date.now(), {
               method: 'GET',
               credentials: 'include',
               cache: 'no-store',

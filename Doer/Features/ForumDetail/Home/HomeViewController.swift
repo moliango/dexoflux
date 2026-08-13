@@ -7,7 +7,7 @@ enum HomeFABMode {
 }
 
 final class HomeViewController: ObservableViewController {
-    static let initialContentReadyNotification = Notification.Name("DexoHomeInitialContentReadyNotification")
+    static let initialContentReadyNotification = Notification.Name("DoerHomeInitialContentReadyNotification")
 
     static let reloadTimeoutNanoseconds: UInt64 = 25_000_000_000
     static let searchRowExpandedHeight: CGFloat = 40

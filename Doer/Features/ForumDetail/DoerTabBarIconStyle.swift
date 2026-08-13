@@ -1,6 +1,6 @@
 import UIKit
 
-enum DexoTabBarIconStyle {
+enum DoerTabBarIconStyle {
     private static let normalConfiguration = UIImage.SymbolConfiguration(
         pointSize: 18,
         weight: .bold,

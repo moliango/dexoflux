@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-final class MeViewModel: DexoObservableObject {
+final class MeViewModel: DoerObservableObject {
     var currentUser: DiscourseCurrentUser?
     var userProfile: DiscourseUserProfile?
     var summary: DiscourseUserSummary?

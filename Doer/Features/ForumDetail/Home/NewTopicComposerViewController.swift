@@ -683,7 +683,7 @@ final class NewTopicComposerViewController: UIViewController {
             panelHeightConstraint?.constant = ComposerToolbarFactory.customPanelHeight
         }
         updateToolbarState()
-        DexoMotion.animate(duration: DexoMotion.short) { self.view.layoutIfNeeded() }
+        DoerMotion.animate(duration: DoerMotion.short) { self.view.layoutIfNeeded() }
     }
 
     private func closePanel(returnToKeyboard: Bool) {
@@ -694,7 +694,7 @@ final class NewTopicComposerViewController: UIViewController {
         panelHeightConstraint?.constant = 0
         updateToolbarState()
         if returnToKeyboard { textView.becomeFirstResponder() }
-        DexoMotion.animate(duration: DexoMotion.quick) { self.view.layoutIfNeeded() }
+        DoerMotion.animate(duration: DoerMotion.quick) { self.view.layoutIfNeeded() }
     }
 
     private func updateToolbarState() {

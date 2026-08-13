@@ -146,8 +146,8 @@ final class ForumTabBarController: UITabBarController {
             tabBar.isUserInteractionEnabled = false
             view.bringSubviewToFront(tabBar)
 
-            DexoMotion.animate(
-                duration: DexoMotion.standard,
+            DoerMotion.animate(
+                duration: DoerMotion.standard,
                 animations: {
                     self.tabBar.transform = hiddenTransform
                     self.expandSelectedContentIntoTabBarArea()
@@ -163,8 +163,8 @@ final class ForumTabBarController: UITabBarController {
             configureTabBarSurface()
             view.bringSubviewToFront(tabBar)
 
-            DexoMotion.animate(
-                duration: DexoMotion.standard,
+            DoerMotion.animate(
+                duration: DoerMotion.standard,
                 animations: {
                     self.restoreScrollExpandedContentLayout()
                     self.tabBar.transform = .identity
@@ -215,9 +215,9 @@ final class ForumTabBarController: UITabBarController {
 
         // Spring animation for smooth global theme switch
         let newColor = appearance.backgroundColor
-        let animator = DexoMotion.propertyAnimator(
-            duration: DexoMotion.standard,
-            timingParameters: DexoMotion.softSpring
+        let animator = DoerMotion.propertyAnimator(
+            duration: DoerMotion.standard,
+            timingParameters: DoerMotion.softSpring
         )
         animator.addAnimations {
             self.tabBar.standardAppearance = appearance
@@ -661,12 +661,12 @@ private extension ForumTabBarController {
             popGestureEnablers[ObjectIdentifier(navigationController)] = enabler
             navigationController.tabBarItem.title = spec.title
             if spec.identifier != "me" || renderedMeAvatarKey == nil {
-                navigationController.tabBarItem.image = DexoTabBarIconStyle.image(
+                navigationController.tabBarItem.image = DoerTabBarIconStyle.image(
                     identifier: spec.identifier,
                     fallbackSymbolName: spec.symbolName,
                     selected: false
                 )
-                navigationController.tabBarItem.selectedImage = DexoTabBarIconStyle.image(
+                navigationController.tabBarItem.selectedImage = DoerTabBarIconStyle.image(
                     identifier: spec.identifier,
                     fallbackSymbolName: spec.symbolName,
                     selected: true
@@ -696,7 +696,7 @@ private extension ForumTabBarController {
                     if spec.identifier == "me", renderedMeAvatarKey != nil {
                         return navigationController.tabBarItem.image
                     }
-                    return DexoTabBarIconStyle.image(
+                    return DoerTabBarIconStyle.image(
                         identifier: spec.identifier,
                         fallbackSymbolName: spec.symbolName,
                         selected: false
@@ -819,12 +819,12 @@ private extension ForumTabBarController {
                self.meAvatarKey(username: currentUsername) != requestedKey {
                 return
             }
-            let normalImage = DexoTabBarIconStyle.avatarImage(
+            let normalImage = DoerTabBarIconStyle.avatarImage(
                 image,
                 selected: false,
                 accentColor: AppSettings.shared.themeStyle.accentColor
             )
-            let selectedImage = DexoTabBarIconStyle.avatarImage(
+            let selectedImage = DoerTabBarIconStyle.avatarImage(
                 image,
                 selected: true,
                 accentColor: AppSettings.shared.themeStyle.accentColor
@@ -835,8 +835,8 @@ private extension ForumTabBarController {
     }
 
     func applyDefaultMeTabIcon(at index: Int) {
-        let normalImage = DexoTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: false)
-        let selectedImage = DexoTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: true)
+        let normalImage = DoerTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: false)
+        let selectedImage = DoerTabBarIconStyle.image(identifier: "me", fallbackSymbolName: "person", selected: true)
         applyMeTabImages(normalImage: normalImage, selectedImage: selectedImage, at: index)
     }
 
@@ -891,7 +891,7 @@ private extension ForumTabBarController {
             },
         ]
 
-        let pluginTabs = Dictionary(uniqueKeysWithValues: DexoPluginRuntime.shared.registry
+        let pluginTabs = Dictionary(uniqueKeysWithValues: DoerPluginRuntime.shared.registry
             .contributions(of: .forumTab, for: pluginScope)
             .map { registration in
                 (AppSettings.pluginForumTabItemID(

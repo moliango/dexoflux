@@ -534,7 +534,7 @@ private final class ObsidianCalloutView: UIView {
         } else if let cell = findWeChatChatPostCell() {
             cell.requestHeightReconciliation()
         } else {
-            findTableView()?.dexo_invalidateSelfSizingRows()
+            findTableView()?.doer_invalidateSelfSizingRows()
         }
     }
 

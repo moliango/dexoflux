@@ -313,7 +313,7 @@ final class TappableImageContainer: UIView {
                 return
             }
             if let tableView = current as? UITableView {
-                tableView.dexo_invalidateSelfSizingRows()
+                tableView.doer_invalidateSelfSizingRows()
                 return
             }
             view = current.superview

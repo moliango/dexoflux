@@ -31,10 +31,10 @@ extension TopicDetailViewController {
         var snapshot = dataSource.snapshot()
         guard snapshot.indexOfItem(postId) != nil else { return }
         // Gate self-sizing beginUpdates while Diffable reloads cells.
-        tableView.dexo_beginDataMutation()
+        tableView.doer_beginDataMutation()
         snapshot.reloadItems([postId])
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-            self?.tableView.dexo_endDataMutation()
+            self?.tableView.doer_endDataMutation()
         }
     }
 
@@ -57,10 +57,10 @@ extension TopicDetailViewController {
             return
         }
 
-        tableView.dexo_beginDataMutation()
+        tableView.doer_beginDataMutation()
         snapshot.reloadItems(ids)
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-            self?.tableView.dexo_endDataMutation()
+            self?.tableView.doer_endDataMutation()
         }
     }
 
@@ -163,7 +163,7 @@ extension TopicDetailViewController {
             isFilteringTopLevel: viewModel.isFilteringTopLevel,
             isNestedViewEnabled: viewModel.isNestedViewEnabled,
             canEdit: topic?.canEdit == true,
-            showExport: DexoPluginRuntime.shared.registry.isPluginEnabled(
+            showExport: DoerPluginRuntime.shared.registry.isPluginEnabled(
                 BuiltInPluginID.topicExport,
                 for: pluginScope
             ),
@@ -242,7 +242,7 @@ extension TopicDetailViewController {
                     await viewModel.loadTopic(id: topicId, containerWidth: view.bounds.width)
                     configureTopicActions()
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             }
         }
@@ -261,13 +261,13 @@ extension TopicDetailViewController {
                 guard let self else { return }
                 do {
                     try await self.api.unassignTopic(topicId: self.topicId)
-                    DexoFeedback.presentToast(
+                    DoerFeedback.presentToast(
                         String(localized: "topic.assign.clear.done", defaultValue: "已取消指定"),
                         on: self
                     )
                     await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             }
         case .toMe:
@@ -276,13 +276,13 @@ extension TopicDetailViewController {
                 guard let self else { return }
                 do {
                     try await self.api.assignTopic(topicId: self.topicId, username: me)
-                    DexoFeedback.presentToast(
+                    DoerFeedback.presentToast(
                         String(localized: "topic.assign.to_me.done", defaultValue: "已指定给你"),
                         on: self
                     )
                     await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             }
         case .pickUser:
@@ -308,13 +308,13 @@ extension TopicDetailViewController {
                 Task { @MainActor in
                     do {
                         try await self.api.assignTopic(topicId: self.topicId, username: name)
-                        DexoFeedback.presentToast(
+                        DoerFeedback.presentToast(
                             String(localized: "topic.assign.to_me.done", defaultValue: "已指定"),
                             on: self
                         )
                         await self.viewModel.loadTopic(id: self.topicId, containerWidth: self.view.bounds.width)
                     } catch {
-                        DexoFeedback.presentToast(error.localizedDescription, on: self)
+                        DoerFeedback.presentToast(error.localizedDescription, on: self)
                     }
                 }
             })
@@ -339,7 +339,7 @@ extension TopicDetailViewController {
                 serverLastRead: server
             )
             lastReadPostNumber = next > 0 ? next : nil
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "topic.mark_unread.step_back.done", defaultValue: "已回退一层阅读进度"),
                 on: self
             )
@@ -350,7 +350,7 @@ extension TopicDetailViewController {
                 username: username
             )
             lastReadPostNumber = nil
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "topic.mark_unread.clear.done", defaultValue: "已清空阅读进度"),
                 on: self
             )

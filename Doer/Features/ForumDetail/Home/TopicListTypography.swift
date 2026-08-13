@@ -70,7 +70,7 @@ enum TopicListTypography {
         return settings.appInterfaceFont(
             ofSize: designSize,
             weight: weight,
-            fallback: UIFont.dexoOriginalSystemFont(ofSize: designSize, weight: weight)
+            fallback: UIFont.doerOriginalSystemFont(ofSize: designSize, weight: weight)
         )
     }
 

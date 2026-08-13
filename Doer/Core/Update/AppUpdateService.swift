@@ -212,7 +212,7 @@ final class AppUpdateService {
     private static let latestReleaseURL = URL(
         string: "https://api.github.com/repos/moliango/doer/releases/latest"
     )!
-    private static let cacheKey = "dexo.update.latest-release-cache.v1"
+    private static let cacheKey = "doer.update.latest-release-cache.v1"
     private static let freshCacheInterval: TimeInterval = 60 * 60
 
     private let session: URLSession

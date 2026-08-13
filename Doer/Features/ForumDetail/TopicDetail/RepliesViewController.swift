@@ -475,7 +475,7 @@ extension RepliesViewController: PostCellDelegate {
     }
 
     private func presentSafari(_ url: URL) {
-        DexoSafariPresenter.present(
+        DoerSafariPresenter.present(
             url: url,
             from: self,
             api: api,

@@ -1,6 +1,6 @@
 import Foundation
 
-final class BookmarksViewModel: DexoObservableObject {
+final class BookmarksViewModel: DoerObservableObject {
     var bookmarks: [DiscourseBookmark] = []
     var isLoading = false
     var errorMessage: String?

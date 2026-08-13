@@ -24,15 +24,15 @@ cd Packages/CookedHTML && swift test
 Doer is a native iOS Discourse forum client (UIKit, iOS 15+). No SwiftUI. Source lives under `Doer/`.
 
 **MVVM with iOS 15-compatible observation**
-- ViewModels inherit `DexoObservableObject` and call `notifyChanged()` after UI-relevant state mutations
-- ViewControllers subclass `ObservableViewController`, which listens for `DexoObservableObject.didChangeNotification` and calls `updateUI()`
+- ViewModels inherit `DoerObservableObject` and call `notifyChanged()` after UI-relevant state mutations
+- ViewControllers subclass `ObservableViewController`, which listens for `DoerObservableObject.didChangeNotification` and calls `updateUI()`
 - `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` applies project-wide
 
 **Key layers:**
 - `Doer/Networking/` — `DiscourseAPI` (one instance per forum, Alamofire-based) + `DiscourseRouter` (all API routes as enum)
 - `Doer/Core/Auth/` — Discourse User API Key OAuth flow via `ASWebAuthenticationSession` + RSA key pair in Keychain
 - `Doer/Database/` — GRDB `DatabasePool` with versioned migrations, stores `ForumInstance` records
-- `Doer/Core/Settings/` — `AppSettings` (`DexoObservableObject` singleton) for user preferences
+- `Doer/Core/Settings/` — `AppSettings` (`DoerObservableObject` singleton) for user preferences
 - `Packages/CookedHTML/` — Local Swift package for parsing Discourse-cooked HTML into `BlockNode`/`InlineNode` trees, with `NSAttributedString` rendering support
 
 **Topic rendering** uses both a WKWebView snapshot path (JS messaging extracts interactive regions) and native UIKit block renderers under `Doer/Features/ForumDetail/TopicDetail/NativeContent/`.

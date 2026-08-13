@@ -1,7 +1,7 @@
 import Combine
 import UIKit
 
-enum DexoMotion {
+enum DoerMotion {
     static let quick: TimeInterval = 0.18
     static let short: TimeInterval = 0.20
     static let standard: TimeInterval = 0.24
@@ -39,9 +39,9 @@ enum DexoMotion {
 
     @discardableResult
     static func animate(
-        duration: TimeInterval = DexoMotion.standard,
+        duration: TimeInterval = DoerMotion.standard,
         delay: TimeInterval = 0,
-        timingParameters: UICubicTimingParameters = DexoMotion.easeOutCubic,
+        timingParameters: UICubicTimingParameters = DoerMotion.easeOutCubic,
         animations: @escaping () -> Void,
         completion: ((UIViewAnimatingPosition) -> Void)? = nil
     ) -> UIViewPropertyAnimator {
@@ -61,8 +61,8 @@ enum DexoMotion {
     }
 
     static func propertyAnimator(
-        duration: TimeInterval = DexoMotion.standard,
-        timingParameters: UITimingCurveProvider = DexoMotion.easeOutCubic
+        duration: TimeInterval = DoerMotion.standard,
+        timingParameters: UITimingCurveProvider = DoerMotion.easeOutCubic
     ) -> UIViewPropertyAnimator {
         guard !UIAccessibility.isReduceMotionEnabled else {
             return UIViewPropertyAnimator(duration: 0, curve: .linear)
@@ -71,7 +71,7 @@ enum DexoMotion {
     }
 }
 
-class DexoSkeletonPlaceholderView: UIView {
+class DoerSkeletonPlaceholderView: UIView {
     let skeletonContentView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -134,7 +134,7 @@ class DexoSkeletonPlaceholderView: UIView {
             startSkeletonPulse()
             let show = { self.alpha = 1 }
             if animated {
-                DexoMotion.animate(duration: DexoMotion.quick, animations: show)
+                DoerMotion.animate(duration: DoerMotion.quick, animations: show)
             } else {
                 show()
             }
@@ -145,9 +145,9 @@ class DexoSkeletonPlaceholderView: UIView {
             }
             let hide = { self.alpha = 0 }
             if animated {
-                DexoMotion.animate(
-                    duration: DexoMotion.quick,
-                    timingParameters: DexoMotion.easeInCubic,
+                DoerMotion.animate(
+                    duration: DoerMotion.quick,
+                    timingParameters: DoerMotion.easeInCubic,
                     animations: hide
                 ) { _ in
                     finish()
@@ -169,7 +169,7 @@ class DexoSkeletonPlaceholderView: UIView {
     }
 
     private func startSkeletonPulse() {
-        skeletonContentView.layer.removeAnimation(forKey: "dexo.skeleton.pulse")
+        skeletonContentView.layer.removeAnimation(forKey: "doer.skeleton.pulse")
         guard !UIAccessibility.isReduceMotionEnabled, window != nil else {
             skeletonContentView.layer.opacity = 1
             return
@@ -182,17 +182,17 @@ class DexoSkeletonPlaceholderView: UIView {
         animation.autoreverses = true
         animation.repeatCount = .infinity
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        skeletonContentView.layer.add(animation, forKey: "dexo.skeleton.pulse")
+        skeletonContentView.layer.add(animation, forKey: "doer.skeleton.pulse")
     }
 
     private func stopSkeletonPulse() {
-        skeletonContentView.layer.removeAnimation(forKey: "dexo.skeleton.pulse")
+        skeletonContentView.layer.removeAnimation(forKey: "doer.skeleton.pulse")
         skeletonContentView.layer.opacity = 1
     }
 }
 
 @MainActor
-class DexoObservableObject: ObservableObject {
+class DoerObservableObject: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
 
     func notifyChanged() {
@@ -202,7 +202,7 @@ class DexoObservableObject: ObservableObject {
 
 @MainActor
 class ObservableViewController: UIViewController {
-    private var observedObjects: [ObjectIdentifier: DexoObservableObject] = [:]
+    private var observedObjects: [ObjectIdentifier: DoerObservableObject] = [:]
     private var observationCancellables = Set<AnyCancellable>()
     private var isObserving = false
 
@@ -210,7 +210,7 @@ class ObservableViewController: UIViewController {
         // Subclasses override this to bind observable state to UI.
     }
 
-    func observe(_ object: DexoObservableObject) {
+    func observe(_ object: DoerObservableObject) {
         let identifier = ObjectIdentifier(object)
         guard observedObjects[identifier] == nil else { return }
         observedObjects[identifier] = object
@@ -230,7 +230,7 @@ class ObservableViewController: UIViewController {
         isObserving = false
     }
 
-    private func subscribe(to object: DexoObservableObject) {
+    private func subscribe(to object: DoerObservableObject) {
         object.objectWillChange
             .sink { [weak self] in
                 self?.updateUI()

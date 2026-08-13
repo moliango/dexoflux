@@ -45,7 +45,7 @@
 | UI 框架 | UIKit（主 App 不使用 SwiftUI） |
 | 最低版本 | iOS 15.0 |
 | Bundle ID | `com.naine.doer` |
-| 架构 | MVVM 风格 ViewModel + `DexoObservableObject` / 可观察 ViewController |
+| 架构 | MVVM 风格 ViewModel + `DoerObservableObject` / 可观察 ViewController |
 | 构建工具 | [Tuist](https://tuist.dev)，通过 `mise` 固定版本 |
 | 网络 | [Alamofire](https://github.com/Alamofire/Alamofire)、自定义 Router、Cookie 复用请求、DoH URLProtocol |
 | Web 会话 | `WKWebView` 负责登录、Cloudflare 验证和会话刷新 |

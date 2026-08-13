@@ -182,7 +182,7 @@ private class DetailsCardView: UIView {
         } else if let cell = findWeChatChatPostCell() {
             cell.requestHeightReconciliation()
         } else {
-            findTableView()?.dexo_invalidateSelfSizingRows()
+            findTableView()?.doer_invalidateSelfSizingRows()
         }
     }
 
@@ -203,7 +203,7 @@ private class DetailsCardView: UIView {
                 cloudflareBaseURL: innerConfig.baseURL
             ) { [weak self] in
                 self?.findWeChatChatPostCell()?.requestHeightReconciliation()
-                    ?? self?.findTableView()?.dexo_invalidateSelfSizingRows()
+                    ?? self?.findTableView()?.doer_invalidateSelfSizingRows()
             }
             return
         }

@@ -38,7 +38,7 @@ final class DohResolver {
         }
     }
 
-    private let queue = DispatchQueue(label: "dexo.doh.resolver")
+    private let queue = DispatchQueue(label: "doer.doh.resolver")
     private var cache: [String: CacheEntry] = [:]
     private var inflight: [String: [(Result<Answer, Error>) -> Void]] = [:]
     private let session: URLSession

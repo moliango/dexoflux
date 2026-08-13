@@ -1,7 +1,7 @@
 import UIKit
 
 @MainActor
-final class PagedTopicListViewModel: DexoObservableObject {
+final class PagedTopicListViewModel: DoerObservableObject {
     typealias Loader = (_ page: Int) async throws -> DiscourseTopicList
 
     private(set) var topics: [DiscourseTopicList.Topic] = []
@@ -110,8 +110,8 @@ final class PagedTopicListViewModel: DexoObservableObject {
 
 final class PagedTopicListViewController: ObservableViewController {
     private let api: DiscourseAPI
-    private lazy var refreshPolicy: DexoListRefreshPolicy = {
-        DexoListRefreshPolicy(
+    private lazy var refreshPolicy: DoerListRefreshPolicy = {
+        DoerListRefreshPolicy(
             tableView: tableView,
             viewModel: viewModel,
             onRefresh: { [weak self] in

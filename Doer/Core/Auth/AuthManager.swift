@@ -1,6 +1,6 @@
 import Foundation
 
-final class AuthManager: DexoObservableObject, @unchecked Sendable {
+final class AuthManager: DoerObservableObject, @unchecked Sendable {
     static let shared = AuthManager()
 
     // Per-baseURL username cache (populated from DB or after login)

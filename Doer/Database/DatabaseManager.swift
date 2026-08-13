@@ -11,6 +11,7 @@ final class DatabaseManager: Sendable {
             // Prefer bootstrap path so a file masquerading as Library/Application Support
             // is repaired before GRDB opens the pool (avoids NSCocoaErrorDomain 512 / ENOTDIR).
             let appSupport = AppStorageBootstrap.applicationSupportDirectoryURL()
+            // Legacy filename — renaming would orphan existing forum records.
             let dbURL = appSupport.appendingPathComponent("dexo.sqlite")
             dbPool = try DatabasePool(path: dbURL.path)
             try migrator.migrate(dbPool)

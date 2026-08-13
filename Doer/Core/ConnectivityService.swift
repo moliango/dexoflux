@@ -12,7 +12,7 @@ import UIKit
 final class ConnectivityService {
     static let shared = ConnectivityService()
 
-    static let didChangeNotification = Notification.Name("DexoConnectivityDidChange")
+    static let didChangeNotification = Notification.Name("DoerConnectivityDidChange")
     nonisolated static let isConnectedUserInfoKey = "isConnected"
 
     /// When true, also require `GET {baseURL}/srv/status` → 200 + body `ok`.
@@ -23,7 +23,7 @@ final class ConnectivityService {
     var pingBaseURL: String?
 
     private let monitor = NWPathMonitor()
-    private let monitorQueue = DispatchQueue(label: "dexo.connectivity.monitor")
+    private let monitorQueue = DispatchQueue(label: "doer.connectivity.monitor")
     private var isMonitoring = false
 
     private var disconnectDebounceWorkItem: DispatchWorkItem?

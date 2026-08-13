@@ -164,7 +164,7 @@ final class FallbackBlockView: UIView {
                 return
             }
             if let tableView = v as? UITableView {
-                tableView.dexo_invalidateSelfSizingRows()
+                tableView.doer_invalidateSelfSizingRows()
                 return
             }
             view = v.superview

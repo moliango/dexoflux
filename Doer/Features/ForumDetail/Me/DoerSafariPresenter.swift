@@ -5,7 +5,7 @@ import UIKit
 /// When `AppSettings.openExternalLinksInAppBrowser` is off, falls back to the system browser.
 /// Non-web schemes (`mailto:`, `tel:`, custom apps) always go to the system.
 /// Forum session cookies are shared via `InAppBrowserWebKitRuntime` + `WebCookieStore`.
-enum DexoSafariPresenter {
+enum DoerSafariPresenter {
     /// Open `url` in the in-app browser when the setting is on; otherwise system browser.
     @MainActor
     static func present(

@@ -110,7 +110,7 @@ final class MeViewController: ObservableViewController {
         if let error = viewModel.errorMessage {
             loadingSkeletonView.setSkeletonActive(false, animated: view.window != nil)
             scrollView.isHidden = false
-            DexoFeedback.presentToast(error, on: self)
+            DoerFeedback.presentToast(error, on: self)
             viewModel.errorMessage = nil
         }
 
@@ -867,7 +867,7 @@ final class MeViewController: ObservableViewController {
             showInfoAlert(String(localized: "me.web.open_error"))
             return
         }
-        DexoSafariPresenter.present(
+        DoerSafariPresenter.present(
             url: url,
             from: self,
             api: api,

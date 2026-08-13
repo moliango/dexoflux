@@ -110,9 +110,9 @@ extension HomeViewController {
         }
 
         if animated, !UIAccessibility.isReduceMotionEnabled {
-            let animator = DexoMotion.propertyAnimator(
-                duration: DexoMotion.emphasized,
-                timingParameters: DexoMotion.softSpring
+            let animator = DoerMotion.propertyAnimator(
+                duration: DoerMotion.emphasized,
+                timingParameters: DoerMotion.softSpring
             )
             animator.addAnimations(updates)
             animator.addCompletion(finish)

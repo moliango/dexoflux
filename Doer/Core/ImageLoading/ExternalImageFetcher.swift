@@ -23,7 +23,7 @@ enum ExternalImageFetcher {
         config.urlCache = URLCache(
             memoryCapacity: 16 * 1024 * 1024,
             diskCapacity: 64 * 1024 * 1024,
-            diskPath: "dexo.external-image-urlcache-v2"
+            diskPath: "doer.external-image-urlcache-v2"
         )
         return URLSession(configuration: config)
     }()

@@ -1,6 +1,6 @@
 import UIKit
 
-private final class CategoryTopicsViewModel: DexoObservableObject {
+private final class CategoryTopicsViewModel: DoerObservableObject {
     var topics: [DiscourseTopicList.Topic] = []
     var isLoading = false
     var isLoadingMore = false

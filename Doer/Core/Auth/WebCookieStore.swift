@@ -26,6 +26,7 @@ final class WebCookieStore {
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Legacy filenames — renaming would drop the saved session.
         filePath = dir.appendingPathComponent("dexo_web_cookies.json")
         userAgentPath = dir.appendingPathComponent("dexo_web_ua.txt")
         load()

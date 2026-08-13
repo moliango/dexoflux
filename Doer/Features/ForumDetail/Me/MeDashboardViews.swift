@@ -1,6 +1,6 @@
 import UIKit
 
-final class MeDashboardSkeletonView: DexoSkeletonPlaceholderView {
+final class MeDashboardSkeletonView: DoerSkeletonPlaceholderView {
     private var cardSurfaces: [UIView] = []
 
     override init(frame: CGRect) {

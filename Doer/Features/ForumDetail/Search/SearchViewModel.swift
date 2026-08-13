@@ -32,7 +32,7 @@ enum SearchSortOrder: String, CaseIterable {
     }
 }
 
-final class SearchViewModel: DexoObservableObject {
+final class SearchViewModel: DoerObservableObject {
     private static let sortOrderDefaultsKey = "search.sort_order"
     private static let aiSearchEnabledKey = "search.ai_enabled"
 

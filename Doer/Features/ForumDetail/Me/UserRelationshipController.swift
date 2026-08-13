@@ -17,7 +17,7 @@ enum UserRelationshipMutation: Equatable {
 }
 
 @MainActor
-final class UserRelationshipController: DexoObservableObject {
+final class UserRelationshipController: DoerObservableObject {
     struct State: Equatable {
         var isFollowed = false
         var isMuted = false

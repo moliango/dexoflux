@@ -2378,25 +2378,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Complete the Cloudflare check in this page. When cf_clearance is detected, Dexo will sync it for native requests."
+            "value" : "Complete the Cloudflare check in this page. When cf_clearance is detected, Doer will sync it for native requests."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此页面完成 Cloudflare 验证。检测到 cf_clearance 后，Dexo 会同步给原生请求使用。"
+            "value" : "在此页面完成 Cloudflare 验证。检测到 cf_clearance 后，Doer 会同步给原生请求使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此頁面完成 Cloudflare 驗證。檢測到 cf_clearance 後，Dexo 會同步給原生請求使用。"
+            "value" : "在此頁面完成 Cloudflare 驗證。檢測到 cf_clearance 後，Doer 會同步給原生請求使用。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此頁面完成 Cloudflare 驗證。檢測到 cf_clearance 後，Dexo 會同步給原生請求使用。"
+            "value" : "在此頁面完成 Cloudflare 驗證。檢測到 cf_clearance 後，Doer 會同步給原生請求使用。"
           }
         }
       }
@@ -3423,25 +3423,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cloudflare verification is required. Dexo will open the verification page; complete it, then retry or refresh."
+            "value" : "Cloudflare verification is required. Doer will open the verification page; complete it, then retry or refresh."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要完成 Cloudflare 验证。Dexo 会自动打开验证页面，完成后重试或刷新。"
+            "value" : "需要完成 Cloudflare 验证。Doer 会自动打开验证页面，完成后重试或刷新。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要完成 Cloudflare 驗證。Dexo 會自動打開驗證頁面，完成後重試或刷新。"
+            "value" : "需要完成 Cloudflare 驗證。Doer 會自動打開驗證頁面，完成後重試或刷新。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要完成 Cloudflare 驗證。Dexo 會自動打開驗證頁面，完成後重試或刷新。"
+            "value" : "需要完成 Cloudflare 驗證。Doer 會自動打開驗證頁面，完成後重試或刷新。"
           }
         }
       }
@@ -19212,25 +19212,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is not a valid Dexo preferences backup."
+            "value" : "This is not a valid Doer preferences backup."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这不是有效的 Dexo 偏好设置备份。"
+            "value" : "这不是有效的 Doer 偏好设置备份。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這不是有效的 Dexo 偏好設定備份。"
+            "value" : "這不是有效的 Doer 偏好設定備份。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這不是有效的 Dexo 偏好設定備份。"
+            "value" : "這不是有效的 Doer 偏好設定備份。"
           }
         }
       }
@@ -19560,7 +19560,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Automatically clear image cache the next time Dexo starts."
+            "value" : "Automatically clear image cache the next time Doer starts."
           }
         },
         "zh-Hans" : {
@@ -20553,25 +20553,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Language changes take effect after restarting Dexo."
+            "value" : "Language changes take effect after restarting Doer."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切换语言后需要重启 Dexo 生效。"
+            "value" : "切换语言后需要重启 Doer 生效。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切換語言後需要重新啟動 Dexo 才會生效。"
+            "value" : "切換語言後需要重新啟動 Doer 才會生效。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切換語言後需要重新啟動 Dexo 才會生效。"
+            "value" : "切換語言後需要重新啟動 Doer 才會生效。"
           }
         }
       }
@@ -21869,7 +21869,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prefer opening post links inside Dexo"
+            "value" : "Prefer opening post links inside Doer"
           }
         },
         "zh-Hans" : {

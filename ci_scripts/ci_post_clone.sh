@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #  ci_post_clone.sh
-#  dexo
+#  doer
 #
 #  Created by Eilgnaw on 3/22/26.
 #  

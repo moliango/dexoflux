@@ -669,9 +669,9 @@ private final class TopicDetailRadialMenuOverlay: UIView {
     }
 
     func dismiss() {
-        DexoMotion.animate(
-            duration: DexoMotion.quick,
-            timingParameters: DexoMotion.easeInCubic,
+        DoerMotion.animate(
+            duration: DoerMotion.quick,
+            timingParameters: DoerMotion.easeInCubic,
             animations: {
                 self.blurView.effect = nil
                 self.dimView.backgroundColor = UIColor.black.withAlphaComponent(0)
@@ -723,7 +723,7 @@ private final class TopicDetailRadialMenuOverlay: UIView {
     }
 
     private func animateIn() {
-        DexoMotion.animate(duration: DexoMotion.quick) {
+        DoerMotion.animate(duration: DoerMotion.quick) {
             self.blurView.effect = UIBlurEffect(style: .systemThinMaterial)
             self.dimView.backgroundColor = UIColor.black.withAlphaComponent(0.20)
         }
@@ -832,6 +832,6 @@ private final class TopicDetailRadialMenuItemView: UIView {
             changes()
             return
         }
-        DexoMotion.animate(duration: DexoMotion.quick, animations: changes)
+        DoerMotion.animate(duration: DoerMotion.quick, animations: changes)
     }
 }

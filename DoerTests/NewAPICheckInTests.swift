@@ -127,10 +127,10 @@ final class NewAPICheckInTests: XCTestCase {
 
     func testWebLoginURLNormalizationKeepsLoginPathAndQuery() {
         let url = NewAPICheckInLoginSupport.normalizedLoginURL(
-            "  api.example.com/oauth/start?tenant=dexo#login  "
+            "  api.example.com/oauth/start?tenant=doer#login  "
         )
 
-        XCTAssertEqual(url?.absoluteString, "https://api.example.com/oauth/start?tenant=dexo#login")
+        XCTAssertEqual(url?.absoluteString, "https://api.example.com/oauth/start?tenant=doer#login")
     }
 
     func testLocalStorageIdentityCompletesLoginOnlyWithTargetCookie() {

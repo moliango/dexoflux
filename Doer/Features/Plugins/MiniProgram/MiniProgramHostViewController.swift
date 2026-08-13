@@ -594,6 +594,6 @@ final class MiniProgramHostViewController: UIViewController {
     }
 
     private func presentToast(_ message: String) {
-        DexoFeedback.presentToast(message, on: self)
+        DoerFeedback.presentToast(message, on: self)
     }
 }

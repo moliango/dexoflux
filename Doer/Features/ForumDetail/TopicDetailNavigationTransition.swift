@@ -21,7 +21,7 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
     }
 
     func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-        DexoMotion.emphasized
+        DoerMotion.emphasized
     }
 
     func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
@@ -38,7 +38,7 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
               let toView = transitionContext.view(forKey: .to)
         else {
             transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
-            return DexoMotion.propertyAnimator(duration: 0)
+            return DoerMotion.propertyAnimator(duration: 0)
         }
 
         let animator: UIViewPropertyAnimator
@@ -49,7 +49,7 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
             animator = makePopAnimator(fromView: fromView, toView: toView, context: transitionContext)
         default:
             transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
-            animator = DexoMotion.propertyAnimator(duration: 0)
+            animator = DoerMotion.propertyAnimator(duration: 0)
         }
 
         runningAnimator = animator
@@ -68,7 +68,7 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
         let container = context.containerView
         guard let toViewController = context.viewController(forKey: .to) else {
             context.completeTransition(false)
-            return DexoMotion.propertyAnimator(duration: 0)
+            return DoerMotion.propertyAnimator(duration: 0)
         }
         TopicDetailTransitionGeometry.normalize(fromView)
         TopicDetailTransitionGeometry.normalize(toView)
@@ -78,9 +78,9 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
         toView.transform = TopicDetailTransitionGeometry.pushInitialTransform
         container.addSubview(toView)
 
-        let animator = DexoMotion.propertyAnimator(
+        let animator = DoerMotion.propertyAnimator(
             duration: transitionDuration(using: context),
-            timingParameters: DexoMotion.softSpring
+            timingParameters: DoerMotion.softSpring
         )
         animator.addAnimations {
             fromView.alpha = 0.98
@@ -110,7 +110,7 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
         let container = context.containerView
         guard let toViewController = context.viewController(forKey: .to) else {
             context.completeTransition(false)
-            return DexoMotion.propertyAnimator(duration: 0)
+            return DoerMotion.propertyAnimator(duration: 0)
         }
         TopicDetailTransitionGeometry.normalize(fromView)
         TopicDetailTransitionGeometry.normalize(toView)
@@ -119,9 +119,9 @@ final class TopicDetailNavigationAnimator: NSObject, UIViewControllerAnimatedTra
         toView.transform = CGAffineTransform(translationX: -listParallaxOffset, y: 0)
         container.insertSubview(toView, belowSubview: fromView)
 
-        let animator = DexoMotion.propertyAnimator(
+        let animator = DoerMotion.propertyAnimator(
             duration: transitionDuration(using: context),
-            timingParameters: DexoMotion.softSpring
+            timingParameters: DoerMotion.softSpring
         )
         animator.addAnimations {
             fromView.alpha = 0.96

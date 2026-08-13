@@ -5,7 +5,7 @@ import XCTest
 /// while request headers stay host-only for `_t` / `_forum_session`.
 @MainActor
 final class WebCookieStoreSessionTests: XCTestCase {
-    private let probeHost = "dexo-cookie-prime.test"
+    private let probeHost = "doer-cookie-prime.test"
     private var probeURL: URL { URL(string: "https://\(probeHost)/")! }
     private var subdomainURL: URL { URL(string: "https://sub.\(probeHost)/home")! }
 

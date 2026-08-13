@@ -1,6 +1,6 @@
 import UIKit
 
-final class DexoLaunchLoadingView: UIView {
+final class DoerLaunchLoadingView: UIView {
     private let rootStackView = UIStackView()
     private let linuxLogoView = UIImageView()
     private let brandLabel = UILabel()
@@ -14,7 +14,7 @@ final class DexoLaunchLoadingView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = DexoLaunchAppearance.backgroundColor
+        backgroundColor = DoerLaunchAppearance.backgroundColor
         isOpaque = true
         isUserInteractionEnabled = true
         isAccessibilityElement = true
@@ -29,7 +29,7 @@ final class DexoLaunchLoadingView: UIView {
     }
 
     func applyThemeStyle() {
-        backgroundColor = DexoLaunchAppearance.backgroundColor
+        backgroundColor = DoerLaunchAppearance.backgroundColor
         brandLabel.textColor = linuxDoTextColor
         brandLabel.font = AppSettings.shared.appInterfaceFont(
             ofSize: 30,
@@ -70,20 +70,20 @@ final class DexoLaunchLoadingView: UIView {
         loadingLabel.alpha = 0
         dotsStackView.alpha = 0
 
-        let heroAnimator = DexoMotion.propertyAnimator(
-            duration: DexoMotion.emphasized,
-            timingParameters: DexoMotion.softSpring
+        let heroAnimator = DoerMotion.propertyAnimator(
+            duration: DoerMotion.emphasized,
+            timingParameters: DoerMotion.softSpring
         )
         heroAnimator.addAnimations {
             self.rootStackView.alpha = 1
             self.rootStackView.transform = .identity
         }
         heroAnimator.startAnimation()
-        DexoMotion.animate(duration: DexoMotion.standard, delay: 0.12) {
+        DoerMotion.animate(duration: DoerMotion.standard, delay: 0.12) {
             self.valuesLabel.alpha = 1
             self.valuesLabel.transform = .identity
         }
-        DexoMotion.animate(duration: DexoMotion.standard, delay: 0.22) {
+        DoerMotion.animate(duration: DoerMotion.standard, delay: 0.22) {
             self.loadingLabel.alpha = 1
             self.dotsStackView.alpha = 1
         }
@@ -93,9 +93,9 @@ final class DexoLaunchLoadingView: UIView {
 
     func dismiss(completion: @escaping () -> Void) {
         stopLogoBreathing()
-        DexoMotion.animate(
-            duration: DexoMotion.standard,
-            timingParameters: DexoMotion.easeInOutCubic,
+        DoerMotion.animate(
+            duration: DoerMotion.standard,
+            timingParameters: DoerMotion.easeInOutCubic,
             animations: {
                 self.alpha = 0
                 self.rootStackView.transform = CGAffineTransform(scaleX: 0.98, y: 0.98)
@@ -191,12 +191,12 @@ final class DexoLaunchLoadingView: UIView {
             animation.autoreverses = true
             animation.repeatCount = .infinity
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            dot.layer.add(animation, forKey: "dexo.launch.dot")
+            dot.layer.add(animation, forKey: "doer.launch.dot")
         }
     }
 
     private func stopLoadingDots() {
-        dotViews.forEach { $0.layer.removeAnimation(forKey: "dexo.launch.dot") }
+        dotViews.forEach { $0.layer.removeAnimation(forKey: "doer.launch.dot") }
     }
 
     private func startLogoBreathing() {
@@ -208,11 +208,11 @@ final class DexoLaunchLoadingView: UIView {
         animation.autoreverses = true
         animation.repeatCount = .infinity
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        linuxLogoView.layer.add(animation, forKey: "dexo.launch.breathe")
+        linuxLogoView.layer.add(animation, forKey: "doer.launch.breathe")
     }
 
     private func stopLogoBreathing() {
-        linuxLogoView.layer.removeAnimation(forKey: "dexo.launch.breathe")
+        linuxLogoView.layer.removeAnimation(forKey: "doer.launch.breathe")
     }
 }
 

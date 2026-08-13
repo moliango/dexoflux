@@ -1,6 +1,6 @@
 import UIKit
 
-final class BrowsingHistoryViewModel: DexoObservableObject {
+final class BrowsingHistoryViewModel: DoerObservableObject {
     var topics: [DiscourseTopicList.Topic] = []
     var isLoading = false
     var isLoadingMore = false

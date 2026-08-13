@@ -18,7 +18,7 @@ final class WebLoginViewController: UIViewController {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let wv = WKWebView(frame: .zero, configuration: config)
-        config.userContentController.add(coordinator, name: "dexoLoginCredentials")
+        config.userContentController.add(coordinator, name: "doerLoginCredentials")
         wv.navigationDelegate = coordinator
         wv.uiDelegate = coordinator
         wv.allowsBackForwardNavigationGestures = true
@@ -186,11 +186,11 @@ final class WebLoginViewController: UIViewController {
                 pass.dispatchEvent(new Event('input', {bubbles:true}));
               }
               const button = document.getElementById('login-button');
-              if (button && !button.dataset.dexoCredentialHook) {
-                button.dataset.dexoCredentialHook = '1';
+              if (button && !button.dataset.doerCredentialHook) {
+                button.dataset.doerCredentialHook = '1';
                 button.addEventListener('click', function() {
                   if (user.value && pass.value) {
-                    window.webkit.messageHandlers.dexoLoginCredentials.postMessage({username:user.value,password:pass.value});
+                    window.webkit.messageHandlers.doerLoginCredentials.postMessage({username:user.value,password:pass.value});
                   }
                 }, true);
               }
@@ -288,7 +288,7 @@ final class WebLoginViewController: UIViewController {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "dexoLoginCredentials",
+            guard message.name == "doerLoginCredentials",
                   let body = message.body as? [String: Any],
                   let username = body["username"] as? String, !username.isEmpty,
                   let password = body["password"] as? String, !password.isEmpty else { return }

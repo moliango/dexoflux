@@ -2,7 +2,7 @@ import Foundation
 
 final class MiniProgramStore {
       static let shared = MiniProgramStore()
-    static let catalogDidChangeNotification = Notification.Name("DexoMiniProgramCatalogDidChange")
+    static let catalogDidChangeNotification = Notification.Name("DoerMiniProgramCatalogDidChange")
 
     private static let defaultsKey = "miniProgram.catalog.v1"
     private static let currentVersion = 1

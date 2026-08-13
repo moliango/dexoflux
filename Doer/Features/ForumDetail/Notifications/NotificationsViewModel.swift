@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 @MainActor
-final class NotificationsViewModel: DexoObservableObject {
+final class NotificationsViewModel: DoerObservableObject {
     var notifications: [DiscourseNotification] { coordinator.notifications }
     var unreadCount: Int { coordinator.unreadCount }
     var isLoading: Bool { coordinator.isLoading }

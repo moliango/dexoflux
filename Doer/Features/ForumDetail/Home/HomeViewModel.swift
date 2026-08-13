@@ -49,7 +49,7 @@ private enum TopicAccessState {
 }
 
 @MainActor
-final class HomeViewModel: DexoObservableObject {
+final class HomeViewModel: DoerObservableObject {
     var listMode: HomeListMode = .latest
     var topics: [DiscourseTopicList.Topic] = []
     var incomingTopicIds: [Int] = []

@@ -1,6 +1,6 @@
 import UIKit
 
-private final class TagTopicsViewModel: DexoObservableObject {
+private final class TagTopicsViewModel: DoerObservableObject {
     var topics: [DiscourseTopicList.Topic] = []
     var isLoading = false
     var isLoadingMore = false

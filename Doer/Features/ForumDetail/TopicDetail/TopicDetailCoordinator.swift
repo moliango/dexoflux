@@ -621,7 +621,7 @@ final class TopicDetailCoordinator {
 
     func presentSafari(_ url: URL) {
         guard let host else { return }
-        DexoSafariPresenter.present(
+        DoerSafariPresenter.present(
             url: url,
             from: host,
             api: api,

@@ -909,7 +909,7 @@ final class UserProfileViewController: ObservableViewController {
             openTopic(id: topicId, floor: reply.postNumber)
         case .summaryLink(let link):
             guard let url = URL(string: link.url) else { return }
-            DexoSafariPresenter.present(
+            DoerSafariPresenter.present(
                 url: url,
                 from: self,
                 api: api,
@@ -1161,7 +1161,7 @@ private extension String {
     }
 }
 
-final class UserProfileSkeletonView: DexoSkeletonPlaceholderView {
+final class UserProfileSkeletonView: DoerSkeletonPlaceholderView {
     private var cardSurfaces: [UIView] = []
 
     override init(frame: CGRect) {

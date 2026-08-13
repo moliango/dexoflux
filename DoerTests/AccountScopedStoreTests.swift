@@ -424,8 +424,8 @@ final class AccountScopedStoreTests: XCTestCase {
 @MainActor
 final class ObservableInfrastructureTests: XCTestCase {
     func testObservablePublisherIsScopedToTheChangedInstance() {
-        let first = DexoObservableObject()
-        let second = DexoObservableObject()
+        let first = DoerObservableObject()
+        let second = DoerObservableObject()
         var firstUpdateCount = 0
         var secondUpdateCount = 0
         let firstToken = first.objectWillChange.sink { firstUpdateCount += 1 }
@@ -442,8 +442,8 @@ final class ObservableInfrastructureTests: XCTestCase {
     }
 
     func testObservableViewControllerOnlyUpdatesForRegisteredObjects() {
-        let observed = DexoObservableObject()
-        let unrelated = DexoObservableObject()
+        let observed = DoerObservableObject()
+        let unrelated = DoerObservableObject()
         let controller = TrackingObservableViewController()
         controller.observe(observed)
         controller.observe(observed)
@@ -459,7 +459,7 @@ final class ObservableInfrastructureTests: XCTestCase {
     }
 
     func testObservableViewControllerStopsUpdatingAfterDisappearing() {
-        let observed = DexoObservableObject()
+        let observed = DoerObservableObject()
         let controller = TrackingObservableViewController()
         controller.observe(observed)
         controller.startObserving()
@@ -471,7 +471,7 @@ final class ObservableInfrastructureTests: XCTestCase {
     }
 
     func testNotifyChangedPublishesOnMainThread() async {
-        let observable = DexoObservableObject()
+        let observable = DoerObservableObject()
         let published = expectation(description: "objectWillChange published")
         var publishedOnMainThread = false
         let token = observable.objectWillChange.sink {

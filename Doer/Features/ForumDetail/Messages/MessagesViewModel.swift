@@ -1,6 +1,6 @@
 import Foundation
 
-final class MessagesViewModel: DexoObservableObject {
+final class MessagesViewModel: DoerObservableObject {
     var messages: [DiscourseTopicList.Topic] = []
     var usersById: [Int: DiscourseTopicList.User] = [:]
     var selectedFilter: PrivateMessageFilter = .inbox

@@ -1,5 +1,5 @@
 import Foundation
 
-final class SettingsViewModel: DexoObservableObject {
+final class SettingsViewModel: DoerObservableObject {
     // Reserved for future settings state
 }

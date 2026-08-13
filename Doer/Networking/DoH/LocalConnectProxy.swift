@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 final class LocalConnectProxy {
-    private let queue = DispatchQueue(label: "dexo.doh.connect-proxy")
+    private let queue = DispatchQueue(label: "doer.doh.connect-proxy")
     private let resolver: DohResolver
     private let requestedPort: UInt16
     private var listener: NWListener?
@@ -249,7 +249,7 @@ final class LocalConnectProxy {
             return
         }
 
-        let response = Data("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Dexo-DoH\r\n\r\n".utf8)
+        let response = Data("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Doer-DoH\r\n\r\n".utf8)
         client.send(content: response, completion: .contentProcessed { [weak self, weak client, weak upstream] error in
             guard let self, let client, let upstream else { return }
             if error != nil {

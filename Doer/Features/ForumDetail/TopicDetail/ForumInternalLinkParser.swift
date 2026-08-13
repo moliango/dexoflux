@@ -196,7 +196,7 @@ enum ForumAttachmentDownloader {
 
         let filename = sanitizedFilename(response.suggestedFilename, fallbackURL: url)
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DexoAttachments", isDirectory: true)
+            .appendingPathComponent("DoerAttachments", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent(filename)

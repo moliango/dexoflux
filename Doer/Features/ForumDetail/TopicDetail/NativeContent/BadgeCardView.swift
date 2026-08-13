@@ -93,7 +93,7 @@ struct BadgeCardModel: Equatable {
                 return fallback
             }
         }
-        return UIColor(dexoHex: value) ?? fallback
+        return UIColor(doerHex: value) ?? fallback
     }
 }
 
@@ -384,8 +384,8 @@ private enum BadgeSVGSanitizer {
 
 private extension UIColor {
 
-    convenience init?(dexoHex: String) {
-        var hex = dexoHex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    convenience init?(doerHex: String) {
+        var hex = doerHex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if hex.hasPrefix("#") { hex.removeFirst() }
         guard hex.count == 6 || hex.count == 8 else { return nil }
 

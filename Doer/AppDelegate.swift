@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  dexo
+//  doer
 //
 //  Created by Eilgnaw on 3/21/26.
 //

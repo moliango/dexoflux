@@ -401,7 +401,7 @@ final class TopicDetailViewController: ObservableViewController {
 //        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
 
         // P2: after fling settles, finish progressive bodies + resume GIF.
-        tableView.dexo_onScrollSettled = { [weak self] in
+        tableView.doer_onScrollSettled = { [weak self] in
             self?.finishVisibleCellsAfterScrollSettle()
         }
 
@@ -554,7 +554,7 @@ final class TopicDetailViewController: ObservableViewController {
         // (parsed-only rows / nested order can make that index larger than table rows).
         // Also wait out Diffable mutation / self-sizing beginUpdates to avoid
         // `_visibleRows` vs `_visibleCells` length traps.
-        if !isApplyingPostSnapshot, !tableView.dexo_isMutatingData, let floor = pendingScrollToFloor {
+        if !isApplyingPostSnapshot, !tableView.doer_isMutatingData, let floor = pendingScrollToFloor {
             let streamIndex = floor - 1
             guard streamIndex >= 0, streamIndex < viewModel.allPostIds.count else {
                 pendingScrollToFloor = nil
@@ -636,11 +636,11 @@ final class TopicDetailViewController: ObservableViewController {
 
         // Top loading bar for loading earlier posts
         if viewModel.isLoadingEarlier {
-            DexoMotion.animate(duration: DexoMotion.quick) {
+            DoerMotion.animate(duration: DoerMotion.quick) {
                 self.topLoadingBar.alpha = 1
             }
         } else {
-            DexoMotion.animate(duration: DexoMotion.quick, timingParameters: DexoMotion.easeInCubic) {
+            DoerMotion.animate(duration: DoerMotion.quick, timingParameters: DoerMotion.easeInCubic) {
                 self.topLoadingBar.alpha = 0
             }
         }
@@ -814,9 +814,9 @@ final class TopicDetailViewController: ObservableViewController {
             self.bottomBar.alpha = 1
             self.bottomBar.transform = .identity
         }
-        DexoMotion.animate(
-            duration: DexoMotion.standard,
-            timingParameters: DexoMotion.easeOutCubic,
+        DoerMotion.animate(
+            duration: DoerMotion.standard,
+            timingParameters: DoerMotion.easeOutCubic,
             animations: animations
         )
     }
@@ -1259,7 +1259,7 @@ final class TopicDetailViewController: ObservableViewController {
             )
         case .apply:
             isApplyingPostSnapshot = true
-            tableView.dexo_beginDataMutation()
+            tableView.doer_beginDataMutation()
             if earlierAnchor != nil {
                 earlierLoadAnchor = nil
             }
@@ -1286,7 +1286,7 @@ final class TopicDetailViewController: ObservableViewController {
 
                     self.isApplyingPostSnapshot = false
                     // Ends mutation and flushes any height passes that queued mid-apply.
-                    self.tableView.dexo_endDataMutation()
+                    self.tableView.doer_endDataMutation()
                     if let pending = self.pendingPostSnapshot {
                         self.pendingPostSnapshot = nil
                         self.applyPostSnapshot(

@@ -65,19 +65,19 @@ enum AppSettingsRuntimeCache {
            let name = snap.globalFontPostScriptName,
            !name.isEmpty,
            let font = UIFont(name: name, size: scaled) {
-            return font.applying(weight: weight).dexoMarkAppFontSourcePointSize(pointSize)
+            return font.applying(weight: weight).doerMarkAppFontSourcePointSize(pointSize)
         }
-        return UIFont.dexoOriginalSystemFont(ofSize: scaled, weight: weight)
-            .dexoMarkAppFontSourcePointSize(pointSize)
+        return UIFont.doerOriginalSystemFont(ofSize: scaled, weight: weight)
+            .doerMarkAppFontSourcePointSize(pointSize)
     }
 
     nonisolated static func interfaceFont(matching font: UIFont) -> UIFont {
         guard !font.fontDescriptor.symbolicTraits.contains(.traitMonoSpace) else {
             return font
         }
-        let sourcePointSize = font.dexoAppFontSourcePointSize ?? font.pointSize
+        let sourcePointSize = font.doerAppFontSourcePointSize ?? font.pointSize
         let pointSize = max(sourcePointSize * interfaceFontScaleMultiplier, 1)
-        let weight = font.dexoDetectedWeight
+        let weight = font.doerDetectedWeight
         let traits = font.fontDescriptor.symbolicTraits
         let snap = current
         let baseFont: UIFont
@@ -87,21 +87,21 @@ enum AppSettingsRuntimeCache {
            let custom = UIFont(name: name, size: pointSize) {
             baseFont = custom.applying(weight: weight)
         } else {
-            baseFont = UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
+            baseFont = UIFont.doerOriginalSystemFont(ofSize: pointSize, weight: weight)
         }
         guard traits.contains(.traitItalic),
               let descriptor = baseFont.fontDescriptor.withSymbolicTraits(
                 baseFont.fontDescriptor.symbolicTraits.union(.traitItalic)
               )
         else {
-            return baseFont.dexoMarkAppFontSourcePointSize(sourcePointSize)
+            return baseFont.doerMarkAppFontSourcePointSize(sourcePointSize)
         }
         return UIFont(descriptor: descriptor, size: pointSize)
-            .dexoMarkAppFontSourcePointSize(sourcePointSize)
+            .doerMarkAppFontSourcePointSize(sourcePointSize)
     }
 }
 
-final class AppSettings: DexoObservableObject {
+final class AppSettings: DoerObservableObject {
     /// Font swizzles read this without touching `shared` during singleton creation.
     nonisolated(unsafe) private static var isCreatingShared = false
     nonisolated(unsafe) private static var sharedInstanceHint: AppSettings?

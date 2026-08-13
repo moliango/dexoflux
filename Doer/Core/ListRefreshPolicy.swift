@@ -1,8 +1,8 @@
 import UIKit
 
-final class DexoListRefreshPolicy: NSObject {
+final class DoerListRefreshPolicy: NSObject {
     private weak var tableView: UITableView?
-    private let viewModel: DexoObservableObject
+    private let viewModel: DoerObservableObject
     private var isRefreshing = false
     private var isLoadingMore = false
     private var refreshTask: Task<Void, Never>?
@@ -12,7 +12,7 @@ final class DexoListRefreshPolicy: NSObject {
 
     init(
         tableView: UITableView,
-        viewModel: DexoObservableObject,
+        viewModel: DoerObservableObject,
         onRefresh: @escaping () async -> Void,
         onLoadMore: @escaping () async -> Void
     ) {
@@ -25,7 +25,7 @@ final class DexoListRefreshPolicy: NSObject {
     /// Convenience for call sites that still pass fire-and-forget closures.
     convenience init(
         tableView: UITableView,
-        viewModel: DexoObservableObject,
+        viewModel: DoerObservableObject,
         onRefresh: @escaping () -> Void,
         onLoadMore: @escaping () -> Void
     ) {

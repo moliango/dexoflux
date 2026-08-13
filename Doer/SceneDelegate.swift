@@ -1,6 +1,6 @@
 import UIKit
 
-enum DexoLaunchAppearance {
+enum DoerLaunchAppearance {
     static let backgroundColorName = "LaunchBackground"
     static let backgroundColor = UIColor(named: backgroundColorName)
         ?? UIColor(red: 0.946, green: 0.944, blue: 0.922, alpha: 1)
@@ -14,7 +14,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         let window = UIWindow(windowScene: windowScene)
         self.window = window
-        window.backgroundColor = DexoLaunchAppearance.backgroundColor
+        window.backgroundColor = DoerLaunchAppearance.backgroundColor
         AppSettings.shared.applyAppearance()
         let defaultForum = DatabaseManager.shared.defaultForum()
         DohDebugLog.record(
@@ -54,10 +54,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func handleIncomingURL(_ url: URL) {
         let baseURL = DatabaseManager.shared.defaultForum().baseURL
-        _ = DexoDeepLinkRouter.handle(url, defaultBaseURL: baseURL)
+        _ = DoerDeepLinkRouter.handle(url, defaultBaseURL: baseURL)
         if let window {
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
-            DexoInAppRoutePresenter.presentPendingIfNeeded(in: window)
+            DoerInAppRoutePresenter.presentPendingIfNeeded(in: window)
         }
     }
 
@@ -78,7 +78,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 container.presentClipboardTopicLinkIfNeeded()
                 container.presentPendingInAppRouteIfNeeded()
             }
-            DexoInAppRoutePresenter.presentPendingIfNeeded(in: window)
+            DoerInAppRoutePresenter.presentPendingIfNeeded(in: window)
         }
     }
     func sceneWillResignActive(_ scene: UIScene) {}

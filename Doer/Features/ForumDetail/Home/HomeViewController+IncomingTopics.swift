@@ -275,8 +275,8 @@ extension HomeViewController {
             return
         }
 
-        DexoMotion.animate(
-            duration: DexoMotion.quick,
+        DoerMotion.animate(
+            duration: DoerMotion.quick,
             animations: updates
         ) { _ in
             completion(true)
@@ -290,7 +290,7 @@ extension HomeViewController {
         incomingTopicsInlineButton.setFloating(false)
 
         guard animated else { return }
-        DexoMotion.animate(duration: DexoMotion.quick) {
+        DoerMotion.animate(duration: DoerMotion.quick) {
             self.view.layoutIfNeeded()
         }
     }

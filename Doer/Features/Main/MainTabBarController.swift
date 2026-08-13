@@ -8,8 +8,8 @@ final class MainTabBarController: UITabBarController {
         let forumListNav = UINavigationController(rootViewController: forumListVC)
         forumListNav.tabBarItem = UITabBarItem(
             title: String(localized: "tab.forums"),
-            image: DexoTabBarIconStyle.image(named: "list.bullet.circle.fill", selected: false),
-            selectedImage: DexoTabBarIconStyle.image(named: "list.bullet.circle.fill", selected: true)
+            image: DoerTabBarIconStyle.image(named: "list.bullet.circle.fill", selected: false),
+            selectedImage: DoerTabBarIconStyle.image(named: "list.bullet.circle.fill", selected: true)
         )
         forumListNav.tabBarItem.tag = 0
 
@@ -17,8 +17,8 @@ final class MainTabBarController: UITabBarController {
         let settingsNav = UINavigationController(rootViewController: settingsVC)
         settingsNav.tabBarItem = UITabBarItem(
             title: String(localized: "tab.settings"),
-            image: DexoTabBarIconStyle.image(named: "gearshape.fill", selected: false),
-            selectedImage: DexoTabBarIconStyle.image(named: "gearshape.fill", selected: true)
+            image: DoerTabBarIconStyle.image(named: "gearshape.fill", selected: false),
+            selectedImage: DoerTabBarIconStyle.image(named: "gearshape.fill", selected: true)
         )
         settingsNav.tabBarItem.tag = 1
 

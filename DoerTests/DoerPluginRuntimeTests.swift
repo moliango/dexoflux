@@ -2,7 +2,7 @@ import XCTest
 @testable import Doer
 
 @MainActor
-final class DexoPluginRuntimeTests: XCTestCase {
+final class DoerPluginRuntimeTests: XCTestCase {
     func testBuiltInPluginsExposeStableIdentifiersAndAreEnabledByDefault() async throws {
         let defaults = makeDefaults()
         let store = PluginStateStore(defaults: defaults)
@@ -204,7 +204,7 @@ final class DexoPluginRuntimeTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "DexoPluginRuntimeTests.\(UUID().uuidString)"
+        let suiteName = "DoerPluginRuntimeTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults

@@ -286,7 +286,7 @@ final class Base64ToolViewController: UIViewController, UITextViewDelegate {
             return
         }
         UIPasteboard.general.string = text
-        DexoFeedback.presentToast(
+        DoerFeedback.presentToast(
             String(localized: "toolbox.base64.status.copied", defaultValue: "已复制结果"),
             on: self
         )

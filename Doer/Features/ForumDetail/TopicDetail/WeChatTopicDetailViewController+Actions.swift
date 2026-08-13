@@ -45,7 +45,7 @@ extension WeChatTopicDetailViewController {
             isFilteringTopLevel: viewModel.isFilteringTopLevel,
             isNestedViewEnabled: viewModel.isNestedViewEnabled,
             canEdit: topic?.canEdit == true,
-            showExport: DexoPluginRuntime.shared.registry.isPluginEnabled(
+            showExport: DoerPluginRuntime.shared.registry.isPluginEnabled(
                 BuiltInPluginID.topicExport,
                 for: pluginScope
             ),
@@ -139,13 +139,13 @@ extension WeChatTopicDetailViewController {
                 guard let self else { return }
                 do {
                     try await self.api.unassignTopic(topicId: self.topicId)
-                    DexoFeedback.presentToast(
+                    DoerFeedback.presentToast(
                         String(localized: "topic.assign.clear.done", defaultValue: "已取消指定"),
                         on: self
                     )
                     await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             }
         case .toMe:
@@ -154,13 +154,13 @@ extension WeChatTopicDetailViewController {
                 guard let self else { return }
                 do {
                     try await self.api.assignTopic(topicId: self.topicId, username: me)
-                    DexoFeedback.presentToast(
+                    DoerFeedback.presentToast(
                         String(localized: "topic.assign.to_me.done", defaultValue: "已指定给你"),
                         on: self
                     )
                     await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
                 } catch {
-                    DexoFeedback.presentToast(error.localizedDescription, on: self)
+                    DoerFeedback.presentToast(error.localizedDescription, on: self)
                 }
             }
         case .pickUser:
@@ -185,13 +185,13 @@ extension WeChatTopicDetailViewController {
                 Task { @MainActor in
                     do {
                         try await self.api.assignTopic(topicId: self.topicId, username: name)
-                        DexoFeedback.presentToast(
+                        DoerFeedback.presentToast(
                             String(localized: "topic.assign.to_me.done", defaultValue: "已指定"),
                             on: self
                         )
                         await self.viewModel.loadTopic(id: self.topicId, containerWidth: width)
                     } catch {
-                        DexoFeedback.presentToast(error.localizedDescription, on: self)
+                        DoerFeedback.presentToast(error.localizedDescription, on: self)
                     }
                 }
             })
@@ -216,7 +216,7 @@ extension WeChatTopicDetailViewController {
                 serverLastRead: server
             )
             lastReadPostNumber = next > 0 ? next : nil
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "topic.mark_unread.step_back.done", defaultValue: "已回退一层阅读进度"),
                 on: self
             )
@@ -227,7 +227,7 @@ extension WeChatTopicDetailViewController {
                 username: username
             )
             lastReadPostNumber = nil
-            DexoFeedback.presentToast(
+            DoerFeedback.presentToast(
                 String(localized: "topic.mark_unread.clear.done", defaultValue: "已清空阅读进度"),
                 on: self
             )

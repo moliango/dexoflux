@@ -1,6 +1,6 @@
 import Foundation
 
-final class UserProfileViewModel: DexoObservableObject {
+final class UserProfileViewModel: DoerObservableObject {
     var userProfile: DiscourseUserProfile?
     var userCard: DiscourseUserProfile?
     var summary: DiscourseUserSummary?

@@ -33,7 +33,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     private var cloudflareShieldButtonConstraints: [NSLayoutConstraint] = []
     private weak var cloudflareShieldButtonHostView: UIView?
 
-    private let launchLoadingView = DexoLaunchLoadingView()
+    private let launchLoadingView = DoerLaunchLoadingView()
     private var tabBarViewController: ForumTabBarController?
 
     private let authSyncOverlayView: UIView = {
@@ -126,7 +126,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = DexoLaunchAppearance.backgroundColor
+        view.backgroundColor = DoerLaunchAppearance.backgroundColor
         DohDebugLog.record("forum container viewDidLoad base=\(forum.baseURL)", subsystem: "Launch")
 
         authManager.restoreAuthState(for: forum)
@@ -316,15 +316,15 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     }
 
     func presentPendingInAppRouteIfNeeded() {
-        guard let route = DexoInAppRouteStore.shared.consume() else { return }
+        guard let route = DoerInAppRouteStore.shared.consume() else { return }
         handleInAppRoute(route)
     }
 
-    func handleInAppRoute(_ route: DexoInAppRoute) {
+    func handleInAppRoute(_ route: DoerInAppRoute) {
         switch route {
         case .readLater:
             guard let tabBarViewController else {
-                DexoInAppRouteStore.shared.enqueue(route)
+                DoerInAppRouteStore.shared.enqueue(route)
                 return
             }
             // Me tab is always last in current tab builder.
@@ -864,8 +864,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             return
         }
 
-        DexoMotion.animate(
-            duration: DexoMotion.quick,
+        DoerMotion.animate(
+            duration: DoerMotion.quick,
             animations: updates
         ) { _ in
             completion(true)

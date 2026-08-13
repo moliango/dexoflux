@@ -904,7 +904,7 @@ final class PluginCenterViewController: UIViewController {
     }
 
     private func presentFetchingLogoHUD() {
-        DexoFeedback.presentLoadingHUD(
+        DoerFeedback.presentLoadingHUD(
             String(localized: "mini_program.logo.fetching", defaultValue: "正在获取 Logo…"),
             on: self
         )
@@ -912,7 +912,7 @@ final class PluginCenterViewController: UIViewController {
 
     @MainActor
     private func dismissFetchingLogoHUD() async {
-        DexoFeedback.dismissLoadingHUD(on: self)
+        DoerFeedback.dismissLoadingHUD(on: self)
         // Brief yield so UI can settle before the next alert.
         try? await Task.sleep(nanoseconds: 50_000_000)
     }

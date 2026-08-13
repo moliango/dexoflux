@@ -45,9 +45,9 @@ extension HomeViewController {
         }
 
         if animated && !UIAccessibility.isReduceMotionEnabled {
-            DexoMotion.animate(
-                duration: DexoMotion.quick,
-                timingParameters: shouldShow ? DexoMotion.easeOutCubic : DexoMotion.easeInCubic,
+            DoerMotion.animate(
+                duration: DoerMotion.quick,
+                timingParameters: shouldShow ? DoerMotion.easeOutCubic : DoerMotion.easeInCubic,
                 animations: updates
             ) { _ in completion() }
         } else {
@@ -103,7 +103,7 @@ extension HomeViewController {
         if animated {
             UIView.transition(
                 with: floatingActionButton,
-                duration: DexoMotion.quick,
+                duration: DoerMotion.quick,
                 options: [.transitionCrossDissolve, .beginFromCurrentState],
                 animations: updates
             )

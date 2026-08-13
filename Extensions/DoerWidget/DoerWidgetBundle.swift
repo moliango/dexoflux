@@ -2,18 +2,19 @@ import SwiftUI
 import WidgetKit
 
 @main
-struct DexoWidgetBundle: WidgetBundle {
+struct DoerWidgetBundle: WidgetBundle {
     var body: some Widget {
-        DexoQuickActionsWidget()
+        DoerQuickActionsWidget()
     }
 }
 
-struct DexoQuickActionsWidget: Widget {
+struct DoerQuickActionsWidget: Widget {
+    // Keep the installed widget kind so existing home-screen widgets survive the rebrand.
     let kind = "DexoQuickActionsWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            DexoQuickActionsView(entry: entry)
+            DoerQuickActionsView(entry: entry)
                 .widgetURL(URL(string: "doer://read-later"))
         }
         .configurationDisplayName(String(localized: "widget.quick.title", defaultValue: "Doer 快捷入口"))
@@ -41,7 +42,7 @@ struct SimpleEntry: TimelineEntry {
     let date: Date
 }
 
-struct DexoQuickActionsView: View {
+struct DoerQuickActionsView: View {
     var entry: Provider.Entry
 
     var body: some View {

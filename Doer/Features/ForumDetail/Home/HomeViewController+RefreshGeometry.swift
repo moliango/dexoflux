@@ -52,7 +52,7 @@ extension HomeViewController {
         }
 
         if animated {
-            DexoMotion.animate(duration: DexoMotion.quick, animations: updates)
+            DoerMotion.animate(duration: DoerMotion.quick, animations: updates)
         } else {
             updates()
         }

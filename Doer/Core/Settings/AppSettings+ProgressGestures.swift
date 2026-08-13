@@ -346,7 +346,7 @@ extension AppSettings {
         guard let fontName = activeFontName(for: contentFontFamily),
               let font = UIFont(name: fontName, size: pointSize)
         else {
-            return UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
+            return UIFont.doerOriginalSystemFont(ofSize: pointSize, weight: weight)
         }
         return font.applying(weight: weight)
     }
@@ -401,7 +401,7 @@ extension AppSettings {
     }
 
     func installGlobalFontSupport() {
-        UIFont.installDexoAppFontOverride()
+        UIFont.installDoerAppFontOverride()
         refreshVisibleAppFonts()
     }
 
@@ -410,10 +410,10 @@ extension AppSettings {
         guard let fontName = activeGlobalAppFontName(),
               let font = UIFont(name: fontName, size: scaledPointSize)
         else {
-            return UIFont.dexoOriginalSystemFont(ofSize: scaledPointSize, weight: weight)
-                .dexoMarkAppFontSourcePointSize(pointSize)
+            return UIFont.doerOriginalSystemFont(ofSize: scaledPointSize, weight: weight)
+                .doerMarkAppFontSourcePointSize(pointSize)
         }
-        return font.applying(weight: weight).dexoMarkAppFontSourcePointSize(pointSize)
+        return font.applying(weight: weight).doerMarkAppFontSourcePointSize(pointSize)
     }
 
     func appInterfaceFont(matching font: UIFont) -> UIFont {
@@ -421,28 +421,28 @@ extension AppSettings {
             return font
         }
 
-        let sourcePointSize = font.dexoAppFontSourcePointSize ?? font.pointSize
+        let sourcePointSize = font.doerAppFontSourcePointSize ?? font.pointSize
         let pointSize = scaledInterfacePointSize(for: sourcePointSize)
-        let weight = font.dexoDetectedWeight
+        let weight = font.doerDetectedWeight
         let traits = font.fontDescriptor.symbolicTraits
         let baseFont: UIFont
         if let fontName = activeGlobalAppFontName(),
            let customFont = UIFont(name: fontName, size: pointSize) {
             baseFont = customFont.applying(weight: weight)
         } else {
-            baseFont = UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
+            baseFont = UIFont.doerOriginalSystemFont(ofSize: pointSize, weight: weight)
         }
 
         guard traits.contains(.traitItalic),
               let descriptor = baseFont.fontDescriptor.withSymbolicTraits(baseFont.fontDescriptor.symbolicTraits.union(.traitItalic))
         else {
-            return baseFont.dexoMarkAppFontSourcePointSize(sourcePointSize)
+            return baseFont.doerMarkAppFontSourcePointSize(sourcePointSize)
         }
-        return UIFont(descriptor: descriptor, size: pointSize).dexoMarkAppFontSourcePointSize(sourcePointSize)
+        return UIFont(descriptor: descriptor, size: pointSize).doerMarkAppFontSourcePointSize(sourcePointSize)
     }
 
     func tabBarItemFont(selected: Bool) -> UIFont {
-        UIFont.dexoOriginalSystemFont(ofSize: 10, weight: selected ? .semibold : .regular)
+        UIFont.doerOriginalSystemFont(ofSize: 10, weight: selected ? .semibold : .regular)
     }
 
     func activeGlobalAppFontName() -> String? {
@@ -529,13 +529,13 @@ extension AppSettings {
         currentFont: UIFont,
         previousInterfaceFontScaleMultiplier: CGFloat
     ) -> UIFont {
-        if let baseFont = view.dexoBaseInterfaceFont {
+        if let baseFont = view.doerBaseInterfaceFont {
             return baseFont
         }
         let safePreviousMultiplier = max(previousInterfaceFontScaleMultiplier, 0.01)
-        let sourcePointSize = currentFont.dexoAppFontSourcePointSize ?? (currentFont.pointSize / safePreviousMultiplier)
+        let sourcePointSize = currentFont.doerAppFontSourcePointSize ?? (currentFont.pointSize / safePreviousMultiplier)
         let baseFont = UIFont(descriptor: currentFont.fontDescriptor, size: sourcePointSize)
-        view.dexoBaseInterfaceFont = baseFont
+        view.doerBaseInterfaceFont = baseFont
         return baseFont
     }
 
