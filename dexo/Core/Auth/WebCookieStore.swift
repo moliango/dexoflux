@@ -184,8 +184,14 @@ final class WebCookieStore {
         let webViewCookies = await withCheckedContinuation { cont in
             dataStore.httpCookieStore.getAllCookies { cont.resume(returning: $0) }
         }
+        let now = Date()
         let cookies = webViewCookies.filter { cookie in
             if let names, !names.contains(cookie.name) {
+                return false
+            }
+            // Skip expired leftovers from WK — applying them would delete still-valid jar
+            // sessions via isDeletionCookie. Explicit empty-value deletions still flow through.
+            if Self.isExpired(cookie, now: now) {
                 return false
             }
             guard let url, let host = url.host?.lowercased() else {
@@ -200,7 +206,7 @@ final class WebCookieStore {
     func syncToWebView(_ dataStore: WKWebsiteDataStore, for url: URL) async {
         guard let host = url.host?.lowercased() else { return }
         await injectCookies(
-            siteCookies(forHost: host),
+            siteCookiesForInjection(forHost: host),
             into: dataStore,
             replacingAuthOnHost: host
         )
@@ -211,7 +217,7 @@ final class WebCookieStore {
     @MainActor
     func syncSiteSession(to dataStore: WKWebsiteDataStore, siteURL: URL) async {
         guard let host = siteURL.host?.lowercased() else { return }
-        let cookies = siteCookies(forHost: host)
+        let cookies = siteCookiesForInjection(forHost: host)
         await injectCookies(cookies, into: dataStore, replacingAuthOnHost: host)
         if !cookies.isEmpty {
             DohDebugLog.record(
@@ -221,8 +227,71 @@ final class WebCookieStore {
         }
     }
 
-    /// All non-expired cookies applicable to `host` or its registrable root (e.g. linux.do).
+    /// Prime WK with the forum login jar **and** any host-specific cookies for `pageURL`.
+    /// Always installs the forum apex session first so `linux.do` SSO / topic pages stay signed in
+    /// even when the first navigation targets a subdomain mini-program.
+    ///
+    /// Only pushes jar → WK (does not pull WK → jar first). Pulling first is unsafe: an expired
+    /// leftover `_t` in WK would be treated as a deletion cookie and wipe a still-valid jar session.
+    @MainActor
+    func primeBrowserSession(
+        to dataStore: WKWebsiteDataStore,
+        forumURL: URL,
+        pageURL: URL?
+    ) async {
+        await syncSiteSession(to: dataStore, siteURL: forumURL)
+        if let pageURL, let pageHost = pageURL.host?.lowercased(),
+           pageHost != forumURL.host?.lowercased() {
+            await syncSiteSession(to: dataStore, siteURL: pageURL)
+        }
+    }
+
+    /// Cookies suitable for an outgoing HTTP request to `host` (auth cookies stay host-only).
     func siteCookies(forHost host: String) -> [HTTPCookie] {
+        let normalizedHost = host.lowercased()
+        let matched = rawSiteCookies(forHost: normalizedHost)
+        return Self.selectCookiesForRequest(matched, host: normalizedHost)
+    }
+
+    /// Cookies to install into `WKHTTPCookieStore`.
+    /// Keeps parent-domain auth cookies (e.g. `_t` on `linux.do`) even when priming a
+    /// subdomain page, so later SSO redirects to the apex host remain logged in.
+    func siteCookiesForInjection(forHost host: String) -> [HTTPCookie] {
+        let normalizedHost = host.lowercased()
+        let matched = rawSiteCookies(forHost: normalizedHost)
+        return Self.selectCookiesForInjection(matched, host: normalizedHost)
+    }
+
+    /// Ensure session cookies carry an Expires date so WK does not treat a re-injected
+    /// login cookie as ephemeral and drop it before the first navigation commits.
+    static func webKitReadyCookie(from cookie: HTTPCookie) -> HTTPCookie {
+        if cookie.expiresDate != nil {
+            return cookie
+        }
+        var props: [HTTPCookiePropertyKey: Any] = [
+            .name: cookie.name,
+            .value: cookie.value,
+            .domain: cookie.domain,
+            .path: cookie.path.isEmpty ? "/" : cookie.path,
+            .expires: Date().addingTimeInterval(60 * 60 * 24 * 180),
+        ]
+        if cookie.isSecure {
+            props[.secure] = "TRUE"
+        }
+        if cookie.isHTTPOnly {
+            props[httpOnlyKey] = "TRUE"
+        }
+        if cookie.version > 0 {
+            props[.version] = cookie.version
+        }
+        let sourceProps = cookie.properties ?? [:]
+        if let sameSite = sourceProps[sameSitePolicyKey] ?? sourceProps[sameSiteKey] {
+            props[sameSitePolicyKey] = sameSite
+        }
+        return HTTPCookie(properties: props) ?? cookie
+    }
+
+    private func rawSiteCookies(forHost host: String) -> [HTTPCookie] {
         let normalizedHost = host.lowercased()
         let root = Self.siteRootDomain(normalizedHost)
         lock.lock()
@@ -237,8 +306,7 @@ final class WebCookieStore {
         if !expiredKeys.isEmpty {
             save()
         }
-        // Prefer the best variant per name for this host (same selection as request cookies).
-        return Self.selectCookiesForRequest(matched, host: normalizedHost)
+        return matched
     }
 
     @MainActor
@@ -248,8 +316,9 @@ final class WebCookieStore {
         replacingAuthOnHost host: String
     ) async {
         let cookieStore = dataStore.httpCookieStore
+        let prepared = cookies.map(Self.webKitReadyCookie(from:))
         let authCookieNames = Set(
-            cookies.filter { Self.isAuthCookieName($0.name) }.map(\.name)
+            prepared.filter { Self.isAuthCookieName($0.name) }.map(\.name)
         )
 
         if !authCookieNames.isEmpty {
@@ -272,15 +341,22 @@ final class WebCookieStore {
             }
         }
 
-        for cookie in cookies {
+        for cookie in prepared {
             await withCheckedContinuation { continuation in
                 cookieStore.setCookie(cookie) {
                     continuation.resume()
                 }
             }
         }
-        if !cookies.isEmpty {
-            DohDebugLog.record("primed WebView cookies: \(Self.cookieSummary(cookies))", subsystem: "Auth")
+        // Round-trip getAllCookies so WebKit commits the jar before the next navigation.
+        // Without this, the first document request can race and go out logged-out.
+        if !prepared.isEmpty {
+            _ = await withCheckedContinuation { continuation in
+                cookieStore.getAllCookies { cookies in
+                    continuation.resume(returning: cookies)
+                }
+            }
+            DohDebugLog.record("primed WebView cookies: \(Self.cookieSummary(prepared))", subsystem: "Auth")
         }
     }
 
@@ -657,6 +733,7 @@ private extension WebCookieStore {
 
         var selected: [String: HTTPCookie] = [:]
         for cookie in sorted {
+            // Request path: never attach apex auth cookies to a subdomain request.
             if isAuthCookieName(cookie.name), normalizedDomain(cookie.domain) != host {
                 continue
             }
@@ -679,6 +756,31 @@ private extension WebCookieStore {
                 return lhsPathLength > rhsPathLength
             }
             return compareCookies(lhs, rhs, host: host) > 0
+        }
+    }
+
+    /// Deduplicate cookies for WK injection while **keeping** parent-domain auth cookies.
+    /// Keyed by name|domain|path so `linux.do` `_t` coexists with any subdomain session cookie.
+    static func selectCookiesForInjection(_ cookies: [HTTPCookie], host: String) -> [HTTPCookie] {
+        let sorted = cookies.sorted { lhs, rhs in
+            compareCookies(lhs, rhs, host: host) > 0
+        }
+        var selected: [String: HTTPCookie] = [:]
+        for cookie in sorted {
+            let domain = normalizedDomain(cookie.domain)
+            let path = cookie.path.isEmpty ? "/" : cookie.path
+            let key = "\(cookie.name)|\(domain)|\(path)"
+            guard let existing = selected[key] else {
+                selected[key] = cookie
+                continue
+            }
+            if compareCookies(cookie, existing, host: host) > 0 {
+                selected[key] = cookie
+            }
+        }
+        return selected.values.sorted { lhs, rhs in
+            if lhs.name != rhs.name { return lhs.name < rhs.name }
+            return normalizedDomain(lhs.domain) < normalizedDomain(rhs.domain)
         }
     }
 

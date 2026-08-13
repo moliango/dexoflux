@@ -96,10 +96,15 @@ final class WebSessionRefreshService: NSObject {
         DohDebugLog.record("web session refresh started reason=\(reason)", subsystem: "Auth")
 
         let dataStore = WKWebsiteDataStore.default()
-        await WebCookieStore.shared.syncToWebView(dataStore, for: baseURL)
+        await WebCookieStore.shared.primeBrowserSession(
+            to: dataStore,
+            forumURL: baseURL,
+            pageURL: baseURL
+        )
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
+        configuration.processPool = InAppBrowserWebKitRuntime.processPool
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: configuration)

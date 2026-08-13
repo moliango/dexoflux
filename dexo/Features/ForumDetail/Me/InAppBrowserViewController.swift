@@ -359,14 +359,13 @@ final class InAppBrowserViewController: UIViewController {
             titleLabel.trailingAnchor.constraint(equalTo: titleCapsule.trailingAnchor, constant: -10),
             titleLabel.centerYAnchor.constraint(equalTo: titleCapsule.centerYAnchor),
         ])
-        // 标题胶囊吃掉中间空间
         titleCapsule.setContentHuggingPriority(.defaultLow, for: .horizontal)
         titleCapsule.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
 
     private func updateTitleCapsule() {
         let pageTitle = (webView.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !pageTitle.isEmpty {
+        if !pageTitle.isEmpty, pageTitle.count < 40 {
             titleLabel.text = pageTitle
         } else if let host = webView.url?.host, !host.isEmpty {
             titleLabel.text = host
@@ -387,16 +386,13 @@ final class InAppBrowserViewController: UIViewController {
         try? store.recordVisit(url: normalizedURL, title: webView.title ?? normalizedURL.host)
 
         let dataStore = webView.configuration.websiteDataStore
-        // 1) 注入当前论坛登录态（linux.do 的 _t / _forum_session / cf_clearance 等），
-        //    让小程序 / 内置浏览器打开 linux.do 相关页时不必二次登录。
-        await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: baseURL)
-        guard !isTornDown else { return }
-        // 2) 若目标站与论坛不同域，再注入该站自己的 Cookie。
-        let forumHost = baseURL.host?.lowercased()
-        let pageHost = normalizedURL.host?.lowercased()
-        if let pageHost, pageHost != forumHost {
-            await WebCookieStore.shared.syncSiteSession(to: dataStore, siteURL: normalizedURL)
-        }
+        // Push the app's durable Discourse session into WK before the first navigation
+        // (forum apex + optional page host), then flush so the document request is signed in.
+        await WebCookieStore.shared.primeBrowserSession(
+            to: dataStore,
+            forumURL: baseURL,
+            pageURL: normalizedURL
+        )
         // After awaits the host may have closed the mini-program (common offline).
         guard !isTornDown, isViewLoaded else { return }
 
@@ -419,14 +415,13 @@ final class InAppBrowserViewController: UIViewController {
         updateControlState()
     }
 
-
     private func updateControlState() {
         backButton.isEnabled = webView.canGoBack
         forwardButton.isEnabled = webView.canGoForward
         let reloadName = webView.isLoading ? "xmark" : "arrow.clockwise"
-        reloadButton.setImage(
-            UIImage(systemName: reloadName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)),
-            for: .normal
+        reloadButton.configuration?.image = UIImage(
+            systemName: reloadName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         )
         updateTitleCapsule()
     }
@@ -532,18 +527,30 @@ final class InAppBrowserViewController: UIViewController {
     }
 
     @objc private func bookmarkTapped() {
-        guard let url = webView.url else { return }
+        guard let url = webView.url ?? initialURL else {
+            DexoFeedback.presentToast(
+                String(localized: "mini_program.bookmark.unavailable", defaultValue: "当前页无法收藏"),
+                on: self
+            )
+            return
+        }
         do {
             if store.isBookmarked(url) {
                 try store.removeBookmark(url: url)
-                showMessage(String(localized: "me.browser.bookmark_removed", defaultValue: "已取消收藏"))
+                DexoFeedback.presentToast(
+                    String(localized: "me.browser.bookmark_removed", defaultValue: "已取消收藏"),
+                    on: self
+                )
             } else {
                 try store.addBookmark(url: url, title: webView.title)
-                showMessage(String(localized: "me.browser.bookmark_added", defaultValue: "已收藏"))
+                DexoFeedback.presentToast(
+                    String(localized: "me.browser.bookmark_added", defaultValue: "已收藏"),
+                    on: self
+                )
             }
             updateControlState()
         } catch {
-            showMessage(error.localizedDescription)
+            DexoFeedback.presentToast(error.localizedDescription, on: self)
         }
     }
 

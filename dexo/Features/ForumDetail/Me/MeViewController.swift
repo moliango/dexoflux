@@ -1,4 +1,3 @@
-import SafariServices
 import SDWebImage
 import UIKit
 
@@ -868,8 +867,12 @@ final class MeViewController: ObservableViewController {
             showInfoAlert(String(localized: "me.web.open_error"))
             return
         }
-        let safari = SFSafariViewController(url: url)
-        present(safari, animated: true)
+        DexoSafariPresenter.present(
+            url: url,
+            from: self,
+            api: api,
+            username: viewModel.currentUser?.username ?? authGate?.currentUsername()
+        )
     }
 
     private func showInfoAlert(_ message: String) {

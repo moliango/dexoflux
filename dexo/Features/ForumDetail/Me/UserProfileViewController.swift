@@ -909,7 +909,12 @@ final class UserProfileViewController: ObservableViewController {
             openTopic(id: topicId, floor: reply.postNumber)
         case .summaryLink(let link):
             guard let url = URL(string: link.url) else { return }
-            UIApplication.shared.open(url)
+            DexoSafariPresenter.present(
+                url: url,
+                from: self,
+                api: api,
+                username: AuthManager.shared.username(for: api.baseURL)
+            )
         case .summaryUser(_, let user):
             guard !user.username.isEmpty else { return }
             navigationController?.pushViewController(

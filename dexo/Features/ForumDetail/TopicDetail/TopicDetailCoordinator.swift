@@ -1,5 +1,4 @@
 import UIKit
-import SafariServices
 
 /// TopicDetail lifecycle / navigation / observers / actions Coordinator.
 /// Host VC keeps view setup, data source, and layout; actions & observers live here.
@@ -479,7 +478,7 @@ final class TopicDetailCoordinator {
         }()
         let avatarURL = AvatarImageLoader.url(from: post.avatarTemplate, baseURL: baseURL, size: 120)
         let hostName = URL(string: baseURL)?.host?.lowercased() ?? ""
-        let brandName = hostName.contains("linux.do") ? "LINUX DO" : "DexoFlux"
+        let brandName = hostName.contains("linux.do") ? "LINUX DO" : "Doer"
         let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let shareURL = "\(trimmedBase)/t/\(topicId)/\(post.postNumber)"
 
@@ -615,11 +614,12 @@ final class TopicDetailCoordinator {
 
     func presentSafari(_ url: URL) {
         guard let host else { return }
-        guard AppSettings.shared.openExternalLinksInAppBrowser else {
-            UIApplication.shared.open(url)
-            return
-        }
-        host.present(SFSafariViewController(url: url), animated: true)
+        DexoSafariPresenter.present(
+            url: url,
+            from: host,
+            api: api,
+            username: AuthManager.shared.username(for: api.baseURL)
+        )
     }
 
     func setNotificationLevel(_ level: DiscourseTopicDetail.NotificationLevel) {
