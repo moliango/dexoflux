@@ -16,10 +16,7 @@ final class PostNativeCell: UITableViewCell {
     static let actionIconPointSize: CGFloat = 12
     static let actionIconCanvasSize = CGSize(width: 22, height: 22)
     static var boostIconImage: UIImage {
-        // 微信和 Telegram 主题使用系统图标，其他主题使用火箭图标
-        let theme = AppSettings.shared.themeStyle
-        let useSystemIcon = theme == .weChat || theme == .telegram
-        if !useSystemIcon, let image = UIImage(named: "BoostRocket") {
+        if let image = UIImage(named: "BoostRocket") {
             return image.withRenderingMode(.alwaysTemplate)
         }
         return UIImage(

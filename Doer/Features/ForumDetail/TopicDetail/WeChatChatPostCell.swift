@@ -326,8 +326,17 @@ final class WeChatChatPostCell: UITableViewCell {
             boostHeight,
             boostLead,
             boostTrail,
-            boostHost.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            boostHost.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -6
+            ),
         ])
+        let pinBottom = boostHost.bottomAnchor.constraint(
+            equalTo: contentView.bottomAnchor,
+            constant: -6
+        )
+        pinBottom.priority = .defaultHigh
+        pinBottom.isActive = true
 
         avatarLead.isActive = true
         bubbleLead.isActive = true
@@ -345,23 +354,22 @@ final class WeChatChatPostCell: UITableViewCell {
     }
 
     private func configureActionButtons() {
-        let buttons: [(UIButton, String, Selector)] = [
-            (voteUpButton, "chevron.up", #selector(handleVoteUpTapped)),
-            (voteDownButton, "chevron.down", #selector(handleVoteDownTapped)),
-            (likeButton, "heart", #selector(handleLikeTapped)),
-            (bookmarkButton, "bookmark", #selector(handleBookmarkTapped)),
-            (replyButton, "arrowshape.turn.up.left", #selector(handleReplyTapped)),
-            (boostActionButton, "bolt.fill", #selector(handleBoostTapped)),
+        let buttons: [(UIButton, UIImage?, Selector)] = [
+            (voteUpButton, UIImage(systemName: "chevron.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteUpTapped)),
+            (voteDownButton, UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteDownTapped)),
+            (likeButton, UIImage(systemName: "heart", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleLikeTapped)),
+            (bookmarkButton, UIImage(systemName: "bookmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleBookmarkTapped)),
+            (replyButton, UIImage(systemName: "arrowshape.turn.up.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleReplyTapped)),
+            (boostActionButton, PostNativeCell.boostIconImage, #selector(handleBoostTapped)),
         ]
-        let symbol = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         voteCountLabel.translatesAutoresizingMaskIntoConstraints = false
         voteCountLabel.font = TopicDetailTypography.chromeFont(.action, weight: .semibold)
         voteCountLabel.adjustsFontForContentSizeCategory = true
         voteCountLabel.textColor = .secondaryLabel
         voteCountLabel.setContentHuggingPriority(.required, for: .horizontal)
-        for (button, name, sel) in buttons {
+        for (button, image, sel) in buttons {
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.setImage(UIImage(systemName: name, withConfiguration: symbol), for: .normal)
+            button.setImage(image, for: .normal)
             button.tintColor = .secondaryLabel
             button.addTarget(self, action: sel, for: .touchUpInside)
             button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
@@ -488,7 +496,7 @@ final class WeChatChatPostCell: UITableViewCell {
             }
         } else {
             for view in views {
-                if isEmptySpacerView(view) { continue }
+                if isEmptySpacerView(view) || isVisuallyEmptyContent(view) { continue }
                 pinArrangedSubview(view, contentWidth: innerWidth)
             }
         }
@@ -577,7 +585,7 @@ final class WeChatChatPostCell: UITableViewCell {
 
         // Boost
         boostActionButton.setImage(
-            UIImage(systemName: "bolt.fill", withConfiguration: symbol),
+            PostNativeCell.boostIconImage,
             for: .normal
         )
         boostActionButton.tintColor = .secondaryLabel
@@ -846,6 +854,21 @@ final class WeChatChatPostCell: UITableViewCell {
         view.setContentHuggingPriority(.required, for: .vertical)
         view.setContentCompressionResistancePriority(.required, for: .vertical)
         contentStack.addArrangedSubview(view)
+    }
+
+    private func isVisuallyEmptyContent(_ view: UIView) -> Bool {
+        if let fallback = view as? FallbackBlockView {
+            return fallback.isBlankHTML
+        }
+        if let textView = view as? UITextView {
+            return (textView.attributedText?.string ?? textView.text ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+        }
+        if let label = view as? UILabel {
+            return (label.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return false
     }
 
     /// Bare `UIView()` placeholders from failed block renderers have no intrinsic size and

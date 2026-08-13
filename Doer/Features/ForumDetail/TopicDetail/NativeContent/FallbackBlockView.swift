@@ -48,6 +48,13 @@ final class FallbackBlockView: UIView {
     private let containerWidth: CGFloat
     private let baseURL: String
 
+    /// Whitespace-only leftovers that would otherwise reserve an 80pt hollow slot.
+    var isBlankHTML: Bool {
+        html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+    }
+
     init(html: String, containerWidth: CGFloat, baseURL: String) {
         self.html = html
         self.containerWidth = containerWidth
