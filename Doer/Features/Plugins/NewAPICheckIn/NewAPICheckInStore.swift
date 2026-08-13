@@ -93,6 +93,70 @@ actor NewAPICheckInStore {
         directoryURL.appendingPathComponent("newapi-checkin.json")
     }
 
+    static func defaultDirectoryURL() -> URL {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Doer/Plugins/NewAPICheckIn", isDirectory: true)
+    }
+
+    nonisolated static func makeExportPayload(
+        directoryURL: URL = NewAPICheckInStore.defaultDirectoryURL(),
+        credentialVault: NewAPICheckInCredentialVault = NewAPICheckInKeychainVault(),
+        customPages: [NewAPICheckInCustomPage]
+    ) throws -> NewAPICheckInExportPayload {
+        let file = loadFile(from: directoryURL)
+        let accounts = try file.accounts.map { state in
+            var credentials: [String: NewAPICheckInCredential] = [:]
+            for platform in state.platforms {
+                let key = "\(state.scopeKey)|\(platform.id.uuidString)"
+                if let data = try credentialVault.data(for: key) {
+                    credentials[platform.id.uuidString] = try decodeCredentialData(data)
+                }
+            }
+            return NewAPICheckInExportPayload.Account(
+                scopeKey: state.scopeKey,
+                platforms: state.platforms,
+                attempts: state.attempts,
+                credentials: credentials
+            )
+        }
+        return NewAPICheckInExportPayload(version: 1, accounts: accounts, customPages: customPages)
+    }
+
+    nonisolated static func importExportPayload(
+        _ payload: NewAPICheckInExportPayload,
+        directoryURL: URL = NewAPICheckInStore.defaultDirectoryURL(),
+        credentialVault: NewAPICheckInCredentialVault = NewAPICheckInKeychainVault(),
+        customPagesStore: NewAPICheckInCustomPageStore
+    ) throws {
+        var file = loadFile(from: directoryURL)
+        for account in payload.accounts {
+            let state = AccountState(
+                scopeKey: account.scopeKey,
+                platforms: account.platforms,
+                attempts: account.attempts
+            )
+            if let index = file.accounts.firstIndex(where: { $0.scopeKey == account.scopeKey }) {
+                let removedIDs = Set(file.accounts[index].platforms.map(\.id))
+                    .subtracting(account.platforms.map(\.id))
+                for platformID in removedIDs {
+                    try? credentialVault.removeData(for: "\(account.scopeKey)|\(platformID.uuidString)")
+                }
+                file.accounts[index] = state
+            } else {
+                file.accounts.append(state)
+            }
+            for platform in account.platforms {
+                let key = "\(account.scopeKey)|\(platform.id.uuidString)"
+                if let credential = account.credentials[platform.id.uuidString] {
+                    try credentialVault.setData(try encodeCredentialData(credential), for: key)
+                }
+            }
+        }
+        try persistFile(file, to: directoryURL)
+        customPagesStore.replaceAll(payload.customPages)
+    }
+
     func platforms() -> [NewAPICheckInPlatform] {
         accountState(in: load()).platforms.sorted { $0.createdAt < $1.createdAt }
     }
@@ -173,6 +237,14 @@ actor NewAPICheckInStore {
     }
 
     private func encodeCredential(_ credential: NewAPICheckInCredential) throws -> Data {
+        try Self.encodeCredentialData(credential)
+    }
+
+    private func decodeCredential(_ data: Data) throws -> NewAPICheckInCredential {
+        try Self.decodeCredentialData(data)
+    }
+
+    nonisolated static func encodeCredentialData(_ credential: NewAPICheckInCredential) throws -> Data {
         var object: [String: Any] = ["additionalHeaders": credential.additionalHeaders]
         object["accessToken"] = credential.accessToken
         object["userID"] = credential.userID
@@ -180,7 +252,7 @@ actor NewAPICheckInStore {
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
-    private func decodeCredential(_ data: Data) throws -> NewAPICheckInCredential {
+    nonisolated static func decodeCredentialData(_ data: Data) throws -> NewAPICheckInCredential {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return NewAPICheckInCredential(
             accessToken: object?["accessToken"] as? String,
@@ -188,6 +260,22 @@ actor NewAPICheckInStore {
             cookieHeader: object?["cookieHeader"] as? String,
             additionalHeaders: object?["additionalHeaders"] as? [String: String] ?? [:]
         )
+    }
+
+    private static func loadFile(from directoryURL: URL) -> StorageFile {
+        let url = storageURL(in: directoryURL)
+        guard let data = try? Data(contentsOf: url) else { return StorageFile() }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(StorageFile.self, from: data)) ?? StorageFile()
+    }
+
+    private static func persistFile(_ file: StorageFile, to directoryURL: URL) throws {
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(file).write(to: storageURL(in: directoryURL), options: .atomic)
     }
 
     private func accountState(in file: StorageFile) -> AccountState {
@@ -204,18 +292,10 @@ actor NewAPICheckInStore {
     }
 
     private func load() -> StorageFile {
-        let url = Self.storageURL(in: directoryURL)
-        guard let data = try? Data(contentsOf: url) else { return StorageFile() }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode(StorageFile.self, from: data)) ?? StorageFile()
+        Self.loadFile(from: directoryURL)
     }
 
     private func persist(_ file: StorageFile) throws {
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(file).write(to: Self.storageURL(in: directoryURL), options: .atomic)
+        try Self.persistFile(file, to: directoryURL)
     }
 }

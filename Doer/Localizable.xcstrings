@@ -19705,25 +19705,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Export preferences and mini programs as a file"
+            "value" : "Export preferences, mini programs, and NewAPI check-in data"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将偏好设置与小程序导出为文件"
+            "value" : "将偏好设置、小程序和 NewAPI 签到数据导出为文件"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將偏好設定與小程式匯出為檔案"
+            "value" : "將偏好設定、小程式和 NewAPI 簽到資料匯出為檔案"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將偏好設定與小程式匯出為檔案"
+            "value" : "將偏好設定、小程式和 NewAPI 簽到資料匯出為檔案"
           }
         }
       }
@@ -19914,25 +19914,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restore preferences and mini programs from a backup file"
+            "value" : "Restore preferences, mini programs, and NewAPI check-in data"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从备份文件恢复偏好设置与小程序"
+            "value" : "从备份文件恢复偏好设置、小程序和 NewAPI 签到数据"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從備份檔案還原偏好設定與小程式"
+            "value" : "從備份檔案還原偏好設定、小程式和 NewAPI 簽到資料"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從備份檔案還原偏好設定與小程式"
+            "value" : "從備份檔案還原偏好設定、小程式和 NewAPI 簽到資料"
           }
         }
       }

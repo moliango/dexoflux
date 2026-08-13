@@ -101,4 +101,47 @@ final class NotionConfigStore {
     private func metaKey(_ scopeKey: String) -> String {
         "notion_config_meta.\(scopeKey)"
     }
+
+    func makeExportPayload() -> NotionConfigExportPayload {
+        let prefix = "notion_config_meta."
+        var entries: [NotionConfigExportPayload.Entry] = []
+        for (key, _) in defaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
+            let scopeKey = String(key.dropFirst(prefix.count))
+            let config = loadConfig(scopeKey: scopeKey)
+            entries.append(
+                NotionConfigExportPayload.Entry(
+                    scopeKey: scopeKey,
+                    databaseId: config.databaseId,
+                    autoSyncOnBookmark: config.autoSyncOnBookmark,
+                    syncScope: config.syncScope.rawValue,
+                    token: token(scopeKey: scopeKey)
+                )
+            )
+        }
+        return NotionConfigExportPayload(entries: entries)
+    }
+
+    func importExportPayload(_ payload: NotionConfigExportPayload) {
+        for entry in payload.entries {
+            let config = NotionConfig(
+                databaseId: entry.databaseId,
+                autoSyncOnBookmark: entry.autoSyncOnBookmark,
+                syncScope: NotionSyncScope(rawValue: entry.syncScope) ?? .allPosts
+            )
+            saveConfig(config, scopeKey: entry.scopeKey)
+            try? setToken(entry.token, scopeKey: entry.scopeKey)
+        }
+    }
+}
+
+struct NotionConfigExportPayload: Codable, Equatable {
+    struct Entry: Codable, Equatable {
+        var scopeKey: String
+        var databaseId: String?
+        var autoSyncOnBookmark: Bool
+        var syncScope: String
+        var token: String?
+    }
+
+    var entries: [Entry]
 }

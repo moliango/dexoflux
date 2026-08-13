@@ -45,11 +45,16 @@ extension AppSettings {
     }
 
     func makePreferencesBackupData(
-        miniProgramStore: MiniProgramStore = .shared
+        miniProgramStore: MiniProgramStore = .shared,
+        pluginStateStore: PluginStateStore = PluginStateStore(),
+        notionConfigStore: NotionConfigStore = .shared,
+        newAPIDirectoryURL: URL = NewAPICheckInStore.defaultDirectoryURL(),
+        newAPICredentialVault: NewAPICheckInCredentialVault = NewAPICheckInKeychainVault(),
+        newAPICustomPages: [NewAPICheckInCustomPage] = NewAPICheckInCustomPageStore.shared.all()
     ) throws -> Data {
         let file = PreferencesBackupFile(
             format: Self.preferencesBackupFormat,
-            version: 1,
+            version: 2,
             exportedAt: Date(),
             preferences: PreferencesBackupPayload(
                 appearanceMode: appearanceMode.rawValue,
@@ -64,6 +69,7 @@ extension AppSettings {
                 // Persist raw preference (not theme-gated effective value).
                 chatTopicDetailEnabled: bool(forKey: "chatTopicDetailEnabled", defaultValue: true),
                 themeTaxonomyColorsEnabled: themeTaxonomyColorsEnabled,
+                homeCategoryDrawerSwipeEnabled: homeCategoryDrawerSwipeEnabled,
                 autoOpenLastForum: autoOpenLastForum,
                 lastOpenedForumId: lastOpenedForumId,
                 hasShownAutoOpenPrompt: hasShownAutoOpenPrompt,
@@ -77,6 +83,22 @@ extension AppSettings {
                 homeIncomingTopicsBannerFloatingEnabled: homeIncomingTopicsBannerFloatingEnabled,
                 openExternalLinksInAppBrowser: openExternalLinksInAppBrowser,
                 defaultExpandRelatedLinks: defaultExpandRelatedLinks,
+                showSuggestedTopics: showSuggestedTopics,
+                composerInstantRender: composerInstantRender,
+                clipboardTopicLinkPromptEnabled: clipboardTopicLinkPromptEnabled,
+                showUserSignatures: showUserSignatures,
+                nestedReplyViewEnabled: nestedReplyViewEnabled,
+                showTopicCardExcerpt: showTopicCardExcerpt,
+                showTopicCardTags: showTopicCardTags,
+                showTopicCardCategory: showTopicCardCategory,
+                showTopicCardCounts: showTopicCardCounts,
+                progressGesturesEnabled: progressGesturesEnabled,
+                progressGestureSwipeLeft: progressGestureSwipeLeft.rawValue,
+                progressGestureSwipeRight: progressGestureSwipeRight.rawValue,
+                progressGestureSwipeUp: progressGestureSwipeUp.rawValue,
+                progressGestureMenuActions: progressGestureMenuActions.map(\.rawValue),
+                localNotificationFilter: localNotificationFilter.rawValue,
+                avatarLoadingProfile: avatarLoadingProfile.rawValue,
                 bottomBarAutoHideEnabled: bottomBarAutoHideEnabled,
                 forumDynamicTabItems: forumDynamicTabItems.map(\.rawValue),
                 homePinnedCategoryIds: homePinnedCategoryIds,
@@ -84,10 +106,20 @@ extension AppSettings {
                 dohProvider: dohProvider.rawValue,
                 dohCustomURL: dohCustomURL,
                 clearImageCacheOnLaunch: clearImageCacheOnLaunch,
-                avatarCacheSizeLimit: avatarCacheSizeLimit.rawValue
+                avatarCacheSizeLimit: avatarCacheSizeLimit.rawValue,
+                meStats: MeStatsPreferences().configuration,
+                meAccountFunctions: MeAccountFunctionPreferences().configuration,
+                userProfileTabs: UserProfileTabPreferences().visibleSections.map(\.rawValue)
             ),
             // Custom mini-programs may omit icons; local logos are embedded when available.
-            miniProgramCatalog: miniProgramStore.makeCatalogExportPayload()
+            miniProgramCatalog: miniProgramStore.makeCatalogExportPayload(),
+            newAPICheckIn: try NewAPICheckInStore.makeExportPayload(
+                directoryURL: newAPIDirectoryURL,
+                credentialVault: newAPICredentialVault,
+                customPages: newAPICustomPages
+            ),
+            pluginState: pluginStateStore.makeExportPayload(),
+            notion: notionConfigStore.makeExportPayload()
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -97,7 +129,12 @@ extension AppSettings {
 
     func importPreferencesBackupData(
         _ data: Data,
-        miniProgramStore: MiniProgramStore = .shared
+        miniProgramStore: MiniProgramStore = .shared,
+        pluginStateStore: PluginStateStore = PluginStateStore(),
+        notionConfigStore: NotionConfigStore = .shared,
+        newAPIDirectoryURL: URL = NewAPICheckInStore.defaultDirectoryURL(),
+        newAPICredentialVault: NewAPICheckInCredentialVault = NewAPICheckInKeychainVault(),
+        newAPICustomPagesStore: NewAPICheckInCustomPageStore = .shared
     ) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -144,6 +181,9 @@ extension AppSettings {
         }
         if let value = preferences.themeTaxonomyColorsEnabled {
             themeTaxonomyColorsEnabled = value
+        }
+        if let value = preferences.homeCategoryDrawerSwipeEnabled {
+            homeCategoryDrawerSwipeEnabled = value
         }
         if let value = preferences.autoOpenLastForum {
             autoOpenLastForum = value
@@ -192,6 +232,59 @@ extension AppSettings {
         if let value = preferences.defaultExpandRelatedLinks {
             defaultExpandRelatedLinks = value
         }
+        if let value = preferences.showSuggestedTopics {
+            showSuggestedTopics = value
+        }
+        if let value = preferences.composerInstantRender {
+            composerInstantRender = value
+        }
+        if let value = preferences.clipboardTopicLinkPromptEnabled {
+            clipboardTopicLinkPromptEnabled = value
+        }
+        if let value = preferences.showUserSignatures {
+            showUserSignatures = value
+        }
+        if let value = preferences.nestedReplyViewEnabled {
+            nestedReplyViewEnabled = value
+        }
+        if let value = preferences.showTopicCardExcerpt {
+            showTopicCardExcerpt = value
+        }
+        if let value = preferences.showTopicCardTags {
+            showTopicCardTags = value
+        }
+        if let value = preferences.showTopicCardCategory {
+            showTopicCardCategory = value
+        }
+        if let value = preferences.showTopicCardCounts {
+            showTopicCardCounts = value
+        }
+        if let value = preferences.progressGesturesEnabled {
+            progressGesturesEnabled = value
+        }
+        if let rawValue = preferences.progressGestureSwipeLeft {
+            progressGestureSwipeLeft = ProgressGestureSettings.decodeAction(rawValue, fallback: .nextPost)
+        }
+        if let rawValue = preferences.progressGestureSwipeRight {
+            progressGestureSwipeRight = ProgressGestureSettings.decodeAction(rawValue, fallback: .previousPost)
+        }
+        if let rawValue = preferences.progressGestureSwipeUp {
+            progressGestureSwipeUp = ProgressGestureSettings.decodeAction(rawValue, fallback: .jumpToUnread)
+        }
+        if let rawValues = preferences.progressGestureMenuActions {
+            progressGestureMenuActions = ProgressGestureSettings.decodeActions(
+                rawValues,
+                fallback: ProgressGestureAction.defaultMenuActions
+            )
+        }
+        if let rawValue = preferences.localNotificationFilter,
+           let value = LocalNotificationFilter(rawValue: rawValue) {
+            localNotificationFilter = value
+        }
+        if let rawValue = preferences.avatarLoadingProfile,
+           let value = AvatarLoadingProfile(rawValue: rawValue) {
+            avatarLoadingProfile = value
+        }
         if let value = preferences.bottomBarAutoHideEnabled {
             bottomBarAutoHideEnabled = value
         }
@@ -221,6 +314,32 @@ extension AppSettings {
         if let catalog = file.miniProgramCatalog {
             miniProgramStore.importCatalogExportPayload(catalog)
         }
+        if let newAPI = file.newAPICheckIn {
+            try NewAPICheckInStore.importExportPayload(
+                newAPI,
+                directoryURL: newAPIDirectoryURL,
+                credentialVault: newAPICredentialVault,
+                customPagesStore: newAPICustomPagesStore
+            )
+        }
+        if let pluginState = file.pluginState {
+            pluginStateStore.importExportPayload(pluginState)
+        }
+        if let notion = file.notion {
+            notionConfigStore.importExportPayload(notion)
+        }
+        if let meStats = preferences.meStats, !meStats.orderedMetrics.isEmpty {
+            MeStatsPreferences().configuration = meStats
+        }
+        if let functions = preferences.meAccountFunctions {
+            MeAccountFunctionPreferences().configuration = functions
+        }
+        if let tabs = preferences.userProfileTabs {
+            let sections = tabs.compactMap(UserProfileSection.init(rawValue:))
+            if !sections.isEmpty {
+                UserProfileTabPreferences().setVisibleSections(sections)
+            }
+        }
         applyLanguage()
         applyAppearance()
         notifyChanged()
@@ -246,19 +365,28 @@ extension AppSettings {
         let preferences: PreferencesBackupPayload
         /// Optional so older backups without a mini-program catalog still import.
         let miniProgramCatalog: MiniProgramCatalogExportPayload?
+        let newAPICheckIn: NewAPICheckInExportPayload?
+        let pluginState: PluginStateExportPayload?
+        let notion: NotionConfigExportPayload?
 
         init(
             format: String,
             version: Int,
             exportedAt: Date,
             preferences: PreferencesBackupPayload,
-            miniProgramCatalog: MiniProgramCatalogExportPayload? = nil
+            miniProgramCatalog: MiniProgramCatalogExportPayload? = nil,
+            newAPICheckIn: NewAPICheckInExportPayload? = nil,
+            pluginState: PluginStateExportPayload? = nil,
+            notion: NotionConfigExportPayload? = nil
         ) {
             self.format = format
             self.version = version
             self.exportedAt = exportedAt
             self.preferences = preferences
             self.miniProgramCatalog = miniProgramCatalog
+            self.newAPICheckIn = newAPICheckIn
+            self.pluginState = pluginState
+            self.notion = notion
         }
 
         init(from decoder: Decoder) throws {
@@ -270,6 +398,18 @@ extension AppSettings {
             miniProgramCatalog = try container.decodeIfPresent(
                 MiniProgramCatalogExportPayload.self,
                 forKey: .miniProgramCatalog
+            )
+            newAPICheckIn = try container.decodeIfPresent(
+                NewAPICheckInExportPayload.self,
+                forKey: .newAPICheckIn
+            )
+            pluginState = try container.decodeIfPresent(
+                PluginStateExportPayload.self,
+                forKey: .pluginState
+            )
+            notion = try container.decodeIfPresent(
+                NotionConfigExportPayload.self,
+                forKey: .notion
             )
         }
     }
@@ -286,6 +426,7 @@ extension AppSettings {
         let xiaohongshuCardsStaggered: Bool?
         let chatTopicDetailEnabled: Bool?
         let themeTaxonomyColorsEnabled: Bool?
+        let homeCategoryDrawerSwipeEnabled: Bool?
         let autoOpenLastForum: Bool?
         let lastOpenedForumId: Int64?
         let hasShownAutoOpenPrompt: Bool?
@@ -299,6 +440,22 @@ extension AppSettings {
         let homeIncomingTopicsBannerFloatingEnabled: Bool?
         let openExternalLinksInAppBrowser: Bool?
         let defaultExpandRelatedLinks: Bool?
+        let showSuggestedTopics: Bool?
+        let composerInstantRender: Bool?
+        let clipboardTopicLinkPromptEnabled: Bool?
+        let showUserSignatures: Bool?
+        let nestedReplyViewEnabled: Bool?
+        let showTopicCardExcerpt: Bool?
+        let showTopicCardTags: Bool?
+        let showTopicCardCategory: Bool?
+        let showTopicCardCounts: Bool?
+        let progressGesturesEnabled: Bool?
+        let progressGestureSwipeLeft: String?
+        let progressGestureSwipeRight: String?
+        let progressGestureSwipeUp: String?
+        let progressGestureMenuActions: [String]?
+        let localNotificationFilter: String?
+        let avatarLoadingProfile: Int?
         let bottomBarAutoHideEnabled: Bool?
         let forumDynamicTabItems: [String]?
         let homePinnedCategoryIds: [Int]?
@@ -307,5 +464,8 @@ extension AppSettings {
         let dohCustomURL: String?
         let clearImageCacheOnLaunch: Bool?
         let avatarCacheSizeLimit: Int?
+        let meStats: MeStatsConfiguration?
+        let meAccountFunctions: MeAccountFunctionConfiguration?
+        let userProfileTabs: [String]?
     }
 }

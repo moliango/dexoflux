@@ -37,7 +37,7 @@ Questions to answer:
 ### App Settings
 
 - User-facing app settings live in `AppSettings.shared` and must call `notifyChanged()` after mutation.
-- Data Management preference backups must export/import only local app preferences such as appearance, reading, bottom-bar, pinned-category, DoH, and cache-behavior settings. Do not export login cookies, Cloudflare clearance, user profile cache, image cache, fonts, or database rows through the preferences backup file.
+- Data Management preference backups must export/import local app preferences (appearance, reading, topic-card chrome, progress gestures, notifications, Me layout, bottom-bar, pinned-category, DoH, cache-behavior) plus plugin catalogs that the user configured: mini programs, NewAPI check-in platforms/credentials/custom pages, plugin enablement, and Notion config. Do not export Discourse login cookies, Cloudflare clearance, user profile cache, image cache, fonts, or database rows through the preferences backup file.
 - Data Management cache actions must reflect real storage boundaries: image cache through `SDImageCache`, cookies through `WebCookieStore` plus the matching `WKHTTPCookieStore`, Me profile cache through `MeProfileCacheStore`, and emoji cache through `EmojiStore`.
 - Clearing Cookie cache is an auth-affecting action and must invalidate the matching web session instead of only deleting the persisted cookie JSON file.
 - Runtime visual settings that affect Topic Detail content must flow through both render paths:

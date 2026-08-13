@@ -246,6 +246,62 @@ final class NewAPICheckInTests: XCTestCase {
         }
     }
 
+    func testExportPayloadRoundTripsPlatformsCredentialsAndCustomPages() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = MemoryNewAPICredentialVault()
+        let scope = PluginScope(baseURL: "https://linux.do", username: "sam")
+        let store = NewAPICheckInStore(
+            scope: scope,
+            directoryURL: directory,
+            credentialVault: vault
+        )
+        let platform = NewAPICheckInPlatform(name: "Example", baseURL: "https://api.example.com")
+        let credential = NewAPICheckInCredential(
+            accessToken: "export-token",
+            userID: "9",
+            cookieHeader: "session=export-cookie",
+            additionalHeaders: ["X-Test": "1"]
+        )
+        let page = NewAPICheckInCustomPage(name: "Docs", urlString: "https://docs.example.com")
+        try await store.save(platform, credential: credential)
+
+        let exported = try NewAPICheckInStore.makeExportPayload(
+            directoryURL: directory,
+            credentialVault: vault,
+            customPages: [page]
+        )
+        XCTAssertEqual(exported.accounts.count, 1)
+        XCTAssertEqual(exported.accounts.first?.platforms.map(\.id), [platform.id])
+        XCTAssertEqual(exported.accounts.first?.credentials[platform.id.uuidString], credential)
+        XCTAssertEqual(exported.customPages, [page])
+
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("newapi-import-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let importVault = MemoryNewAPICredentialVault()
+        let suite = UserDefaults(suiteName: "NewAPICustomPages.\(UUID().uuidString)")!
+        defer { suite.removePersistentDomain(forName: suite.dictionaryRepresentation().keys.first ?? "") }
+        let pagesStore = NewAPICheckInCustomPageStore(defaults: suite)
+        try NewAPICheckInStore.importExportPayload(
+            exported,
+            directoryURL: destination,
+            credentialVault: importVault,
+            customPagesStore: pagesStore
+        )
+
+        let importedStore = NewAPICheckInStore(
+            scope: scope,
+            directoryURL: destination,
+            credentialVault: importVault
+        )
+        let platforms = await importedStore.platforms()
+        let restored = try await importedStore.credential(for: platform.id)
+        XCTAssertEqual(platforms.map(\.id), [platform.id])
+        XCTAssertEqual(restored, credential)
+        XCTAssertEqual(pagesStore.all().map(\.urlString), [page.urlString])
+    }
+
     func testClearingAttemptsKeepsPlatformsAndCredentials() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

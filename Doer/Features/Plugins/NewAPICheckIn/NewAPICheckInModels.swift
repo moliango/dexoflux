@@ -19,7 +19,7 @@ enum NewAPICheckInPlatformSource: String, Codable, Sendable {
     case manual
 }
 
-struct NewAPICheckInCredential: Equatable, Sendable {
+struct NewAPICheckInCredential: Equatable, Codable, Sendable {
     var accessToken: String?
     var userID: String?
     var cookieHeader: String?
@@ -55,7 +55,7 @@ struct NewAPICheckInLoginProbeResult: Equatable, Sendable {
     let requestCount: Int?
     let message: String?
 
-    init(
+    nonisolated init(
         isLoggedIn: Bool,
         userID: String?,
         accessToken: String?,
@@ -191,5 +191,19 @@ struct NewAPICheckInBatchSummary: Equatable, Sendable {
         if authenticationExpired > 0 { parts.append("\(authenticationExpired) 需重新登录") }
         if failed > 0 { parts.append("\(failed) 失败") }
         return parts.joined(separator: " · ")
+    }
+}
+
+struct NewAPICheckInExportPayload: Codable, Equatable, Sendable {
+    var version: Int
+    var accounts: [Account]
+    var customPages: [NewAPICheckInCustomPage]
+
+    struct Account: Codable, Equatable, Sendable {
+        var scopeKey: String
+        var platforms: [NewAPICheckInPlatform]
+        var attempts: [NewAPICheckInAttempt]
+        /// Keyed by platform UUID string.
+        var credentials: [String: NewAPICheckInCredential]
     }
 }

@@ -111,6 +111,42 @@ final class AccountScopedStoreTests: XCTestCase {
         }
     }
 
+    func testReadingAndNotificationPreferencesBackupRoundTrip() throws {
+        let settings = AppSettings.shared
+        let originalClipboard = settings.clipboardTopicLinkPromptEnabled
+        let originalFilter = settings.localNotificationFilter
+        let originalExcerpt = settings.showTopicCardExcerpt
+        let originalSignatures = settings.showUserSignatures
+        let originalGestures = settings.progressGesturesEnabled
+        defer {
+            settings.clipboardTopicLinkPromptEnabled = originalClipboard
+            settings.localNotificationFilter = originalFilter
+            settings.showTopicCardExcerpt = originalExcerpt
+            settings.showUserSignatures = originalSignatures
+            settings.progressGesturesEnabled = originalGestures
+        }
+
+        settings.clipboardTopicLinkPromptEnabled = false
+        settings.localNotificationFilter = .mentionsOnly
+        settings.showTopicCardExcerpt = true
+        settings.showUserSignatures = false
+        settings.progressGesturesEnabled = false
+        let backup = try settings.makePreferencesBackupData()
+
+        settings.clipboardTopicLinkPromptEnabled = true
+        settings.localNotificationFilter = .all
+        settings.showTopicCardExcerpt = false
+        settings.showUserSignatures = true
+        settings.progressGesturesEnabled = true
+        try settings.importPreferencesBackupData(backup)
+
+        XCTAssertFalse(settings.clipboardTopicLinkPromptEnabled)
+        XCTAssertEqual(settings.localNotificationFilter, .mentionsOnly)
+        XCTAssertTrue(settings.showTopicCardExcerpt)
+        XCTAssertFalse(settings.showUserSignatures)
+        XCTAssertFalse(settings.progressGesturesEnabled)
+    }
+
     func testPluginDockPreferencesBackupRoundTrip() throws {
         try withPreservedPluginDockDefaults {
             AppSettings.shared.pluginDockEnabled = false

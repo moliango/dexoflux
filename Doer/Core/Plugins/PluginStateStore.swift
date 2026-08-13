@@ -82,4 +82,32 @@ final class PluginStateStore {
     private func enabledDefaultsKey(pluginID: String, scope: PluginScope) -> String {
         "\(Self.enabledDefaultsPrefix).\(scope.storageKey).\(pluginID)"
     }
+
+    func makeExportPayload() -> PluginStateExportPayload {
+        var enabled: [String: Bool] = [:]
+        let prefix = Self.enabledDefaultsPrefix + "."
+        for (key, value) in defaults.dictionaryRepresentation() {
+            guard key.hasPrefix(prefix), let flag = value as? Bool else { continue }
+            enabled[String(key.dropFirst(prefix.count))] = flag
+        }
+        return PluginStateExportPayload(safeModeEnabled: isSafeModeEnabled, enabledByKey: enabled)
+    }
+
+    func importExportPayload(_ payload: PluginStateExportPayload) {
+        setSafeModeEnabled(payload.safeModeEnabled)
+        let prefix = Self.enabledDefaultsPrefix + "."
+        for (key, _) in defaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
+            defaults.removeObject(forKey: key)
+        }
+        for (suffix, enabled) in payload.enabledByKey {
+            defaults.set(enabled, forKey: prefix + suffix)
+        }
+        notificationCenter.post(name: Self.stateDidChangeNotification, object: self)
+    }
+}
+
+struct PluginStateExportPayload: Codable, Equatable {
+    var safeModeEnabled: Bool
+    /// Keys are `"\(scope.storageKey).\(pluginID)"`.
+    var enabledByKey: [String: Bool]
 }

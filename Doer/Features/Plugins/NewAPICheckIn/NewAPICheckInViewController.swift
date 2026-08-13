@@ -455,7 +455,10 @@ final class NewAPICheckInViewController: UITableViewController {
         }
         let name = fields.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let platform = NewAPICheckInPlatform(
-            name: name?.isEmpty == false ? name! : host,
+            name: {
+                if let name, !name.isEmpty { return name }
+                return host
+            }(),
             baseURL: url.absoluteString,
             source: .manual
         )

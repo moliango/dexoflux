@@ -160,7 +160,7 @@ final class NewAPICheckInCustomPagesViewController: UITableViewController {
 
 // MARK: - Model + store
 
-struct NewAPICheckInCustomPage: Codable, Equatable, Identifiable {
+struct NewAPICheckInCustomPage: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var name: String
     var urlString: String
@@ -182,15 +182,17 @@ struct NewAPICheckInCustomPage: Codable, Equatable, Identifiable {
     }
 }
 
-final class NewAPICheckInCustomPageStore {
+nonisolated final class NewAPICheckInCustomPageStore: @unchecked Sendable {
     static let shared = NewAPICheckInCustomPageStore()
 
     private let defaultsKey = "plugin.newapi.custom_pages.v1"
+    private let defaults: UserDefaults
     private let lock = NSLock()
     private var cache: [NewAPICheckInCustomPage]
 
-    private init() {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode([NewAPICheckInCustomPage].self, from: data) {
             cache = decoded
         } else {
@@ -222,9 +224,16 @@ final class NewAPICheckInCustomPageStore {
         lock.unlock()
     }
 
+    func replaceAll(_ pages: [NewAPICheckInCustomPage]) {
+        lock.lock()
+        cache = pages
+        persistLocked()
+        lock.unlock()
+    }
+
     private func persistLocked() {
         if let data = try? JSONEncoder().encode(cache) {
-            UserDefaults.standard.set(data, forKey: defaultsKey)
+            defaults.set(data, forKey: defaultsKey)
         }
     }
 }

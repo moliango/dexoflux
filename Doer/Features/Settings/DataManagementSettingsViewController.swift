@@ -461,7 +461,7 @@ extension DataManagementSettingsViewController {
         do {
             let data = try settings.makePreferencesBackupData()
             let fileURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("Dexo-Preferences-\(Self.backupTimestamp()).json")
+                .appendingPathComponent("Doer-Preferences-\(Self.backupTimestamp()).json")
             try data.write(to: fileURL, options: .atomic)
             let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
             activity.popoverPresentationController?.sourceView = view
