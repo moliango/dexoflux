@@ -97,15 +97,12 @@ final class IncomingTopicsBannerView: UIControl {
 
     override var intrinsicContentSize: CGSize {
         switch AppSettings.shared.themeStyle {
-        case .telegram:
-            // Compact pill sized to title — parent centers it.
-            let titleW = titleLabel.intrinsicContentSize.width
-            let width = min(max(titleW + 78, 168), UIScreen.main.bounds.width - 64)
-            return CGSize(width: width, height: 40)
         case .weChat:
             return CGSize(width: UIView.noIntrinsicMetric, height: 44)
         default:
-            return CGSize(width: UIView.noIntrinsicMetric, height: 52)
+            let titleW = titleLabel.intrinsicContentSize.width
+            let width = min(max(titleW + 78, 168), UIScreen.main.bounds.width - 64)
+            return CGSize(width: width, height: 40)
         }
     }
 
@@ -119,22 +116,19 @@ final class IncomingTopicsBannerView: UIControl {
         let accent = theme.accentColor
 
         switch theme {
-        case .telegram:
-            applyTelegramStyle(accent: accent)
         case .weChat:
             applyWeChatStyle(accent: accent)
         default:
-            applyDefaultStyle(theme: theme, accent: accent)
+            applyCapsuleStyle(accent: accent)
         }
     }
 
     // MARK: - Theme skins
 
-    /// Telegram: solid brand-blue capsule toast (like in-app “N new messages”).
-    private func applyTelegramStyle(accent: UIColor) {
+    /// Compact filled capsule (Telegram + default / eye-care / Xiaohongshu).
+    private func applyCapsuleStyle(accent: UIColor) {
         backgroundColor = accent
-        layer.cornerRadius = 22
-        layer.cornerCurve = .continuous
+        layer.cornerCurve = .circular
         layer.borderWidth = 0
         layer.borderColor = UIColor.clear.cgColor
         layer.shadowColor = accent.cgColor
@@ -198,43 +192,6 @@ final class IncomingTopicsBannerView: UIControl {
         setIconSymbol("arrow.up", pointSize: 13, weight: .bold)
         setChevronSymbol("chevron.up", pointSize: 11, weight: .semibold)
         setIconContainerSize(26)
-    }
-
-    private func applyDefaultStyle(theme: AppSettings.ThemeStyle, accent: UIColor) {
-        backgroundColor = theme.topicCardBackgroundColor
-        layer.cornerRadius = 16
-        layer.cornerCurve = .continuous
-        layer.borderWidth = 1
-        layer.borderColor = accent.withAlphaComponent(0.12).cgColor
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = isFloatingStyle ? 0.08 : 0.02
-        layer.shadowRadius = isFloatingStyle ? 14 : 8
-        layer.shadowOffset = isFloatingStyle ? CGSize(width: 0, height: 6) : CGSize(width: 0, height: 2)
-
-        iconContainer.backgroundColor = accent.withAlphaComponent(0.14)
-        iconContainer.layer.cornerRadius = 17
-        iconView.tintColor = accent
-        activityIndicator.color = accent
-        chevronView.tintColor = .tertiaryLabel
-
-        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 15)
-        let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 11)
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: .semibold)
-        )
-        titleLabel.textColor = .label
-        subtitleLabel.isHidden = false
-        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: subPoint, weight: .medium)
-        )
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleHeightConstraint?.constant = 14
-        titleCenterYConstraint?.isActive = false
-        titleTopConstraint?.isActive = true
-
-        setIconSymbol("arrow.up", pointSize: 16, weight: .bold)
-        setChevronSymbol("chevron.up", pointSize: 12, weight: .semibold)
-        setIconContainerSize(34)
     }
 
     private func setIconSymbol(_ name: String, pointSize: CGFloat, weight: UIImage.SymbolWeight) {
@@ -306,6 +263,14 @@ final class IncomingTopicsBannerView: UIControl {
         ])
 
         setIconContainerSize(34)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if AppSettings.shared.themeStyle != .weChat {
+            layer.cornerRadius = bounds.height / 2
+            layer.cornerCurve = .circular
+        }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

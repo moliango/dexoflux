@@ -6,12 +6,7 @@ import UIKit
 extension HomeViewController {
     /// Host height used for floating inset + inline table header.
     var incomingTopicsBannerHostHeight: CGFloat {
-        switch AppSettings.shared.themeStyle {
-        case .telegram, .weChat:
-            return Self.incomingTopicsBannerHeightChat
-        default:
-            return Self.incomingTopicsBannerHeight
-        }
+        Self.incomingTopicsBannerHeightChat
     }
 
     func installIncomingTopicsBannerLayoutConstraints() {
@@ -90,24 +85,6 @@ extension HomeViewController {
             : incomingTopicsInlineHeaderView.frame.height
 
         switch theme {
-        case .telegram:
-            // Compact centered capsule — width from intrinsicContentSize.
-            incomingTopicsButtonHeightConstraint?.constant = 40
-            incomingTopicsInlineButtonHeightConstraint?.constant = 40
-            incomingTopicsButtonLeadingConstraint?.isActive = false
-            incomingTopicsButtonTrailingConstraint?.isActive = false
-            incomingTopicsButtonCenterXConstraint?.isActive = true
-            incomingTopicsButtonMaxWidthConstraint?.constant = -64
-            incomingTopicsButtonMaxWidthConstraint?.isActive = true
-            ensureTelegramBannerWidthConstraints()
-
-            incomingTopicsInlineButtonLeadingConstraint?.isActive = false
-            incomingTopicsInlineButtonTrailingConstraint?.isActive = false
-            incomingTopicsInlineButtonCenterXConstraint?.isActive = true
-            incomingTopicsInlineButtonMaxWidthConstraint?.constant = -64
-            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = true
-            ensureTelegramInlineBannerWidthConstraints()
-
         case .weChat:
             // Match WeChat list side inset (16) — flat tip bar.
             incomingTopicsButtonHeightConstraint?.constant = 44
@@ -128,22 +105,21 @@ extension HomeViewController {
             incomingTopicsInlineButtonTrailingConstraint?.isActive = true
 
         default:
-            incomingTopicsButtonHeightConstraint?.constant = 52
-            incomingTopicsInlineButtonHeightConstraint?.constant = 52
-            tearDownTelegramBannerWidthConstraints()
-            incomingTopicsButtonCenterXConstraint?.isActive = false
-            incomingTopicsButtonMaxWidthConstraint?.isActive = false
-            incomingTopicsButtonLeadingConstraint?.constant = 18
-            incomingTopicsButtonTrailingConstraint?.constant = -18
-            incomingTopicsButtonLeadingConstraint?.isActive = true
-            incomingTopicsButtonTrailingConstraint?.isActive = true
+            incomingTopicsButtonHeightConstraint?.constant = 40
+            incomingTopicsInlineButtonHeightConstraint?.constant = 40
+            incomingTopicsButtonLeadingConstraint?.isActive = false
+            incomingTopicsButtonTrailingConstraint?.isActive = false
+            incomingTopicsButtonCenterXConstraint?.isActive = true
+            incomingTopicsButtonMaxWidthConstraint?.constant = -64
+            incomingTopicsButtonMaxWidthConstraint?.isActive = true
+            ensureTelegramBannerWidthConstraints()
 
-            incomingTopicsInlineButtonCenterXConstraint?.isActive = false
-            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = false
-            incomingTopicsInlineButtonLeadingConstraint?.constant = 18
-            incomingTopicsInlineButtonTrailingConstraint?.constant = -18
-            incomingTopicsInlineButtonLeadingConstraint?.isActive = true
-            incomingTopicsInlineButtonTrailingConstraint?.isActive = true
+            incomingTopicsInlineButtonLeadingConstraint?.isActive = false
+            incomingTopicsInlineButtonTrailingConstraint?.isActive = false
+            incomingTopicsInlineButtonCenterXConstraint?.isActive = true
+            incomingTopicsInlineButtonMaxWidthConstraint?.constant = -64
+            incomingTopicsInlineButtonMaxWidthConstraint?.isActive = true
+            ensureTelegramInlineBannerWidthConstraints()
         }
 
         incomingTopicsButton.applyThemeStyle()
