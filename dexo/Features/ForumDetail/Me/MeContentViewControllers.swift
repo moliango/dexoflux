@@ -111,23 +111,16 @@ final class PagedTopicListViewModel: DexoObservableObject {
 final class PagedTopicListViewController: ObservableViewController {
     private let api: DiscourseAPI
     private lazy var refreshPolicy: DexoListRefreshPolicy = {
-        let policy = DexoListRefreshPolicy(
+        DexoListRefreshPolicy(
             tableView: tableView,
             viewModel: viewModel,
             onRefresh: { [weak self] in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    await self.viewModel.refresh()
-                }
+                await self?.viewModel.refresh()
             },
             onLoadMore: { [weak self] in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    await self.viewModel.loadMore()
-                }
+                await self?.viewModel.loadMore()
             }
         )
-        return policy
     }()
     private let viewModel: PagedTopicListViewModel
     private let emptyMessage: String
@@ -144,9 +137,9 @@ final class PagedTopicListViewController: ObservableViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = TopicCell.estimatedHeight
         tableView.showsVerticalScrollIndicator = false
-        tableView.contentInsetAdjustmentBehavior = .never
-        
-        
+        // Keep system safe-area insets so UIRefreshControl geometry stays valid.
+        tableView.contentInsetAdjustmentBehavior = .automatic
+        tableView.alwaysBounceVertical = true
         return tableView
     }()
 
@@ -307,7 +300,9 @@ final class PagedTopicListViewController: ObservableViewController {
 
     override func updateUI() {
         applyThemeStyle()
-        refreshControl.endRefreshing()
+        if !viewModel.isLoading, refreshControl.isRefreshing {
+            refreshControl.endRefreshing()
+        }
         tableView.reloadData()
 
         let hasTopics = !viewModel.topics.isEmpty
@@ -317,7 +312,9 @@ final class PagedTopicListViewController: ObservableViewController {
             activityIndicator.stopAnimating()
         }
 
-        tableView.isHidden = !hasTopics
+        // Keep the table visible so empty-state pull-to-refresh still works.
+        tableView.isHidden = false
+        tableView.alpha = hasTopics ? 1 : 0.01
         stateStackView.isHidden = hasTopics || viewModel.isLoading
         retryButton.isHidden = viewModel.errorMessage == nil
 
@@ -349,12 +346,17 @@ final class PagedTopicListViewController: ObservableViewController {
     }
 
     @objc private func refreshPulled() {
+        // Policy owns the single refresh task; do not start a second parallel load.
         refreshPolicy.startPullToRefresh()
-        Task { await viewModel.refresh() }
     }
 
     @objc private func retryTapped() {
-        Task { await viewModel.refresh() }
+        Task {
+            await viewModel.refresh()
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
+            }
+        }
     }
 
     @objc private func loadMoreRetryTapped() {
@@ -363,6 +365,9 @@ final class PagedTopicListViewController: ObservableViewController {
                 await viewModel.refresh()
             } else {
                 await viewModel.loadMore()
+            }
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
             }
         }
     }

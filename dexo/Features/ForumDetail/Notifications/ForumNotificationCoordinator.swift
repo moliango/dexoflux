@@ -424,6 +424,8 @@ final class ForumNotificationCoordinator: DexoObservableObject {
     private var authObservationToken: AnyCancellable?
     private var isRefreshing = false
     private var pendingForceListRefresh = false
+    /// Waiters blocked while another refresh is in flight (pull-to-refresh coalescing).
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
     private var lastListRefreshAt: Date?
     private var nextAutomaticRefreshAt: Date?
     private var lastNotificationChannelPosition: Int?
@@ -505,7 +507,12 @@ final class ForumNotificationCoordinator: DexoObservableObject {
 
     func refresh(forceList: Bool = false, deliverAlerts: Bool = true) async {
         if isRefreshing {
+            // Coalesce: remember force-list intent and wait until the active chain finishes
+            // so pull-to-refresh actually observes the latest list instead of no-op returning.
             pendingForceListRefresh = pendingForceListRefresh || forceList
+            await withCheckedContinuation { continuation in
+                refreshWaiters.append(continuation)
+            }
             return
         }
         if !forceList, let nextAutomaticRefreshAt, nextAutomaticRefreshAt > Date() {
@@ -517,17 +524,30 @@ final class ForumNotificationCoordinator: DexoObservableObject {
         }
 
         isRefreshing = true
-        isLoading = forceList && notifications.isEmpty
+        // forceList (pull-to-refresh / first open) must keep isLoading true until the
+        // request finishes so list pages do not end UIRefreshControl on the first notify.
+        isLoading = forceList || pendingForceListRefresh
         errorMessage = nil
         requiresLogin = false
         notifyChanged()
         defer {
+            let shouldForceAgain = pendingForceListRefresh
+            let waiters = refreshWaiters
+            refreshWaiters.removeAll()
+            pendingForceListRefresh = false
+            // Clear the in-flight flag before chaining/resuming so a coalesced
+            // force-list refresh is not treated as still busy.
             isRefreshing = false
             isLoading = false
             notifyChanged()
-            if pendingForceListRefresh {
-                pendingForceListRefresh = false
-                Task { await refresh(forceList: true, deliverAlerts: false) }
+            if shouldForceAgain {
+                // Run coalesced force-list work before releasing pull-to-refresh waiters.
+                Task { @MainActor in
+                    await self.refresh(forceList: true, deliverAlerts: false)
+                    waiters.forEach { $0.resume() }
+                }
+            } else {
+                waiters.forEach { $0.resume() }
             }
         }
 

@@ -5,40 +5,71 @@ final class DexoListRefreshPolicy: NSObject {
     private let viewModel: DexoObservableObject
     private var isRefreshing = false
     private var isLoadingMore = false
+    private var refreshTask: Task<Void, Never>?
     private var loadMoreTask: Task<Void, Never>?
-    private let onRefresh: () -> Void
-    private let onLoadMore: () -> Void
+    private let onRefresh: () async -> Void
+    private let onLoadMore: () async -> Void
 
-    init(tableView: UITableView, viewModel: DexoObservableObject, onRefresh: @escaping () -> Void, onLoadMore: @escaping () -> Void) {
+    init(
+        tableView: UITableView,
+        viewModel: DexoObservableObject,
+        onRefresh: @escaping () async -> Void,
+        onLoadMore: @escaping () async -> Void
+    ) {
         self.tableView = tableView
         self.viewModel = viewModel
         self.onRefresh = onRefresh
         self.onLoadMore = onLoadMore
     }
 
+    /// Convenience for call sites that still pass fire-and-forget closures.
+    convenience init(
+        tableView: UITableView,
+        viewModel: DexoObservableObject,
+        onRefresh: @escaping () -> Void,
+        onLoadMore: @escaping () -> Void
+    ) {
+        self.init(
+            tableView: tableView,
+            viewModel: viewModel,
+            onRefresh: {
+                onRefresh()
+            },
+            onLoadMore: {
+                onLoadMore()
+            }
+        )
+    }
+
     func startPullToRefresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
-        Task { @MainActor in
-            viewModel.notifyChanged()
-            tableView?.contentInset.top = 0
-            forceScrollToTop(animated: false)
-            onRefresh()
-            isRefreshing = false
+        // Cancel an in-flight load-more so page 0 refresh does not race with appends.
+        cancelLoadMore()
+        refreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isRefreshing = false
+                self.refreshTask = nil
+            }
+            await self.onRefresh()
+            self.scrollToTopSafely(animated: false)
         }
     }
 
     func handleWillDisplay(at indexPath: IndexPath) {
-        guard let tableView = tableView else { return }
+        guard let tableView else { return }
         let totalRows = tableView.numberOfRows(inSection: 0)
-        guard indexPath.row >= totalRows - 6 else { return }
-        guard !isLoadingMore else { return }
+        guard totalRows > 0, indexPath.row >= totalRows - 6 else { return }
+        guard !isRefreshing, !isLoadingMore else { return }
         isLoadingMore = true
-        loadMoreTask = Task { [weak self] in
-            guard let self = self else { return }
-            viewModel.notifyChanged()
-            onLoadMore()
-            isLoadingMore = false
+        loadMoreTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isLoadingMore = false
+                self.loadMoreTask = nil
+            }
+            await self.onLoadMore()
         }
     }
 
@@ -48,9 +79,26 @@ final class DexoListRefreshPolicy: NSObject {
         isLoadingMore = false
     }
 
+    func cancel() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        isRefreshing = false
+        cancelLoadMore()
+    }
+
+    /// Safe top scroll: never calls `scrollToRow` on an empty table.
     func forceScrollToTop(animated: Bool) {
-        guard let tableView = tableView else { return }
-        let indexPath = IndexPath(row: 0, section: 0)
-        tableView.scrollToRow(at: indexPath, at: .top, animated: animated)
+        scrollToTopSafely(animated: animated)
+    }
+
+    private func scrollToTopSafely(animated: Bool) {
+        guard let tableView else { return }
+        let top = -tableView.adjustedContentInset.top
+        let offset = CGPoint(x: tableView.contentOffset.x, y: top)
+        if animated {
+            tableView.setContentOffset(offset, animated: true)
+        } else {
+            tableView.contentOffset = offset
+        }
     }
 }

@@ -42,6 +42,7 @@ final class BrowsingHistoryViewModel: DexoObservableObject {
     }
 
     func loadTopics() async {
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
         requiresLogin = false
@@ -57,6 +58,8 @@ final class BrowsingHistoryViewModel: DexoObservableObject {
             let result = try await api.fetchReadTopics(page: 0)
             topics = result.topicList.topics
             canLoadMore = result.topicList.moreTopicsUrl != nil
+            usersById.removeAll()
+            categoryIndex = DiscourseCategoryIndex()
             indexUsers(result.users)
             indexCategories(result.categories)
         } catch {
@@ -169,6 +172,8 @@ final class BrowsingHistoryViewController: ObservableViewController {
         table.rowHeight = UITableView.automaticDimension
         table.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
         table.showsVerticalScrollIndicator = false
+        // Short / empty lists still need bounce so UIRefreshControl can fire.
+        table.alwaysBounceVertical = true
         return table
     }()
 
@@ -323,7 +328,9 @@ final class BrowsingHistoryViewController: ObservableViewController {
     }
 
     override func updateUI() {
-        refreshControl.endRefreshing()
+        if !viewModel.isLoading, refreshControl.isRefreshing {
+            refreshControl.endRefreshing()
+        }
         applyThemeStyle()
 
         var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
@@ -349,7 +356,9 @@ final class BrowsingHistoryViewController: ObservableViewController {
             activityIndicator.stopAnimating()
         }
 
-        tableView.isHidden = !hasTopics
+        // Keep the table visible so empty-state pull-to-refresh still works.
+        tableView.isHidden = false
+        tableView.alpha = hasTopics ? 1 : 0.01
         stateStackView.isHidden = hasTopics || viewModel.isLoading
 
         if viewModel.requiresLogin {
@@ -369,7 +378,7 @@ final class BrowsingHistoryViewController: ObservableViewController {
         } else if !hasTopics, !viewModel.isLoading {
             configureState(
                 iconName: "clock.arrow.circlepath",
-                text: "还没有浏览历史",
+                text: String(localized: "me.discourse_history.empty", defaultValue: "还没有论坛浏览记录"),
                 showLogin: false,
                 showRetry: false
             )
@@ -425,12 +434,18 @@ final class BrowsingHistoryViewController: ObservableViewController {
     @objc private func pullToRefresh() {
         Task {
             await viewModel.loadTopics()
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
+            }
         }
     }
 
     @objc private func retryTapped() {
         Task {
             await viewModel.loadTopics()
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
+            }
         }
     }
 
