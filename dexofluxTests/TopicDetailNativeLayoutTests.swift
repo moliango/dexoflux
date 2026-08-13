@@ -1,6 +1,6 @@
 import CookedHTML
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class TopicDetailNativeLayoutTests: XCTestCase {
@@ -58,6 +58,30 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         let tail = TopicDetailPaginationPolicy.jumpWindow(targetIndex: 198, totalCount: 200)
         XCTAssertLessThanOrEqual(tail.upperBound, 200)
         XCTAssertTrue(tail.contains(198))
+    }
+
+    /// Jump mid-thread then prepend earlier floors must keep stream order
+    /// (regression: #16 appearing above #1 after load-earlier).
+    func testStreamOrderSortKeepsLowerFloorsBeforeHigher() {
+        let streamIds = [101, 102, 116, 117, 118] // floors 1,2,16,17,18
+        let idOrder = Dictionary(uniqueKeysWithValues: streamIds.enumerated().map { ($1, $0) })
+        // Simulate a corrupted posts array: mid-thread head first, then earlier floors.
+        let scrambled = [116, 117, 118, 101, 102]
+        let sorted = scrambled.sorted { (idOrder[$0] ?? Int.max) < (idOrder[$1] ?? Int.max) }
+        XCTAssertEqual(sorted, streamIds)
+        XCTAssertLessThan(
+            idOrder[101] ?? Int.max,
+            idOrder[116] ?? Int.max,
+            "floor 1 must sort before floor 16"
+        )
+    }
+
+    func testJumpWindowAroundFloorSixteenDoesNotIncludeOPUnlessNearHead() {
+        // Floor 16 → stream index 15
+        let window = TopicDetailPaginationPolicy.jumpWindow(targetIndex: 15, totalCount: 28)
+        XCTAssertFalse(window.contains(0), "mid-thread jump must not pull floor 1 into the window")
+        XCTAssertTrue(window.contains(15))
+        XCTAssertEqual(window.lowerBound, 10) // 15 - lookback 5
     }
 
     func testEarlierLoadAnchorIsConsumedOnlyAfterLoadingFinishes() {

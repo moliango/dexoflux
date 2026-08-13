@@ -1,5 +1,4 @@
 import CookedHTML
-import SafariServices
 import UIKit
 
 // MARK: - TopicDetailBottomBarDelegate
@@ -171,27 +170,46 @@ extension TopicDetailViewController: TopicDetailBottomBarDelegate {
             self?.jumpToPostId(postId)
         }
         timeline.onDismiss = { [weak self] in
-            self?.syncOwningTabBarVisibility()
+            guard let self else { return }
+            // Restore topic chrome after the sheet closes (including after app switch).
+            self.bottomBar.isHidden = !self.viewModel.isReady
+            self.floatingReplyButton.isHidden = !self.viewModel.isReady
+            self.bottomBar.alpha = self.viewModel.isReady ? 1 : 0
+            self.bottomBar.transform = .identity
+            self.view.bringSubviewToFront(self.floatingReplyButton)
+            self.view.bringSubviewToFront(self.bottomBar)
+            self.syncOwningTabBarVisibility()
         }
         timeline.modalPresentationStyle = .pageSheet
         timeline.isModalInPresentation = true
         if let sheet = timeline.sheetPresentationController {
-            // Fit the compact timeline content; avoid a tall empty band under buttons.
+            // Custom height keeps cancel/jump on-screen. A single compact detent avoids
+            // the system expanding the container on foreground and sinking the action row.
             if #available(iOS 16.0, *) {
                 let timelineDetent = UISheetPresentationController.Detent.custom(
                     identifier: .init("topic.timeline")
                 ) { context in
-                    // preferred content + home-indicator reserve.
-                    let fitted = TopicTimelineSheetViewController.preferredSheetHeight + 34
+                    // Content height + home-indicator reserve only — avoid a tall empty band
+                    // under cancel/jump (the green strip users reported).
+                    let homeIndicator: CGFloat = 34
+                    let fitted = TopicTimelineSheetViewController.preferredSheetHeight + homeIndicator
                     return min(fitted, context.maximumDetentValue)
                 }
                 sheet.detents = [timelineDetent]
                 sheet.selectedDetentIdentifier = timelineDetent.identifier
+                sheet.largestUndimmedDetentIdentifier = nil
             } else {
                 sheet.detents = [.medium()]
             }
+            // Help UIKit size the sheet to the compact content chain.
+            timeline.preferredContentSize = CGSize(
+                width: UIScreen.main.bounds.width,
+                height: TopicTimelineSheetViewController.preferredSheetHeight + 34
+            )
             sheet.prefersGrabberVisible = false
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+            sheet.prefersEdgeAttachedInCompactHeight = true
+            sheet.widthFollowsPreferredContentSizeWhenEdgeAttached = true
         }
         present(timeline, animated: true)
     }

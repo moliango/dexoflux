@@ -1,5 +1,4 @@
 import CookedHTML
-import SafariServices
 import UIKit
 
 final class TopicDetailViewController: ObservableViewController {
@@ -694,6 +693,14 @@ final class TopicDetailViewController: ObservableViewController {
                     )
                 }
             }
+            // Flat mode: force Discourse stream order so jump/load-earlier never paints
+            // e.g. #16 above #1 when the in-memory posts array was briefly unsorted.
+            if !viewModel.isNestedViewEnabled, !readyIds.isEmpty, !viewModel.allPostIds.isEmpty {
+                let streamOrder = Dictionary(
+                    uniqueKeysWithValues: viewModel.allPostIds.enumerated().map { ($1, $0) }
+                )
+                readyIds.sort { (streamOrder[$0] ?? Int.max) < (streamOrder[$1] ?? Int.max) }
+            }
             // Sort chips only when the tree actually has rows (not during flat fallback).
             if viewModel.isNestedViewEnabled,
                !viewModel.nestedRows.isEmpty,
@@ -712,6 +719,7 @@ final class TopicDetailViewController: ObservableViewController {
             warmEstimatedRowHeights(forPostIds: readyIds.filter { $0 != TopicDetailListItem.nestedSortBarID })
             let completedEarlierAnchor = viewModel.isLoadingEarlier ? nil : earlierLoadAnchor
             applyPostSnapshot(itemIDs: readyIds, earlierAnchor: completedEarlierAnchor)
+            refreshNestedSortBarSelection()
             if shouldReloadVisibleContent {
                 // Font/theme change invalidates measured row heights.
                 postRowHeightCache.removeAll(keepingCapacity: true)
@@ -785,8 +793,8 @@ final class TopicDetailViewController: ObservableViewController {
 
     func applyTypography() {
         titleLabel.font = TopicDetailTypography.topicTitleFont()
-        navTitleLabel.font = TopicDetailTypography.interfaceFont(ofSize: 17, weight: .semibold)
-        errorLabel.font = TopicDetailTypography.interfaceFont(ofSize: 14, weight: .regular)
+        navTitleLabel.font = TopicDetailTypography.chromeFont(.navTitle, weight: .semibold)
+        errorLabel.font = TopicDetailTypography.chromeFont(.error, weight: .regular)
     }
 
     func prepareInitialContentTransition() {
@@ -1200,6 +1208,21 @@ final class TopicDetailViewController: ObservableViewController {
                 contentWidth: contentWidth
             )
         }
+    }
+
+    /// Diffable often skips reloads when post IDs are unchanged after a sort tap.
+    /// Force the chip bar to pick up `viewModel.nestedSort` selection chrome.
+    func refreshNestedSortBarSelection() {
+        let sortBarID = TopicDetailListItem.nestedSortBarID
+        if let indexPath = dataSource.indexPath(for: sortBarID),
+           let cell = tableView.cellForRow(at: indexPath) as? NestedSortBarCell {
+            cell.configure(selected: viewModel.nestedSort)
+            return
+        }
+        var snapshot = dataSource.snapshot()
+        guard snapshot.itemIdentifiers.contains(sortBarID) else { return }
+        snapshot.reconfigureItems([sortBarID])
+        dataSource.apply(snapshot, animatingDifferences: false)
     }
 
     func applyPostSnapshot(

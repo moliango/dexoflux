@@ -91,12 +91,21 @@ final class TopicTimelineSheetViewController: UIViewController {
         return view
     }()
 
-    /// Content-fitted sheet height used by the presenter detent (excludes home indicator).
-    /// grabber+title+track+actions+paddings; keep in sync with viewDidLoad constraints.
-    static let preferredSheetHeight: CGFloat = 400
-
     /// Vertical scrubber height inside the sheet (must match the track constraint).
-    static let trackHeight: CGFloat = 240
+    static let trackHeight: CGFloat = 220
+
+    /// Content-fitted sheet height used by the presenter detent (excludes home indicator).
+    /// Keep in sync with viewDidLoad vertical chain so the sheet does not leave a tall
+    /// empty band under the cancel/jump row.
+    /// Do not pin action buttons to the sheet bottom — after app switch the sheet
+    /// container can grow taller than the visible detent and bottom-pinned controls sink off-screen.
+    static var preferredSheetHeight: CGFloat {
+        // grabber(8+4) + title gap+line(12+22) + content(14+track) + actions(16+48) + bottom(8)
+        8 + 4 + 12 + 22 + 14 + trackHeight + 16 + 48 + 8
+    }
+
+    private var buttonRow: UIStackView?
+    private var foregroundObserver: NSObjectProtocol?
 
     init(currentIndex: Int, stream: [Int], title: String?) {
 
@@ -155,6 +164,7 @@ final class TopicTimelineSheetViewController: UIViewController {
         buttonRow.axis = .horizontal
         buttonRow.distribution = .fillEqually
         buttonRow.spacing = 16
+        self.buttonRow = buttonRow
 
         titleLabel.text = titleText
         totalLabel.text = "/ \(totalCount)"
@@ -164,9 +174,9 @@ final class TopicTimelineSheetViewController: UIViewController {
         view.addSubview(contentRow)
         view.addSubview(buttonRow)
 
-        // Compact vertical chain: grabber → title → floor controls → actions.
-        // Buttons sit under content with a fixed 10pt gap to the sheet bottom inset
-        // so a tall detent cannot leave a large empty band under the action row.
+        // Keep cancel/jump directly under the floor controls.
+        // Pinning to safeArea.bottom fails when the sheet container grows taller than the
+        // visible detent (common after background→foreground): buttons sink below the fold.
         NSLayoutConstraint.activate([
             grabberView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             grabberView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -190,14 +200,15 @@ final class TopicTimelineSheetViewController: UIViewController {
             trackView.widthAnchor.constraint(equalToConstant: 56),
             trackView.heightAnchor.constraint(equalToConstant: Self.trackHeight),
 
-            buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 18),
+            buttonRow.topAnchor.constraint(equalTo: contentRow.bottomAnchor, constant: 16),
             buttonRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
             buttonRow.heightAnchor.constraint(equalToConstant: 48),
-            // Exactly 10pt under the action row (plus home-indicator safe area).
+            // Soft ceiling only — never require bottom equality against a growing sheet.
+            // Keep a tight 8pt reserve so the detent does not leave a tall empty strip.
             buttonRow.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -10
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -8
             ),
         ])
 
@@ -206,11 +217,66 @@ final class TopicTimelineSheetViewController: UIViewController {
         }
         feedback.prepare()
         updateFloorDisplay()
+        observeForegroundReturn()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        relayoutSheetChrome()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Second pass after the sheet finishes its presentation / foreground animation.
+        relayoutSheetChrome()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        onDismiss?()
+        if isBeingDismissed || presentingViewController == nil {
+            tearDownForegroundObserver()
+            onDismiss?()
+        }
+    }
+
+    deinit {
+        tearDownForegroundObserver()
+    }
+
+    private func observeForegroundReturn() {
+        guard foregroundObserver == nil else { return }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.relayoutSheetChrome()
+        }
+    }
+
+    private func tearDownForegroundObserver() {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+            self.foregroundObserver = nil
+        }
+    }
+
+    /// Re-fit detents and keep the action row on-screen after background/foreground.
+    private func relayoutSheetChrome() {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        if let buttonRow {
+            view.bringSubviewToFront(buttonRow)
+            buttonRow.isHidden = false
+            buttonRow.alpha = 1
+        }
+        if #available(iOS 16.0, *), let sheet = sheetPresentationController {
+            sheet.invalidateDetents()
+            // Re-select the compact timeline detent in case the system expanded the sheet.
+            if let identifier = sheet.detents.first?.identifier {
+                sheet.selectedDetentIdentifier = identifier
+            }
+        }
     }
 
     @objc private func trackValueChanged(_ sender: TopicTimelineTrackView) {

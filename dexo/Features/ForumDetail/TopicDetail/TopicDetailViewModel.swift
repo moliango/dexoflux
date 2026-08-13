@@ -553,7 +553,33 @@ final class TopicDetailViewModel: DexoObservableObject {
             // Keep topic starter + posts that are not replies to another post.
             base = base.filter { $0.postNumber == 1 || $0.replyToPostNumber == nil }
         }
-        return base
+        // Always present in Discourse stream order so jump / load-earlier cannot
+        // leave a mid-thread post above floor 1.
+        return postsSortedByStream(base)
+    }
+
+    /// True only for the real topic OP (stream head / post_number 1), never a jump-window head.
+    private func isRealOpeningPost(_ post: DiscourseTopicDetail.Post) -> Bool {
+        if post.postNumber == 1 { return true }
+        if let headId = allPostIds.first, headId == post.id { return true }
+        return false
+    }
+
+    private func streamIndexOrder() -> [Int: Int] {
+        Dictionary(uniqueKeysWithValues: allPostIds.enumerated().map { ($1, $0) })
+    }
+
+    private func postsSortedByStream(_ posts: [DiscourseTopicDetail.Post]) -> [DiscourseTopicDetail.Post] {
+        guard !allPostIds.isEmpty else { return posts }
+        let idOrder = streamIndexOrder()
+        return posts.sorted { (idOrder[$0.id] ?? Int.max) < (idOrder[$1.id] ?? Int.max) }
+    }
+
+    /// Keep `postStream.posts` aligned with `allPostIds` after any window mutation.
+    private func resortLoadedPostsByStreamOrder() {
+        guard var current = topic?.postStream.posts, !current.isEmpty, !allPostIds.isEmpty else { return }
+        current = postsSortedByStream(current)
+        topic?.postStream.posts = current
     }
 
     private func nestedVisiblePosts() -> [DiscourseTopicDetail.Post] {
@@ -713,10 +739,10 @@ final class TopicDetailViewModel: DexoObservableObject {
     func setNestedSort(_ sort: NestedReplySort) {
         guard nestedSort != sort else { return }
         nestedSort = sort
-        guard isNestedViewEnabled, let topicId = nestedTopicId ?? topic?.id else {
-            notifyChanged()
-            return
-        }
+        // Refresh chip selection immediately — snapshot IDs often stay identical while
+        // `/n/topic` reloads, so Diffable would otherwise skip cell reconfigure.
+        notifyChanged()
+        guard isNestedViewEnabled, let topicId = nestedTopicId ?? topic?.id else { return }
         Task { await loadNestedRoots(topicId: topicId, trackVisit: false) }
     }
 
@@ -882,6 +908,10 @@ final class TopicDetailViewModel: DexoObservableObject {
                 roots.append(p)
             }
         }
+        roots = sortFlatNestedRoots(roots)
+        for key in childrenMap.keys {
+            childrenMap[key] = sortFlatNestedRoots(childrenMap[key] ?? [])
+        }
         func build(_ post: DiscourseTopicDetail.Post) -> DiscourseNestedNode {
             let kids = (childrenMap[post.postNumber] ?? []).map(build)
             return DiscourseNestedNode(
@@ -895,6 +925,22 @@ final class TopicDetailViewModel: DexoObservableObject {
         nestedRoots = roots.map(build)
         nestedExpandedPostNumbers = Set(roots.prefix(20).map(\.postNumber))
         rebuildNestedRows()
+    }
+
+    private func sortFlatNestedRoots(_ posts: [DiscourseTopicDetail.Post]) -> [DiscourseTopicDetail.Post] {
+        switch nestedSort {
+        case .old:
+            return posts.sorted { $0.postNumber < $1.postNumber }
+        case .new:
+            return posts.sorted { $0.postNumber > $1.postNumber }
+        case .top:
+            return posts.sorted {
+                if $0.reactionUsersCount != $1.reactionUsersCount {
+                    return $0.reactionUsersCount > $1.reactionUsersCount
+                }
+                return $0.postNumber < $1.postNumber
+            }
+        }
     }
 
     private func findNestedNode(postNumber: Int) -> DiscourseNestedNode? {
@@ -1251,10 +1297,10 @@ final class TopicDetailViewModel: DexoObservableObject {
             }
 
             // Sort new posts by their order in allPostIds
-            let idOrder = Dictionary(uniqueKeysWithValues: allPostIds.enumerated().map { ($1, $0) })
-            let sortedPosts = newPosts.sorted { (idOrder[$0.id] ?? 0) < (idOrder[$1.id] ?? 0) }
+            let sortedPosts = postsSortedByStream(newPosts)
 
             topic?.postStream.posts.append(contentsOf: sortedPosts)
+            resortLoadedPostsByStreamOrder()
 
             for post in sortedPosts {
                 loadedPostIds.insert(post.id)
@@ -1309,20 +1355,30 @@ final class TopicDetailViewModel: DexoObservableObject {
             }
 
             // Sort new posts by their order in allPostIds
-            let idOrder = Dictionary(uniqueKeysWithValues: allPostIds.enumerated().map { ($1, $0) })
-            let sortedPosts = newPosts.sorted { (idOrder[$0.id] ?? 0) < (idOrder[$1.id] ?? 0) }
+            let sortedPosts = postsSortedByStream(newPosts)
 
-            // Insert after the pinned first post (index 1) if it exists, otherwise at 0
+            // Only skip index 0 when the real OP is intentionally pinned there.
+            // Jump windows used to set firstPost = window head (e.g. #16), then this
+            // path inserted floors 1…15 *after* #16 — "16 above 1". Never do that.
             let insertIndex: Int
-            if loadedRangeStart > 0, let fp = firstPost, posts.first?.id == fp.id {
+            if let fp = firstPost,
+               isRealOpeningPost(fp),
+               posts.first?.id == fp.id,
+               loadedRangeStart > 0 {
                 insertIndex = 1
             } else {
                 insertIndex = 0
             }
             topic?.postStream.posts.insert(contentsOf: sortedPosts, at: insertIndex)
+            resortLoadedPostsByStreamOrder()
 
             for post in sortedPosts {
                 loadedPostIds.insert(post.id)
+            }
+            // Refresh OP cache once stream head is actually loaded.
+            if let headId = allPostIds.first,
+               let head = topic?.postStream.posts.first(where: { $0.id == headId }) {
+                firstPost = head
             }
             guard await parseAndStore(posts: sortedPosts, generation: parseGeneration) else {
                 isLoadingEarlier = false
@@ -1379,11 +1435,12 @@ final class TopicDetailViewModel: DexoObservableObject {
             let response = try await api.fetchTopicPosts(topicId: topicId, postIds: batch)
 
             // Sort by stream order
-            let idOrder = Dictionary(uniqueKeysWithValues: allPostIds.enumerated().map { ($1, $0) })
-            let sortedPosts = response.postStream.posts.sorted { (idOrder[$0.id] ?? 0) < (idOrder[$1.id] ?? 0) }
+            let sortedPosts = postsSortedByStream(response.postStream.posts)
 
             topic?.postStream.posts = sortedPosts
-            firstPost = sortedPosts.first { $0.postNumber == 1 } ?? sortedPosts.first
+            // Only cache real OP. Falling back to sortedPosts.first made mid-thread
+            // jump heads look "pinned", so load-earlier inserted lower floors after them.
+            firstPost = sortedPosts.first(where: { isRealOpeningPost($0) })
 
             for post in sortedPosts {
                 loadedPostIds.insert(post.id)
@@ -1613,6 +1670,8 @@ final class TopicDetailViewModel: DexoObservableObject {
                 } else {
                     loadedRangeEnd = min(max(loadedRangeEnd, loadedRangeStart), newStream.count)
                 }
+                // Re-align in-memory bodies to the new stream so floors never invert.
+                resortLoadedPostsByStreamOrder()
             }
 
             if growth <= 0 && newStream.count <= acknowledgedStreamCount {

@@ -1,5 +1,4 @@
 import CookedHTML
-import SafariServices
 import UIKit
 
 // MARK: - Topic Timeline Sheet
