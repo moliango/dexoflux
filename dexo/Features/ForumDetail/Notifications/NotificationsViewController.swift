@@ -51,6 +51,8 @@ final class NotificationsViewController: ObservableViewController {
         table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
         table.estimatedRowHeight = TopicListCellFactory.estimatedRowHeight
+        // Short / empty lists still need bounce so UIRefreshControl can fire.
+        table.alwaysBounceVertical = true
         table.refreshControl = refreshControl
         return table
     }()
@@ -214,7 +216,11 @@ final class NotificationsViewController: ObservableViewController {
     }
 
     override func updateUI() {
-        refreshControl.endRefreshing()
+        // Only end the spinner when a load is not in flight. Intermediate
+        // coordinator notifyChanged() calls must not cancel an active pull.
+        if !viewModel.isLoading, refreshControl.isRefreshing {
+            refreshControl.endRefreshing()
+        }
         applyThemeStyle()
 
         let sourceEmpty = viewModel.notifications.isEmpty
@@ -224,7 +230,10 @@ final class NotificationsViewController: ObservableViewController {
         skeletonView.isHidden = !showSkeleton
         filterContainerView.isHidden = viewModel.requiresLogin
         filterScrollView.isHidden = false
-        tableView.isHidden = !hasFiltered || showSkeleton
+        // Keep the table visible (except over skeleton) so pull-to-refresh still
+        // works on empty / filter-empty states.
+        tableView.isHidden = showSkeleton
+        tableView.alpha = hasFiltered ? 1 : 0.01
         stateStackView.isHidden = hasFiltered || showSkeleton
         // Keep mark-all enabled if any unread exists (global), not just current filter.
         navigationItem.rightBarButtonItem?.isEnabled = viewModel.notifications.contains { !$0.read }
@@ -299,12 +308,18 @@ final class NotificationsViewController: ObservableViewController {
     @objc private func refreshPulled() {
         Task {
             await viewModel.loadNotifications()
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
+            }
         }
     }
 
     @objc private func retryTapped() {
         Task {
             await viewModel.loadNotifications()
+            if refreshControl.isRefreshing {
+                refreshControl.endRefreshing()
+            }
         }
     }
 
@@ -425,25 +440,8 @@ extension NotificationsViewController: UITableViewDataSource, UITableViewDelegat
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let notification = filteredNotifications[indexPath.row]
-        let layout = TopicListLayoutKind.current
-        if layout.usesChatSessionRows {
-            let avatarURL = NotificationCell.avatarURL(for: notification, baseURL: api.baseURL)
-            let item = TopicListSessionItem(
-                title: notification.displayTitle,
-                subtitle: notification.displayDescription,
-                timeText: NotificationCell.formatDate(notification.createdAt),
-                avatarURL: avatarURL,
-                isEmphasized: !notification.read,
-                badgeText: nil,
-                baseURL: api.baseURL
-            )
-            return TopicListCellFactory.makeSessionCell(
-                tableView: tableView,
-                indexPath: indexPath,
-                item: item,
-                layout: layout
-            )
-        }
+        // Always use the dedicated FluxDo-style notification cell (avatar + type badge
+        // + title/action subtitle). Chat-session rows strip the type badge chrome.
         guard let cell = tableView.dequeueReusableCell(
             withIdentifier: NotificationCell.reuseIdentifier,
             for: indexPath
@@ -645,6 +643,7 @@ private final class NotificationCell: UITableViewCell {
         avatarImageView.image = nil
         badgeIconView.sd_cancelCurrentImageLoad()
         badgeIconView.image = nil
+        badgeIconView.tintColor = .secondaryLabel
         titleLabel.text = nil
         descriptionLabel.text = nil
         timeLabel.text = nil
@@ -652,28 +651,34 @@ private final class NotificationCell: UITableViewCell {
 
     func configure(with notification: DiscourseNotification, baseURL: String) {
         let themeStyle = AppSettings.shared.themeStyle
-        let icon = Self.icon(for: notification.notificationType)
         let color = Self.color(for: notification.notificationType, themeStyle: themeStyle)
         cardView.backgroundColor = themeStyle.topicCardBackgroundColor
         avatarImageView.backgroundColor = themeStyle.topicChipBackgroundColor
         unreadDotView.backgroundColor = themeStyle.accentColor
-        badgeIconView.image = UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+        badgeIconView.sd_cancelCurrentImageLoad()
+        // FluxDo-style type badge: always a concrete template image (boost → BoostRocket).
+        badgeIconView.image = notification.badgeImage(pointSize: 13)
         badgeIconView.tintColor = notification.read ? .secondaryLabel : color
+        // FluxDo: unread badge sits on surface with type color; read uses muted chip.
         badgeContainer.backgroundColor = notification.read
             ? themeStyle.topicChipBackgroundColor
-            : themeStyle.accentColor.withAlphaComponent(0.12)
-        badgeContainer.layer.shadowColor = themeStyle.accentColor.cgColor
+            : color.withAlphaComponent(0.16)
+        badgeContainer.layer.shadowColor = UIColor.black.cgColor
+        badgeContainer.layer.shadowOpacity = 0.10
 
         titleLabel.text = notification.displayTitle
+        titleLabel.textColor = .label
         titleLabel.font = .systemFont(ofSize: 15, weight: notification.read ? .regular : .semibold)
+        titleLabel.numberOfLines = 2
         descriptionLabel.text = notification.displayDescription
+        descriptionLabel.textColor = .secondaryLabel
         timeLabel.text = Self.formatDate(notification.createdAt)
         unreadDotView.isHidden = notification.read
 
         AvatarImageLoader.setImage(
             on: avatarImageView,
             url: Self.avatarURL(for: notification, baseURL: baseURL),
-            placeholder: UIImage(systemName: "person.crop.circle")
+            placeholder: UIImage(systemName: "person.crop.circle.fill")
         )
 
         // Badge granted: catalog supplies type color + optional image; payload has name.
@@ -783,41 +788,7 @@ private final class NotificationCell: UITableViewCell {
         return relative.localizedString(for: date, relativeTo: Date())
     }
 
-    private static func icon(for type: Int) -> String {
-        switch type {
-        case 1:
-            return "at"
-        case 2:
-            return "arrowshape.turn.up.left.fill"
-        case 3:
-            return "quote.bubble.fill"
-        case 5, 19:
-            return "heart.fill"
-        case 6, 7:
-            return "envelope.fill"
-        case 9:
-            return "plus.bubble.fill"
-        case 11, 39:
-            return "link"
-        case 12:
-            return "medal.fill"
-        case 15:
-            return "person.2.fill"
-        case 17:
-            return "eye.fill"
-        case 24:
-            return "bookmark.fill"
-        case 25:
-            return "hand.thumbsup.fill"
-        case 34:
-            return "checklist"
-        case 43:
-            return "rocket.fill"
-        default:
-            return "bell.fill"
-        }
-    }
-
+    /// FluxDo `notification_item` color map.
     private static func color(for type: Int, themeStyle: AppSettings.ThemeStyle) -> UIColor {
         if themeStyle != .systemDefault, AppSettings.shared.themeTaxonomyColorsEnabled {
             return themeStyle.topicTagColor(for: "notification-\(type)")
@@ -825,16 +796,23 @@ private final class NotificationCell: UITableViewCell {
         switch type {
         case 5, 19, 25:
             return .systemRed
-        case 6, 7:
+        case 6, 7, 13, 29, 30, 31, 32, 33, 40:
             return .systemBlue
         case 12:
             return .systemYellow
         case 1, 15:
-            return .systemBlue
-        case 24:
+            return themeStyle.accentColor
+        case 24, 37:
             return .systemPurple
+        case 38:
+            return .systemRed
         case 43:
-            return .systemIndigo
+            // FluxDo boost accent — deep purple / indigo.
+            return .systemPurple
+        case 800, 801, 802:
+            return .systemGreen
+        case 34, 35:
+            return .systemOrange
         default:
             return .secondaryLabel
         }
