@@ -9,8 +9,7 @@ final class CompactPinnedTopicCell: UITableViewCell {
     private let cardView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.layer.cornerRadius = 10
-        view.layer.cornerCurve = .continuous
+        view.layer.cornerRadius = 0
         return view
     }()
 
@@ -98,13 +97,13 @@ final class CompactPinnedTopicCell: UITableViewCell {
         cardView.addSubview(replyStack)
 
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             cardView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
 
-            pinView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
+            pinView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
             pinView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
             pinView.widthAnchor.constraint(equalToConstant: 14),
             pinView.heightAnchor.constraint(equalToConstant: 14),
@@ -120,13 +119,13 @@ final class CompactPinnedTopicCell: UITableViewCell {
             titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -10),
 
             unreadBadge.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
-            unreadBadge.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            unreadBadge.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
             unreadBadge.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
             unreadBadge.heightAnchor.constraint(equalToConstant: 18),
             unreadBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
             replyStack.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
-            replyStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            replyStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
             replyStack.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
         ])
     }
