@@ -29,15 +29,13 @@ final class DexoListRefreshPolicy: NSObject {
         onRefresh: @escaping () -> Void,
         onLoadMore: @escaping () -> Void
     ) {
+        let refresh = onRefresh
+        let loadMore = onLoadMore
         self.init(
             tableView: tableView,
             viewModel: viewModel,
-            onRefresh: {
-                onRefresh()
-            },
-            onLoadMore: {
-                onLoadMore()
-            }
+            onRefresh: { () async in refresh() },
+            onLoadMore: { () async in loadMore() }
         )
     }
 
