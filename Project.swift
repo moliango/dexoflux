@@ -31,19 +31,19 @@ let project = Project(
             product: .app,
             bundleId: "com.naine.doer",
             deploymentTargets: .iOS("15.0"),
-            infoPlist: .file(path: "dexo/Info.plist"),
+            infoPlist: .file(path: "Doer/Info.plist"),
             sources: [
-                .glob("dexo/**", excluding: [
-                    "dexo/Info.plist",
-                    "dexo/Assets.xcassets/**",
-                    "dexo/AppIcon.icon/**",
+                .glob("Doer/**", excluding: [
+                    "Doer/Info.plist",
+                    "Doer/Assets.xcassets/**",
+                    "Doer/AppIcon.icon/**",
                 ]),
             ],
             resources: .resources([
-                .glob(pattern: "dexo/Assets.xcassets/**"),
-                .glob(pattern: "dexo/Localizable.xcstrings"),
-                .glob(pattern: "dexo/Core/aliases.json"),
-                .glob(pattern: "dexo/Resources/Fonts/**"),
+                .glob(pattern: "Doer/Assets.xcassets/**"),
+                .glob(pattern: "Doer/Localizable.xcstrings"),
+                .glob(pattern: "Doer/Core/aliases.json"),
+                .glob(pattern: "Doer/Resources/Fonts/**"),
             ]),
             dependencies: [
                 .external(name: "Alamofire"),
@@ -91,7 +91,7 @@ let project = Project(
             bundleId: "com.naine.doerTests",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .default,
-            sources: ["dexofluxTests/**"],
+            sources: ["DoerTests/**"],
             dependencies: [
                 .target(name: "Doer"),
             ]
@@ -102,8 +102,8 @@ let project = Project(
             product: .appExtension,
             bundleId: "com.naine.doer.share",
             deploymentTargets: .iOS("15.0"),
-            infoPlist: .file(path: "Extensions/DexoShare/Info.plist"),
-            sources: ["Extensions/DexoShare/**"],
+            infoPlist: .file(path: "Extensions/DoerShare/Info.plist"),
+            sources: ["Extensions/DoerShare/**"],
             dependencies: [],
             settings: .settings(
                 base: [
@@ -123,8 +123,8 @@ let project = Project(
             product: .appExtension,
             bundleId: "com.naine.doer.widget",
             deploymentTargets: .iOS("15.0"),
-            infoPlist: .file(path: "Extensions/DexoWidget/Info.plist"),
-            sources: ["Extensions/DexoWidget/**"],
+            infoPlist: .file(path: "Extensions/DoerWidget/Info.plist"),
+            sources: ["Extensions/DoerWidget/**"],
             dependencies: [],
             settings: .settings(
                 base: [

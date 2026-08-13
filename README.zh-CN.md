@@ -85,12 +85,15 @@ make clean
 .
 ├── Project.swift                 # Tuist 工程：Doer / DoerTests / DoerShare / DoerWidget
 ├── Tuist/                        # 外部 Swift 依赖
-├── dexo/                         # App 源码
+├── Doer/                         # App 源码
 │   ├── AppDelegate.swift
 │   ├── SceneDelegate.swift
 │   ├── Info.plist
 │   ├── Localizable.xcstrings     # en / zh-Hans / zh-Hant / zh-HK
 │   ├── Assets.xcassets/          # 应用图标、启动图、运行时图片
+│   ├── AppIcon.icon/             # Icon Composer 资源
+│   ├── Components/               # 共用反馈 / 空状态组件
+│   ├── Resources/Fonts/          # 内置图标字体
 │   ├── Core/
 │   │   ├── Auth/                 # Web 登录、Cookie、Keychain、会话刷新
 │   │   ├── ImageLoading/         # 头像和图片加载
@@ -102,16 +105,17 @@ make clean
 │   ├── Features/
 │   │   ├── ForumDetail/          # 首页、帖子、我的、通知、搜索、聊天
 │   │   ├── ForumList/            # 多论坛列表
+│   │   ├── Main/                 # 根底栏容器
 │   │   ├── Settings/             # 外观、阅读、数据、网络、关于
 │   │   ├── Plugins/              # 小程序、NewAPI 签到、工具箱
 │   │   ├── Notion/               # Notion 话题同步
 │   │   └── AIModelService/       # 应用内 AI 服务
 │   └── Networking/               # DiscourseAPI + DiscourseRouter + DoH
 ├── Extensions/
-│   ├── DexoShare/                # 分享扩展 → doer://
-│   └── DexoWidget/               # 主屏幕小组件
+│   ├── DoerShare/                # 分享扩展 → doer://
+│   └── DoerWidget/               # 主屏幕小组件
 ├── Packages/CookedHTML/          # cooked HTML → 原生节点树
-├── dexofluxTests/                # 单元测试（DoerTests）
+├── DoerTests/                    # App 单元测试
 ├── ci_scripts/                   # 未签名 IPA 构建
 └── assets/                       # README 图标和截图
 ```

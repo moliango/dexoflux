@@ -53,7 +53,7 @@ final class LocalizationCoverageTests: XCTestCase {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let catalogURL = projectRoot.appendingPathComponent("dexo/Localizable.xcstrings")
+        let catalogURL = projectRoot.appendingPathComponent("Doer/Localizable.xcstrings")
         let data = try Data(contentsOf: catalogURL)
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let strings = try XCTUnwrap(root["strings"] as? [String: Any])

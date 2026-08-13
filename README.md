@@ -85,12 +85,15 @@ The generated workspace is not committed. Run `make generate` again after changi
 .
 ├── Project.swift                 # Tuist project: Doer / DoerTests / DoerShare / DoerWidget
 ├── Tuist/                        # External Swift packages
-├── dexo/                         # App source
+├── Doer/                         # App source
 │   ├── AppDelegate.swift
 │   ├── SceneDelegate.swift
 │   ├── Info.plist
 │   ├── Localizable.xcstrings     # en / zh-Hans / zh-Hant / zh-HK
 │   ├── Assets.xcassets/          # App icon, launch art, runtime images
+│   ├── AppIcon.icon/             # Icon Composer asset
+│   ├── Components/               # Shared feedback / empty-state views
+│   ├── Resources/Fonts/          # Bundled icon font
 │   ├── Core/
 │   │   ├── Auth/                 # Web login, cookie store, Keychain, session refresh
 │   │   ├── ImageLoading/         # Avatar and image helpers
@@ -102,16 +105,17 @@ The generated workspace is not committed. Run `make generate` again after changi
 │   ├── Features/
 │   │   ├── ForumDetail/          # Home, topic, Me, notifications, search, chat
 │   │   ├── ForumList/            # Multi-forum list
+│   │   ├── Main/                 # Root tab container
 │   │   ├── Settings/             # Appearance, reading, data, network, about
 │   │   ├── Plugins/              # Mini programs, NewAPI check-in, toolbox
 │   │   ├── Notion/               # Notion topic sync
 │   │   └── AIModelService/       # In-app AI providers
 │   └── Networking/               # DiscourseAPI + DiscourseRouter + DoH
 ├── Extensions/
-│   ├── DexoShare/                # Share extension → doer://
-│   └── DexoWidget/               # Home-screen widget
+│   ├── DoerShare/                # Share extension → doer://
+│   └── DoerWidget/               # Home-screen widget
 ├── Packages/CookedHTML/          # Cooked HTML → native block/inline tree
-├── dexofluxTests/                # Unit tests (DoerTests target)
+├── DoerTests/                    # App unit tests
 ├── ci_scripts/                   # Unsigned IPA build
 └── assets/                       # README icon and screenshots
 ```
