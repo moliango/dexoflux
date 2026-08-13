@@ -90,6 +90,27 @@ enum NewAPICheckInLoginSupport {
         return header?.isEmpty == false ? header : nil
     }
 
+    nonisolated static func siteOrigin(from url: URL) -> URL? {
+        guard let normalized = normalizedLoginURL(url.absoluteString) else { return nil }
+        var components = URLComponents(url: normalized, resolvingAgainstBaseURL: false)
+        components?.path = ""
+        components?.query = nil
+        components?.fragment = nil
+        components?.user = nil
+        components?.password = nil
+        return components?.url
+    }
+
+    nonisolated static func matchingPlatform(
+        in platforms: [NewAPICheckInPlatform],
+        url: URL
+    ) -> NewAPICheckInPlatform? {
+        platforms.first { platform in
+            guard let platformURL = normalizedLoginURL(platform.baseURL) else { return false }
+            return samePlatformFamily(platformURL, url)
+        }
+    }
+
     nonisolated static func samePlatformFamily(_ lhs: URL, _ rhs: URL) -> Bool {
         guard let left = lhs.host?.lowercased(), let right = rhs.host?.lowercased() else { return false }
         return left == right || left.hasSuffix(".\(right)") || right.hasSuffix(".\(left)")

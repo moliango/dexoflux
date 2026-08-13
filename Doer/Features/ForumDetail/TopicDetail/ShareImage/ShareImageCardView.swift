@@ -372,11 +372,6 @@ final class ShareImageCardView: UIView {
             }
         }
 
-        if let cached = SDImageCache.shared.imageFromCache(forKey: url.absoluteString) {
-            finish(cached)
-            return
-        }
-
         ExternalImageFetcher.fetch(url: url, refererBaseURL: baseURL) { image in
             if let image {
                 SDImageCache.shared.store(image, forKey: url.absoluteString, completion: nil)

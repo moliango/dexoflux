@@ -241,6 +241,37 @@ final class CloudflareRecoveryTests: XCTestCase {
         XCTAssertFalse(CloudflareImageGate.isPaused(baseURL: base))
     }
 
+    func testTopicDetailSkipsReloadWhenThreadIsAlreadyReady() {
+        XCTAssertFalse(
+            TopicDetailCloudflareRecoveryPolicy.shouldReloadTopic(
+                isReady: true,
+                hasParsedPosts: true,
+                errorMessage: nil
+            )
+        )
+        XCTAssertTrue(
+            TopicDetailCloudflareRecoveryPolicy.shouldReloadTopic(
+                isReady: true,
+                hasParsedPosts: true,
+                errorMessage: "Cloudflare verification required"
+            )
+        )
+        XCTAssertTrue(
+            TopicDetailCloudflareRecoveryPolicy.shouldReloadTopic(
+                isReady: false,
+                hasParsedPosts: false,
+                errorMessage: nil
+            )
+        )
+        XCTAssertTrue(
+            TopicDetailCloudflareRecoveryPolicy.shouldReloadTopic(
+                isReady: true,
+                hasParsedPosts: false,
+                errorMessage: nil
+            )
+        )
+    }
+
 }
 
 

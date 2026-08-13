@@ -36,6 +36,19 @@ final class LinkTextView: UITextView {
         // Prevent underestimated height from painting text into the next block (covers/masks next line).
         clipsToBounds = true
         isScrollEnabled = false
+        isSelectable = true
+        // iOS 16+ supplies 引用回复 via UITextViewDelegate.editMenuForTextIn.
+        // Installing UIMenuItem there duplicates the action in the selection menu.
+        if #available(iOS 16.0, *) {
+            // Native edit menu path.
+        } else {
+            UIMenuController.shared.menuItems = [
+                UIMenuItem(
+                    title: DiscourseQuoteMarkdown.actionTitle,
+                    action: #selector(doerQuoteReply(_:))
+                )
+            ]
+        }
         textContainer.lineFragmentPadding = 0
         textContainerInset = .zero
     }
@@ -207,6 +220,31 @@ final class LinkTextView: UITextView {
                 animator.pausesOnCompletion = true
                 blurAnimators.append(animator)
             }
+        }
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(doerQuoteReply(_:)) {
+            let selected = DiscourseQuoteMarkdown.selectedText(in: self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !selected.isEmpty
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    @objc func doerQuoteReply(_ sender: Any?) {
+        let text = DiscourseQuoteMarkdown.selectedText(in: self)
+        var view: UIView? = superview
+        while let current = view {
+            if let cell = current as? PostNativeCell {
+                cell.delegate?.postCell(didQuoteSelectedText: text, postId: cell.postId)
+                return
+            }
+            if let cell = current as? WeChatChatPostCell {
+                cell.handleQuoteSelectedText(text)
+                return
+            }
+            view = current.superview
         }
     }
 }

@@ -168,7 +168,9 @@ extension TopicDetailViewController {
                 for: pluginScope
             ),
             canAssign: topic?.canAssign == true || topic?.assignedToUsername != nil,
-            assignedToUsername: topic?.assignedToUsername
+            assignedToUsername: topic?.assignedToUsername,
+            currentFloor: currentVisibleFloor(),
+            totalFloors: max(viewModel.totalFloors, 1)
         )
         let barItem = navigationItem.rightBarButtonItems?.first
         TopicMoreMenuPresenter.present(from: self, barButtonItem: barItem, model: model) { [weak self] action in
@@ -208,6 +210,10 @@ extension TopicDetailViewController {
                 initialURL: url
             )
             navigationController?.pushViewController(browser, animated: true)
+        case .openTimeline:
+            showTimelineSheet()
+        case .jumpToFloor(let floor):
+            jumpToFloor(floor)
         case .readingSettings:
             navigationController?.pushViewController(ReadingSettingsViewController(), animated: true)
         case .markUnreadStepBack:

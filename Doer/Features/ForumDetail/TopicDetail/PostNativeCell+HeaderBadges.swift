@@ -117,7 +117,7 @@ extension PostNativeCell {
         imageView.isAccessibilityElement = false
 
         if let cacheKey = SDWebImageManager.shared.cacheKey(for: url),
-           let cachedImage = SDImageCache.shared.imageFromCache(forKey: cacheKey) {
+           let cachedImage = SDImageCache.shared.imageFromMemoryCache(forKey: cacheKey) {
             imageView.image = cachedImage.withRenderingMode(.alwaysOriginal)
             imageView.tintColor = nil
             return imageView

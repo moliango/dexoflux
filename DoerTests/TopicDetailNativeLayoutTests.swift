@@ -60,6 +60,21 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         XCTAssertTrue(tail.contains(198))
     }
 
+    func testFirstPaintSplitKeepsRemainderForScrollLoad() {
+        XCTAssertLessThan(
+            TopicDetailPaginationPolicy.firstPaintPostCount,
+            TopicDetailPaginationPolicy.pageSize
+        )
+        let items = Array(1...20)
+        let split = TopicDetailPaginationPolicy.firstPaintSplit(items)
+        XCTAssertEqual(split.immediate, Array(1...6))
+        XCTAssertEqual(split.deferred, Array(7...20))
+
+        let short = TopicDetailPaginationPolicy.firstPaintSplit([1, 2])
+        XCTAssertEqual(short.immediate, [1, 2])
+        XCTAssertTrue(short.deferred.isEmpty)
+    }
+
     /// Jump mid-thread then prepend earlier floors must keep stream order
     /// (regression: #16 appearing above #1 after load-earlier).
     func testStreamOrderSortKeepsLowerFloorsBeforeHigher() {
@@ -82,6 +97,79 @@ final class TopicDetailNativeLayoutTests: XCTestCase {
         XCTAssertFalse(window.contains(0), "mid-thread jump must not pull floor 1 into the window")
         XCTAssertTrue(window.contains(15))
         XCTAssertEqual(window.lowerBound, 10) // 15 - lookback 5
+    }
+
+    func testBoostChipWidthGrowsWithTextAndKeepsCountVisible() {
+        let short = BoostChipLayout.bubbleWidth(
+            displayText: "赞",
+            uniqueUserCount: 1,
+            boostCount: 1
+        )
+        let long = BoostChipLayout.bubbleWidth(
+            displayText: "这个 Boost 文案比较长所以需要更宽",
+            uniqueUserCount: 1,
+            boostCount: 1
+        )
+        XCTAssertGreaterThan(long, short)
+
+        let grouped = BoostChipLayout.bubbleWidth(
+            displayText: "赞",
+            uniqueUserCount: 2,
+            boostCount: 12
+        )
+        let singleSameText = BoostChipLayout.bubbleWidth(
+            displayText: "赞",
+            uniqueUserCount: 2,
+            boostCount: 1
+        )
+        XCTAssertGreaterThan(grouped, singleSameText)
+        XCTAssertGreaterThanOrEqual(BoostChipLayout.countBadgeWidth(count: 12), BoostChipLayout.countMinWidth)
+        XCTAssertLessThanOrEqual(
+            BoostChipLayout.measuredTextWidth(
+                String(repeating: "长", count: 40),
+                font: BoostChipLayout.titleFont(),
+                maxWidth: BoostChipLayout.singleTextMaxWidth
+            ),
+            BoostChipLayout.singleTextMaxWidth
+        )
+    }
+
+    func testBoostFlagPolicyMatchesFluxDo() {
+        let selfBoost = DiscourseTopicDetail.Boost(
+            id: 1,
+            cooked: "self",
+            user: DiscourseTopicDetail.BoostUser(id: 1, username: "alice", name: nil, avatarTemplate: nil),
+            canDelete: false,
+            canFlag: true
+        )
+        let otherBoost = DiscourseTopicDetail.Boost(
+            id: 2,
+            cooked: "other",
+            user: DiscourseTopicDetail.BoostUser(id: 2, username: "bob", name: nil, avatarTemplate: nil),
+            canDelete: false,
+            canFlag: true
+        )
+        XCTAssertTrue(BoostActionPolicy.canDelete(boost: selfBoost, currentUsername: "alice"))
+        XCTAssertFalse(BoostActionPolicy.canFlag(boost: selfBoost, currentUsername: "alice"))
+        XCTAssertTrue(BoostActionPolicy.canFlag(boost: otherBoost, currentUsername: "alice"))
+        XCTAssertFalse(BoostActionPolicy.canFlag(boost: otherBoost, currentUsername: nil))
+
+        let reported = otherBoost.replacingActionState(userFlagStatus: 1)
+        XCTAssertTrue(BoostActionPolicy.boostAlreadyReported(boost: reported, currentUsername: "alice"))
+        XCTAssertFalse(BoostActionPolicy.canFlag(boost: reported, currentUsername: "alice"))
+
+        let types = BoostActionPolicy.filterFlagTypes(
+            DiscourseFlagType.defaultTypes,
+            availableFlags: ["spam", "notify_moderators"]
+        )
+        XCTAssertEqual(types.map(\.nameKey), ["spam", "notify_moderators"])
+        XCTAssertTrue(BoostActionPolicy.filterFlagTypes(DiscourseFlagType.defaultTypes, availableFlags: nil).isEmpty)
+    }
+
+    func testChatBubbleTapDoesNotPresentReactionSheet() {
+        XCTAssertFalse(ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .tap))
+        XCTAssertTrue(ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .longPress))
+        XCTAssertFalse(ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .actionButton))
     }
 
     func testEarlierLoadAnchorIsConsumedOnlyAfterLoadingFinishes() {

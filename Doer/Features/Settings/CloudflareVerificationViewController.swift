@@ -92,6 +92,21 @@ enum CloudflareVerificationPolicy {
     }
 }
 
+/// After CF verification: only rebuild Topic Detail when the page is empty or already
+/// showing a Cloudflare error. A populated thread must keep its parse and only retry images.
+enum TopicDetailCloudflareRecoveryPolicy {
+    static func shouldReloadTopic(
+        isReady: Bool,
+        hasParsedPosts: Bool,
+        errorMessage: String?
+    ) -> Bool {
+        if let errorMessage, errorMessage.localizedCaseInsensitiveContains("cloudflare") {
+            return true
+        }
+        return !isReady || !hasParsedPosts
+    }
+}
+
 final class CloudflareVerificationViewController: UIViewController {
     private let baseURL: URL
     private let challengeURL: URL
@@ -198,19 +213,25 @@ final class CloudflareVerificationViewController: UIViewController {
         super.viewDidLoad()
         title = String(localized: "cloudflare.verify.title")
         view.backgroundColor = .systemBackground
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: String(localized: "weblogin.done"),
-            style: .done,
-            target: self,
-            action: #selector(doneTapped)
-        )
         navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "arrow.clockwise"),
-            style: .plain,
+            barButtonSystemItem: .close,
             target: self,
-            action: #selector(reloadTapped)
+            action: #selector(closeTapped)
         )
-        navigationItem.leftItemsSupplementBackButton = true
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(
+                title: String(localized: "weblogin.done"),
+                style: .done,
+                target: self,
+                action: #selector(doneTapped)
+            ),
+            UIBarButtonItem(
+                image: UIImage(systemName: "arrow.clockwise"),
+                style: .plain,
+                target: self,
+                action: #selector(reloadTapped)
+            ),
+        ]
 
         statusContainer.addSubview(statusIconView)
         statusContainer.addSubview(statusLabel)
@@ -276,6 +297,17 @@ final class CloudflareVerificationViewController: UIViewController {
         Task { @MainActor [self] in
             await self.ensureFailureCleanup().value
             self.notifyFinishIfNeeded()
+        }
+    }
+
+    @objc private func closeTapped() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        isClosing = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.cancelPendingVerificationWork()
+            self.finishAndClose()
         }
     }
 

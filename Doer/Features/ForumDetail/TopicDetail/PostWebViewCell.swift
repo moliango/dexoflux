@@ -575,16 +575,19 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didToggleBookmarkForPost post: DiscourseTopicDetail.Post, isBookmarked: Bool)
     func postCell(didTapBoostForPost post: DiscourseTopicDetail.Post)
     func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post)
+    func postCell(didUpdateBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post)
     func postCell(didTapAvatarForUsername username: String)
     func postCell(didTapQuotedPostNumber postNumber: Int)
     func postCell(didTapReaction reactionId: String, forPost post: DiscourseTopicDetail.Post)
     func postCell(didTapToggleSharedIssueForTopicId topicId: Int)
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String])
     func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post)
+    func postCell(didQuoteSelectedText text: String, postId: Int?)
 }
 
 extension PostCellDelegate {
     func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post) {}
+    func postCell(didQuoteSelectedText text: String, postId: Int?) {}
 }
 
 final class PostWebViewCell: UITableViewCell {
@@ -987,4 +990,5 @@ extension PostCellDelegate {
     func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {}
     func postCell(didTapShowRevisionForPost post: DiscourseTopicDetail.Post) {}
     func postCell(didRequestDeleteBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {}
+    func postCell(didUpdateBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {}
 }

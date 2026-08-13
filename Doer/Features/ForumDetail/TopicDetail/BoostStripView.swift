@@ -32,6 +32,7 @@ final class BoostStripView: UIView {
 
     var onRequestDeleteBoost: ((DiscourseTopicDetail.Boost) -> Void)?
     var onOpenUserProfile: ((String) -> Void)?
+    var onBoostChanged: ((DiscourseTopicDetail.Boost) -> Void)?
 
     private let groups: [Group]
     private let baseURL: String
@@ -89,7 +90,7 @@ final class BoostStripView: UIView {
     private func setupViews() {
         translatesAutoresizingMaskIntoConstraints = false
         // Avatar stack needs a bit more than the old 32pt strip.
-        let height: CGFloat = 34
+        let height: CGFloat = BoostChipLayout.stripHeight
         addSubview(scrollView)
         scrollView.addSubview(stackView)
 
@@ -141,11 +142,12 @@ final class BoostStripView: UIView {
         let avatarStack = makeAvatarStack(users: users)
         avatarStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleFont = TopicDetailTypography.interfaceFont(ofSize: 12, weight: .regular)
+        let titleFont = BoostChipLayout.titleFont()
         // UIImageView segments — NSTextAttachment in UILabel kept falling back to ":rofl:" text.
         let titleContent = makeTitleContent(for: group, font: titleFont)
         titleContent.translatesAutoresizingMaskIntoConstraints = false
-        titleContent.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleContent.setContentHuggingPriority(.required, for: .horizontal)
+        titleContent.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let countLabel = UILabel()
         countLabel.text = "\(group.boosts.count)"
@@ -156,6 +158,8 @@ final class BoostStripView: UIView {
         countLabel.layer.cornerRadius = 8
         countLabel.clipsToBounds = true
         countLabel.translatesAutoresizingMaskIntoConstraints = false
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         countLabel.isHidden = group.boosts.count <= 1
 
         let chevron = UIImageView(
@@ -164,45 +168,57 @@ final class BoostStripView: UIView {
         chevron.tintColor = .tertiaryLabel
         chevron.translatesAutoresizingMaskIntoConstraints = false
         chevron.setContentHuggingPriority(.required, for: .horizontal)
+        chevron.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         container.addSubview(avatarStack)
         container.addSubview(titleContent)
         container.addSubview(countLabel)
         container.addSubview(chevron)
 
-        let stackWidth: CGFloat = users.isEmpty ? 20 : (20 + CGFloat(max(users.count - 1, 0)) * 12)
+        let stackWidth = BoostChipLayout.avatarStackWidth(userCount: max(users.count, 1))
         let showCount = group.boosts.count > 1
         countLabel.isHidden = !showCount
+        let titleWidth = BoostChipLayout.measuredTextWidth(
+            group.displayText,
+            font: titleFont,
+            maxWidth: BoostChipLayout.titleMaxWidth(boostCount: group.boosts.count)
+        )
+        let bubbleWidth = BoostChipLayout.bubbleWidth(
+            displayText: group.displayText,
+            uniqueUserCount: max(users.count, 1),
+            boostCount: group.boosts.count
+        )
 
         var constraints: [NSLayoutConstraint] = [
-            container.heightAnchor.constraint(equalToConstant: 28),
+            container.heightAnchor.constraint(equalToConstant: BoostChipLayout.bubbleHeight),
+            container.widthAnchor.constraint(equalToConstant: bubbleWidth),
 
-            avatarStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+            avatarStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: BoostChipLayout.leadingPadding),
             avatarStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            avatarStack.widthAnchor.constraint(equalToConstant: max(stackWidth, 20)),
-            avatarStack.heightAnchor.constraint(equalToConstant: 20),
+            avatarStack.widthAnchor.constraint(equalToConstant: stackWidth),
+            avatarStack.heightAnchor.constraint(equalToConstant: BoostChipLayout.avatarSize),
 
-            titleContent.leadingAnchor.constraint(equalTo: avatarStack.trailingAnchor, constant: 5),
+            titleContent.leadingAnchor.constraint(equalTo: avatarStack.trailingAnchor, constant: BoostChipLayout.avatarTextSpacing),
             titleContent.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            titleContent.widthAnchor.constraint(lessThanOrEqualToConstant: 160),
+            titleContent.widthAnchor.constraint(equalToConstant: titleWidth),
             titleContent.heightAnchor.constraint(equalToConstant: 20),
 
-            chevron.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
+            chevron.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -BoostChipLayout.trailingPadding),
             chevron.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            chevron.widthAnchor.constraint(equalToConstant: 10),
+            chevron.widthAnchor.constraint(equalToConstant: BoostChipLayout.chevronWidth),
         ]
 
         if showCount {
             constraints += [
-                countLabel.leadingAnchor.constraint(equalTo: titleContent.trailingAnchor, constant: 5),
+                countLabel.leadingAnchor.constraint(equalTo: titleContent.trailingAnchor, constant: BoostChipLayout.textCountSpacing),
                 countLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-                countLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+                countLabel.widthAnchor.constraint(equalToConstant: BoostChipLayout.countBadgeWidth(count: group.boosts.count)),
                 countLabel.heightAnchor.constraint(equalToConstant: 16),
-                chevron.leadingAnchor.constraint(equalTo: countLabel.trailingAnchor, constant: 4),
+                chevron.leadingAnchor.constraint(equalTo: countLabel.trailingAnchor, constant: BoostChipLayout.countChevronSpacing),
             ]
         } else {
             constraints += [
-                chevron.leadingAnchor.constraint(equalTo: titleContent.trailingAnchor, constant: 4),
+                chevron.leadingAnchor.constraint(equalTo: titleContent.trailingAnchor, constant: BoostChipLayout.textChevronSpacing),
             ]
         }
         NSLayoutConstraint.activate(constraints)
@@ -258,7 +274,7 @@ final class BoostStripView: UIView {
 
     @objc private func bubbleTapped(_ sender: UIControl) {
         guard groups.indices.contains(sender.tag) else { return }
-        presentGroupSheet(groups[sender.tag], sourceView: sender)
+        presentBoostActions(for: groups[sender.tag], sourceView: sender)
     }
 
     @objc private func bubbleLongPressed(_ gesture: UILongPressGestureRecognizer) {
@@ -269,7 +285,7 @@ final class BoostStripView: UIView {
         let group = groups[view.tag]
         let deletable = group.boosts.filter(\.canDelete)
         guard !deletable.isEmpty else {
-            presentGroupSheet(group, sourceView: view)
+            presentBoostActions(for: group, sourceView: view)
             return
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -301,6 +317,129 @@ final class BoostStripView: UIView {
             pop.sourceRect = view.bounds
         }
         nearestViewController()?.present(sheet, animated: true)
+    }
+
+    private func presentBoostActions(for group: Group, sourceView: UIView) {
+        let host = nearestViewController()
+        let currentUsername = AuthManager.shared.username(for: baseURL)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var boosts = group.boosts
+            let api = DiscourseAPI(baseURL: self.baseURL)
+            for index in boosts.indices where BoostActionPolicy.shouldFetchActionState(
+                boost: boosts[index],
+                currentUsername: currentUsername
+            ) {
+                do {
+                    let resolved = try await api.getBoost(boostId: boosts[index].id)
+                    boosts[index] = resolved
+                    self.onBoostChanged?(resolved)
+                } catch {
+                    // Keep payload permissions; popover still shows author / delete when possible.
+                }
+            }
+
+            let visible = boosts.filter {
+                BoostActionPolicy.canShowActionSheet(boost: $0, currentUsername: currentUsername)
+            }
+            guard !visible.isEmpty else { return }
+
+            if visible.contains(where: {
+                BoostActionPolicy.boostAlreadyReported(boost: $0, currentUsername: currentUsername)
+                    && !BoostActionPolicy.canDelete(boost: $0, currentUsername: currentUsername)
+            }) {
+                if let host {
+                    DoerFeedback.presentToast(
+                        String(localized: "boost.flag.already_reported", defaultValue: "你已经举报过这条 Boost"),
+                        on: host
+                    )
+                }
+            }
+
+            let popover = BoostAuthorPopoverViewController(
+                boosts: visible,
+                currentUsername: currentUsername,
+                baseURL: self.baseURL
+            )
+            popover.onAction = { [weak self, weak host] action in
+                guard let self else { return }
+                switch action {
+                case .profile(let username):
+                    self.onOpenUserProfile?(username)
+                case .delete(let boost):
+                    self.onRequestDeleteBoost?(boost)
+                case .flag(let boost):
+                    self.presentFlagSheet(for: boost, from: host, api: api)
+                }
+            }
+            popover.modalPresentationStyle = .popover
+            if let pop = popover.popoverPresentationController {
+                pop.sourceView = sourceView
+                pop.sourceRect = sourceView.bounds
+                pop.permittedArrowDirections = [.up, .down]
+                pop.delegate = popover
+                pop.backgroundColor = .secondarySystemGroupedBackground
+            }
+            (host ?? self.nearestViewController())?.present(popover, animated: true)
+        }
+    }
+
+    private func presentFlagSheet(
+        for boost: DiscourseTopicDetail.Boost,
+        from host: UIViewController?,
+        api: DiscourseAPI
+    ) {
+        let presenter = host ?? nearestViewController()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let allTypes = (try? await api.fetchBoostFlagTypes()) ?? DiscourseFlagType.defaultTypes
+            let filtered = BoostActionPolicy.filterFlagTypes(allTypes, availableFlags: boost.availableFlags)
+            let types: [DiscourseFlagType]
+            if let available = boost.availableFlags, available.isEmpty {
+                types = []
+            } else if filtered.isEmpty {
+                types = allTypes.filter(\.isFlag).filter(\.enabled)
+            } else {
+                types = filtered
+            }
+            guard !types.isEmpty else {
+                if let presenter {
+                    DoerFeedback.presentToast(
+                        String(localized: "common.no_data", defaultValue: "暂无数据"),
+                        on: presenter
+                    )
+                }
+                return
+            }
+            let sheet = BoostFlagSheetViewController(boost: boost, flagTypes: types)
+            sheet.onSubmit = { [weak self] flagTypeId, message in
+                try await api.flagBoost(boostId: boost.id, flagTypeId: flagTypeId, message: message)
+                do {
+                    let updated = try await api.getBoost(boostId: boost.id)
+                    self?.onBoostChanged?(updated)
+                } catch {
+                    self?.onBoostChanged?(
+                        boost.replacingActionState(canFlag: false, userFlagStatus: boost.userFlagStatus ?? 1)
+                    )
+                }
+            }
+            sheet.onFinished = {
+                presenter.map {
+                    DoerFeedback.presentToast(
+                        String(localized: "boost.flag.submitted", defaultValue: "已提交举报"),
+                        on: $0
+                    )
+                }
+            }
+            let nav = UINavigationController(rootViewController: sheet)
+            nav.modalPresentationStyle = .pageSheet
+            if let sheetController = nav.sheetPresentationController {
+                sheetController.detents = [.medium(), .large()]
+                sheetController.prefersGrabberVisible = true
+                sheetController.preferredCornerRadius = 16
+            }
+            presenter?.present(nav, animated: true)
+        }
     }
 
     private func presentGroupSheet(_ group: Group, sourceView: UIView) {
@@ -431,7 +570,8 @@ final class BoostStripView: UIView {
                 label.textColor = .label
                 label.numberOfLines = 1
                 label.lineBreakMode = .byTruncatingTail
-                label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                label.setContentHuggingPriority(.required, for: .horizontal)
+                label.setContentCompressionResistancePriority(.required, for: .horizontal)
                 stack.addArrangedSubview(label)
             case .emoji(let url, let code):
                 let imageView = UIImageView()

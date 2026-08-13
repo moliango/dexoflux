@@ -2179,6 +2179,61 @@
         }
       }
     },
+    "boost.author.profile" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "主页"
+          }
+        }
+      }
+    },
+    "boost.flag" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "举报"
+          }
+        }
+      }
+    },
+    "boost.flag.already_reported" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "你已经举报过这条 Boost"
+          }
+        }
+      }
+    },
+    "boost.flag.submitted" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已提交举报"
+          }
+        }
+      }
+    },
+    "boost.flag.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "举报 Boost"
+          }
+        }
+      }
+    },
     "cancel" : {
       "localizations" : {
         "en" : {
@@ -2731,6 +2786,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "下一步"
+          }
+        }
+      }
+    },
+    "common.no_data" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "暂无数据"
           }
         }
       }
@@ -3796,6 +3862,94 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "元宇宙"
+          }
+        }
+      }
+    },
+    "flag.inappropriate" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不当内容"
+          }
+        }
+      }
+    },
+    "flag.inappropriate.desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "此内容违反社区准则。"
+          }
+        }
+      }
+    },
+    "flag.notify_moderators" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "其他"
+          }
+        }
+      }
+    },
+    "flag.notify_moderators.desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "由于其他原因通知版主。请说明原因。"
+          }
+        }
+      }
+    },
+    "flag.off_topic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "跑题"
+          }
+        }
+      }
+    },
+    "flag.off_topic.desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "此内容与讨论主题无关。"
+          }
+        }
+      }
+    },
+    "flag.spam" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "垃圾信息"
+          }
+        }
+      }
+    },
+    "flag.spam.desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "此内容是广告或垃圾信息。"
           }
         }
       }
@@ -12219,6 +12373,39 @@
         }
       }
     },
+    "plugins.newapi.add_from_browser" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加到 NewAPI 签到"
+          }
+        }
+      }
+    },
+    "plugins.newapi.add_from_browser.invalid_url" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "无法识别当前站点地址"
+          }
+        }
+      }
+    },
+    "plugins.newapi.add_from_browser.saved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已添加到 NewAPI 签到"
+          }
+        }
+      }
+    },
     "plugins.newapi.add.help" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -13642,6 +13829,17 @@
         }
       }
     },
+    "post.boost.flag_failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "举报 Boost 失败"
+          }
+        }
+      }
+    },
     "post.boost.placeholder" : {
       "localizations" : {
         "en" : {
@@ -13772,6 +13970,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這則評論目前無法編輯。"
+          }
+        }
+      }
+    },
+    "post.flag.description_hint" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "补充说明"
+          }
+        }
+      }
+    },
+    "post.flag.notify_moderators" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "通知版主"
           }
         }
       }
@@ -14039,6 +14259,17 @@
         }
       }
     },
+    "post.quote_reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "引用回复"
+          }
+        }
+      }
+    },
     "post.related_links" : {
       "localizations" : {
         "en" : {
@@ -14091,6 +14322,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "▼ %lld 條回復"
+          }
+        }
+      }
+    },
+    "post.submit_flag" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "提交举报"
           }
         }
       }
@@ -25679,6 +25921,28 @@
         }
       }
     },
+    "topic.menu.floor_progress" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "第 %1$d / %2$d 层"
+          }
+        }
+      }
+    },
+    "topic.menu.open_timeline" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "打开楼层跳转"
+          }
+        }
+      }
+    },
     "topic.menu.section.assign" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -26258,6 +26522,28 @@
         }
       }
     },
+    "trust.widget.summary" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "距离下一级的进度"
+          }
+        }
+      }
+    },
+    "trust.widget.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "信任等级"
+          }
+        }
+      }
+    },
     "update.asset.unavailable" : {
       "localizations" : {
         "en" : {
@@ -26675,6 +26961,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "動態"
+          }
+        }
+      }
+    },
+    "user.profile.clicks" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clicks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次点击"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次點擊"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次點擊"
           }
         }
       }
@@ -27627,6 +27941,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消關注"
+          }
+        }
+      }
+    },
+    "user.profile.username_copied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "用户名已复制"
           }
         }
       }

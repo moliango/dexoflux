@@ -165,8 +165,23 @@ final class WebCookieStore {
     }
 
     /// Pull latest cf_clearance (and related) from the default WK store used by foreground verification.
+    /// Bounded so a stalled `getAllCookies` cannot pin recovery forever.
     @MainActor
     func forceSyncCloudflareClearance(for baseURLString: String) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                await self.syncCloudflareClearanceFromDefaultStore(for: baseURLString)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
+    }
+
+    @MainActor
+    private func syncCloudflareClearanceFromDefaultStore(for baseURLString: String) async {
         guard let url = URL(string: baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) else { return }
         await syncFromWebView(
             .default(),

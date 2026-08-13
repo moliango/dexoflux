@@ -53,11 +53,8 @@ enum ExternalImageFetcher {
             return
         }
 
-        if !forceRetry,
-           CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: refererBaseURL) {
-            completion(nil)
-            return
-        }
+        // CF gate is checked on the IO queue after a disk lookup so a paused
+        // forum can still paint images already on disk.
 
         // Reap stale inflight so a hung request cannot block the same URL forever
         // (force-quit was the only previous recovery for this class of bug).
@@ -81,6 +78,16 @@ enum ExternalImageFetcher {
         inflightLock.unlock()
 
         networkQueue.async {
+            if !forceRetry, let cached = AvatarImageLoader.imageFromDiskCacheIfAvailable(for: url) {
+                finish(cacheKey: coalescedKey, image: cached)
+                return
+            }
+            if !forceRetry,
+               CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: refererBaseURL) {
+                finish(cacheKey: coalescedKey, image: nil)
+                return
+            }
+
             // Bounded wait: never block this queue forever if slots are wedged.
             let gotSlot = networkSemaphore.wait(timeout: .now() + 25) == .success
             guard gotSlot else {
@@ -92,7 +99,7 @@ enum ExternalImageFetcher {
                 // signal happens in task completion; if we return before creating a task, signal here.
             }
 
-            if !forceRetry, let cached = AvatarImageLoader.cachedImageIfAvailable(for: url) {
+            if !forceRetry, let cached = AvatarImageLoader.imageFromDiskCacheIfAvailable(for: url) {
                 networkSemaphore.signal()
                 finish(cacheKey: coalescedKey, image: cached)
                 return

@@ -38,15 +38,21 @@ enum AvatarImageLoader {
         var stores = 0
     }
 
+    /// Serial IO queue for SD disk probes. Never read the disk cache on the main thread.
+    private static let diskIOQueue = DispatchQueue(
+        label: "com.naine.doer.image-disk-cache",
+        qos: .userInitiated
+    )
+
     /// Shared SD load options for avatars / list chrome.
     /// No `.retryFailed` here: a CF challenge HTML response must not be hammered by every
     /// avatar cell. Topic body images use `contentOptions` / user tap uses `forceRetryOptions`.
+    /// Memory hits stay sync so scrolling does not flash a placeholder; disk stays async.
     static let options: SDWebImageOptions = [
         .continueInBackground,
         .scaleDownLargeImages,
         .highPriority,
         .queryMemoryDataSync,
-        .queryDiskDataSync,
     ]
 
     /// Topic cooked images (visible content). Allow one automatic retry after a transient
@@ -58,7 +64,6 @@ enum AvatarImageLoader {
         .scaleDownLargeImages,
         .highPriority,
         .queryMemoryDataSync,
-        .queryDiskDataSync,
     ]
 
     /// Explicit user tap-to-retry: clear failed-URL blacklist + skip stale cache entry.
@@ -76,7 +81,6 @@ enum AvatarImageLoader {
         .scaleDownLargeImages,
         .lowPriority,
         .queryMemoryDataSync,
-        .queryDiskDataSync,
     ]
 
     /// Drop SDWebImage's process-local failed-URL entry so a later load can try again.
@@ -219,19 +223,19 @@ enum AvatarImageLoader {
             imageView.image = cachedUserAvatar.image
         }
 
-        // CF recovery in flight: serve cache only; don't hammer main-domain images.
+        // CF recovery in flight: memory/disk only; don't hammer main-domain images.
+        // Disk query is async (no `.queryDiskDataSync`) so the main thread is not blocked.
+        let loadOptions: SDWebImageOptions
         if CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
-            imageView.sd_cancelCurrentImageLoad()
-            if imageView.image == nil {
-                imageView.image = placeholder
-            }
-            return
+            loadOptions = options.union(.fromCacheOnly)
+        } else {
+            loadOptions = options
         }
 
         imageView.sd_setImage(
             with: url,
             placeholderImage: cachedUserAvatar?.image ?? placeholder,
-            options: options,
+            options: loadOptions,
             context: context(for: url, cloudflareBaseURL: cloudflareBaseURL),
             progress: nil,
             completed: { image, _, _, _ in
@@ -247,12 +251,30 @@ enum AvatarImageLoader {
         )
     }
 
-    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
-        // 1) Already in memory/disk → zero network, zero CF risk.
-        // 2) CF gate / missing clearance on main host → cache-only.
-        // 3) Cap main-domain prefetch so avatar storms don't trip the shield.
-        let uncached = urls.filter { !isImageCached(for: $0) }
-        let networkURLs = uncached.filter {
+    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil, maxUncached: Int? = nil) {
+        guard !urls.isEmpty else { return }
+        diskIOQueue.async {
+            var seen = Set<String>()
+            var uncached: [URL] = []
+            for url in urls {
+                let key = url.absoluteString
+                guard seen.insert(key).inserted else { continue }
+                if isImageCached(for: url) { continue }
+                uncached.append(url)
+                if let maxUncached, uncached.count >= maxUncached { break }
+            }
+            guard !uncached.isEmpty else { return }
+            DispatchQueue.main.async {
+                startNetworkPrefetch(urls: uncached, cloudflareBaseURL: cloudflareBaseURL)
+            }
+        }
+    }
+
+    /// 1) Already in memory/disk → skipped before this runs (zero network, zero CF risk).
+    /// 2) CF gate / missing clearance on main host → cache-only.
+    /// 3) Cap main-domain prefetch so avatar storms don't trip the shield.
+    private static func startNetworkPrefetch(urls: [URL], cloudflareBaseURL: String?) {
+        let networkURLs = urls.filter {
             !CloudflareImageGate.shouldBlockNetworkLoad(url: $0, cloudflareBaseURL: cloudflareBaseURL)
                 && !CloudflareImageGate.shouldSkipPrefetchWithoutClearance(
                     url: $0,
@@ -302,16 +324,16 @@ enum AvatarImageLoader {
     }
 
     /// True when process memory or SD disk already has this URL (no network needed).
-    static func isImageCached(for url: URL) -> Bool {
-        if inMemoryCache.object(forKey: url as NSURL) != nil {
+    /// Disk probe is IO — only call from `diskIOQueue`.
+    private static func isImageCached(for url: URL) -> Bool {
+        if cachedImage(for: url) != nil {
             return true
         }
-        let key = url.absoluteString
-        if SDImageCache.shared.diskImageDataExists(withKey: key) {
-            return true
-        }
-        // Some loads store under SD's default key variants — last resort decode check.
-        return SDImageCache.shared.imageFromCache(forKey: key) != nil
+        assert(
+            !Thread.isMainThread,
+            "SD disk cache probe must not run on the main thread"
+        )
+        return SDImageCache.shared.diskImageDataExists(withKey: url.absoluteString)
     }
 
     /// Write a successful network decode into the process cache so later cells
@@ -398,14 +420,31 @@ enum AvatarImageLoader {
         return context
     }
 
-    /// Memory first, then SD disk — used for fast path and CF-gated cache-only loads.
+    /// Process + SD memory only. Safe on the main thread; does not touch disk.
     static func cachedImageIfAvailable(for url: URL) -> UIImage? {
         cachedImage(for: url)
     }
 
-    /// Decode from cache without network (nil if miss).
+    /// Decode from cache without network (nil if miss). Memory only — safe on main.
     static func imageFromLocalCache(for url: URL) -> UIImage? {
         cachedImage(for: url)
+    }
+
+    /// Memory then SD disk. May decode from disk — call only from a background queue.
+    static func imageFromDiskCacheIfAvailable(for url: URL) -> UIImage? {
+        if let memory = cachedImage(for: url) {
+            return memory
+        }
+        assert(
+            !Thread.isMainThread,
+            "SD disk cache decode must not run on the main thread"
+        )
+        let key = url.absoluteString
+        guard let disk = SDImageCache.shared.imageFromCache(forKey: key) else {
+            return nil
+        }
+        inMemoryCache.setObject(disk, forKey: url as NSURL, cost: disk.avatarCacheCost)
+        return disk
     }
 
     static func cachedUserAvatar(baseURL: String?, userId: Int?) -> UserAvatarCacheEntry? {
@@ -424,10 +463,10 @@ enum AvatarImageLoader {
         if let memory = inMemoryCache.object(forKey: cacheKey) {
             return memory
         }
-        // SDWebImage default key is absoluteString for plain URL loads.
-        if let disk = SDImageCache.shared.imageFromCache(forKey: url.absoluteString) {
-            inMemoryCache.setObject(disk, forKey: cacheKey, cost: disk.avatarCacheCost)
-            return disk
+        // SD memory only — `imageFromCache` would synchronously decode from disk.
+        if let sdMemory = SDImageCache.shared.imageFromMemoryCache(forKey: url.absoluteString) {
+            inMemoryCache.setObject(sdMemory, forKey: cacheKey, cost: sdMemory.avatarCacheCost)
+            return sdMemory
         }
         return nil
     }
@@ -522,6 +561,19 @@ enum AvatarImageLoader {
         userAvatarCache.removeAll(keepingCapacity: true)
         userAvatarCacheStatsByBaseURL.removeAll(keepingCapacity: true)
         userAvatarCacheLock.unlock()
+    }
+
+    static func usesSynchronousDiskCacheQueryForTesting() -> Bool {
+        options.contains(.queryDiskDataSync)
+            || contentOptions.contains(.queryDiskDataSync)
+            || prefetchOptions.contains(.queryDiskDataSync)
+            || forceRetryOptions.contains(.queryDiskDataSync)
+    }
+
+    static func usesSynchronousMemoryCacheQueryForTesting() -> Bool {
+        options.contains(.queryMemoryDataSync)
+            && contentOptions.contains(.queryMemoryDataSync)
+            && prefetchOptions.contains(.queryMemoryDataSync)
     }
 
     nonisolated private static func originString(for url: URL) -> String? {
@@ -647,12 +699,12 @@ enum ForumImageLoader {
             AvatarImageLoader.clearFailedLoad(for: url)
         }
         // User tap may proceed even while CF gate is paused — explicit intent.
+        // Otherwise serve memory/disk asynchronously and skip the network.
+        var options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         if !forceRetry,
            CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
-            completed(nil)
-            return nil
+            options.insert(.fromCacheOnly)
         }
-        let options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         return SDWebImageManager.shared.loadImage(
             with: url,
             options: options,
@@ -694,19 +746,13 @@ enum ForumImageLoader {
             AvatarImageLoader.clearFailedLoad(for: url)
         }
 
+        var options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         if !forceRetry,
            CloudflareImageGate.shouldBlockNetworkLoad(url: url, cloudflareBaseURL: cloudflareBaseURL) {
-            imageView.sd_cancelCurrentImageLoad()
-            if imageView.image == nil {
-                imageView.image = placeholder
-            }
-            // Nil completion paints the tap-to-retry chrome; do NOT leave the URL
-            // permanently blacklisted — we never started an SD load.
-            completed?(nil, nil, .none, url)
-            return
+            // Disk may still have the image; query it off the main thread via SD.
+            options.insert(.fromCacheOnly)
         }
 
-        let options = forceRetry ? AvatarImageLoader.forceRetryOptions : AvatarImageLoader.contentOptions
         imageView.sd_setImage(
             with: url,
             placeholderImage: placeholder,
@@ -722,10 +768,11 @@ enum ForumImageLoader {
         )
     }
 
-    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil) {
+    static func prefetch(urls: [URL], cloudflareBaseURL: String? = nil, maxUncached: Int? = nil) {
         AvatarImageLoader.prefetch(
             urls: urls,
-            cloudflareBaseURL: cloudflareBaseURL
+            cloudflareBaseURL: cloudflareBaseURL,
+            maxUncached: maxUncached
         )
     }
 }

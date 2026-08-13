@@ -825,8 +825,8 @@ final class TopicDetailViewController: ObservableViewController {
         let newPostIds = postIds.filter { postId in
             prefetchedImagePostIds.insert(postId).inserted
         }
-        // Cap content-image prefetch: long posts have dozens of URLs; warming all of them
-        // on main/CDN hosts is a common CF shield trigger even with disk cache.
+        // Cap network prefetch after a background disk filter: long posts have dozens of
+        // URLs; warming all of them on main/CDN hosts is a common CF shield trigger.
         let rawContentURLs = newPostIds.flatMap { postId in
             viewModel.parsedBlocks[postId]?.imageSourceURLs.compactMap(URL.init(string:)) ?? []
         }
@@ -835,14 +835,11 @@ final class TopicDetailViewController: ObservableViewController {
         for url in rawContentURLs {
             let key = url.absoluteString
             guard seen.insert(key).inserted else { continue }
-            // Skip warm cache entirely — no network, no CF.
-            if AvatarImageLoader.isImageCached(for: url) { continue }
             contentURLs.append(url)
-            if contentURLs.count >= 8 { break }
         }
-        ForumImageLoader.prefetch(urls: contentURLs, cloudflareBaseURL: baseURL)
+        ForumImageLoader.prefetch(urls: contentURLs, cloudflareBaseURL: baseURL, maxUncached: 8)
 
-        let avatarURLs = avatarURLs(forPostIds: newPostIds).filter { !AvatarImageLoader.isImageCached(for: $0) }
+        let avatarURLs = avatarURLs(forPostIds: newPostIds)
         AvatarImageLoader.prefetch(
             urls: avatarURLs,
             cloudflareBaseURL: baseURL
@@ -893,20 +890,25 @@ final class TopicDetailViewController: ObservableViewController {
         tableView.isScrollEnabled = true
         jumpOverlay.isHidden = true
 
-        // Flip CF error copy immediately so dismiss doesn't leave "still need to verify".
-        viewModel.errorMessage = String(
-            localized: "cloudflare.recovering",
-            defaultValue: "验证已通过，正在重新加载…"
+        let shouldReload = TopicDetailCloudflareRecoveryPolicy.shouldReloadTopic(
+            isReady: viewModel.isReady,
+            hasParsedPosts: !viewModel.parsedBlocks.isEmpty,
+            errorMessage: viewModel.errorMessage
         )
-        viewModel.notifyChanged()
-        errorLabel.text = viewModel.errorMessage
-        errorLabel.isHidden = false
-        loadingSkeletonView.setSkeletonActive(true, animated: true)
+        if shouldReload {
+            viewModel.errorMessage = String(
+                localized: "cloudflare.recovering",
+                defaultValue: "验证已通过，正在重新加载…"
+            )
+            viewModel.notifyChanged()
+            errorLabel.text = viewModel.errorMessage
+            errorLabel.isHidden = false
+            loadingSkeletonView.setSkeletonActive(true, animated: true)
+        }
 
         Task { [weak self] in
             guard let self else { return }
             await WebCookieStore.shared.forceSyncCloudflareClearance(for: self.baseURL)
-            self.api.resetSession()
 
             let readyPostIds = self.viewModel.posts.compactMap { post in
                 self.viewModel.parsedBlocks[post.id] == nil ? nil : post.id
@@ -917,10 +919,13 @@ final class TopicDetailViewController: ObservableViewController {
             )
             self.prefetchedImagePostIds.removeAll()
 
-            await self.viewModel.recoverAfterCloudflare(
-                id: self.topicId,
-                containerWidth: self.view.bounds.width
-            )
+            if shouldReload {
+                self.api.resetSession()
+                await self.viewModel.recoverAfterCloudflare(
+                    id: self.topicId,
+                    containerWidth: self.view.bounds.width
+                )
+            }
 
             await MainActor.run {
                 self.isRecoveringAfterCloudflare = false

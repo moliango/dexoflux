@@ -23,6 +23,21 @@ extension PostNativeCell: UITextViewDelegate {
         delegate?.postCell(didTapLinkURL: URL)
         return false
     }
+
+    @available(iOS 16.0, *)
+    func textView(
+        _ textView: UITextView,
+        editMenuForTextIn range: NSRange,
+        suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+        DiscourseQuoteMarkdown.editMenu(
+            for: textView,
+            range: range,
+            suggestedActions: suggestedActions
+        ) { [weak self] selected in
+            self?.delegate?.postCell(didQuoteSelectedText: selected, postId: self?.postId)
+        }
+    }
 }
 
 // MARK: - UIPopoverPresentationControllerDelegate

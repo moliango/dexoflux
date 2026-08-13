@@ -578,6 +578,12 @@ final class InAppBrowserViewController: UIViewController {
         menu.addAction(UIAlertAction(title: String(localized: "mini_program.add_as_program", defaultValue: "添加到小程序"), style: .default) { [weak self] _ in
             self?.addCurrentPageAsMiniProgram()
         })
+        menu.addAction(UIAlertAction(
+            title: String(localized: "plugins.newapi.add_from_browser", defaultValue: "添加到 NewAPI 签到"),
+            style: .default
+        ) { [weak self] _ in
+            self?.addCurrentPageAsNewAPICheckIn()
+        })
         
         menu.addAction(UIAlertAction(title: String(localized: "me.browser.copy_url", defaultValue: "复制链接"), style: .default) { [weak self] _ in
             UIPasteboard.general.url = self?.webView.url
@@ -642,6 +648,50 @@ final class InAppBrowserViewController: UIViewController {
                 }
             })
             self.present(alert, animated: true)
+        }
+    }
+
+    @objc private func addCurrentPageAsNewAPICheckIn() {
+        let pageURL = webView.url ?? initialURL
+        guard let pageURL,
+              let origin = NewAPICheckInLoginSupport.siteOrigin(from: pageURL)
+        else {
+            DoerFeedback.presentToast(
+                String(localized: "plugins.newapi.add_from_browser.invalid_url", defaultValue: "无法识别当前站点地址"),
+                on: self
+            )
+            return
+        }
+
+        Task { @MainActor in
+            let runtime = NewAPICheckInRuntime.shared
+            let platforms = await runtime.store.platforms()
+            let existing = NewAPICheckInLoginSupport.matchingPlatform(in: platforms, url: origin)
+            let login = NewAPICheckInLoginViewController(
+                baseURL: origin,
+                mode: .newAPI,
+                store: runtime.store,
+                service: runtime.service,
+                existingPlatform: existing
+            ) { [weak self] in
+                guard let self else { return }
+                DoerFeedback.presentToast(
+                    String(
+                        localized: "plugins.newapi.add_from_browser.saved",
+                        defaultValue: "已添加到 NewAPI 签到"
+                    ),
+                    on: self
+                )
+            }
+            login.hidesBottomBarWhenPushed = true
+            if let navigationController {
+                navigationController.setNavigationBarHidden(false, animated: true)
+                navigationController.pushViewController(login, animated: true)
+            } else {
+                let nav = UINavigationController(rootViewController: login)
+                nav.modalPresentationStyle = .pageSheet
+                present(nav, animated: true)
+            }
         }
     }
 }

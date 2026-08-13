@@ -92,18 +92,30 @@ struct DiscourseUserReaction: Decodable, Identifiable, Hashable {
     let excerpt: String?
     let reactionValue: String?
     let createdAt: String?
+    let avatarTemplate: String?
+
+    private struct ReactionUser: Decodable {
+        let username: String?
+        let avatarTemplate: String?
+
+        enum CodingKeys: String, CodingKey {
+            case username
+            case avatarTemplate = "avatar_template"
+        }
+    }
 
     private struct Post: Decodable {
         let topicId: Int?
         let postNumber: Int?
         let topicTitle: String?
         let excerpt: String?
+        let user: ReactionUser?
 
         enum CodingKeys: String, CodingKey {
             case topicId = "topic_id"
             case postNumber = "post_number"
             case topicTitle = "topic_title"
-            case excerpt
+            case excerpt, user
         }
     }
 
@@ -124,13 +136,15 @@ struct DiscourseUserReaction: Decodable, Identifiable, Hashable {
         case excerpt
         case reactionValue = "reaction_value"
         case createdAt = "created_at"
-        case post, reaction
+        case avatarTemplate = "avatar_template"
+        case user, post, reaction
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let post = try container.decodeIfPresent(Post.self, forKey: .post)
         let reaction = try container.decodeIfPresent(Reaction.self, forKey: .reaction)
+        let user = try container.decodeIfPresent(ReactionUser.self, forKey: .user)
         id = try container.decodeIfPresent(Int.self, forKey: .id) ?? 0
         postId = try container.decodeIfPresent(Int.self, forKey: .postId) ?? 0
         topicId = try container.decodeIfPresent(Int.self, forKey: .topicId) ?? post?.topicId ?? 0
@@ -139,6 +153,12 @@ struct DiscourseUserReaction: Decodable, Identifiable, Hashable {
         excerpt = try container.decodeIfPresent(String.self, forKey: .excerpt) ?? post?.excerpt
         reactionValue = try container.decodeIfPresent(String.self, forKey: .reactionValue) ?? reaction?.reactionValue
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        let decodedAvatar = try container.decodeIfPresent(String.self, forKey: .avatarTemplate)
+            ?? user?.avatarTemplate
+            ?? post?.user?.avatarTemplate
+        avatarTemplate = decodedAvatar?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? decodedAvatar
+            : nil
     }
 }
 

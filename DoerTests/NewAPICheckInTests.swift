@@ -336,6 +336,29 @@ final class NewAPICheckInTests: XCTestCase {
         XCTAssertEqual(storedCredential?.accessToken, "token")
     }
 
+    func testSiteOriginStripsPathQueryAndFragment() {
+        let url = URL(string: "https://ai.example.com/login?next=/app#hash")!
+        let origin = NewAPICheckInLoginSupport.siteOrigin(from: url)
+        XCTAssertEqual(origin?.scheme, "https")
+        XCTAssertEqual(origin?.host, "ai.example.com")
+        XCTAssertTrue(origin?.path.isEmpty == true || origin?.path == "/")
+        XCTAssertNil(origin?.query)
+        XCTAssertNil(origin?.fragment)
+    }
+
+    func testMatchingPlatformUsesHostFamily() {
+        let platforms = [
+            NewAPICheckInPlatform(name: "API", baseURL: "https://ai.example.com"),
+        ]
+        let page = URL(string: "https://ai.example.com/console/token")!
+        XCTAssertEqual(
+            NewAPICheckInLoginSupport.matchingPlatform(in: platforms, url: page)?.name,
+            "API"
+        )
+        let other = URL(string: "https://other.example.com/")!
+        XCTAssertNil(NewAPICheckInLoginSupport.matchingPlatform(in: platforms, url: other))
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("newapi-checkin-tests-\(UUID().uuidString)", isDirectory: true)

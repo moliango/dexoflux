@@ -385,6 +385,8 @@ enum TopicDetailPollResultMerger {
 enum TopicDetailPaginationPolicy {
     /// Posts fetched per network window (Discourse post_ids batch).
     static let pageSize = 20
+    /// Parse this many posts before first paint (~1–2 screens). The rest wait for scroll / idle.
+    static let firstPaintPostCount = 6
     /// Keep about one page ahead of the visible stream index ready (parsed).
     static let forwardReadyBuffer = pageSize
     /// When jumping, also fetch a few floors before the target for upward scroll.
@@ -434,6 +436,11 @@ enum TopicDetailPaginationPolicy {
         let start = max(0, target - lookback)
         let end = min(totalCount, max(target + 1, start + pageSize))
         return start..<end
+    }
+
+    static func firstPaintSplit<T>(_ items: [T]) -> (immediate: [T], deferred: [T]) {
+        let count = min(firstPaintPostCount, items.count)
+        return (Array(items.prefix(count)), Array(items.dropFirst(count)))
     }
 
     static func shouldRestoreEarlierAnchor(
@@ -1003,47 +1010,23 @@ final class TopicDetailViewModel: DoerObservableObject {
             2_000_000_000,
         ]
         var lastError: String?
-        for (index, delay) in delays.enumerated() {
-            try? await Task.sleep(nanoseconds: delay)
+        for index in delays.indices {
+            if index > 0 {
+                try? await Task.sleep(nanoseconds: delays[index - 1])
+            }
             do {
                 let detail = try await api.fetchTopic(id: id, trackVisit: true)
-                topic = detail
-                startLoadingCategoryMetadata(for: detail.categoryId)
-                allPostIds = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
-                loadedPostIds = Set(detail.postStream.posts.map(\.id))
-                firstPost = detail.postStream.posts.first
-                loadedRangeStart = 0
-                if let lastLoadedId = detail.postStream.posts.last?.id,
-                   let lastIndex = allPostIds.firstIndex(of: lastLoadedId) {
-                    loadedRangeEnd = lastIndex + 1
-                } else {
-                    loadedRangeEnd = detail.postStream.posts.count
-                }
                 parseGeneration += 1
                 let generation = parseGeneration
-                parsedBlocks = [:]
-                unsupportedPostIds = []
-                let postsToRender = detail.postStream.posts
-                if postsToRender.isEmpty {
-                    isReady = true
-                    isLoading = false
-                    errorMessage = nil
-                    notifyChanged()
-                    return
-                }
-                guard await parseAndStore(posts: postsToRender, generation: generation) else {
-                    // Generation raced (e.g. user left/re-entered). Never leave isLoading stuck.
+                guard await applyLoadedTopicDetail(
+                    detail,
+                    containerWidth: containerWidth,
+                    generation: generation
+                ) else {
                     isLoading = false
                     notifyChanged()
                     return
                 }
-                isReady = true
-                isLoading = false
-                errorMessage = nil
-                acknowledgedStreamCount = allPostIds.count
-                pendingNewReplyCount = 0
-                notifyChanged()
-                scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
                 return
             } catch {
                 lastError = error.localizedDescription
@@ -1083,58 +1066,14 @@ final class TopicDetailViewModel: DoerObservableObject {
 
         do {
             let detail = try await api.fetchTopic(id: id, trackVisit: true)
-            topic = detail
-            startLoadingCategoryMetadata(for: detail.categoryId)
-
-            // Save the full stream of post IDs
-            allPostIds = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
-            loadedPostIds = Set(detail.postStream.posts.map(\.id))
-
-            // Cache the first post (OP)
-            firstPost = detail.postStream.posts.first
-
-            // Set range tracking
-            loadedRangeStart = 0
-            if let lastLoadedId = detail.postStream.posts.last?.id,
-               let lastIndex = allPostIds.firstIndex(of: lastLoadedId) {
-                loadedRangeEnd = lastIndex + 1
-            } else {
-                loadedRangeEnd = detail.postStream.posts.count
-            }
-
-            let postsToRender = detail.postStream.posts
-            guard !postsToRender.isEmpty else {
-                isReady = true
+            guard await applyLoadedTopicDetail(
+                detail,
+                containerWidth: containerWidth,
+                generation: generation
+            ) else {
                 isLoading = false
                 notifyChanged()
                 return
-            }
-
-            // Parse all posts with annotated blocks
-            guard await parseAndStore(posts: postsToRender, generation: generation) else {
-                // Generation raced (user left/re-entered) — never leave isLoading stuck.
-                isLoading = false
-                notifyChanged()
-                return
-            }
-
-            isReady = true
-            acknowledgedStreamCount = allPostIds.count
-            pendingNewReplyCount = 0
-            scheduleForwardWindowPrefetch(containerWidth: containerWidth, visibleStreamIndex: 0)
-
-            isLoading = false
-            // Publish flat stream first so first paint is never blank under nested mode.
-            notifyChanged()
-            // Nested may have been enabled before topic id existed (preferNestedOnLoad).
-            // Always (re)fetch tree after the flat stream is ready so sort/roots stay in sync.
-            if isNestedViewEnabled {
-                await loadNestedRoots(topicId: id, trackVisit: false)
-                // loadNestedRoots already abandons when unrenderable; belt-and-suspenders.
-                _ = abandonNestedIfUnrenderable()
-                if !isNestedViewEnabled {
-                    notifyChanged()
-                }
             }
             return
         } catch {
@@ -1167,6 +1106,147 @@ final class TopicDetailViewModel: DoerObservableObject {
 
         isLoading = false
         notifyChanged()
+    }
+
+    /// Apply a freshly fetched topic: parse ~1–2 screens, paint, then fill the rest off the first-paint path.
+    /// - Returns: `false` when a newer `parseGeneration` won the race.
+    @discardableResult
+    private func applyLoadedTopicDetail(
+        _ detail: DiscourseTopicDetail,
+        containerWidth: CGFloat,
+        generation: Int
+    ) async -> Bool {
+        topic = detail
+        startLoadingCategoryMetadata(for: detail.categoryId)
+
+        allPostIds = detail.postStream.stream ?? detail.postStream.posts.map(\.id)
+        loadedPostIds = Set(detail.postStream.posts.map(\.id))
+        firstPost = detail.postStream.posts.first
+
+        loadedRangeStart = 0
+        let postsToRender = detail.postStream.posts
+        let split = TopicDetailPaginationPolicy.firstPaintSplit(postsToRender)
+        if let lastImmediateId = split.immediate.last?.id,
+           let lastIndex = allPostIds.firstIndex(of: lastImmediateId) {
+            loadedRangeEnd = lastIndex + 1
+        } else {
+            loadedRangeEnd = split.immediate.count
+        }
+
+        guard !split.immediate.isEmpty else {
+            isReady = true
+            isLoading = false
+            errorMessage = nil
+            acknowledgedStreamCount = allPostIds.count
+            pendingNewReplyCount = 0
+            notifyChanged()
+            return true
+        }
+
+        guard await parseAndStore(posts: split.immediate, generation: generation) else {
+            return false
+        }
+
+        isReady = true
+        isLoading = false
+        errorMessage = nil
+        acknowledgedStreamCount = allPostIds.count
+        pendingNewReplyCount = 0
+        notifyChanged()
+
+        if isNestedViewEnabled {
+            await loadNestedRoots(topicId: detail.id, trackVisit: false)
+            _ = abandonNestedIfUnrenderable()
+            if !isNestedViewEnabled {
+                notifyChanged()
+            }
+        }
+
+        scheduleCachedRemainderParse(
+            containerWidth: containerWidth,
+            generation: generation
+        )
+        return true
+    }
+
+    /// Parse already-fetched posts past the first-paint window in small chunks, then prefetch the next network page.
+    private func scheduleCachedRemainderParse(containerWidth: CGFloat, generation: Int) {
+        cancelForwardWindowPrefetch()
+        let width = containerWidth
+        forwardPrefetchTask = Task { [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            await self.parseCachedRemainderThenPrefetch(
+                containerWidth: width,
+                generation: generation
+            )
+        }
+    }
+
+    private func parseCachedRemainderThenPrefetch(containerWidth: CGFloat, generation: Int) async {
+        let chunkSize = TopicDetailPaginationPolicy.firstPaintPostCount
+        while !Task.isCancelled, generation == parseGeneration, loadedRangeEnd < allPostIds.count {
+            let byId = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
+            var chunk: [DiscourseTopicDetail.Post] = []
+            var newEnd = loadedRangeEnd
+            for id in allPostIds[loadedRangeEnd...] {
+                guard let post = byId[id] else { break }
+                newEnd += 1
+                if parsedBlocks[id] == nil {
+                    chunk.append(post)
+                }
+                if chunk.count >= chunkSize { break }
+                if chunk.isEmpty, newEnd - loadedRangeEnd >= chunkSize { break }
+            }
+            if newEnd == loadedRangeEnd { break }
+            if !chunk.isEmpty {
+                guard await parseAndStore(posts: chunk, generation: generation) else { return }
+            }
+            guard !Task.isCancelled, generation == parseGeneration else { return }
+            loadedRangeEnd = newEnd
+            notifyChanged()
+            await Task.yield()
+        }
+        guard !Task.isCancelled, generation == parseGeneration else { return }
+        scheduleForwardWindowPrefetch(
+            containerWidth: containerWidth,
+            visibleStreamIndex: max(0, loadedRangeEnd - 1)
+        )
+    }
+
+    /// Resolve `batch` from the in-memory stream when possible; fetch only missing ids, then parse unparsed posts.
+    private func fetchAndParsePosts(
+        topicId: Int,
+        batch: [Int],
+        generation: Int
+    ) async throws -> Bool {
+        let existingById = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
+        let missingIds = batch.filter { existingById[$0] == nil }
+
+        if !missingIds.isEmpty {
+            let response = try await api.fetchTopicPosts(topicId: topicId, postIds: missingIds)
+            let newPosts = response.postStream.posts.filter { !loadedPostIds.contains($0.id) }
+            if !newPosts.isEmpty {
+                let sortedPosts = postsSortedByStream(newPosts)
+                topic?.postStream.posts.append(contentsOf: sortedPosts)
+                resortLoadedPostsByStreamOrder()
+                for post in sortedPosts {
+                    loadedPostIds.insert(post.id)
+                }
+            }
+        }
+
+        for id in batch {
+            loadedPostIds.insert(id)
+        }
+
+        let latestById = Dictionary(uniqueKeysWithValues: posts.map { ($0.id, $0) })
+        let toParse = batch.compactMap { id -> DiscourseTopicDetail.Post? in
+            guard parsedBlocks[id] == nil else { return nil }
+            return latestById[id]
+        }
+        if toParse.isEmpty { return true }
+        return await parseAndStore(posts: toParse, generation: generation)
     }
 
     private func startLoadingCategoryMetadata(for categoryId: Int?) {
@@ -1272,6 +1352,7 @@ final class TopicDetailViewModel: DoerObservableObject {
               ),
               let topicId = topic?.id
         else { return }
+        cancelForwardWindowPrefetch()
         isLoadingMore = true
         notifyChanged()
 
@@ -1285,32 +1366,15 @@ final class TopicDetailViewModel: DoerObservableObject {
         }
 
         do {
-            let response = try await api.fetchTopicPosts(topicId: topicId, postIds: batch)
-            let newPosts = response.postStream.posts.filter { !loadedPostIds.contains($0.id) }
-
-            guard !newPosts.isEmpty else {
-                for id in batch { loadedPostIds.insert(id) }
-                loadedRangeEnd = newEnd
+            guard try await fetchAndParsePosts(
+                topicId: topicId,
+                batch: batch,
+                generation: parseGeneration
+            ) else {
                 isLoadingMore = false
                 notifyChanged()
                 return
             }
-
-            // Sort new posts by their order in allPostIds
-            let sortedPosts = postsSortedByStream(newPosts)
-
-            topic?.postStream.posts.append(contentsOf: sortedPosts)
-            resortLoadedPostsByStreamOrder()
-
-            for post in sortedPosts {
-                loadedPostIds.insert(post.id)
-            }
-            guard await parseAndStore(posts: sortedPosts, generation: parseGeneration) else {
-                isLoadingMore = false
-                notifyChanged()
-                return
-            }
-
             loadedRangeEnd = newEnd
         } catch {
             // Silently fail; user can scroll again to retry
@@ -1531,6 +1595,18 @@ final class TopicDetailViewModel: DoerObservableObject {
             // create response often marks own boost canDelete=true even if username missing
             topic?.postStream.posts[index].canBoost = false
         }
+        if notify { notifyChanged() }
+    }
+
+    func updatePostBoost(postId: Int, boost: DiscourseTopicDetail.Boost, notify: Bool = false) {
+        guard let index = topic?.postStream.posts.firstIndex(where: { $0.id == postId }) else { return }
+        var boosts = topic?.postStream.posts[index].boosts ?? []
+        if let existing = boosts.firstIndex(where: { $0.id == boost.id }) {
+            boosts[existing] = boost
+        } else {
+            boosts.append(boost)
+        }
+        topic?.postStream.posts[index].boosts = boosts
         if notify { notifyChanged() }
     }
 

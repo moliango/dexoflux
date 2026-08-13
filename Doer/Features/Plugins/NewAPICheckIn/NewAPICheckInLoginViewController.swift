@@ -244,6 +244,11 @@ final class NewAPICheckInLoginViewController: UIViewController, WKNavigationDele
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if isMovingFromParent || navigationController?.isBeingDismissed == true || isBeingDismissed {
@@ -574,6 +579,10 @@ final class NewAPICheckInLoginViewController: UIViewController, WKNavigationDele
                navigationController.viewControllers.dropLast().last is NewAPICheckInWebLoginEntryViewController,
                let destination = navigationController.viewControllers.dropLast(2).last {
                 navigationController.popToViewController(destination, animated: true)
+            } else if let navigationController,
+                      navigationController.viewControllers.first === self,
+                      presentingViewController != nil {
+                dismiss(animated: true)
             } else {
                 navigationController?.popViewController(animated: true)
             }

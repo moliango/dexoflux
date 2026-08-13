@@ -71,7 +71,9 @@ enum DiscourseRouter {
     case toggleReaction(postId: Int, reactionId: String)
     case toggleSharedIssue
     case createBoost(postId: Int)
+    case getBoost(boostId: Int)
     case deleteBoost(boostId: Int)
+    case flagBoost(boostId: Int)
     case votePoll
     case upload(clientId: String)
     /// discourse-assign: claim / assign topic (FluxDo parity).
@@ -80,7 +82,7 @@ enum DiscourseRouter {
     
     var method: HTTPMethod {
         switch self {
-        case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .upload,
+        case .createTopic, .createBookmark, .createInvite, .toggleSharedIssue, .createBoost, .flagBoost, .upload,
              .topicNotificationLevel, .presenceUpdate, .saveDraft, .assignTopic:
             return .post
         case .toggleReaction, .votePoll, .follow, .userNotificationLevel, .updateTopic, .updatePost:
@@ -251,8 +253,12 @@ enum DiscourseRouter {
             return "/solution/shared_issue"
         case .createBoost(let postId):
             return "/discourse-boosts/posts/\(postId)/boosts"
+        case .getBoost(let boostId):
+            return "/discourse-boosts/boosts/\(boostId)"
         case .deleteBoost(let boostId):
             return "/discourse-boosts/boosts/\(boostId)"
+        case .flagBoost(let boostId):
+            return "/discourse-boosts/boosts/\(boostId)/flags"
         case .votePoll:
             return "/polls/vote"
         case .upload(let clientId):

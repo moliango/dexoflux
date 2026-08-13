@@ -395,11 +395,15 @@ struct DiscourseTopicDetail: Decodable {
         let user: BoostUser
         let canDelete: Bool
         let canFlag: Bool
+        let userFlagStatus: Int?
+        let availableFlags: [String]?
 
         enum CodingKeys: String, CodingKey {
             case id, cooked, user
             case canDelete = "can_delete"
             case canFlag = "can_flag"
+            case userFlagStatus = "user_flag_status"
+            case availableFlags = "available_flags"
         }
 
         init(from decoder: Decoder) throws {
@@ -410,14 +414,43 @@ struct DiscourseTopicDetail: Decodable {
                 ?? BoostUser(id: 0, username: "", name: nil, avatarTemplate: nil)
             canDelete = (try? container.decodeIfPresent(Bool.self, forKey: .canDelete)) ?? false
             canFlag = (try? container.decodeIfPresent(Bool.self, forKey: .canFlag)) ?? false
+            userFlagStatus = container.decodeLossyInt(forKey: .userFlagStatus)
+            availableFlags = try? container.decodeIfPresent([String].self, forKey: .availableFlags)
         }
 
-        init(id: Int, cooked: String, user: BoostUser, canDelete: Bool, canFlag: Bool) {
+        init(
+            id: Int,
+            cooked: String,
+            user: BoostUser,
+            canDelete: Bool,
+            canFlag: Bool,
+            userFlagStatus: Int? = nil,
+            availableFlags: [String]? = nil
+        ) {
             self.id = id
             self.cooked = cooked
             self.user = user
             self.canDelete = canDelete
             self.canFlag = canFlag
+            self.userFlagStatus = userFlagStatus
+            self.availableFlags = availableFlags
+        }
+
+        func replacingActionState(
+            canDelete: Bool? = nil,
+            canFlag: Bool? = nil,
+            userFlagStatus: Int? = nil,
+            availableFlags: [String]? = nil
+        ) -> Boost {
+            Boost(
+                id: id,
+                cooked: cooked,
+                user: user,
+                canDelete: canDelete ?? self.canDelete,
+                canFlag: canFlag ?? self.canFlag,
+                userFlagStatus: userFlagStatus ?? self.userFlagStatus,
+                availableFlags: availableFlags ?? self.availableFlags
+            )
         }
     }
 

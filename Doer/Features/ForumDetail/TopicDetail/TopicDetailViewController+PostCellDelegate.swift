@@ -154,6 +154,10 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didUpdateBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {
+        viewModel.updatePostBoost(postId: post.id, boost: boost)
+    }
+
     func postCell(didTapAvatarForUsername username: String) {
         let previewVC = UserProfilePreviewViewController(api: api, username: username)
         previewVC.onViewProfile = { [weak self] selectedUsername in
@@ -171,6 +175,21 @@ extension TopicDetailViewController: PostCellDelegate {
     func postCell(didTapReplyToPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
             self?.presentReplyComposer(for: post)
+        }
+    }
+
+    func postCell(didQuoteSelectedText text: String, postId: Int?) {
+        let post = postId.flatMap { viewModel.post(byId: $0) }
+        guard let post else { return }
+        let markdown = DiscourseQuoteMarkdown.make(
+            username: post.username,
+            postNumber: post.postNumber,
+            topicId: topicId,
+            excerpt: text
+        )
+        guard !markdown.isEmpty else { return }
+        performAuthenticated { [weak self] in
+            self?.presentReplyComposer(for: post, initialText: markdown)
         }
     }
 

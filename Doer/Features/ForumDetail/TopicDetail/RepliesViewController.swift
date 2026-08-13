@@ -248,6 +248,21 @@ extension RepliesViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didQuoteSelectedText text: String, postId: Int?) {
+        let post = postId.flatMap { id in replies.first(where: { $0.id == id }) }
+        guard let post else { return }
+        let markdown = DiscourseQuoteMarkdown.make(
+            username: post.username,
+            postNumber: post.postNumber,
+            topicId: topicId,
+            excerpt: text
+        )
+        guard !markdown.isEmpty else { return }
+        performAuthenticated { [weak self] in
+            self?.presentReplyComposer(for: post, initialText: markdown)
+        }
+    }
+
     func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
             self?.loadAndPresentPostEditor(postId: post.id)
@@ -345,6 +360,13 @@ extension RepliesViewController: PostCellDelegate {
                     self.showPostActionError(error)
                 }
             }
+        }
+    }
+
+    func postCell(didUpdateBoost boost: DiscourseTopicDetail.Boost, forPost post: DiscourseTopicDetail.Post) {
+        if let idx = replies.firstIndex(where: { $0.id == post.id }),
+           let existing = replies[idx].boosts.firstIndex(where: { $0.id == boost.id }) {
+            replies[idx].boosts[existing] = boost
         }
     }
 

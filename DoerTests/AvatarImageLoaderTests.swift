@@ -43,4 +43,12 @@ final class AvatarImageLoaderTests: XCTestCase {
 
         XCTAssertNil(AvatarImageLoader.cachedUserAvatarForTesting(baseURL: "https://example.com", userId: 42))
     }
+
+    func testImageLoadOptionsDoNotQueryDiskSynchronously() {
+        XCTAssertFalse(AvatarImageLoader.usesSynchronousDiskCacheQueryForTesting())
+    }
+
+    func testImageLoadOptionsQueryMemorySynchronously() {
+        XCTAssertTrue(AvatarImageLoader.usesSynchronousMemoryCacheQueryForTesting())
+    }
 }

@@ -447,12 +447,7 @@ final class MiniProgramHostViewController: UIViewController {
 
     /// Close = destroy immediately. Floating keeps the instance via MiniProgramFloatingManager.
     func destroyAndDismiss() {
-        // Stop nested web views before dismiss so offline/error navigations cannot
-        // race deallocation (WK cookie observer / KVO) and crash.
         prepareContentForTeardown(content)
-
-        // Settle forum chrome under this overFullScreen cover first so Home never
-        // reflows as the host slides away (fullScreen re-insert thrash on ProMotion).
         settleUnderlyingChromeBeforeDismiss()
 
         let teardown = { [weak self] in
@@ -460,15 +455,20 @@ final class MiniProgramHostViewController: UIViewController {
             self.content.willMove(toParent: nil)
             self.content.view.removeFromSuperview()
             self.content.removeFromParent()
-            // One-shot z-order after cover is gone; no delayed reassert thrash.
             if let home = Self.homeViewControllerFromKeyWindow() {
                 home.finalizeTabBarOrderingAfterMiniProgramChrome()
             }
         }
 
-        if presentingViewController != nil {
-            // Prefer a clean slide-down without concurrent child layout thrash.
-            dismiss(animated: true, completion: teardown)
+        // CDK/LDC CF sheets present on top of this host. `self.dismiss()` would only
+        // pop the shield and leave the mini-program stuck. Dismiss from the presenter
+        // so the whole modal stack (shield + host) goes away.
+        if let presenter = presentingViewController {
+            presenter.dismiss(animated: true, completion: teardown)
+        } else if presentedViewController != nil {
+            dismiss(animated: true) { [weak self] in
+                self?.destroyAndDismiss()
+            }
         } else {
             teardown()
             view.removeFromSuperview()

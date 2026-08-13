@@ -89,15 +89,7 @@ extension DiscourseAPI {
         switch response.result {
         case .success(let data):
             do {
-                // Plugin may return bare Boost or `{ "boost": {…} }`.
-                if let boost = try? JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data) {
-                    return boost
-                }
-                struct Envelope: Decodable { let boost: DiscourseTopicDetail.Boost }
-                if let env = try? JSONDecoder().decode(Envelope.self, from: data) {
-                    return env.boost
-                }
-                return try JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data)
+                return try Self.decodeBoostPayload(data)
             } catch {
                 throw DiscourseDecodingError(
                     route: route,
@@ -118,8 +110,77 @@ extension DiscourseAPI {
         }
     }
 
+    func getBoost(boostId: Int) async throws -> DiscourseTopicDetail.Boost {
+        let route = DiscourseRouter.getBoost(boostId: boostId)
+        let response = try await performRequest(route: route)
+        return try Self.decodeBoostPayload(response.data)
+    }
+
     func deleteBoost(boostId: Int) async throws {
         try await requestVoid(route: .deleteBoost(boostId: boostId))
+    }
+
+    func flagBoost(boostId: Int, flagTypeId: Int, message: String?) async throws {
+        let route = DiscourseRouter.flagBoost(boostId: boostId)
+        let url = baseURL + route.path
+        var parameters: Parameters = ["flag_type_id": flagTypeId]
+        if let message, !message.isEmpty {
+            parameters["message"] = message
+        }
+        let response = await session.request(
+            url,
+            method: route.method,
+            parameters: parameters,
+            encoding: URLEncoding.httpBody
+        )
+        .serializingData()
+        .response
+
+        if let newToken = response.response?.value(forHTTPHeaderField: "X-CSRF-Token") {
+            interceptor.updateCSRFToken(newToken)
+        }
+        if let httpResponse = response.response, let responseURL = httpResponse.url,
+           shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: responseURL) {
+            WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: responseURL)
+        }
+        if handleCloudflareChallengeIfNeeded(route: route, response: response, source: "api.action") {
+            throw Self.cloudflareChallengeError()
+        }
+        if let statusCode = response.response?.statusCode, !(200 ..< 300).contains(statusCode) {
+            if statusCode == 429 {
+                throw DiscourseAPIError(messages: [String(localized: "error.rate_limited")], errorType: "rate_limited")
+            }
+            if let data = response.data,
+               let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data),
+               !errBody.errors.isEmpty {
+                throw DiscourseAPIError(messages: errBody.errors, errorType: errBody.errorType)
+            }
+            throw DiscourseAPIError(
+                messages: [String(localized: "post.boost.flag_failed", defaultValue: "举报 Boost 失败")],
+                errorType: nil
+            )
+        }
+        if let error = response.error {
+            throw error
+        }
+    }
+
+    func fetchBoostFlagTypes() async throws -> [DiscourseFlagType] {
+        let types = (try? await fetchSiteInfo().postActionTypes) ?? []
+        let enabled = types.filter { $0.isFlag && $0.enabled }
+        return enabled.isEmpty ? DiscourseFlagType.defaultTypes : enabled
+    }
+
+    private static func decodeBoostPayload(_ data: Data) throws -> DiscourseTopicDetail.Boost {
+        // Plugin may return bare Boost or `{ "boost": {…} }`.
+        if let boost = try? JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data) {
+            return boost
+        }
+        struct Envelope: Decodable { let boost: DiscourseTopicDetail.Boost }
+        if let env = try? JSONDecoder().decode(Envelope.self, from: data) {
+            return env.boost
+        }
+        return try JSONDecoder().decode(DiscourseTopicDetail.Boost.self, from: data)
     }
 
 
