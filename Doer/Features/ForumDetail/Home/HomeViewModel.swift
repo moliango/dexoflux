@@ -10,6 +10,53 @@ enum IncomingTopicPageTraversal {
     }
 }
 
+/// Keeps Discourse pinned topics above newly inserted / paginated rows.
+enum HomeTopicListOrdering {
+    static func isPinned(_ topic: DiscourseTopicList.Topic, pinnedIds: Set<Int>) -> Bool {
+        pinnedIds.contains(topic.id) || topic.pinned == true
+    }
+
+    static func withPinnedFirst(
+        _ topics: [DiscourseTopicList.Topic],
+        pinnedIds: Set<Int>
+    ) -> [DiscourseTopicList.Topic] {
+        var seen = Set<Int>()
+        let pinned = topics.filter { isPinned($0, pinnedIds: pinnedIds) }
+        let unpinned = topics.filter { !isPinned($0, pinnedIds: pinnedIds) }
+        return (pinned + unpinned).compactMap { topic in
+            guard seen.insert(topic.id).inserted else { return nil }
+            return topic
+        }
+    }
+
+    /// “查看 N 个新话题” must insert below pins, not shove pins into the middle.
+    static func mergeIncoming(
+        incoming: [DiscourseTopicList.Topic],
+        existing: [DiscourseTopicList.Topic],
+        pinnedIds: Set<Int>
+    ) -> (topics: [DiscourseTopicList.Topic], pinnedIds: Set<Int>) {
+        var nextPinned = pinnedIds
+        nextPinned.formUnion(incoming.filter { $0.pinned == true }.map(\.id))
+        nextPinned.formUnion(existing.filter { $0.pinned == true }.map(\.id))
+
+        let incomingIds = Set(incoming.map(\.id))
+        let remaining = existing.filter { !incomingIds.contains($0.id) }
+
+        let pinnedRemaining = remaining.filter { isPinned($0, pinnedIds: nextPinned) }
+        let pinnedIncoming = incoming.filter { isPinned($0, pinnedIds: nextPinned) }
+        let unpinnedIncoming = incoming.filter { !isPinned($0, pinnedIds: nextPinned) }
+        let unpinnedRemaining = remaining.filter { !isPinned($0, pinnedIds: nextPinned) }
+
+        return (
+            withPinnedFirst(
+                pinnedRemaining + pinnedIncoming + unpinnedIncoming + unpinnedRemaining,
+                pinnedIds: nextPinned
+            ),
+            nextPinned
+        )
+    }
+}
+
 enum HomeListMode: CaseIterable, Hashable {
     case latest
     case newTopics
@@ -51,17 +98,6 @@ private enum TopicAccessState {
 @MainActor
 final class HomeViewModel: DoerObservableObject {
     var pinnedTopicIds: Set<Int> = []
-
-    var pinnedTopicIds: Set<Int> = []
-
-    var pinnedTopicIds: Set<Int> = []
-
-    var pinnedTopicIds: Set<Int> = []
-
-    var pinnedTopicIds: Set<Int> = []
-
-    var pinnedTopicIds: Set<Int> = []
-
     var listMode: HomeListMode = .latest
     var topics: [DiscourseTopicList.Topic] = []
     var incomingTopicIds: [Int] = []
@@ -205,7 +241,11 @@ final class HomeViewModel: DoerObservableObject {
     func hydrateFromBackgroundCacheIfNeeded() {
         guard isGlobalLatestList, topics.isEmpty else { return }
         guard let cached = TopicListCacheFacade.load(baseURL: api.baseURL) else { return }
-        topics = applyLocalReadProgress(to: cached.topicList.topics)
+        pinnedTopicIds = Set(cached.topicList.topics.filter { $0.pinned == true }.map(\.id))
+        topics = HomeTopicListOrdering.withPinnedFirst(
+            applyLocalReadProgress(to: cached.topicList.topics),
+            pinnedIds: pinnedTopicIds
+        )
         canLoadMore = cached.topicList.moreTopicsUrl != nil
         indexUsers(cached.users)
         indexCategories(cached.categories, source: .topicList)
@@ -261,11 +301,12 @@ final class HomeViewModel: DoerObservableObject {
             }
             let result = try await fetchTopics(page: 0)
             try Task.checkCancellation()
-            topics = applyLocalReadProgress(to: result.topicList.topics)
-
-            // Update global pinned state from the new page.
-            let newPinned = Set(result.topicList.topics.filter { $0.pinned == true }.map { $0.id })
-            pinnedTopicIds.formUnion(newPinned)
+            // Page 0 is source of truth for which topics are currently pinned.
+            pinnedTopicIds = Set(result.topicList.topics.filter { $0.pinned == true }.map(\.id))
+            topics = HomeTopicListOrdering.withPinnedFirst(
+                applyLocalReadProgress(to: result.topicList.topics),
+                pinnedIds: pinnedTopicIds
+            )
             if isGlobalLatestList {
                 // Full page-0 refresh is the source of truth — clear leftover
                 // background pending so cold start / foreground reload don't
@@ -338,11 +379,11 @@ final class HomeViewModel: DoerObservableObject {
             currentPage = nextPage
             let existingIds = Set(topics.map(\.id))
             let newTopics = result.topicList.topics.filter { !existingIds.contains($0.id) }
-            topics.append(contentsOf: applyLocalReadProgress(to: newTopics))
-
-            // Update global pinned state from the new page.
-            let newPinned = Set(newTopics.filter { $0.pinned == true }.map { $0.id })
-            pinnedTopicIds.formUnion(newPinned)
+            pinnedTopicIds.formUnion(newTopics.filter { $0.pinned == true }.map(\.id))
+            topics = HomeTopicListOrdering.withPinnedFirst(
+                topics + applyLocalReadProgress(to: newTopics),
+                pinnedIds: pinnedTopicIds
+            )
             canLoadMore = result.topicList.moreTopicsUrl != nil
             loadMoreErrorMessage = nil
             shouldRetryLoadMoreAfterCloudflare = false
@@ -471,9 +512,13 @@ final class HomeViewModel: DoerObservableObject {
             if !incomingTopics.isEmpty {
                 let order = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
                 incomingTopics.sort { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
-                let incomingIds = Set(incomingTopics.map(\.id))
-                let remaining = topics.filter { !incomingIds.contains($0.id) }
-                topics = applyLocalReadProgress(to: incomingTopics + remaining)
+                let merged = HomeTopicListOrdering.mergeIncoming(
+                    incoming: applyLocalReadProgress(to: incomingTopics),
+                    existing: topics,
+                    pinnedIds: pinnedTopicIds
+                )
+                topics = merged.topics
+                pinnedTopicIds = merged.pinnedIds
                 indexUsers(incomingUsers)
                 indexCategories(incomingCategories, source: .topicList)
             }
@@ -560,6 +605,7 @@ final class HomeViewModel: DoerObservableObject {
         categoryMetadataTask?.cancel()
         categoryMetadataTask = nil
         topics = []
+        pinnedTopicIds = []
         incomingTopicIds = []
         shouldRetryIncomingTopicsAfterCloudflare = false
         isLoading = false
