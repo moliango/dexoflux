@@ -14,6 +14,61 @@ final class UserProfileModelsTests: XCTestCase {
         XCTAssertNotNil(UserProfileFormatting.trustLevelText(4))
     }
 
+    func testContentPresentationMapsLinkClicks() throws {
+        let data = Data(#"{"url":"https://example.test","title":"Example","clicks":4}"#.utf8)
+        let link = try JSONDecoder().decode(DiscourseUserSummaryLink.self, from: data)
+        let presentation = UserProfileContentPresentation.make(from: .summaryLink(link))
+        XCTAssertEqual(presentation.title, "Example")
+        XCTAssertEqual(presentation.symbol, "link")
+        XCTAssertTrue(presentation.subtitle?.contains("4") == true)
+    }
+
+    func testContentPresentationMapsSummaryTopicChrome() {
+        let topic = DiscourseUserSummaryTopic(
+            id: 17,
+            title: "Topic",
+            likesCount: 6,
+            postsCount: 3,
+            views: nil,
+            slug: nil,
+            categoryId: nil,
+            createdAt: nil
+        )
+        let presentation = UserProfileContentPresentation.make(from: .summaryTopic(topic))
+        XCTAssertEqual(presentation.title, "Topic")
+        XCTAssertEqual(presentation.symbol, "text.bubble.fill")
+        XCTAssertNil(presentation.avatarTemplate)
+        XCTAssertTrue(presentation.subtitle?.contains("6") == true)
+
+        let withAvatar = UserProfileContentPresentation.make(
+            from: .summaryTopic(topic),
+            fallbackAvatarTemplate: "/user_avatar/{size}/1.png"
+        )
+        XCTAssertEqual(withAvatar.avatarTemplate, "/user_avatar/{size}/1.png")
+    }
+
+    func testCardLayoutKeepsNameBesideOverflowingAvatar() {
+        XCTAssertEqual(UserProfileCardLayout.identityLeading, UserProfileCardLayout.avatarDiameter + 8)
+        XCTAssertEqual(UserProfileCardLayout.avatarDiameter, 76)
+        XCTAssertLessThan(UserProfileCardLayout.avatarOverflow, UserProfileCardLayout.avatarRadius)
+    }
+
+    func testCleanBioKeepsPlainEmojiShortcodes() {
+        XCTAssertEqual(
+            UserProfileFormatting.cleanBio("你好，我是马里奥 :face_without_mouth:"),
+            "你好，我是马里奥 :face_without_mouth:"
+        )
+    }
+
+    func testCleanBioRecoversEmojiShortcodesFromImg() {
+        let html = """
+        <p>你好 <img src="/images/emoji/twitter/face_without_mouth.png" class="emoji" alt=":face_without_mouth:"></p>
+        """
+        let cleaned = UserProfileFormatting.cleanBio(html)
+        XCTAssertEqual(cleaned?.contains(":face_without_mouth:"), true)
+        XCTAssertEqual(cleaned?.contains("<img"), false)
+    }
+
     func testCardDefaultsMissingCapabilitiesToNil() throws {
         let data = Data(#"{"user":{"id":1,"username":"sam","trust_level":2}}"#.utf8)
 
@@ -45,6 +100,20 @@ final class UserProfileModelsTests: XCTestCase {
         XCTAssertEqual(response.reactions.count, 1)
         XCTAssertEqual(response.reactions[0].topicId, 17)
         XCTAssertEqual(response.reactions[0].reactionValue, "heart")
+        XCTAssertNil(response.reactions[0].avatarTemplate)
+    }
+
+    func testReactionsDecodeNestedUserAvatar() throws {
+        let data = Data(#"[{"id":8,"post_id":31,"user":{"username":"sam","avatar_template":"/user_avatar/linux.do/sam/{size}/9.png"},"post":{"topic_id":17,"topic_title":"Topic","user":{"username":"alice","avatar_template":"/user_avatar/linux.do/alice/{size}/1.png"}},"reaction":{"reaction_value":"heart"}}]"#.utf8)
+
+        let response = try JSONDecoder().decode(DiscourseUserReactionResponse.self, from: data)
+        XCTAssertEqual(response.reactions[0].avatarTemplate, "/user_avatar/linux.do/sam/{size}/9.png")
+
+        let presentation = UserProfileContentPresentation.make(
+            from: .reaction(response.reactions[0]),
+            fallbackAvatarTemplate: "/fallback/{size}.png"
+        )
+        XCTAssertEqual(presentation.avatarTemplate, "/user_avatar/linux.do/sam/{size}/9.png")
     }
 
     func testFollowUsersDecodeArray() throws {

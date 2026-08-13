@@ -19,8 +19,10 @@ final class UserProfilePreviewViewController: ObservableViewController {
     private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private let dimView = UIView()
     private let cardView = UIView()
+    private let clipView = UIView()
+    private let backgroundImageView = UIImageView()
+    private let backgroundScrimView = ProfileCardScrimView()
     private let cardStack = UIStackView()
-    private let watermarkLabel = UILabel()
     private let avatarHaloView = UIView()
     private let avatarImageView = UIImageView()
     private let flairImageView = UIImageView()
@@ -28,13 +30,15 @@ final class UserProfilePreviewViewController: ObservableViewController {
     private let usernameLabel = UILabel()
     private let levelLabel = UILabel()
     private let titleLabel = UILabel()
+    private let identityNameStack = UIStackView()
     private let bioLabel = UILabel()
     private let locationWebsiteStack = UIStackView()
     private let factsLabel = UILabel()
     private let statsLabel = UILabel()
-    private let actionSpacerView = UIView()
-    private let loadingIndicator = UIActivityIndicatorView(style: .medium)
+    private let skeletonView = UserProfileCardSkeletonView()
     private let errorLabel = UILabel()
+    private var cardStackBottomConstraint: NSLayoutConstraint?
+    private var skeletonBottomConstraint: NSLayoutConstraint?
     private var lastPresentedRelationshipError: String?
 
     private lazy var messageButton = makeActionButton(
@@ -54,16 +58,16 @@ final class UserProfilePreviewViewController: ObservableViewController {
         config.title = String(localized: "user.profile.view_profile")
         config.image = UIImage(systemName: "person.crop.circle")
         config.imagePadding = 6
-        config.cornerStyle = .capsule
+        config.cornerStyle = .large
         config.baseForegroundColor = AppSettings.shared.themeStyle.accentColor
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
-        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-        config.titleTextAttributesTransformer = compactButtonTextAttributes(size: 11.5)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        config.titleTextAttributesTransformer = compactButtonTextAttributes(size: 14)
         let button = ProfilePreviewButton(type: .system)
         button.configuration = config
         button.translatesAutoresizingMaskIntoConstraints = false
         button.layer.borderWidth = 1
-        button.layer.cornerRadius = 16
+        button.layer.cornerRadius = 12
         button.layer.cornerCurve = .continuous
         button.addTarget(self, action: #selector(viewProfileTapped), for: .touchUpInside)
         return button
@@ -72,15 +76,15 @@ final class UserProfilePreviewViewController: ObservableViewController {
     private lazy var moreButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "ellipsis")
-        config.cornerStyle = .capsule
+        config.cornerStyle = .large
         config.baseForegroundColor = .label
         config.contentInsets = .zero
-        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         let button = ProfilePreviewButton(type: .system)
         button.configuration = config
         button.translatesAutoresizingMaskIntoConstraints = false
         button.layer.borderWidth = 1
-        button.layer.cornerRadius = 16
+        button.layer.cornerRadius = 12
         button.layer.cornerCurve = .continuous
         button.accessibilityLabel = String(localized: "user.profile.more")
         button.showsMenuAsPrimaryAction = true
@@ -105,7 +109,14 @@ final class UserProfilePreviewViewController: ObservableViewController {
         observe(viewModel)
         observe(AppSettings.shared)
         setupUI()
-        Task {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(emojiStoreDidUpdate),
+            name: EmojiStore.didUpdateNotification,
+            object: nil
+        )
+        ensureEmojiMapLoaded()
+        Task { @MainActor in
             await viewModel.load()
         }
     }
@@ -121,13 +132,19 @@ final class UserProfilePreviewViewController: ObservableViewController {
     override func updateUI() {
         applyTheme()
 
-        loadingIndicator.isHidden = !viewModel.isLoading
-        viewModel.isLoading ? loadingIndicator.startAnimating() : loadingIndicator.stopAnimating()
-        errorLabel.isHidden = viewModel.errorMessage == nil
+        let showsSkeleton = viewModel.userCard == nil
+            && viewModel.userProfile == nil
+            && viewModel.errorMessage == nil
+        skeletonView.applyThemeStyle()
+        skeletonView.setSkeletonActive(showsSkeleton, animated: view.window != nil)
+        cardStack.isHidden = showsSkeleton
+        cardStackBottomConstraint?.isActive = !showsSkeleton
+        skeletonBottomConstraint?.isActive = showsSkeleton
+        errorLabel.isHidden = viewModel.errorMessage == nil || showsSkeleton
         errorLabel.text = viewModel.errorMessage
 
         guard let profile = viewModel.userCard ?? viewModel.userProfile else {
-            configurePlaceholder()
+            configurePlaceholder(showsSkeleton: showsSkeleton)
             return
         }
 
@@ -149,30 +166,34 @@ final class UserProfilePreviewViewController: ObservableViewController {
         view.addSubview(dimView)
 
         cardView.translatesAutoresizingMaskIntoConstraints = false
-        cardView.layer.cornerRadius = 24
+        cardView.layer.cornerRadius = UserProfileCardLayout.cardCornerRadius
         cardView.layer.cornerCurve = .continuous
         cardView.layer.shadowColor = UIColor.black.cgColor
-        cardView.layer.shadowOpacity = 0.18
-        cardView.layer.shadowRadius = 24
+        cardView.layer.shadowOpacity = 0.28
+        cardView.layer.shadowRadius = 32
         cardView.layer.shadowOffset = CGSize(width: 0, height: 12)
         view.addSubview(cardView)
 
-        watermarkLabel.translatesAutoresizingMaskIntoConstraints = false
-        watermarkLabel.text = "LINUX DO"
-        watermarkLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 54,
-            weight: .black,
-            fallback: .systemFont(ofSize: 54, weight: .black)
-        )
-        watermarkLabel.textAlignment = .center
-        watermarkLabel.adjustsFontSizeToFitWidth = true
-        watermarkLabel.minimumScaleFactor = 0.55
-        cardView.addSubview(watermarkLabel)
+        clipView.translatesAutoresizingMaskIntoConstraints = false
+        clipView.layer.cornerRadius = UserProfileCardLayout.cardCornerRadius
+        clipView.layer.cornerCurve = .continuous
+        clipView.clipsToBounds = true
+        cardView.addSubview(clipView)
+
+        backgroundImageView.translatesAutoresizingMaskIntoConstraints = false
+        backgroundImageView.contentMode = .scaleAspectFill
+        backgroundImageView.clipsToBounds = true
+        backgroundImageView.isHidden = true
+        clipView.addSubview(backgroundImageView)
+
+        backgroundScrimView.translatesAutoresizingMaskIntoConstraints = false
+        backgroundScrimView.isHidden = true
+        clipView.addSubview(backgroundScrimView)
 
         cardStack.axis = .vertical
-        cardStack.spacing = 11
+        cardStack.spacing = 12
         cardStack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(cardStack)
+        clipView.addSubview(cardStack)
 
         setupIdentity()
         setupBody()
@@ -180,9 +201,10 @@ final class UserProfilePreviewViewController: ObservableViewController {
         setupAvatar()
         setupLoadingAndError()
 
-        let centerY = cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -44)
-        centerY.priority = .defaultHigh
-        let preferredWidth = cardView.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -44)
+        let preferredWidth = cardView.widthAnchor.constraint(
+            equalTo: view.widthAnchor,
+            constant: -UserProfileCardLayout.screenMargin * 2
+        )
         preferredWidth.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
@@ -197,32 +219,61 @@ final class UserProfilePreviewViewController: ObservableViewController {
             dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             cardView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            cardView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 22),
-            cardView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -22),
-            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 390),
-            cardView.heightAnchor.constraint(greaterThanOrEqualToConstant: 330),
+            cardView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor,
+                constant: UserProfileCardLayout.screenMargin
+            ),
+            cardView.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor,
+                constant: -UserProfileCardLayout.screenMargin
+            ),
+            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
             preferredWidth,
-            cardView.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 56),
-            cardView.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -18),
-            centerY,
+            cardView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: UserProfileCardLayout.avatarOverflow + UserProfileCardLayout.dockedTopGap
+            ),
+            cardView.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -UserProfileCardLayout.screenMargin
+            ),
 
-            watermarkLabel.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-            watermarkLabel.centerYAnchor.constraint(equalTo: cardView.centerYAnchor, constant: -8),
-            watermarkLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: -18),
-            watermarkLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: 18),
+            clipView.topAnchor.constraint(equalTo: cardView.topAnchor),
+            clipView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+            clipView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            clipView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
 
-            cardStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 42),
-            cardStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 17),
-            cardStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -17),
-            cardStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            backgroundImageView.topAnchor.constraint(equalTo: clipView.topAnchor),
+            backgroundImageView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+            backgroundImageView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+            backgroundImageView.bottomAnchor.constraint(equalTo: clipView.bottomAnchor),
+
+            backgroundScrimView.topAnchor.constraint(equalTo: clipView.topAnchor),
+            backgroundScrimView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+            backgroundScrimView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+            backgroundScrimView.bottomAnchor.constraint(equalTo: clipView.bottomAnchor),
+
+            cardStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: UserProfileCardLayout.bodyTop),
+            cardStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor, constant: UserProfileCardLayout.bodyHorizontal),
+            cardStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor, constant: -UserProfileCardLayout.bodyHorizontal),
         ])
+
+        let cardStackBottom = cardStack.bottomAnchor.constraint(
+            equalTo: clipView.bottomAnchor,
+            constant: -UserProfileCardLayout.bodyBottom
+        )
+        cardStackBottomConstraint = cardStackBottom
+        cardStack.isHidden = true
+        cardStackBottom.isActive = false
+        skeletonBottomConstraint?.isActive = true
+        skeletonView.setSkeletonActive(true, animated: false)
     }
 
     private func setupIdentity() {
         displayNameLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 18,
-            weight: .heavy,
-            fallback: .systemFont(ofSize: 18, weight: .heavy)
+            ofSize: UserProfileCardLayout.nameSize,
+            weight: .semibold,
+            fallback: .systemFont(ofSize: UserProfileCardLayout.nameSize, weight: .semibold)
         )
         displayNameLabel.textColor = .label
         displayNameLabel.numberOfLines = 1
@@ -230,30 +281,32 @@ final class UserProfilePreviewViewController: ObservableViewController {
         displayNameLabel.minimumScaleFactor = 0.72
 
         usernameLabel.font = AppSettings.shared.appInterfaceFont(
+            ofSize: UserProfileCardLayout.usernameSize,
+            weight: .regular,
+            fallback: .systemFont(ofSize: UserProfileCardLayout.usernameSize, weight: .regular)
+        )
+        usernameLabel.textColor = .secondaryLabel
+        usernameLabel.numberOfLines = 1
+        usernameLabel.isUserInteractionEnabled = true
+        usernameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        usernameLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(copyUsernameTapped)))
+
+        levelLabel.font = AppSettings.shared.appInterfaceFont(
             ofSize: 11,
             weight: .semibold,
             fallback: .systemFont(ofSize: 11, weight: .semibold)
         )
-        usernameLabel.textColor = .secondaryLabel
-        usernameLabel.numberOfLines = 1
-        usernameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        levelLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 11,
-            weight: .bold,
-            fallback: .systemFont(ofSize: 11, weight: .bold)
-        )
         levelLabel.textAlignment = .center
-        levelLabel.layer.cornerRadius = 6
+        levelLabel.layer.cornerRadius = 4
         levelLabel.layer.cornerCurve = .continuous
         levelLabel.clipsToBounds = true
         levelLabel.isHidden = true
         levelLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         titleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 11,
-            weight: .semibold,
-            fallback: .systemFont(ofSize: 11, weight: .semibold)
+            ofSize: UserProfileCardLayout.metaSize,
+            weight: .medium,
+            fallback: .systemFont(ofSize: UserProfileCardLayout.metaSize, weight: .medium)
         )
         titleLabel.textColor = .secondaryLabel
         titleLabel.numberOfLines = 1
@@ -261,45 +314,54 @@ final class UserProfilePreviewViewController: ObservableViewController {
         let usernameRow = UIStackView(arrangedSubviews: [usernameLabel, levelLabel])
         usernameRow.axis = .horizontal
         usernameRow.alignment = .center
-        usernameRow.spacing = 5
+        usernameRow.spacing = 8
 
-        let nameStack = UIStackView(arrangedSubviews: [displayNameLabel, usernameRow, titleLabel])
-        nameStack.axis = .vertical
-        nameStack.spacing = 3
-        nameStack.alignment = .leading
+        locationWebsiteStack.axis = .horizontal
+        locationWebsiteStack.alignment = .center
+        locationWebsiteStack.spacing = 8
+        locationWebsiteStack.distribution = .fill
+        locationWebsiteStack.isHidden = true
+
+        identityNameStack.axis = .vertical
+        identityNameStack.spacing = 2
+        identityNameStack.alignment = .leading
+        identityNameStack.addArrangedSubview(displayNameLabel)
+        identityNameStack.addArrangedSubview(usernameRow)
+        identityNameStack.addArrangedSubview(titleLabel)
+        identityNameStack.addArrangedSubview(locationWebsiteStack)
 
         let spacer = UIView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.widthAnchor.constraint(equalToConstant: 76).isActive = true
+        spacer.widthAnchor.constraint(equalToConstant: UserProfileCardLayout.identityLeading).isActive = true
 
-        let row = UIStackView(arrangedSubviews: [spacer, nameStack])
+        let row = UIStackView(arrangedSubviews: [spacer, identityNameStack])
         row.axis = .horizontal
         row.alignment = .top
         row.spacing = 0
         cardStack.addArrangedSubview(row)
 
-        let levelHeightConstraint = levelLabel.heightAnchor.constraint(equalToConstant: 22)
+        locationWebsiteStack.widthAnchor.constraint(
+            lessThanOrEqualTo: identityNameStack.widthAnchor
+        ).isActive = true
+
+        let levelHeightConstraint = levelLabel.heightAnchor.constraint(equalToConstant: 20)
         levelHeightConstraint.priority = UILayoutPriority(999)
-        let levelWidthConstraint = levelLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 68)
-        levelWidthConstraint.priority = UILayoutPriority(999)
-        NSLayoutConstraint.activate([levelHeightConstraint, levelWidthConstraint])
+        NSLayoutConstraint.activate([
+            levelHeightConstraint,
+            levelLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 36),
+        ])
     }
 
     private func setupBody() {
         bioLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: AppSettings.interfaceFontReferencePointSize,
+            ofSize: UserProfileCardLayout.usernameSize,
             weight: .regular,
-            fallback: .systemFont(ofSize: AppSettings.interfaceFontReferencePointSize, weight: .regular)
+            fallback: .systemFont(ofSize: UserProfileCardLayout.usernameSize, weight: .regular)
         )
         bioLabel.textColor = .label
         bioLabel.numberOfLines = 3
         bioLabel.lineBreakMode = .byTruncatingTail
         cardStack.addArrangedSubview(bioLabel)
-
-        locationWebsiteStack.axis = .horizontal
-        locationWebsiteStack.alignment = .center
-        locationWebsiteStack.spacing = 12
-        cardStack.addArrangedSubview(locationWebsiteStack)
 
         factsLabel.numberOfLines = 0
         factsLabel.lineBreakMode = .byWordWrapping
@@ -325,36 +387,30 @@ final class UserProfilePreviewViewController: ObservableViewController {
         bottomRow.axis = .horizontal
         bottomRow.spacing = 8
 
-        actionSpacerView.isUserInteractionEnabled = false
-        actionSpacerView.setContentHuggingPriority(.defaultLow, for: .vertical)
-        actionSpacerView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        cardStack.addArrangedSubview(actionSpacerView)
         cardStack.addArrangedSubview(primaryRow)
-        cardStack.setCustomSpacing(6, after: primaryRow)
+        cardStack.setCustomSpacing(8, after: primaryRow)
         cardStack.addArrangedSubview(bottomRow)
 
         NSLayoutConstraint.activate([
-            actionSpacerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 14),
-            messageButton.heightAnchor.constraint(equalToConstant: 34),
-            followButton.heightAnchor.constraint(equalToConstant: 34),
-            viewProfileButton.heightAnchor.constraint(equalToConstant: 32),
-            moreButton.widthAnchor.constraint(equalToConstant: 42),
-            moreButton.heightAnchor.constraint(equalToConstant: 32),
+            messageButton.heightAnchor.constraint(equalToConstant: UserProfileCardLayout.actionHeight),
+            followButton.heightAnchor.constraint(equalToConstant: UserProfileCardLayout.actionHeight),
+            viewProfileButton.heightAnchor.constraint(equalToConstant: UserProfileCardLayout.actionHeight),
+            moreButton.widthAnchor.constraint(equalToConstant: UserProfileCardLayout.actionHeight),
+            moreButton.heightAnchor.constraint(equalToConstant: UserProfileCardLayout.actionHeight),
         ])
     }
 
     private func setupAvatar() {
         avatarHaloView.translatesAutoresizingMaskIntoConstraints = false
-        avatarHaloView.layer.cornerRadius = 36
+        avatarHaloView.layer.cornerRadius = UserProfileCardLayout.avatarRadius
         avatarHaloView.layer.cornerCurve = .continuous
-        avatarHaloView.layer.borderWidth = 2
+        avatarHaloView.layer.borderWidth = UserProfileCardLayout.avatarBorderWidth
         avatarHaloView.isUserInteractionEnabled = false
         view.addSubview(avatarHaloView)
 
         avatarImageView.contentMode = .scaleAspectFill
         avatarImageView.clipsToBounds = true
-        avatarImageView.layer.cornerRadius = 31
-        avatarImageView.layer.borderWidth = 2
+        avatarImageView.layer.cornerRadius = UserProfileCardLayout.avatarRadius - UserProfileCardLayout.avatarBorderWidth
         avatarImageView.translatesAutoresizingMaskIntoConstraints = false
         avatarImageView.backgroundColor = .secondarySystemFill
         avatarHaloView.addSubview(avatarImageView)
@@ -362,7 +418,7 @@ final class UserProfilePreviewViewController: ObservableViewController {
         flairImageView.translatesAutoresizingMaskIntoConstraints = false
         flairImageView.contentMode = .scaleAspectFit
         flairImageView.clipsToBounds = true
-        flairImageView.layer.cornerRadius = 10
+        flairImageView.layer.cornerRadius = 9
         flairImageView.layer.cornerCurve = .continuous
         flairImageView.layer.borderWidth = 1.5
         flairImageView.isHidden = true
@@ -370,26 +426,34 @@ final class UserProfilePreviewViewController: ObservableViewController {
         view.addSubview(flairImageView)
 
         NSLayoutConstraint.activate([
-            avatarHaloView.widthAnchor.constraint(equalToConstant: 72),
+            avatarHaloView.widthAnchor.constraint(equalToConstant: UserProfileCardLayout.avatarDiameter),
             avatarHaloView.heightAnchor.constraint(equalTo: avatarHaloView.widthAnchor),
-            avatarHaloView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
-            avatarHaloView.centerYAnchor.constraint(equalTo: cardView.topAnchor),
+            avatarHaloView.leadingAnchor.constraint(
+                equalTo: cardView.leadingAnchor,
+                constant: UserProfileCardLayout.bodyHorizontal
+            ),
+            avatarHaloView.topAnchor.constraint(
+                equalTo: cardView.topAnchor,
+                constant: -UserProfileCardLayout.avatarOverflow
+            ),
 
-            avatarImageView.centerXAnchor.constraint(equalTo: avatarHaloView.centerXAnchor),
-            avatarImageView.centerYAnchor.constraint(equalTo: avatarHaloView.centerYAnchor),
-            avatarImageView.widthAnchor.constraint(equalToConstant: 62),
-            avatarImageView.heightAnchor.constraint(equalToConstant: 62),
+            avatarImageView.topAnchor.constraint(equalTo: avatarHaloView.topAnchor, constant: UserProfileCardLayout.avatarBorderWidth),
+            avatarImageView.leadingAnchor.constraint(equalTo: avatarHaloView.leadingAnchor, constant: UserProfileCardLayout.avatarBorderWidth),
+            avatarImageView.trailingAnchor.constraint(equalTo: avatarHaloView.trailingAnchor, constant: -UserProfileCardLayout.avatarBorderWidth),
+            avatarImageView.bottomAnchor.constraint(equalTo: avatarHaloView.bottomAnchor, constant: -UserProfileCardLayout.avatarBorderWidth),
 
-            flairImageView.trailingAnchor.constraint(equalTo: avatarHaloView.trailingAnchor, constant: 3),
-            flairImageView.bottomAnchor.constraint(equalTo: avatarHaloView.bottomAnchor, constant: 1),
-            flairImageView.widthAnchor.constraint(equalToConstant: 22),
-            flairImageView.heightAnchor.constraint(equalToConstant: 22),
+            flairImageView.trailingAnchor.constraint(equalTo: avatarHaloView.trailingAnchor, constant: 2),
+            flairImageView.bottomAnchor.constraint(equalTo: avatarHaloView.bottomAnchor, constant: 2),
+            flairImageView.widthAnchor.constraint(equalToConstant: 20),
+            flairImageView.heightAnchor.constraint(equalToConstant: 20),
         ])
+        view.bringSubviewToFront(avatarHaloView)
+        view.bringSubviewToFront(flairImageView)
     }
 
     private func setupLoadingAndError() {
-        loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(loadingIndicator)
+        skeletonView.translatesAutoresizingMaskIntoConstraints = false
+        clipView.addSubview(skeletonView)
 
         errorLabel.font = AppSettings.shared.appInterfaceFont(
             ofSize: 13,
@@ -400,31 +464,44 @@ final class UserProfilePreviewViewController: ObservableViewController {
         errorLabel.numberOfLines = 0
         errorLabel.textAlignment = .center
         errorLabel.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(errorLabel)
+        clipView.addSubview(errorLabel)
+
+        let skeletonBottom = skeletonView.bottomAnchor.constraint(equalTo: clipView.bottomAnchor)
+        skeletonBottomConstraint = skeletonBottom
 
         NSLayoutConstraint.activate([
-            loadingIndicator.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-            loadingIndicator.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12),
+            skeletonView.topAnchor.constraint(equalTo: clipView.topAnchor),
+            skeletonView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+            skeletonView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
 
-            errorLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
-            errorLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
-            errorLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12),
+            errorLabel.leadingAnchor.constraint(equalTo: clipView.leadingAnchor, constant: 24),
+            errorLabel.trailingAnchor.constraint(equalTo: clipView.trailingAnchor, constant: -24),
+            errorLabel.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -12),
         ])
     }
 
-    private func configurePlaceholder() {
-        displayNameLabel.text = viewModel.username
-        usernameLabel.text = "@\(viewModel.username)"
+    private func configurePlaceholder(showsSkeleton: Bool) {
+        if showsSkeleton {
+            displayNameLabel.text = nil
+            usernameLabel.text = nil
+        } else {
+            displayNameLabel.text = viewModel.username
+            usernameLabel.text = "@\(viewModel.username)"
+        }
         levelLabel.text = nil
         levelLabel.isHidden = true
         titleLabel.text = nil
         titleLabel.isHidden = true
-        bioLabel.text = viewModel.isLoading ? " " : String(localized: "user.profile.no_bio")
+        bioLabel.text = nil
+        bioLabel.attributedText = nil
+        bioLabel.isHidden = true
         factsLabel.attributedText = nil
+        factsLabel.isHidden = true
         statsLabel.attributedText = nil
+        statsLabel.isHidden = true
         locationWebsiteStack.isHidden = true
         flairImageView.isHidden = true
-        cardView.alpha = viewModel.isLoading ? 0.88 : 1
+        cardView.alpha = 1
     }
 
     private func configureProfile(_ profile: DiscourseUserProfile, summary: DiscourseUserSummary?) {
@@ -444,10 +521,23 @@ final class UserProfilePreviewViewController: ObservableViewController {
         )
         configureFlair(profile.flairUrl)
 
-        bioLabel.text = UserProfileFormatting.cleanBio(profile.bioExcerpt) ?? String(localized: "user.profile.no_bio")
+        applyBio(UserProfileFormatting.cleanBio(profile.bioExcerpt))
         configureLocationWebsite(profile: profile)
         configureFacts(profile: profile)
         configureStats(profile: profile, summary: summary)
+        configureCardBackground(profile.cardBackgroundURL)
+    }
+
+    private func configureCardBackground(_ rawURL: String?) {
+        guard let url = resolvedBackgroundURL(rawURL) else {
+            backgroundImageView.image = nil
+            backgroundImageView.isHidden = true
+            backgroundScrimView.isHidden = true
+            return
+        }
+        backgroundImageView.isHidden = false
+        backgroundScrimView.isHidden = false
+        ForumImageLoader.setImage(on: backgroundImageView, url: url)
     }
 
     private func configureFlair(_ flairUrl: String?) {
@@ -468,14 +558,67 @@ final class UserProfilePreviewViewController: ObservableViewController {
         }
 
         if let location = profile.location?.trimmedNonEmpty {
-            locationWebsiteStack.addArrangedSubview(makeInlineIconText(symbolName: "location", text: location))
+            locationWebsiteStack.addArrangedSubview(
+                makeMetaChip(symbolName: "mappin.and.ellipse", text: location)
+            )
         }
 
         if let website = (profile.websiteName?.trimmedNonEmpty ?? profile.website?.trimmedNonEmpty) {
-            locationWebsiteStack.addArrangedSubview(makeInlineIconText(symbolName: "link", text: website))
+            locationWebsiteStack.addArrangedSubview(
+                makeMetaChip(symbolName: "link", text: website)
+            )
         }
 
         locationWebsiteStack.isHidden = locationWebsiteStack.arrangedSubviews.isEmpty
+        let spacingAfter: UIView
+        if !titleLabel.isHidden {
+            spacingAfter = titleLabel
+        } else if let usernameRow = usernameLabel.superview,
+                  identityNameStack.arrangedSubviews.contains(usernameRow) {
+            spacingAfter = usernameRow
+        } else {
+            spacingAfter = displayNameLabel
+        }
+        identityNameStack.setCustomSpacing(
+            locationWebsiteStack.isHidden ? 2 : 8,
+            after: spacingAfter
+        )
+    }
+
+    private func applyBio(_ bio: String?) {
+        guard let bio else {
+            bioLabel.text = nil
+            bioLabel.attributedText = nil
+            bioLabel.isHidden = true
+            return
+        }
+        bioLabel.isHidden = false
+        TitleEmojiRenderer.apply(
+            bio,
+            to: bioLabel,
+            font: bioLabel.font,
+            textColor: .label,
+            baseURL: api.baseURL
+        )
+    }
+
+    @objc private func emojiStoreDidUpdate() {
+        refreshBioEmojiIfNeeded()
+    }
+
+    private func ensureEmojiMapLoaded() {
+        if EmojiStore.load(for: api.baseURL) {
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.api.fetchEmojiGroups()
+        }
+    }
+
+    private func refreshBioEmojiIfNeeded() {
+        guard let profile = viewModel.userCard ?? viewModel.userProfile else { return }
+        applyBio(UserProfileFormatting.cleanBio(profile.bioExcerpt))
     }
 
     private func configureFacts(profile: DiscourseUserProfile) {
@@ -483,9 +626,14 @@ final class UserProfilePreviewViewController: ObservableViewController {
         if let lastPostedAt = profile.lastPostedAt {
             items.append((String(localized: "user.profile.last_posted"), UserProfileFormatting.relativeDate(lastPostedAt)))
         }
-        items.append((String(localized: "user.profile.joined"), UserProfileFormatting.shortDate(profile.createdAt)))
-        items.append((String(localized: "user.profile.read_time"), UserProfileFormatting.duration(seconds: profile.timeRead)))
-        factsLabel.attributedText = makeInlineMetricText(items: items, baseSize: 10.25, separator: "   ")
+        if profile.createdAt != nil {
+            items.append((String(localized: "user.profile.joined"), UserProfileFormatting.shortDate(profile.createdAt)))
+        }
+        if let timeRead = profile.timeRead, timeRead > 0 {
+            items.append((String(localized: "user.profile.read_time"), UserProfileFormatting.duration(seconds: timeRead)))
+        }
+        factsLabel.attributedText = items.isEmpty ? nil : makeInlineMetricText(items: items, baseSize: UserProfileCardLayout.metaSize, separator: "   ")
+        factsLabel.isHidden = items.isEmpty
     }
 
     private func configureStats(profile: DiscourseUserProfile, summary: DiscourseUserSummary?) {
@@ -508,9 +656,10 @@ final class UserProfilePreviewViewController: ObservableViewController {
         ]
         statsLabel.attributedText = makeInlineMetricText(
             items: socialItems.isEmpty ? fallbackItems : socialItems,
-            baseSize: 10.75,
+            baseSize: UserProfileCardLayout.metaSize,
             separator: "   "
         )
+        statsLabel.isHidden = socialItems.isEmpty && fallbackItems.isEmpty
     }
 
     private func configureActions(profile: DiscourseUserProfile) {
@@ -660,17 +809,18 @@ final class UserProfilePreviewViewController: ObservableViewController {
         present(alert, animated: true)
     }
 
-    private func makeInlineIconText(symbolName: String, text: String) -> UIView {
+    private func makeMetaChip(symbolName: String, text: String) -> UIView {
         let icon = UIImageView(image: UIImage(systemName: symbolName))
         icon.tintColor = .secondaryLabel
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.setContentHuggingPriority(.required, for: .horizontal)
 
         let label = UILabel()
         label.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 10.5,
+            ofSize: 12,
             weight: .medium,
-            fallback: .systemFont(ofSize: 10.5, weight: .medium)
+            fallback: .systemFont(ofSize: 12, weight: .medium)
         )
         label.textColor = .secondaryLabel
         label.text = text
@@ -681,7 +831,14 @@ final class UserProfilePreviewViewController: ObservableViewController {
         let stack = UIStackView(arrangedSubviews: [icon, label])
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 6
+        stack.spacing = 4
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.layoutMargins = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        stack.layer.cornerRadius = 8
+        stack.layer.cornerCurve = .continuous
+        stack.backgroundColor = AppSettings.shared.themeStyle.topicChipBackgroundColor
+        stack.setContentHuggingPriority(.required, for: .horizontal)
+        stack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 12),
@@ -725,12 +882,12 @@ final class UserProfilePreviewViewController: ObservableViewController {
         config.title = title
         config.image = UIImage(systemName: symbolName)
         config.imagePadding = 6
-        config.cornerStyle = .capsule
+        config.cornerStyle = .large
         config.baseForegroundColor = style == .filled ? .white : AppSettings.shared.themeStyle.accentColor
         config.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
-        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-        config.titleTextAttributesTransformer = compactButtonTextAttributes(size: 11.5)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        config.titleTextAttributesTransformer = compactButtonTextAttributes(size: 14)
         let button = ProfilePreviewButton(type: .system)
         button.configuration = config
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -754,21 +911,26 @@ final class UserProfilePreviewViewController: ObservableViewController {
         let theme = AppSettings.shared.themeStyle
         let cardBackground = theme.topicCardBackgroundColor
         let resolvedCardBackground = cardBackground.resolvedColor(with: traitCollection)
-        cardView.backgroundColor = cardBackground.withAlphaComponent(0.98)
-        cardView.layer.borderWidth = 1
-        cardView.layer.borderColor = theme.accentColor.withAlphaComponent(0.14).cgColor
-        watermarkLabel.textColor = theme.accentColor.withAlphaComponent(0.08)
+        cardView.backgroundColor = .clear
+        clipView.backgroundColor = cardBackground
+        cardView.layer.borderWidth = 0.5
+        cardView.layer.borderColor = UIColor.separator.withAlphaComponent(0.28).cgColor
+        backgroundScrimView.topColor = cardBackground.withAlphaComponent(0.45)
+        backgroundScrimView.bottomColor = cardBackground.withAlphaComponent(0.92)
 
         avatarHaloView.backgroundColor = cardBackground
-        avatarHaloView.layer.borderColor = theme.accentColor.withAlphaComponent(0.28).cgColor
-        avatarImageView.layer.borderColor = resolvedCardBackground.cgColor
+        avatarHaloView.layer.borderColor = resolvedCardBackground.cgColor
         flairImageView.backgroundColor = cardBackground
         flairImageView.layer.borderColor = resolvedCardBackground.cgColor
 
-        levelLabel.backgroundColor = theme.accentColor.withAlphaComponent(0.14)
+        levelLabel.backgroundColor = theme.accentColor.withAlphaComponent(0.16)
         levelLabel.textColor = theme.accentColor
-        viewProfileButton.layer.borderColor = theme.accentColor.withAlphaComponent(0.42).cgColor
-        moreButton.layer.borderColor = theme.accentColor.withAlphaComponent(0.24).cgColor
+        viewProfileButton.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
+        moreButton.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
+        locationWebsiteStack.arrangedSubviews.forEach {
+            $0.backgroundColor = theme.topicChipBackgroundColor
+        }
+        skeletonView.applyThemeStyle()
 
         var messageConfig = messageButton.configuration
         messageConfig?.baseBackgroundColor = theme.accentColor
@@ -781,7 +943,7 @@ final class UserProfilePreviewViewController: ObservableViewController {
         followButton.configuration = followConfig
 
         var profileConfig = viewProfileButton.configuration
-        profileConfig?.baseForegroundColor = theme.accentColor
+        profileConfig?.baseForegroundColor = .label
         viewProfileButton.configuration = profileConfig
     }
 
@@ -800,6 +962,27 @@ final class UserProfilePreviewViewController: ObservableViewController {
         }
         let normalizedPath = flairUrl.hasPrefix("/") ? flairUrl : "/\(flairUrl)"
         return URL(string: api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + normalizedPath)
+    }
+
+    private func resolvedBackgroundURL(_ rawURL: String?) -> URL? {
+        guard let rawURL = rawURL?.trimmedNonEmpty else { return nil }
+        if rawURL.hasPrefix("//") {
+            return URL(string: "https:\(rawURL)")
+        }
+        if let absoluteURL = URL(string: rawURL), absoluteURL.scheme != nil {
+            return absoluteURL
+        }
+        let normalizedBase = api.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/"
+        return URL(string: rawURL, relativeTo: URL(string: normalizedBase))?.absoluteURL
+    }
+
+    @objc private func copyUsernameTapped() {
+        UIPasteboard.general.string = viewModel.username
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        DoerFeedback.presentToast(
+            String(localized: "user.profile.username_copied", defaultValue: "用户名已复制"),
+            on: self
+        )
     }
 
     @objc private func backgroundTapped() {
@@ -835,5 +1018,33 @@ private extension String {
     var trimmedNonEmpty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+}
+
+private final class ProfileCardScrimView: UIView {
+    var topColor: UIColor = .clear {
+        didSet { setNeedsLayout() }
+    }
+    var bottomColor: UIColor = .clear {
+        didSet { setNeedsLayout() }
+    }
+
+    private let gradientLayer = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        layer.addSublayer(gradientLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
+        gradientLayer.colors = [topColor.cgColor, bottomColor.cgColor]
     }
 }

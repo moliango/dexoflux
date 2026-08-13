@@ -141,6 +141,7 @@ final class UserProfileViewController: ObservableViewController {
 
         guard let profile = viewModel.userProfile else {
             contentView.alpha = 1
+            profileContentView.avatarTemplate = viewModel.userCard?.avatarTemplate ?? ""
             if !showsSkeleton {
                 profileContentView.render(viewModel: contentViewModel)
             }
@@ -149,6 +150,9 @@ final class UserProfileViewController: ObservableViewController {
 
         contentView.alpha = 1
         configure(profile: profile, summary: viewModel.summary)
+        profileContentView.avatarTemplate = profile.avatarTemplate
+            ?? viewModel.userCard?.avatarTemplate
+            ?? ""
         profileContentView.render(viewModel: contentViewModel)
     }
 
@@ -186,9 +190,9 @@ final class UserProfileViewController: ObservableViewController {
             heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
             heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            heroView.heightAnchor.constraint(equalToConstant: 530),
+            heroView.bottomAnchor.constraint(equalTo: recencyPill.bottomAnchor, constant: 32),
 
-            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -110),
+            panelView.topAnchor.constraint(equalTo: heroView.bottomAnchor, constant: -28),
             panelView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             panelView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             panelView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -436,14 +440,15 @@ final class UserProfileViewController: ObservableViewController {
         tabScrollView.addSubview(tabStack)
         NSLayoutConstraint.activate([
             tabStack.topAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.topAnchor),
-            tabStack.leadingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.leadingAnchor),
-            tabStack.trailingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.trailingAnchor),
+            tabStack.leadingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.leadingAnchor, constant: 18),
+            tabStack.trailingAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.trailingAnchor, constant: -18),
             tabStack.bottomAnchor.constraint(equalTo: tabScrollView.contentLayoutGuide.bottomAnchor),
             tabStack.heightAnchor.constraint(equalTo: tabScrollView.frameLayoutGuide.heightAnchor),
         ])
 
         panelStack.addArrangedSubview(profileContentView)
         profileContentView.heightAnchor.constraint(equalToConstant: 620).isActive = true
+        profileContentView.baseURL = api.baseURL
         profileContentView.onRefresh = { [weak self] in
             Task { @MainActor in
                 await self?.contentViewModel.refresh()
@@ -460,8 +465,8 @@ final class UserProfileViewController: ObservableViewController {
 
         NSLayoutConstraint.activate([
             panelStack.topAnchor.constraint(equalTo: panelView.topAnchor, constant: 14),
-            panelStack.leadingAnchor.constraint(equalTo: panelView.leadingAnchor, constant: 18),
-            panelStack.trailingAnchor.constraint(equalTo: panelView.trailingAnchor, constant: -18),
+            panelStack.leadingAnchor.constraint(equalTo: panelView.leadingAnchor),
+            panelStack.trailingAnchor.constraint(equalTo: panelView.trailingAnchor),
             panelStack.bottomAnchor.constraint(equalTo: panelView.bottomAnchor, constant: -34),
         ])
     }
@@ -509,7 +514,13 @@ final class UserProfileViewController: ObservableViewController {
         levelLabel.isHidden = levelText == nil
         titleLabel.text = profile.title
         titleLabel.isHidden = (profile.title ?? "").isEmpty
-        bioLabel.text = UserProfileFormatting.cleanBio(profile.bioExcerpt) ?? String(localized: "user.profile.no_bio")
+        TitleEmojiRenderer.apply(
+            UserProfileFormatting.cleanBio(profile.bioExcerpt) ?? String(localized: "user.profile.no_bio"),
+            to: bioLabel,
+            font: bioLabel.font,
+            textColor: UIColor.white.withAlphaComponent(0.88),
+            baseURL: api.baseURL
+        )
         recencyLabel.text = profile.lastPostedAt.map(UserProfileFormatting.relativeDate) ?? String(localized: "user.profile.last_posted")
 
         AvatarImageLoader.setImage(
@@ -804,7 +815,7 @@ final class UserProfileViewController: ObservableViewController {
     private func applyTheme() {
         let theme = AppSettings.shared.themeStyle
         scrollView.backgroundColor = .black
-        panelView.backgroundColor = theme.contentBackgroundColor
+        panelView.backgroundColor = theme.topicListBackgroundColor
         bioCard.backgroundColor = UIColor.white.withAlphaComponent(0.10)
         recencyPill.backgroundColor = UIColor.white.withAlphaComponent(0.16)
         levelLabel.backgroundColor = UIColor.white.withAlphaComponent(0.18)

@@ -440,6 +440,7 @@ final class TrustRequirementsViewController: UIViewController {
             if let report = await fetchConnectReport() {
                 if !report.isEmptyState {
                     state = .report(report)
+                    TrustLevelWidgetRefresher.persist(report: report, trustLevel: trustLevel)
                     return
                 }
                 if let paragraph = report.emptyParagraphs.first, !paragraph.isEmpty {
@@ -477,7 +478,9 @@ final class TrustRequirementsViewController: UIViewController {
         }
         do {
             let summary = try await api.fetchUserSummary(username: username)
-            state = .fallback(note: note, items: TrustFallbackCatalog.requirements(level: trustLevel, summary: summary))
+            let items = TrustFallbackCatalog.requirements(level: trustLevel, summary: summary)
+            state = .fallback(note: note, items: items)
+            TrustLevelWidgetRefresher.persist(fallback: items, trustLevel: trustLevel, note: note)
         } catch {
             state = .error(error.localizedDescription)
         }
