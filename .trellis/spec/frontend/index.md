@@ -21,7 +21,20 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
 | [Build & Dependencies](./build-and-dependencies.md) | Tuist regeneration, SPM dedupe, verification norm | Filled |
+| [App Extensions](./app-extensions.md) | Widget App Group snapshot, APNs silent wake, Home connectivity, quote-reply | Filled |
 | [FluxDo Porting](./fluxdo-porting.md) | Reference repo, porting rules, Discourse endpoint contracts | Filled |
+
+---
+
+## Quality Check
+
+Before finishing frontend work:
+
+- [ ] `make generate` if Swift files or `Project.swift` / entitlements changed
+- [ ] `xcodebuild build -workspace Doer.xcworkspace -scheme DoerTests -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`
+- [ ] Do not boot Simulator unless the owner asked
+- [ ] Widget / App Group / APNs / deep-link contracts match [App Extensions](./app-extensions.md)
+- [ ] Cookie login must not add Discourse `push_url` / User API Key flows
 
 ---
 

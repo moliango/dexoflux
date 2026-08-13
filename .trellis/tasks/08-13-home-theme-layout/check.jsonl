@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/build-and-dependencies.md", "reason": "Confirm make generate after new files and compile-only xcodebuild"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Home layout must not fork a second cell factory; chat cells stay shared"}

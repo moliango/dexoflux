@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/build-and-dependencies.md", "reason": "New Swift files need make generate; verify with generic iOS Simulator compile only"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse TopicListCellFactory, ChatTopicStyle, and TopicDetailFactory instead of duplicating theme switches"}

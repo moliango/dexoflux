@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/build-and-dependencies.md", "reason": "Compile-only after new Swift and entitlements"}
+{"file": ".trellis/spec/frontend/app-extensions.md", "reason": "Widget App Group, APNs, connectivity, quote contracts"}

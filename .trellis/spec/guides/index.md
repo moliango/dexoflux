@@ -34,7 +34,8 @@ These guides help you **ask the right questions before coding**.
 - [ ] Data format changes between layers
 - [ ] Multiple consumers need the same data
 - [ ] You're not sure where to put some logic
-- [ ] You are adding an event kind, JSONL record, RPC payload, or config field
+- [ ] You're adding a home-screen widget, App Group payload, APNs token, or `doer://` route
+- [ ] Cookie-authenticated Discourse features look like they need User API Key (`push_url`)
 - [ ] UI / command code starts casting raw payload fields directly
 
 → Read [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md)

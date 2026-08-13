@@ -9,9 +9,10 @@
 ## Convention: Regenerate the project after adding/removing source files
 
 **What**: Run `make generate` whenever a Swift file is created or deleted —
-not only after editing `Project.swift`.
+not only after editing `Project.swift`. Entitlements files and extra `sources`
+entries also require regeneration.
 
-**Why**: Target sources use `.glob("dexo/**")` which Tuist resolves **at
+**Why**: Target sources use `.glob("Doer/**")` which Tuist resolves **at
 generation time**. A file created after the last generation is not part of the
 `.xcodeproj`, so the build fails with `cannot find 'NewType' in scope` even
 though the file exists on disk.
@@ -93,3 +94,35 @@ unnecessary for catching compile/scope errors.
 
 `swiftc -parse` alone is still NOT sufficient — it misses scope/type errors and
 the new-file-not-in-project failure above. Use `xcodebuild build`.
+
+---
+
+## Convention: Tuist `resources` before `entitlements`
+
+**What**: `Project.swift` `Target.target(...)` labeled arguments must follow
+the ProjectDescription parameter order. `resources:` must appear before
+`entitlements:`.
+
+**Why**: Tuist dumps `Project.swift` with `-suppress-warnings` and Swift
+enforces this order. Putting entitlements above resources fails generate:
+
+`argument 'resources' must precede argument 'entitlements'`
+
+```swift
+// Correct
+sources: [...],
+resources: .resources([...]),
+entitlements: .file(path: "Doer/Doer.entitlements"),
+dependencies: [...],
+```
+
+---
+
+## Convention: Share Codable snapshots with WidgetKit via App Group
+
+**What**: Compile `Shared/TrustLevelWidgetSnapshot.swift` into both `Doer` and
+`DoerWidget`. Do not import app models into the widget. See
+[App Extensions](./app-extensions.md).
+
+**Why**: WidgetKit cannot link the app target. A tiny Codable snapshot plus
+`group.com.naine.doer` is the boundary.

@@ -38,7 +38,9 @@
 
 | Feature | Endpoint | Notes |
 |---------|----------|-------|
-| Trust requirements | GET `https://connect.linux.do/` | Needs web-session cookies; `.linux.do`-domain cookies (incl. `cf_clearance`) flow to the subdomain via `WebCookieStore.cookieHeader(for:)`. Anonymous → Cloudflare challenge page (no `div.card`) → fall back to `/u/{username}/summary.json`-based thresholds. |
+| Trust requirements | GET `https://connect.linux.do/` | Needs web-session cookies; `.linux.do`-domain cookies (incl. `cf_clearance`) flow to the subdomain via `WebCookieStore.cookieHeader(for:)`. Anonymous → Cloudflare challenge page (no `div.card`) → fall back to `/u/{username}/summary.json`-based thresholds. Host match is `linux.do` or `*.linux.do`, not `contains("linux.do")`. Empty-state Connect cards must not overwrite the trust widget snapshot. |
+| Trust widget | App Group `group.com.naine.doer` | App writes `TrustLevelWidgetSnapshot`; widget reads it. Kind `DoerTrustLevelWidget`. Deep link `doer://trust`. |
+| APNs | `registerForRemoteNotifications` + `remote-notification` | Cookie login cannot use Discourse `push_url`. Silent push wakes `BackgroundNotificationDeliveryPipeline`. |
 | Pending invites | GET `/u/{username}/invited/pending` | Link built as `{baseURL}/invites/{invite_key}` when response has no link field. |
 | Create invite | POST `/invites` | `max_redemptions_allowed=1`, optional `expires_at` ISO8601 / `description` / `email`. Session cookie + CSRF (handled by `DiscourseAuthInterceptor`). ~24h rate limit per invite. |
 | Recent searches | GET/DELETE `/u/recent-searches.json` | `{"recent_searches": [String]}`. |
