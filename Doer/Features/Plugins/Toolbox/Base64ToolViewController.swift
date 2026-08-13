@@ -433,7 +433,11 @@ final class Base64ToolViewController: UIViewController, UITextViewDelegate {
         button.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.12)
         button.layer.cornerRadius = 10
         button.layer.cornerCurve = .continuous
-        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
+        var config = UIButton.Configuration.plain()
+        config.title = title
+        config.baseForegroundColor = .systemIndigo
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
+        button.configuration = config
         button.addTarget(self, action: action, for: .touchUpInside)
         return button
     }

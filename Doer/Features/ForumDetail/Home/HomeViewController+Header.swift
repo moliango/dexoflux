@@ -156,7 +156,6 @@ extension HomeViewController {
                 config.cornerStyle = .capsule
             } else {
                 config.background.backgroundColor = themeStyle.topicChipBackgroundColor
-                    ?? .secondarySystemGroupedBackground
             }
             searchButton.configuration = config
         }

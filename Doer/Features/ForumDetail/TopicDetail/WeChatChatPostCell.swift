@@ -369,10 +369,12 @@ final class WeChatChatPostCell: UITableViewCell {
         voteCountLabel.setContentHuggingPriority(.required, for: .horizontal)
         for (button, image, sel) in buttons {
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.setImage(image, for: .normal)
-            button.tintColor = .secondaryLabel
+            var config = UIButton.Configuration.plain()
+            config.image = image
+            config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6)
+            config.baseForegroundColor = .secondaryLabel
+            button.configuration = config
             button.addTarget(self, action: sel, for: .touchUpInside)
-            button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
             button.setContentHuggingPriority(.required, for: .horizontal)
             NSLayoutConstraint.activate([
                 button.heightAnchor.constraint(equalToConstant: Metrics.actionBarHeight),

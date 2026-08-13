@@ -33,9 +33,11 @@ enum TopicListTypography {
         weight: UIFont.Weight,
         scaledForDynamicType: Bool = true
     ) -> UIFont {
-        let interfaceFont = interfaceFont(ofSize: role.designPointSize, weight: weight)
-        guard scaledForDynamicType else { return interfaceFont }
-        return UIFontMetrics(forTextStyle: role.textStyle).scaledFont(for: interfaceFont)
+        interfaceFont(
+            ofSize: role.designPointSize,
+            weight: weight,
+            textStyle: scaledForDynamicType ? role.textStyle : nil
+        )
     }
 
     static func scaledFont(
@@ -43,23 +45,32 @@ enum TopicListTypography {
         weight: UIFont.Weight,
         relativeTo textStyle: UIFont.TextStyle
     ) -> UIFont {
-        UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: interfaceFont(ofSize: pointSize, weight: weight)
-        )
+        interfaceFont(ofSize: pointSize, weight: weight, textStyle: textStyle)
     }
 
     static func fixedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
-        interfaceFont(ofSize: pointSize, weight: weight)
+        interfaceFont(ofSize: pointSize, weight: weight, textStyle: nil)
     }
 
-    /// 15pt design → `ContentFontSize.standard` visual size at 100%.
-    /// Do not also apply `effectiveInterfacePointSize`; that double-shrinks against the slider multiplier.
-    private static func interfaceFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
+    /// Scale design size with the interface slider. Use `scaledValue(for:)` instead of
+    /// `scaledFont(for:)` so Dynamic Type does not stamp a text style that makes
+    /// `adjustsFontForContentSizeCategory` ignore the slider.
+    private static func interfaceFont(
+        ofSize pointSize: CGFloat,
+        weight: UIFont.Weight,
+        textStyle: UIFont.TextStyle?
+    ) -> UIFont {
+        let designSize: CGFloat
+        if let textStyle {
+            designSize = UIFontMetrics(forTextStyle: textStyle).scaledValue(for: pointSize)
+        } else {
+            designSize = pointSize
+        }
         let settings = AppSettings.shared
         return settings.appInterfaceFont(
-            ofSize: pointSize,
+            ofSize: designSize,
             weight: weight,
-            fallback: UIFont.dexoOriginalSystemFont(ofSize: pointSize, weight: weight)
+            fallback: UIFont.dexoOriginalSystemFont(ofSize: designSize, weight: weight)
         )
     }
 

@@ -58,7 +58,10 @@ final class NestedSortBarCell: UITableViewCell {
             button.titleLabel?.font = TopicDetailTypography.chromeFont(.sortChip, weight: .semibold)
             button.layer.cornerRadius = 14
             button.layer.cornerCurve = .continuous
-            button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+            var config = UIButton.Configuration.plain()
+            config.title = sort.title
+            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+            button.configuration = config
             button.accessibilityLabel = sort.title
             button.setContentCompressionResistancePriority(.required, for: .horizontal)
             button.addAction(UIAction { [weak self] _ in

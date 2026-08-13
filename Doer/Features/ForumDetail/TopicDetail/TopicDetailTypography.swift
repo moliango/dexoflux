@@ -85,9 +85,8 @@ enum TopicDetailTypography {
         weight: UIFont.Weight,
         relativeTo textStyle: UIFont.TextStyle
     ) -> UIFont {
-        UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: interfaceFont(ofSize: pointSize, weight: weight)
-        )
+        let size = UIFontMetrics(forTextStyle: textStyle).scaledValue(for: pointSize)
+        return interfaceFont(ofSize: size, weight: weight)
     }
 
     static func chromeFont(
@@ -102,43 +101,31 @@ enum TopicDetailTypography {
                 relativeTo: role.textStyle
             )
         }
-        let font = interfaceFont(ofSize: role.designPointSize, weight: weight)
-        guard scaledForDynamicType else { return font }
-        return UIFontMetrics(forTextStyle: role.textStyle).scaledFont(for: font)
+        let size = scaledForDynamicType
+            ? UIFontMetrics(forTextStyle: role.textStyle).scaledValue(for: role.designPointSize)
+            : role.designPointSize
+        return interfaceFont(ofSize: size, weight: weight)
     }
 
     static func topicTitleFont(relativeTo textStyle: UIFont.TextStyle = .headline) -> UIFont {
-        let settings = AppSettings.shared
-        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
-        let pointSize = settings.effectiveContentPointSize(
-            for: settings.contentFontSize.basePointSize + comfortFontDelta
-        )
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: settings.contentFont(ofSize: pointSize, weight: .semibold)
+        contentFont(
+            ofSize: bodySourcePointSize(),
+            weight: .semibold,
+            textStyle: textStyle
         )
     }
 
     /// Post body / cooked HTML base font — single source for classic + chat.
     static func bodyContentFont() -> UIFont {
-        let settings = AppSettings.shared
-        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
-        let basePointSize = settings.effectiveContentPointSize(
-            for: settings.contentFontSize.basePointSize + comfortFontDelta
-        )
-        return UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentFont(ofSize: basePointSize)
-        )
+        contentFont(ofSize: bodySourcePointSize(), textStyle: .body)
     }
 
     static func bodyCodeFont() -> UIFont {
         let settings = AppSettings.shared
-        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
-        let basePointSize = settings.effectiveContentPointSize(
-            for: settings.contentFontSize.basePointSize + comfortFontDelta
+        let pointSize = UIFontMetrics(forTextStyle: .body).scaledValue(
+            for: max(bodySourcePointSize() - 1, 1)
         )
-        return UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 1))
-        )
+        return settings.contentMonospacedFont(ofSize: pointSize)
     }
 
     static func contentContextFont(
@@ -146,10 +133,10 @@ enum TopicDetailTypography {
         weight: UIFont.Weight,
         relativeTo textStyle: UIFont.TextStyle
     ) -> UIFont {
-        let settings = AppSettings.shared
-        let pointSize = contentContextPointSize(offsetFromBody: offset)
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: settings.contentFont(ofSize: pointSize, weight: weight)
+        contentFont(
+            ofSize: contentContextPointSize(offsetFromBody: offset),
+            weight: weight,
+            textStyle: textStyle
         )
     }
 
@@ -159,10 +146,10 @@ enum TopicDetailTypography {
         relativeTo textStyle: UIFont.TextStyle
     ) -> UIFont {
         let settings = AppSettings.shared
-        let pointSize = contentContextPointSize(offsetFromBody: offset)
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: settings.contentMonospacedFont(ofSize: pointSize, weight: weight)
+        let pointSize = UIFontMetrics(forTextStyle: textStyle).scaledValue(
+            for: contentContextPointSize(offsetFromBody: offset)
         )
+        return settings.contentMonospacedFont(ofSize: pointSize, weight: weight)
     }
 
     static func contentVisualScale() -> CGFloat {
@@ -172,6 +159,24 @@ enum TopicDetailTypography {
         let bodySizeRatio = bodySourceSize / AppSettings.ContentFontSize.standard.basePointSize
         let scaleRatio = CGFloat(settings.contentFontScalePercent) / CGFloat(AppSettings.defaultFontScalePercent)
         return max(bodySizeRatio * scaleRatio, 0.75)
+    }
+
+    private static func bodySourcePointSize() -> CGFloat {
+        let settings = AppSettings.shared
+        let comfortFontDelta: CGFloat = settings.readingComfortMode ? 1 : 0
+        return settings.effectiveContentPointSize(
+            for: settings.contentFontSize.basePointSize + comfortFontDelta
+        )
+    }
+
+    private static func contentFont(
+        ofSize pointSize: CGFloat,
+        weight: UIFont.Weight = .regular,
+        textStyle: UIFont.TextStyle
+    ) -> UIFont {
+        let settings = AppSettings.shared
+        let scaled = UIFontMetrics(forTextStyle: textStyle).scaledValue(for: pointSize)
+        return settings.contentFont(ofSize: scaled, weight: weight)
     }
 
     private static func contentContextPointSize(offsetFromBody offset: CGFloat) -> CGFloat {
