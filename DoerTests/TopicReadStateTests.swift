@@ -46,6 +46,33 @@ final class TopicReadStateTests: XCTestCase {
         ))
     }
 
+    func testIncomingMergeKeepsPinnedTopicsAboveNewRows() throws {
+        let pinned = try decodeTopic(id: 1, extra: #", "pinned": true"#)
+        let older = try decodeTopic(id: 2)
+        let incoming = try decodeTopic(id: 3)
+
+        let merged = HomeTopicListOrdering.mergeIncoming(
+            incoming: [incoming],
+            existing: [pinned, older],
+            pinnedIds: [1]
+        )
+
+        XCTAssertEqual(merged.topics.map(\.id), [1, 3, 2])
+        XCTAssertEqual(merged.pinnedIds, [1])
+    }
+
+    func testWithPinnedFirstUsesRememberedPinnedIdsWhenFlagMissing() throws {
+        let rememberedPinned = try decodeTopic(id: 9)
+        let fresh = try decodeTopic(id: 10)
+
+        let ordered = HomeTopicListOrdering.withPinnedFirst(
+            [fresh, rememberedPinned],
+            pinnedIds: [9]
+        )
+
+        XCTAssertEqual(ordered.map(\.id), [9, 10])
+    }
+
     @MainActor
     func testHomeReadProgressUpdateClearsUnreadOnlyThroughHighestSeen() throws {
         let viewModel = HomeViewModel(api: DiscourseAPI(baseURL: "https://linux.do"))
@@ -64,12 +91,12 @@ final class TopicReadStateTests: XCTestCase {
         XCTAssertFalse(viewModel.topics[0].isUnreadForDisplay)
     }
 
-    private func decodeTopic(extra: String = "") throws -> DiscourseTopicList.Topic {
+    private func decodeTopic(id: Int = 17, extra: String = "") throws -> DiscourseTopicList.Topic {
         let json = """
         {
           "topic_list": {
             "topics": [{
-              "id": 17,
+              "id": \(id),
               "fancy_title": "Topic",
               "title": "Topic",
               "posts_count": 6,
