@@ -184,6 +184,7 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
     }()
 
     private let chatInputBar: WeChatChatInputBar = WeChatChatInputBar()
+    private var chatInputBarBottomConstraint: NSLayoutConstraint?
     private var emojiStoreObserver: NSObjectProtocol?
 
     init(api: DiscourseAPI, channel: DiscourseChatChannel) {
@@ -207,6 +208,9 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
             self?.sendMessage(text)
         }
         chatInputBar.onPlus = { [weak self] in
+            self?.showPlusMenu()
+        }
+        chatInputBar.onEmoji = { [weak self] in
             self?.showPlusMenu()
         }
         // Conversation UI owns the bottom chrome — hide host tab bar (WeChat-like).
@@ -250,7 +254,8 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         view.addSubview(tableView)
         view.addSubview(chatInputBar)
 
-        let bottom = chatInputBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+        let bottom = chatInputBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        chatInputBarBottomConstraint = bottom
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -261,6 +266,52 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
             chatInputBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottom,
         ])
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(chatKeyboardWillChangeFrame(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(chatKeyboardWillHide(_:)),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
+    }
+
+    @objc private func chatKeyboardWillChangeFrame(_ notification: Notification) {
+        guard
+            let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+            let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+        else { return }
+        let converted = view.convert(frame, from: nil)
+        let overlap = max(0, view.bounds.maxY - converted.minY)
+        let lift = max(0, overlap - view.safeAreaInsets.bottom)
+        chatInputBarBottomConstraint?.constant = -lift
+        let curve = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt)
+            ?? UIView.AnimationOptions.curveEaseInOut.rawValue
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            options: UIView.AnimationOptions(rawValue: curve << 16).union(.beginFromCurrentState)
+        ) {
+            self.view.layoutIfNeeded()
+        }
+    }
+
+    @objc private func chatKeyboardWillHide(_ notification: Notification) {
+        chatInputBarBottomConstraint?.constant = 0
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+        let curve = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt)
+            ?? UIView.AnimationOptions.curveEaseInOut.rawValue
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            options: UIView.AnimationOptions(rawValue: curve << 16).union(.beginFromCurrentState)
+        ) {
+            self.view.layoutIfNeeded()
+        }
     }
 
     private func applyTheme() {
