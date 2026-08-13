@@ -675,7 +675,7 @@ final class MeViewController: ObservableViewController {
                 await MainActor.run {
                     self.configureBalanceCard(isLoggedIn: true)
                 }
-            } catch LinuxDoExtensionError.cloudflare(let baseURL, _) {
+            } catch LinuxDoExtensionError.cloudflare {
                 await MainActor.run {
                     let verifier = CloudflareVerificationViewController(
                         baseURL: service.baseURL,

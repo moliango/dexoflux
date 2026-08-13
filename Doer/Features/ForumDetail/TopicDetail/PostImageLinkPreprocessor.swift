@@ -6,7 +6,7 @@ import Foundation
 /// FluxDo ends up showing these as media. Discourse often leaves failed oneboxes
 /// as `<a href="https://...jpg">https://...jpg</a>` which native rendering used
 /// to keep as plain links.
-enum PostImageLinkPreprocessor {
+nonisolated enum PostImageLinkPreprocessor {
     /// Match standalone anchor whose href looks like an image / badge endpoint.
     private static let anchorPattern: NSRegularExpression = {
         try! NSRegularExpression(

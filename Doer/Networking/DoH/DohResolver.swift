@@ -16,7 +16,7 @@ final class DohResolver {
         }
     }
 
-    private struct JsonResponse: Decodable {
+    nonisolated private struct JsonResponse: Decodable {
         let status: Int?
         let answer: [JsonAnswer]?
 
@@ -26,7 +26,7 @@ final class DohResolver {
         }
     }
 
-    private struct JsonAnswer: Decodable {
+    nonisolated private struct JsonAnswer: Decodable {
         let type: Int?
         let ttl: Int?
         let data: String
@@ -81,7 +81,7 @@ final class DohResolver {
     }
 
     private func load(host: String) {
-        let provider = DohProviderConfiguration.current()
+        let provider = DohProviderConfiguration.current(settings: AppSettings.shared)
         let types = ["A", "AAAA"]
         let group = DispatchGroup()
         let resultLock = NSLock()
@@ -694,7 +694,8 @@ struct DohProviderConfiguration {
     let name: String
     let url: String
 
-    static func current(settings: AppSettings = .shared) -> DohProviderConfiguration {
+    @MainActor
+    static func current(settings: AppSettings) -> DohProviderConfiguration {
         let provider = settings.dohProvider
         return DohProviderConfiguration(name: provider.title, url: settings.dohServerURL)
     }

@@ -128,14 +128,14 @@ struct AIDefaultModelRef: Equatable, Sendable {
     let providerID: String
     let modelID: String
 
-    var storageValue: String { "\(providerID)|\(modelID)" }
+    nonisolated var storageValue: String { "\(providerID)|\(modelID)" }
 
     init(providerID: String, modelID: String) {
         self.providerID = providerID
         self.modelID = modelID
     }
 
-    init?(storageValue: String?) {
+    nonisolated init?(storageValue: String?) {
         guard let storageValue else { return nil }
         let parts = storageValue.split(separator: "|", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }

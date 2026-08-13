@@ -375,7 +375,7 @@ extension PostNativeCell {
         UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
     }
 
-    static func normalizedActionIcon(_ image: UIImage) -> UIImage {
+    nonisolated static func normalizedActionIcon(_ image: UIImage) -> UIImage {
         guard image.size.width > 0, image.size.height > 0 else {
             return image.withRenderingMode(.alwaysTemplate)
         }

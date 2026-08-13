@@ -2,7 +2,7 @@ import UIKit
 
 /// WeChat-style circular mini-program icon: logo fills the full disc, no gray ring padding.
 enum MiniProgramIconBadge {
-    static let defaultSize: CGFloat = 56
+    nonisolated static let defaultSize: CGFloat = 56
 
     /// Pre-rendered circular app icon (alwaysOriginal).
     @MainActor

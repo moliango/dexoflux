@@ -161,7 +161,7 @@ final class BookmarkCell: UITableViewCell {
         avatarImageView.image = nil
     }
 
-    private static func cleanedExcerpt(_ html: String) -> String {
+    nonisolated private static func cleanedExcerpt(_ html: String) -> String {
         CookedContentPipeline.plainTextPreview(fromCooked: html)
     }
 

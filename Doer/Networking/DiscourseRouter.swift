@@ -171,9 +171,9 @@ enum DiscourseRouter {
             return "/u/recent-searches.json"
         case .tags:
             return "/tags.json"
-        case .tagSearch(let query, let categoryId):
+        case .tagSearch(let query, _):
             let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-            var path = "/tags/filter/search?q=\(encoded)&limit=5"
+            let path = "/tags/filter/search?q=\(encoded)&limit=5"
             //            if let categoryId {
             //                path += "&categoryId=\(categoryId)"
             //            }

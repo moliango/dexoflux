@@ -1,6 +1,6 @@
 import Foundation
 
-enum DohDebugLog {
+nonisolated enum DohDebugLog {
     private static let lock = NSLock()
     private static let maxLines = 500
     private static var entries: [String] = []

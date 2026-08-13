@@ -223,7 +223,7 @@ final class BoostInputViewController: UIViewController {
         if cachedEntries.isEmpty {
             emojiPickerView.showLoading()
         } else {
-            EmojiStore.load(for: api.baseURL)
+            _ = EmojiStore.load(for: api.baseURL)
             emojiPickerView.setEmojiGroups(
                 [DiscourseEmojiGroup(key: "custom", emojis: cachedEntries)],
                 baseURL: api.baseURL

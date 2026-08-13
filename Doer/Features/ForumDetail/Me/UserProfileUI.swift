@@ -63,14 +63,14 @@ enum UserProfileFormatting {
         return formatter.string(from: date)
     }
 
-    static func relativeDate(_ dateString: String?) -> String {
+    nonisolated static func relativeDate(_ dateString: String?) -> String {
         guard let date = parsedDate(dateString) else { return "--" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private static func parsedDate(_ dateString: String?) -> Date? {
+    nonisolated private static func parsedDate(_ dateString: String?) -> Date? {
         guard let dateString else { return nil }
         let isoWithFraction = ISO8601DateFormatter()
         isoWithFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

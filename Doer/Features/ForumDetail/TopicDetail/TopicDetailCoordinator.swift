@@ -69,8 +69,15 @@ final class TopicDetailCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String
             Task { @MainActor [weak self] in
-                self?.host?.handleCloudflareVerificationCompleted(notification)
+                var userInfo: [AnyHashable: Any] = [:]
+                if let verifiedBaseURL {
+                    userInfo[DiscourseAPI.cloudflareBaseURLUserInfoKey] = verifiedBaseURL
+                }
+                self?.host?.handleCloudflareVerificationCompleted(
+                    Notification(name: DiscourseAPI.cloudflareVerificationCompletedNotification, object: nil, userInfo: userInfo)
+                )
             }
         }
     }

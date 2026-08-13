@@ -724,7 +724,9 @@ extension AppSettings {
             return
         }
         UIApplication.shared.setAlternateIconName(nil) { [weak self] _ in
-            self?.defaults.set(AppIconStyle.primary.rawValue, forKey: "appIconStyle")
+            Task { @MainActor [weak self] in
+                self?.defaults.set(AppIconStyle.primary.rawValue, forKey: "appIconStyle")
+            }
         }
     }
 

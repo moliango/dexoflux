@@ -14,7 +14,7 @@ final class PostNativeCell: UITableViewCell {
     static let headerHeight: CGFloat = 44
     static let bottomBarHeight: CGFloat = 36
     static let actionIconPointSize: CGFloat = 12
-    static let actionIconCanvasSize = CGSize(width: 22, height: 22)
+    nonisolated static let actionIconCanvasSize = CGSize(width: 22, height: 22)
     static var boostIconImage: UIImage {
         if let image = UIImage(named: "BoostRocket") {
             return image.withRenderingMode(.alwaysTemplate)

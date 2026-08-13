@@ -371,8 +371,8 @@ extension WeChatTopicDetailViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await api.searchTopic(topicId: topicId, term: query)
-                let posts = (result.posts ?? []).filter { $0.topicId == topicId }
+                let result = try await api.searchTopic(topicId: self.topicId, term: query)
+                let posts = (result.posts ?? []).filter { $0.topicId == self.topicId }
                 presentSearchResults(posts, query: query)
             } catch {
                 showPostActionError(error)

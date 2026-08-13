@@ -116,7 +116,7 @@ final class ForumOverlayManager {
     }
 
     func restore() {
-        guard let currentContainer,
+        guard currentContainer != nil,
               let mainWindow,
               let overlayWindow,
               isMinimized else { return }

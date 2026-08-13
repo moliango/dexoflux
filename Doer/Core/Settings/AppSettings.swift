@@ -116,17 +116,17 @@ final class AppSettings: DexoObservableObject {
         defer { isCreatingShared = false }
         return AppSettings()
     }()
-    static let topicTitleReferencePointSize: CGFloat = 15
-    static let minimumFontScalePercent = 30
-    static let maximumFontScalePercent = 150
-    static let fontScaleStepPercent = 5
-    static let defaultFontScalePercent = 100
-    static let defaultInterfaceFontScalePercent = 100
-    static let legacyInterfaceFontDefaultPercent = 85
+    nonisolated static let topicTitleReferencePointSize: CGFloat = 15
+    nonisolated static let minimumFontScalePercent = 30
+    nonisolated static let maximumFontScalePercent = 150
+    nonisolated static let fontScaleStepPercent = 5
+    nonisolated static let defaultFontScalePercent = 100
+    nonisolated static let defaultInterfaceFontScalePercent = 100
+    nonisolated static let legacyInterfaceFontDefaultPercent = 85
     /// Default visual size for a 15pt source interface label; matches reading body at 100%.
-    static let interfaceFontDefaultVisualPointSize: CGFloat = ContentFontSize.standard.basePointSize
-    static let interfaceFontReferencePointSize: CGFloat = 15
-    static let interfaceFontDefaultVisualMultiplier: CGFloat =
+    nonisolated static let interfaceFontDefaultVisualPointSize: CGFloat = ContentFontSize.standard.basePointSize
+    nonisolated static let interfaceFontReferencePointSize: CGFloat = 15
+    nonisolated static let interfaceFontDefaultVisualMultiplier: CGFloat =
         interfaceFontDefaultVisualPointSize / interfaceFontReferencePointSize
 
     let defaults = UserDefaults.standard

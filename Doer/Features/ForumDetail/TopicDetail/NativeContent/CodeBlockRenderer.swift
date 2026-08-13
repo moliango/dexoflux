@@ -220,7 +220,7 @@ private enum MermaidFlowchartParser {
         return cleanLabel(value)
     }
 
-    private static func cleanLabel(_ value: String) -> String {
+    nonisolated private static func cleanLabel(_ value: String) -> String {
         value
             .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "&nbsp;", with: " ")

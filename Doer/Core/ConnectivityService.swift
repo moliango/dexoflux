@@ -13,7 +13,7 @@ final class ConnectivityService {
     static let shared = ConnectivityService()
 
     static let didChangeNotification = Notification.Name("DexoConnectivityDidChange")
-    static let isConnectedUserInfoKey = "isConnected"
+    nonisolated static let isConnectedUserInfoKey = "isConnected"
 
     /// When true, also require `GET {baseURL}/srv/status` → 200 + body `ok`.
     /// FluxDo keeps this false by default (local path only).
@@ -44,7 +44,7 @@ final class ConnectivityService {
         isMonitoring = true
 
         monitor.pathUpdateHandler = { [weak self] path in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handlePathUpdate(path)
             }
         }

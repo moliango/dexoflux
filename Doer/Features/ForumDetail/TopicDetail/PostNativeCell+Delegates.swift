@@ -3,7 +3,7 @@ import UIKit
 // MARK: - UIColor hex helper
 
 extension UIColor {
-    convenience init?(hex: String) {
+    nonisolated convenience init?(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         guard hex.count == 6, let int = UInt64(hex, radix: 16) else { return nil }
         let r = CGFloat((int >> 16) & 0xFF) / 255

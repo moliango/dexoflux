@@ -387,8 +387,10 @@ final class TopicDetailViewController: ObservableViewController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, let renderedTopicTitle else { return }
-            self.configureTitleLabel(renderedTopicTitle)
+            Task { @MainActor [weak self] in
+                guard let self, let renderedTopicTitle else { return }
+                self.configureTitleLabel(renderedTopicTitle)
+            }
         }
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
@@ -865,7 +867,16 @@ final class TopicDetailViewController: ObservableViewController {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            self?.handleCloudflareVerificationCompleted(notification)
+            let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String
+            Task { @MainActor [weak self] in
+                var userInfo: [AnyHashable: Any] = [:]
+                if let verifiedBaseURL {
+                    userInfo[DiscourseAPI.cloudflareBaseURLUserInfoKey] = verifiedBaseURL
+                }
+                self?.handleCloudflareVerificationCompleted(
+                    Notification(name: DiscourseAPI.cloudflareVerificationCompletedNotification, object: nil, userInfo: userInfo)
+                )
+            }
         }
     }
 

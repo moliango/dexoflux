@@ -209,7 +209,7 @@ final class DiscourseAPI {
            shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: url) {
             WebCookieStore.shared.mergeResponseHeaders(httpResponse.allHeaderFields, for: url)
             if executionContext.allowsInteractiveWebRecovery {
-                await WebSessionRefreshService.shared.ensureInBackground(baseURL: baseURL, reason: "api_response_cookie")
+                WebSessionRefreshService.shared.ensureInBackground(baseURL: baseURL, reason: "api_response_cookie")
             }
         }
 
@@ -603,7 +603,7 @@ final class DiscourseAPI {
         return nil
     }
 
-    static func bodyPreview(from data: Data) -> String? {
+    nonisolated static func bodyPreview(from data: Data) -> String? {
         guard !data.isEmpty else { return nil }
         let maxLength = 800
         let previewData = data.prefix(maxLength)

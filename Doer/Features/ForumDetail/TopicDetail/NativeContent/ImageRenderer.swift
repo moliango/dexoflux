@@ -388,7 +388,7 @@ enum ImageRenderer: BlockRenderer {
         return container
     }
 
-    private static func makeURL(_ raw: String) -> URL? {
+    nonisolated private static func makeURL(_ raw: String) -> URL? {
         let cleaned = raw
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&#38;", with: "&")

@@ -29,7 +29,7 @@ private struct WebRenderStyle: Sendable {
     let blockquoteBackgroundHex: String
     let bodyFontFamilyCSS: String
 
-    static let `default` = WebRenderStyle(
+    nonisolated static let `default` = WebRenderStyle(
         bodyFontSize: 13.94,
         quoteFontSize: 12.94,
         codeFontSize: 11.94,

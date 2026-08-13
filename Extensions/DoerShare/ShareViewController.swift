@@ -104,8 +104,10 @@ final class ShareViewController: UIViewController {
                 return true
             }
             // iOS 18+ / extension open via selector
-            if current.responds(to: Selector(("openURL:options:completionHandler:"))) {
-                current.perform(Selector(("openURL:")), with: url)
+            let openSelector = NSSelectorFromString("openURL:options:completionHandler:")
+            let legacySelector = NSSelectorFromString("openURL:")
+            if current.responds(to: openSelector) {
+                current.perform(legacySelector, with: url)
                 return true
             }
             responder = current.next

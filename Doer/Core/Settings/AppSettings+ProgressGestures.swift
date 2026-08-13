@@ -165,7 +165,7 @@ extension AppSettings {
             }
         }
 
-        var basePointSize: CGFloat {
+        nonisolated var basePointSize: CGFloat {
             switch self {
             case .small: return 13.67
             case .standard: return 13.94
@@ -239,6 +239,7 @@ extension AppSettings {
         set {
             let previousMultiplier = interfaceFontScaleMultiplier
             defaults.set(Self.normalizedFontScalePercent(newValue), forKey: "interfaceFontScalePercent")
+            publishRuntimeCache()
             refreshVisibleAppFonts(previousInterfaceFontScaleMultiplier: previousMultiplier)
             notifyChanged()
         }

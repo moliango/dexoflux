@@ -9,11 +9,11 @@ final class WebCookieStore {
     private var jar: [String: HTTPCookie] = [:]
     private let lock = NSLock()
     private let filePath: URL
-    private static let maxAgeKey = HTTPCookiePropertyKey("Max-Age")
-    private static let httpOnlyKey = HTTPCookiePropertyKey("HttpOnly")
-    private static let sameSiteKey = HTTPCookiePropertyKey("SameSite")
-    private static let sameSitePolicyKey = HTTPCookiePropertyKey("SameSitePolicy")
-    private static let createdKey = HTTPCookiePropertyKey("Created")
+    nonisolated private static let maxAgeKey = HTTPCookiePropertyKey("Max-Age")
+    nonisolated private static let httpOnlyKey = HTTPCookiePropertyKey("HttpOnly")
+    nonisolated private static let sameSiteKey = HTTPCookiePropertyKey("SameSite")
+    nonisolated private static let sameSitePolicyKey = HTTPCookiePropertyKey("SameSitePolicy")
+    nonisolated private static let createdKey = HTTPCookiePropertyKey("Created")
     private static let authCookieNames: Set<String> = ["_t", "_forum_session"]
 
     /// The User-Agent captured from the WKWebView that completed login.
@@ -494,7 +494,7 @@ final class WebCookieStore {
 
     private func save() {
         lock.lock()
-        let records = jar.values.compactMap(StoredCookie.init(cookie:))
+        let records = jar.values.compactMap { StoredCookie(cookie: $0) }
         lock.unlock()
 
         do {
@@ -545,7 +545,7 @@ final class WebCookieStore {
 }
 
 private extension WebCookieStore {
-    struct StoredCookie: Codable {
+    nonisolated struct StoredCookie: Codable {
         let name: String
         let value: String
         let domain: String
@@ -556,7 +556,7 @@ private extension WebCookieStore {
         let version: Int?
         let sameSitePolicy: String?
 
-        init?(cookie: HTTPCookie) {
+        nonisolated init?(cookie: HTTPCookie) {
             guard !cookie.name.isEmpty, !cookie.domain.isEmpty else { return nil }
             name = cookie.name
             value = cookie.value
@@ -571,7 +571,7 @@ private extension WebCookieStore {
                 ?? props[WebCookieStore.sameSiteKey] as? String
         }
 
-        func makeCookie() -> HTTPCookie? {
+        nonisolated func makeCookie() -> HTTPCookie? {
             var props: [HTTPCookiePropertyKey: Any] = [
                 .name: name,
                 .value: value,
@@ -861,7 +861,7 @@ private extension WebCookieStore {
         return .distantPast
     }
 
-    static func cookies(fromResponseHeaders headers: [AnyHashable: Any], for url: URL) -> [HTTPCookie] {
+    nonisolated static func cookies(fromResponseHeaders headers: [AnyHashable: Any], for url: URL) -> [HTTPCookie] {
         var result: [HTTPCookie] = []
         for (key, value) in headers {
             guard "\(key)".lowercased() == "set-cookie" else { continue }
@@ -877,9 +877,9 @@ private extension WebCookieStore {
         return result
     }
 
-    static func setCookieHeaderStrings(from value: Any) -> [String] {
+    nonisolated static func setCookieHeaderStrings(from value: Any) -> [String] {
         if let strings = value as? [String] {
-            return strings.flatMap(splitSetCookieHeader)
+            return strings.flatMap { splitSetCookieHeader($0) }
         }
         if let values = value as? [Any] {
             return values.flatMap { setCookieHeaderStrings(from: $0) }
@@ -890,7 +890,7 @@ private extension WebCookieStore {
         return splitSetCookieHeader("\(value)")
     }
 
-    static func splitSetCookieHeader(_ header: String) -> [String] {
+    nonisolated static func splitSetCookieHeader(_ header: String) -> [String] {
         var parts: [String] = []
         var start = header.startIndex
         var index = header.startIndex
@@ -917,7 +917,7 @@ private extension WebCookieStore {
         return parts
     }
 
-    static func isCookieSeparator(_ index: String.Index, in header: String) -> Bool {
+    nonisolated static func isCookieSeparator(_ index: String.Index, in header: String) -> Bool {
         var cursor = index
         while cursor < header.endIndex, header[cursor].isWhitespace {
             cursor = header.index(after: cursor)
@@ -931,7 +931,7 @@ private extension WebCookieStore {
         return isValidCookieName(name)
     }
 
-    static func isValidCookieName(_ name: String) -> Bool {
+    nonisolated static func isValidCookieName(_ name: String) -> Bool {
         guard !name.isEmpty else { return false }
         let separators = CharacterSet(charactersIn: "()<>@,;:\\\"/[]?={} \t")
         return name.unicodeScalars.allSatisfy { scalar in

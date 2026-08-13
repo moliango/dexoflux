@@ -369,7 +369,7 @@ final class TopicDetailBottomBar: UIView {
         case .up: action = settings.progressGestureSwipeUp
         case .none: action = nil
         }
-        if action == .none { action = nil }
+        if action == ProgressGestureAction.none { action = nil }
 
         let triggerable = action != nil && maxDelta >= Metrics.swipeTriggerDistance
         if triggerable != swipeTriggerable, triggerable {

@@ -292,7 +292,7 @@ extension RepliesViewController: PostCellDelegate {
             guard let self else { return }
             Task {
                 do {
-                    try await self.api.toggleReaction(postId: post.id, reactionId: reactionId)
+                    _ = try await self.api.toggleReaction(postId: post.id, reactionId: reactionId)
                     await self.loadReplies()
                 } catch {
                     self.showPostActionError(error)

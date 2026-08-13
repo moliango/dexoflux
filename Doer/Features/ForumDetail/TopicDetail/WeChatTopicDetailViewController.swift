@@ -905,7 +905,16 @@ final class WeChatTopicDetailViewController: ObservableViewController {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            self?.handleCloudflareVerificationCompleted(notification)
+            let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String
+            Task { @MainActor [weak self] in
+                var userInfo: [AnyHashable: Any] = [:]
+                if let verifiedBaseURL {
+                    userInfo[DiscourseAPI.cloudflareBaseURLUserInfoKey] = verifiedBaseURL
+                }
+                self?.handleCloudflareVerificationCompleted(
+                    Notification(name: DiscourseAPI.cloudflareVerificationCompletedNotification, object: nil, userInfo: userInfo)
+                )
+            }
         }
     }
 

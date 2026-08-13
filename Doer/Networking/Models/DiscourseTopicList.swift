@@ -4,13 +4,13 @@ extension Notification.Name {
     static let topicReadProgressDidChange = Notification.Name("topicReadProgressDidChange")
 }
 
-enum TopicReadProgressUserInfoKey {
+nonisolated enum TopicReadProgressUserInfoKey {
     static let baseURL = "baseURL"
     static let topicId = "topicId"
     static let highestSeen = "highestSeen"
 }
 
-struct DiscourseTopicList: Decodable {
+nonisolated struct DiscourseTopicList: Decodable {
     let users: [User]?
     let categories: [DiscourseCategory]?
     let topicList: TopicList

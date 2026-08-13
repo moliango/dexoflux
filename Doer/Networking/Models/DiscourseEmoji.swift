@@ -109,7 +109,7 @@ struct DiscourseUploadResponse: Decodable {
         return "[\(originalFilename)|attachment](\(shortURL))\(suffix)"
     }
 
-    private static func formatFileSize(_ bytes: Int) -> String {
+    nonisolated private static func formatFileSize(_ bytes: Int) -> String {
         guard bytes >= 1024 else { return "\(bytes) B" }
         let kb = Double(bytes) / 1024
         guard kb >= 1024 else { return String(format: "%.1f KB", kb) }

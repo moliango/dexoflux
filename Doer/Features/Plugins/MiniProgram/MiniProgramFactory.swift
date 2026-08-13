@@ -8,7 +8,7 @@ struct MiniProgramDescriptor: Hashable {
     let categoryID: String
     let url: URL?
 
-    init(record: MiniProgramRecord) {
+    nonisolated init(record: MiniProgramRecord) {
         id = record.id
         displayName = record.displayName
         icon = record.icon

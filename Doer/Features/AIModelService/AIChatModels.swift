@@ -97,14 +97,14 @@ struct AIPromptPreset: Codable, Equatable, Identifiable, Sendable {
     var title: String
     var prompt: String
 
-    init(id: UUID = UUID(), title: String, prompt: String) {
+    nonisolated init(id: UUID = UUID(), title: String, prompt: String) {
         self.id = id
         self.title = title
         self.prompt = prompt
     }
 
     /// FluxDo 的四个默认快捷词（文案逐字对齐）。
-    static func defaultPresets() -> [AIPromptPreset] {
+    nonisolated static func defaultPresets() -> [AIPromptPreset] {
         [
             AIPromptPreset(
                 title: String(localized: "ai.preset.summarize", defaultValue: "总结这个话题"),

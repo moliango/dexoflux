@@ -118,12 +118,12 @@ struct DiscourseAPIError: LocalizedError {
 
 final class DiscourseAuthInterceptor: RequestInterceptor {
     let baseURL: String
-    private var csrfToken: String?
-    private var isFetchingCSRF = false
-    private var csrfWaiters: [(String?) -> Void] = []
+    nonisolated(unsafe) private var csrfToken: String?
+    nonisolated(unsafe) private var isFetchingCSRF = false
+    nonisolated(unsafe) private var csrfWaiters: [(String?) -> Void] = []
     private let csrfLock = NSLock()
     private let authLogLock = NSLock()
-    private var loggedAuthSignatures = Set<String>()
+    nonisolated(unsafe) private var loggedAuthSignatures = Set<String>()
 
     init(baseURL: String) {
         self.baseURL = baseURL

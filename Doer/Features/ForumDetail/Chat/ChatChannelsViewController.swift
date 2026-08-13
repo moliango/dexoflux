@@ -222,7 +222,9 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.tableView.reloadData()
+            Task { @MainActor [weak self] in
+                self?.tableView.reloadData()
+            }
         }
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleMessageLongPress(_:)))
         tableView.addGestureRecognizer(longPress)

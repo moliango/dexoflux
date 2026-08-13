@@ -277,9 +277,9 @@ extension DiscourseAPI {
 
     // MARK: - Topic timings CF cooldown (best-effort path)
 
-    private static let topicTimingsCooldownLock = NSLock()
-    private static var topicTimingsCooldownUntilByBase: [String: Date] = [:]
-    private static let topicTimingsCooldownDuration: TimeInterval = 120
+    nonisolated private static let topicTimingsCooldownLock = NSLock()
+    nonisolated(unsafe) private static var topicTimingsCooldownUntilByBase: [String: Date] = [:]
+    nonisolated private static let topicTimingsCooldownDuration: TimeInterval = 120
 
     nonisolated private static func normalizedTimingsBase(_ baseURL: String) -> String {
         baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()

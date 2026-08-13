@@ -15,7 +15,7 @@ enum TitleEmojiRenderer {
         let raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !raw.isEmpty {
-            var result = decodeHTMLEntities(raw)
+            let result = decodeHTMLEntities(raw)
             // Raw title has no shortcodes, but fancy HTML may carry emoji <img alt=":code:">.
             if !containsShortcode(result), fancy.contains("<img") || fancy.contains("<IMG") {
                 let recovered = decodeHTMLEntities(recoverShortcodesFromHTML(fancy))

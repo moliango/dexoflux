@@ -4,7 +4,7 @@ import Foundation
 /// 先用缓存立即渲染，再等网络刷新替换。
 enum BackgroundTopicListCache {
     /// 超过该时长的缓存不再展示（宁缺毋滥的上限，正常后台刷新远比这频繁）。
-    private static let maximumAge: TimeInterval = 24 * 60 * 60
+    nonisolated private static let maximumAge: TimeInterval = 24 * 60 * 60
 
     nonisolated private static func fileURL(for baseURL: String) -> URL {
         let normalized = ForumInstance.normalizedBaseURL(baseURL)
@@ -51,7 +51,7 @@ enum BackgroundTopicListCache {
     }
 }
 
-struct BackgroundTopicFingerprint: Codable, Equatable {
+nonisolated struct BackgroundTopicFingerprint: Codable, Equatable {
     let id: Int
     let postsCount: Int
     let replyCount: Int
@@ -90,7 +90,7 @@ struct BackgroundTopicFingerprint: Codable, Equatable {
 }
 
 final class BackgroundTopicUpdateStore {
-    static let shared = BackgroundTopicUpdateStore()
+    nonisolated static let shared = BackgroundTopicUpdateStore()
 
     private struct ForumState: Codable {
         var baseline: [BackgroundTopicFingerprint]

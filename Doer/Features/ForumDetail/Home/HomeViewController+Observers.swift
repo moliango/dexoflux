@@ -9,7 +9,16 @@ extension HomeViewController {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            self?.handleCloudflareVerificationCompleted(notification)
+            let verifiedBaseURL = notification.userInfo?[DiscourseAPI.cloudflareBaseURLUserInfoKey] as? String
+            Task { @MainActor [weak self] in
+                var userInfo: [AnyHashable: Any] = [:]
+                if let verifiedBaseURL {
+                    userInfo[DiscourseAPI.cloudflareBaseURLUserInfoKey] = verifiedBaseURL
+                }
+                self?.handleCloudflareVerificationCompleted(
+                    Notification(name: DiscourseAPI.cloudflareVerificationCompletedNotification, object: nil, userInfo: userInfo)
+                )
+            }
         }
     }
 
@@ -56,13 +65,16 @@ extension HomeViewController {
                   let topicId = notification.userInfo?[TopicReadProgressUserInfoKey.topicId] as? Int,
                   let highestSeen = notification.userInfo?[TopicReadProgressUserInfoKey.highestSeen] as? Int
             else { return }
-            // Phase 7: reconfigure the single row — avoid full Home chrome rebuild.
-            guard self.viewModel.updateTopicReadProgress(
-                topicId: topicId,
-                highestSeen: highestSeen,
-                notify: false
-            ) else { return }
-            self.applyTopicSnapshot(animatingDifferences: false)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Phase 7: reconfigure the single row — avoid full Home chrome rebuild.
+                guard self.viewModel.updateTopicReadProgress(
+                    topicId: topicId,
+                    highestSeen: highestSeen,
+                    notify: false
+                ) else { return }
+                self.applyTopicSnapshot(animatingDifferences: false)
+            }
         }
     }
 
@@ -78,9 +90,11 @@ extension HomeViewController {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                let connected = (notification.userInfo?[ConnectivityService.isConnectedUserInfoKey] as? Bool)
-                    ?? ConnectivityService.shared.isConnected
-                self?.handleConnectivityChanged(isConnected: connected)
+                let connectedFromNote = notification.userInfo?[ConnectivityService.isConnectedUserInfoKey] as? Bool
+                Task { @MainActor [weak self] in
+                    let connected = connectedFromNote ?? ConnectivityService.shared.isConnected
+                    self?.handleConnectivityChanged(isConnected: connected)
+                }
             }
         }
     }

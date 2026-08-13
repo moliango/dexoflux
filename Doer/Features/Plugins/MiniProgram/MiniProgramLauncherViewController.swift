@@ -111,7 +111,9 @@ final class MiniProgramLauncherViewController: UIViewController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.rebuildContent()
+            Task { @MainActor [weak self] in
+                self?.rebuildContent()
+            }
         }
 
         rebuildContent()

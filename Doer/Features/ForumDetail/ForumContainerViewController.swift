@@ -309,10 +309,6 @@ final class ForumContainerViewController: UIViewController, AuthGating {
               let navigationController = tabBarViewController.navigationControllers.first
         else { return }
         tabBarViewController.selectedIndex = 0
-        // Avoid stacking duplicates of same topic on top.
-        if let existing = navigationController.viewControllers.reversed().first(where: { ($0 as? TopicDetailViewController) != nil }) as? TopicDetailViewController {
-            // still push a fresh VC for simplicity and correct floor
-        }
         navigationController.pushViewController(
             TopicDetailFactory.make(api: api, topicId: topicId, initialFloor: postNumber),
             animated: true
