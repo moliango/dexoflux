@@ -1,5 +1,5 @@
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class DexoPluginRuntimeTests: XCTestCase {
@@ -30,7 +30,7 @@ final class DexoPluginRuntimeTests: XCTestCase {
             displayName: "Duplicate",
             version: "1.0.0",
             minimumHostVersion: "1.2",
-            publisher: "DexoFlux",
+            publisher: "Doer",
             supportedHosts: [],
             capabilities: [.forumRead],
             contributions: [],
@@ -180,6 +180,7 @@ final class DexoPluginRuntimeTests: XCTestCase {
             MiniProgramID.cdk,
             MiniProgramID.newAPICheckIn,
             MiniProgramID.ldcStore,
+            MiniProgramID.toolbox,
         ])
     }
 

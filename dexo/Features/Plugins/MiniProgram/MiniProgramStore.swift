@@ -560,5 +560,15 @@ private extension MiniProgramStore {
             isVisible: true,
             order: 4
         ),
+        MiniProgramRecord(
+            id: MiniProgramID.toolbox,
+            kind: .builtIn,
+            displayName: "工具箱",
+            urlString: nil,
+            categoryID: MiniProgramCategoryID.tools,
+            icon: .system(symbolName: "wrench.and.screwdriver.fill"),
+            isVisible: true,
+            order: 5
+        ),
     ]
 }

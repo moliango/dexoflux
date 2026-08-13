@@ -6,6 +6,7 @@ enum MiniProgramID {
     static let cdk = "builtin.cdk"
     static let newAPICheckIn = "builtin.newapi-check-in"
     static let ldcStore = "builtin.ldc-store"
+    static let toolbox = "builtin.toolbox"
 }
 
 enum MiniProgramCategoryID {

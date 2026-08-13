@@ -66,6 +66,11 @@ enum MiniProgramFactory {
                 username: username,
                 url: URL(string: "https://ldcstore.com/")!
             )
+        case MiniProgramID.toolbox:
+            let root = ToolboxMiniProgramViewController()
+            let navigation = UINavigationController(rootViewController: root)
+            navigation.setNavigationBarHidden(false, animated: false)
+            return navigation
         default:
             guard let record = MiniProgramStore.shared.program(id: programID),
                   record.isVisible,

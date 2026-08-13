@@ -94,6 +94,14 @@ enum MiniProgramIconBadge {
                 ])
                 drawSymbol("ticket.fill", in: rect, pointSize: rect.width * 0.42, color: .white)
             }
+        case MiniProgramID.toolbox:
+            return {
+                drawGradient(in: rect, colors: [
+                    UIColor(red: 0.18, green: 0.48, blue: 0.92, alpha: 1),
+                    UIColor(red: 0.35, green: 0.28, blue: 0.90, alpha: 1),
+                ])
+                drawSymbol("wrench.and.screwdriver.fill", in: rect, pointSize: rect.width * 0.42, color: .white)
+            }
         default:
             break
         }

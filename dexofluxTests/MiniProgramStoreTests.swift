@@ -1,5 +1,5 @@
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class MiniProgramStoreTests: XCTestCase {
@@ -12,6 +12,7 @@ final class MiniProgramStoreTests: XCTestCase {
             MiniProgramID.cdk,
             MiniProgramID.newAPICheckIn,
             MiniProgramID.ldcStore,
+            MiniProgramID.toolbox,
         ])
         XCTAssertEqual(store.visiblePrograms().map(\.displayName), [
             "元宇宙",
@@ -19,10 +20,13 @@ final class MiniProgramStoreTests: XCTestCase {
             "CDK",
             "NewAPI 签到",
             "LD 士多",
+            "工具箱",
         ])
         XCTAssertEqual(store.program(id: MiniProgramID.ldc)?.urlString, "https://credit.linux.do/home")
         XCTAssertEqual(store.program(id: MiniProgramID.cdk)?.urlString, "https://cdk.linux.do/dashboard")
         XCTAssertNil(store.program(id: MiniProgramID.metaverse)?.urlString)
+        XCTAssertNil(store.program(id: MiniProgramID.toolbox)?.urlString)
+        XCTAssertEqual(store.program(id: MiniProgramID.toolbox)?.categoryID, MiniProgramCategoryID.tools)
         XCTAssertTrue(store.visiblePrograms().allSatisfy(\.isBuiltIn))
     }
 
