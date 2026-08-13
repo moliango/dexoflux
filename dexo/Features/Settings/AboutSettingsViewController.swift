@@ -2,8 +2,8 @@ import UIKit
 
 final class AboutSettingsViewController: ObservableViewController {
     private enum Link {
-        static let source = URL(string: "https://github.com/moliango/dexoflux")!
-        static let issues = URL(string: "https://github.com/moliango/dexoflux/issues")!
+        static let source = URL(string: "https://github.com/moliango/doer")!
+        static let issues = URL(string: "https://github.com/moliango/doer/issues")!
     }
 
     private let settings = AppSettings.shared
@@ -152,7 +152,7 @@ final class AboutSettingsViewController: ObservableViewController {
         }
 
         let nameLabel = UILabel()
-        nameLabel.text = "DexoFlux"
+        nameLabel.text = "Doer"
         nameLabel.font = .systemFont(ofSize: 28, weight: .semibold)
         nameLabel.textColor = .label
         nameLabel.textAlignment = .center
@@ -673,7 +673,7 @@ final class PerfDiagnosticsViewController: UIViewController {
         }()
 
         return """
-        DexoFlux Performance Diagnostics
+        Doer Performance Diagnostics
         ================================
         App: \(version.displayString)
         iOS: \(device.systemVersion)

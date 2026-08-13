@@ -29,7 +29,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             enqueueNotificationRoute(from: response.notification.request.content.userInfo)
             ForumNotificationRoutePresenter.presentPendingRouteIfNeeded(in: window)
         }
-        // Cold-start / warm URL contexts (dexo:// or https://forum/t/…).
+        // Cold-start / warm URL contexts (doer:// or https://forum/t/…).
         for context in connectionOptions.urlContexts {
             handleIncomingURL(context.url)
         }

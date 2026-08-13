@@ -1,6 +1,6 @@
 import UIKit
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 final class AvatarImageLoaderTests: XCTestCase {
     override func setUp() {

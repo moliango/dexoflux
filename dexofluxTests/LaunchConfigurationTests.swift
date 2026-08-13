@@ -1,6 +1,6 @@
 import XCTest
 import UIKit
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class LaunchConfigurationTests: XCTestCase {

@@ -586,7 +586,7 @@ final class HomeViewController: ObservableViewController {
 
     let loginTitleLabel: UILabel = {
         let label = UILabel()
-        label.text = "欢迎使用 DexoFlux"
+        label.text = "欢迎使用 Doer"
         label.font = .systemFont(ofSize: 24, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0

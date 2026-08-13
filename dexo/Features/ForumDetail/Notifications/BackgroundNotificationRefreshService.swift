@@ -2,7 +2,7 @@ import BackgroundTasks
 import Foundation
 
 enum BackgroundNotificationRefreshPolicy {
-    static let taskIdentifier = "com.naine.dexoflux.notificationRefresh"
+    static let taskIdentifier = "com.naine.doer.notificationRefresh"
     static let minimumInterval: TimeInterval = 15 * 60
 
     static func earliestBeginDate(now: Date = Date()) -> Date {

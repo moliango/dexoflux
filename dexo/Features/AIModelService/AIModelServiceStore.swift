@@ -11,7 +11,7 @@ actor AIModelServiceStore {
         var providers: [AIProvider] = []
     }
 
-    private static let keychainService = "com.naine.dexoflux.ai-model-service"
+    private static let keychainService = "com.naine.doer.ai-model-service"
     private static let defaultModelKey = "ai.model_service.default_model"
 
     private let directoryURL: URL
@@ -19,7 +19,7 @@ actor AIModelServiceStore {
     init(directoryURL: URL? = nil) {
         self.directoryURL = directoryURL ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DexoFlux/AIModelService", isDirectory: true)
+            .appendingPathComponent("Doer/AIModelService", isDirectory: true)
     }
 
     // MARK: - Providers

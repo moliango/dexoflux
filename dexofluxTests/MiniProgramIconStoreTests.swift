@@ -1,6 +1,6 @@
 import UIKit
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 final class MiniProgramIconStoreTests: XCTestCase {
     func testSavesLocalIconDataWithProgramRelativePathAndLoadsImage() throws {

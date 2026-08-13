@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// Parses `dexo://` and forum `https://…/t/…` URLs into in-app routes.
+/// Parses `doer://` / `dexo://` and forum `https://…/t/…` URLs into in-app routes.
 enum DexoDeepLinkRouter {
     enum Destination: Equatable {
         case topic(topicId: Int, postNumber: Int?, baseURL: String?)
@@ -11,7 +11,7 @@ enum DexoDeepLinkRouter {
 
     static func destination(from url: URL) -> Destination? {
         let scheme = (url.scheme ?? "").lowercased()
-        if scheme == "dexo" || scheme == "dexoflux" {
+        if scheme == "doer" || scheme == "dexo" || scheme == "dexoflux" {
             return parseAppScheme(url)
         }
         if scheme == "http" || scheme == "https" {
@@ -59,7 +59,7 @@ enum DexoDeepLinkRouter {
     }
 
     private static func parseAppScheme(_ url: URL) -> Destination? {
-        // dexo://topic/123/4  | dexo://t/123/4 | dexo://read-later | dexo://notifications
+        // doer://topic/123/4  | doer://t/123/4 | doer://read-later | doer://notifications
         let host = (url.host ?? "").lowercased()
         let parts = url.path.split(separator: "/").map(String.init)
         let head = host.isEmpty ? parts.first?.lowercased() : host

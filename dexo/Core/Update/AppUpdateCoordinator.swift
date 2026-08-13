@@ -7,7 +7,7 @@ extension Notification.Name {
 @MainActor
 final class AppUpdateCoordinator {
     static let shared = AppUpdateCoordinator()
-    static let releasesURL = URL(string: "https://github.com/moliango/dexoflux/releases")!
+    static let releasesURL = URL(string: "https://github.com/moliango/doer/releases")!
 
     private let service: AppUpdateService
     private var automaticCheckTask: Task<Void, Never>?

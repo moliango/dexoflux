@@ -1,7 +1,7 @@
 import Alamofire
 import UIKit
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class PostEditingTests: XCTestCase {

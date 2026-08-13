@@ -8,7 +8,7 @@ enum BuiltInPlugins {
         displayName: "LDC",
         version: "1.0.0",
         minimumHostVersion: "1.2",
-        publisher: "DexoFlux",
+        publisher: "Doer",
         supportedHosts: ["linux.do"],
         capabilities: [
             .forumRead,
@@ -53,7 +53,7 @@ enum BuiltInPlugins {
         displayName: "CDK",
         version: "1.0.0",
         minimumHostVersion: "1.2",
-        publisher: "DexoFlux",
+        publisher: "Doer",
         supportedHosts: ["linux.do"],
         capabilities: [
             .forumRead,
@@ -98,7 +98,7 @@ enum BuiltInPlugins {
         displayName: "Topic Export",
         version: "1.0.0",
         minimumHostVersion: "1.2",
-        publisher: "DexoFlux",
+        publisher: "Doer",
         supportedHosts: [],
         capabilities: [
             .forumRead,

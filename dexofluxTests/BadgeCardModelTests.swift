@@ -1,5 +1,5 @@
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 final class BadgeCardModelTests: XCTestCase {
     func testParsesPromptIwoojiBadgeURL() throws {

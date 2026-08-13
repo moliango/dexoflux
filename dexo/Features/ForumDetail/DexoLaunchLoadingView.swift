@@ -116,7 +116,7 @@ final class DexoLaunchLoadingView: UIView {
         linuxLogoView.contentMode = .scaleAspectFit
         linuxLogoView.translatesAutoresizingMaskIntoConstraints = false
 
-        brandLabel.text = "DexoFlux"
+        brandLabel.text = "Doer"
         brandLabel.textAlignment = .center
         brandLabel.translatesAutoresizingMaskIntoConstraints = false
 

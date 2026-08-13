@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
 PRODUCTS_DIR="${BUILD_DIR}/Build/Products/Release-iphoneos"
 IPA_STAGING_DIR="${BUILD_DIR}/ipa"
-IPA_PATH="${BUILD_DIR}/dexo-unsigned.ipa"
+IPA_PATH="${BUILD_DIR}/doer-unsigned.ipa"
 
 XCODEBUILD_COMMON=(
   -configuration Release
@@ -37,9 +37,9 @@ build_project_scheme "Tuist/.build/tuist-derived/GRDB/GRDB.xcodeproj" "GRDB"
 build_project_scheme "Tuist/.build/tuist-derived/SDWebImage/SDWebImage.xcodeproj" "SDWebImage"
 build_project_scheme "Tuist/.build/tuist-derived/SDWebImageSVGCoder/SDWebImageSVGCoder.xcodeproj" "SDWebImageSVGCoder"
 build_project_scheme "Tuist/.build/tuist-derived/Lightbox/Lightbox.xcodeproj" "Lightbox"
-build_project_scheme "dexo.xcodeproj" "dexo"
+build_project_scheme "Doer.xcodeproj" "Doer"
 
-APP_PATH="${PRODUCTS_DIR}/dexo.app"
+APP_PATH="${PRODUCTS_DIR}/Doer.app"
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "error: app bundle not found at ${APP_PATH}" >&2
   exit 1

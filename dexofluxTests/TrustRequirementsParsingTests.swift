@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import dexoflux
+@testable import Doer
 
 final class TrustRequirementsParsingTests: XCTestCase {
     func testConnectCardParsesRingsBarsQuotasAndVetos() throws {

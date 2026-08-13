@@ -38,7 +38,7 @@ final class NotionConfigStore {
     static let shared = NotionConfigStore()
 
     private let defaults: UserDefaults
-    private let keychainService = "com.naine.dexoflux.notion"
+    private let keychainService = "com.naine.doer.notion"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

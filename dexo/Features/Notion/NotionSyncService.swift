@@ -136,7 +136,7 @@ final class NotionSyncService {
         let cleaned = Self.normalizeNotionID(parentPageId)
         let db = try await client.createDatabaseForExport(
             parentPageId: cleaned,
-            title: "DexoFlux Topics"
+            title: "Doer Topics"
         )
         guard let id = db["id"] as? String else {
             throw NotionAPIError(message: "create database missing id", statusCode: nil)

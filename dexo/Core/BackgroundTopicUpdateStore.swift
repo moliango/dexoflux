@@ -12,7 +12,7 @@ enum BackgroundTopicListCache {
             .addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "forum"
         return FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DexoFlux/TopicListCache", isDirectory: true)
+            .appendingPathComponent("Doer/TopicListCache", isDirectory: true)
             .appendingPathComponent("\(name).json")
     }
 

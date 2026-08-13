@@ -6,7 +6,7 @@ import AppIntents
 @available(iOS 16.0, *)
 struct NewAPICheckInAllIntent: AppIntent {
     static var title: LocalizedStringResource = "NewAPI 全部签到"
-    static var description = IntentDescription("执行 DexoFlux 中配置的全部 NewAPI 平台签到。")
+    static var description = IntentDescription("执行 Doer 中配置的全部 NewAPI 平台签到。")
     static var openAppWhenRun: Bool { false }
 
     @MainActor

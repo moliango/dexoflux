@@ -4,10 +4,14 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.naine.dexoflux.notificationRefresh</string>
+		<string>com.naine.doer.notificationRefresh</string>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>CFBundleDisplayName</key>
+	<string>Doer</string>
+	<key>CFBundleName</key>
+	<string>Doer</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
@@ -28,9 +32,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.naine.dexoflux</string>
+			<string>com.naine.doer</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>doer</string>
 				<string>dexo</string>
 			</array>
 		</dict>

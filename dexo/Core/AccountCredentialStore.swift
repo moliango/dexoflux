@@ -16,7 +16,7 @@ final class AccountCredentialStore {
 
     init(host: String) {
         let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        service = "com.naine.dexoflux.web-login.\(normalized.isEmpty ? "forum" : normalized)"
+        service = "com.naine.doer.web-login.\(normalized.isEmpty ? "forum" : normalized)"
         migrateLegacySingleAccountIfNeeded()
     }
 

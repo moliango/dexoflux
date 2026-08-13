@@ -1,6 +1,6 @@
 import Combine
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class AccountScopedStoreTests: XCTestCase {
@@ -351,7 +351,7 @@ final class AccountScopedStoreTests: XCTestCase {
 
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("dexoflux-store-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("doer-store-tests-\(UUID().uuidString)", isDirectory: true)
     }
 
     private func withPreservedPluginDockDefaults<T>(_ operation: () throws -> T) rethrows -> T {

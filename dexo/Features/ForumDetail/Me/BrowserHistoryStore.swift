@@ -108,7 +108,7 @@ final class BrowserHistoryStore {
             self.directoryURL = directoryURL
         } else {
             let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            self.directoryURL = root.appendingPathComponent("DexoFlux/Browser", isDirectory: true)
+            self.directoryURL = root.appendingPathComponent("Doer/Browser", isDirectory: true)
         }
         self.maxHistoryCount = max(1, maxHistoryCount)
         try? FileManager.default.createDirectory(at: self.directoryURL, withIntermediateDirectories: true)

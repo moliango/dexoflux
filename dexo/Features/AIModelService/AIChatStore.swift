@@ -21,7 +21,7 @@ actor AIChatStore {
     init(directoryURL: URL? = nil) {
         self.directoryURL = directoryURL ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DexoFlux/AIModelService", isDirectory: true)
+            .appendingPathComponent("Doer/AIModelService", isDirectory: true)
     }
 
     // MARK: - Sessions

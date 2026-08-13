@@ -3,7 +3,7 @@ import ProjectDescription
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 
 let project = Project(
-    name: "dexoflux",
+    name: "Doer",
     options: .options(
         defaultKnownRegions: ["en", "zh-Hans", "zh-Hant", "zh-HK"],
         developmentRegion: "en"
@@ -26,10 +26,10 @@ let project = Project(
     ),
     targets: [
         .target(
-            name: "dexoflux",
+            name: "Doer",
             destinations: .iOS,
             product: .app,
-            bundleId: "com.naine.dexoflux",
+            bundleId: "com.naine.doer",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .file(path: "dexo/Info.plist"),
             sources: [
@@ -53,8 +53,8 @@ let project = Project(
                 .external(name: "Lightbox"),
                 .package(product: "CookedHTML"),
                 .package(product: "SwiftSoup"),
-                .target(name: "dexofluxShare"),
-                .target(name: "dexofluxWidget"),
+                .target(name: "DoerShare"),
+                .target(name: "DoerWidget"),
             ],
             settings: .settings(
                 base: [
@@ -63,7 +63,7 @@ let project = Project(
                     "CODE_SIGN_STYLE": "Automatic",
                     "CURRENT_PROJECT_VERSION": "1",
                     "GENERATE_INFOPLIST_FILE": "YES",
-                    "INFOPLIST_KEY_CFBundleDisplayName": "DexoFlux",
+                    "INFOPLIST_KEY_CFBundleDisplayName": "Doer",
                     "INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription": "用于保存话题分享图片到相册",
                     "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
                     "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
@@ -73,7 +73,7 @@ let project = Project(
                     "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
                     "OTHER_LDFLAGS": "$(inherited) -ObjC",
                     "MARKETING_VERSION": "1.6",
-                    "PRODUCT_NAME": "dexoflux",
+                    "PRODUCT_NAME": "Doer",
                     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
                     "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
                     "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
@@ -85,22 +85,22 @@ let project = Project(
             )
         ),
         .target(
-            name: "dexofluxTests",
+            name: "DoerTests",
             destinations: .iOS,
             product: .unitTests,
-            bundleId: "com.naine.dexofluxTests",
+            bundleId: "com.naine.doerTests",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .default,
             sources: ["dexofluxTests/**"],
             dependencies: [
-                .target(name: "dexoflux"),
+                .target(name: "Doer"),
             ]
         ),
         .target(
-            name: "dexofluxShare",
+            name: "DoerShare",
             destinations: .iOS,
             product: .appExtension,
-            bundleId: "com.naine.dexoflux.share",
+            bundleId: "com.naine.doer.share",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .file(path: "Extensions/DexoShare/Info.plist"),
             sources: ["Extensions/DexoShare/**"],
@@ -109,7 +109,7 @@ let project = Project(
                 base: [
                     "CODE_SIGN_STYLE": "Automatic",
                     "DEVELOPMENT_TEAM": .string(developmentTeam),
-                    "PRODUCT_NAME": "DexoFluxShare",
+                    "PRODUCT_NAME": "DoerShare",
                     "SKIP_INSTALL": "YES",
                     "SWIFT_VERSION": "5.0",
                     "TARGETED_DEVICE_FAMILY": "1,2",
@@ -118,10 +118,10 @@ let project = Project(
             )
         ),
         .target(
-            name: "dexofluxWidget",
+            name: "DoerWidget",
             destinations: .iOS,
             product: .appExtension,
-            bundleId: "com.naine.dexoflux.widget",
+            bundleId: "com.naine.doer.widget",
             deploymentTargets: .iOS("15.0"),
             infoPlist: .file(path: "Extensions/DexoWidget/Info.plist"),
             sources: ["Extensions/DexoWidget/**"],
@@ -130,7 +130,7 @@ let project = Project(
                 base: [
                     "CODE_SIGN_STYLE": "Automatic",
                     "DEVELOPMENT_TEAM": .string(developmentTeam),
-                    "PRODUCT_NAME": "DexoFluxWidget",
+                    "PRODUCT_NAME": "DoerWidget",
                     "SKIP_INSTALL": "YES",
                     "SWIFT_VERSION": "5.0",
                     "TARGETED_DEVICE_FAMILY": "1,2",
@@ -141,10 +141,10 @@ let project = Project(
     ],
     schemes: [
         .scheme(
-            name: "dexofluxTests",
+            name: "DoerTests",
             shared: true,
-            buildAction: .buildAction(targets: ["dexoflux", "dexofluxTests"]),
-            testAction: .targets(["dexofluxTests"])
+            buildAction: .buildAction(targets: ["Doer", "DoerTests"]),
+            testAction: .targets(["DoerTests"])
         ),
     ]
 )

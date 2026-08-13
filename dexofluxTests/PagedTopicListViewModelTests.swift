@@ -1,5 +1,5 @@
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class PagedTopicListViewModelTests: XCTestCase {

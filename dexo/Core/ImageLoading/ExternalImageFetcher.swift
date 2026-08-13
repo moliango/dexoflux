@@ -35,7 +35,7 @@ enum ExternalImageFetcher {
 
     private static let maxConcurrentNetwork = 6
     private static let networkSemaphore = DispatchSemaphore(value: maxConcurrentNetwork)
-    private static let networkQueue = DispatchQueue(label: "com.naine.dexoflux.external-image", qos: .userInitiated)
+    private static let networkQueue = DispatchQueue(label: "com.naine.doer.external-image", qos: .userInitiated)
 
     /// If an inflight batch is older than this, drop it so later loads are not wedged forever.
     private static let inflightStaleInterval: TimeInterval = 40

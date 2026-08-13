@@ -523,7 +523,7 @@ final class LinuxDoExtensionCache {
 final class LDCMerchantCredentialsStore {
     struct Credentials { let clientID: String; let clientSecret: String }
     private let account: String
-    private let service = "com.naine.dexoflux.ldc-reward"
+    private let service = "com.naine.doer.ldc-reward"
 
     init(baseURL: String, username: String?) { account = AccountScopeKey.make(baseURL: baseURL, username: username) }
     func load() -> Credentials? {

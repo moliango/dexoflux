@@ -116,7 +116,10 @@ struct AppRelease: Codable, Equatable, Sendable {
     let version: AppVersion
 
     var ipaAsset: AppReleaseAsset? {
-        assets.first { $0.name.caseInsensitiveCompare("dexoflux-unsigned.ipa") == .orderedSame }
+        assets.first { asset in
+            let name = asset.name.lowercased()
+            return name == "doer-unsigned.ipa"
+        }
     }
 
     func isUpdateAvailable(comparedTo installedVersion: AppVersion) -> Bool {
@@ -141,7 +144,7 @@ struct AppRelease: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .tagName,
                 in: container,
-                debugDescription: "Unsupported DexoFlux release tag: \(tagName)"
+                debugDescription: "Unsupported Doer release tag: \(tagName)"
             )
         }
         version = parsedVersion
@@ -207,7 +210,7 @@ final class AppUpdateService {
     static let shared = AppUpdateService()
 
     private static let latestReleaseURL = URL(
-        string: "https://api.github.com/repos/moliango/dexoflux/releases/latest"
+        string: "https://api.github.com/repos/moliango/doer/releases/latest"
     )!
     private static let cacheKey = "dexo.update.latest-release-cache.v1"
     private static let freshCacheInterval: TimeInterval = 60 * 60
@@ -243,7 +246,7 @@ final class AppUpdateService {
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        request.setValue("DexoFlux-iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("Doer-iOS", forHTTPHeaderField: "User-Agent")
         if let etag = cached?.etag, !etag.isEmpty {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }

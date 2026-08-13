@@ -13,14 +13,14 @@ enum NewAPICheckInStoreError: Error {
 }
 
 final class NewAPICheckInKeychainVault: NewAPICheckInCredentialVault, @unchecked Sendable {
-    private let service = "com.naine.dexoflux.plugin.newapi-checkin"
+    private let service = "com.naine.doer.plugin.newapi-checkin"
 
     nonisolated init() {}
 
     nonisolated func data(for key: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.naine.dexoflux.plugin.newapi-checkin",
+            kSecAttrService as String: "com.naine.doer.plugin.newapi-checkin",
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
@@ -36,7 +36,7 @@ final class NewAPICheckInKeychainVault: NewAPICheckInCredentialVault, @unchecked
         try removeData(for: key)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.naine.dexoflux.plugin.newapi-checkin",
+            kSecAttrService as String: "com.naine.doer.plugin.newapi-checkin",
             kSecAttrAccount as String: key,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data,
@@ -48,7 +48,7 @@ final class NewAPICheckInKeychainVault: NewAPICheckInCredentialVault, @unchecked
     nonisolated func removeData(for key: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.naine.dexoflux.plugin.newapi-checkin",
+            kSecAttrService as String: "com.naine.doer.plugin.newapi-checkin",
             kSecAttrAccount as String: key,
         ]
         let status = SecItemDelete(query as CFDictionary)
@@ -84,7 +84,7 @@ actor NewAPICheckInStore {
         scopeKey = scope.storageKey
         self.directoryURL = directoryURL ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DexoFlux/Plugins/NewAPICheckIn", isDirectory: true)
+            .appendingPathComponent("Doer/Plugins/NewAPICheckIn", isDirectory: true)
         self.credentialVault = credentialVault
         self.maximumAttemptCount = max(1, maximumAttemptCount)
     }

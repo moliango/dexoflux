@@ -1,5 +1,5 @@
 import XCTest
-@testable import dexoflux
+@testable import Doer
 
 @MainActor
 final class AppUpdateServiceTests: XCTestCase {
@@ -40,7 +40,7 @@ final class AppUpdateServiceTests: XCTestCase {
     func testReleaseDecodingSelectsUnsignedIPAAndStableReleaseCanTriggerUpdate() async throws {
         MockAppUpdateURLProtocol.handler = { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/vnd.github+json")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "DexoFlux-iOS")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Doer-iOS")
             return Self.response(request: request, statusCode: 200, headers: ["ETag": #""release-etag""#])
         }
         let service = makeService()
@@ -50,8 +50,8 @@ final class AppUpdateServiceTests: XCTestCase {
         XCTAssertEqual(release.tagName, "v1.2-build.8")
         XCTAssertEqual(release.version, AppVersion(marketingVersion: "1.2", buildNumber: 8))
         XCTAssertEqual(release.releaseNotes, "Release notes")
-        XCTAssertEqual(release.htmlURL.absoluteString, "https://github.com/moliango/dexoflux/releases/tag/v1.2-build.8")
-        XCTAssertEqual(release.ipaAsset?.name, "dexoflux-unsigned.ipa")
+        XCTAssertEqual(release.htmlURL.absoluteString, "https://github.com/moliango/doer/releases/tag/v1.2-build.8")
+        XCTAssertEqual(release.ipaAsset?.name, "doer-unsigned.ipa")
         XCTAssertEqual(release.ipaAsset?.size, 12_345_678)
         XCTAssertFalse(release.isUpdateAvailable(comparedTo: AppVersion(marketingVersion: "1.2", buildNumber: 7)))
         XCTAssertTrue(release.isUpdateAvailable(comparedTo: AppVersion(marketingVersion: "1.1", buildNumber: 999)))
@@ -88,7 +88,7 @@ final class AppUpdateServiceTests: XCTestCase {
         XCTAssertNil(release.ipaAsset)
         XCTAssertEqual(
             release.htmlURL.absoluteString,
-            "https://github.com/moliango/dexoflux/releases/tag/v1.2-build.8"
+            "https://github.com/moliango/doer/releases/tag/v1.2-build.8"
         )
     }
 
@@ -102,7 +102,7 @@ final class AppUpdateServiceTests: XCTestCase {
         try FileManager.default.createDirectory(at: configuredURL, withIntermediateDirectories: true)
         try PropertyListSerialization.data(
             fromPropertyList: [
-                "CFBundleIdentifier": "com.naine.dexoflux.tests.configured",
+                "CFBundleIdentifier": "com.naine.doer.tests.configured",
                 "CFBundlePackageType": "BNDL",
                 "CFBundleShortVersionString": "1.2",
                 "CFBundleVersion": "7",
@@ -115,7 +115,7 @@ final class AppUpdateServiceTests: XCTestCase {
         try FileManager.default.createDirectory(at: fallbackURL, withIntermediateDirectories: true)
         try PropertyListSerialization.data(
             fromPropertyList: [
-                "CFBundleIdentifier": "com.naine.dexoflux.tests.fallback",
+                "CFBundleIdentifier": "com.naine.doer.tests.fallback",
                 "CFBundlePackageType": "BNDL",
             ],
             format: .xml,
@@ -285,8 +285,8 @@ final class AppUpdateServiceTests: XCTestCase {
             ? """
               ,
                 {
-                  "name": "dexoflux-unsigned.ipa",
-                  "browser_download_url": "https://example.com/dexoflux-unsigned.ipa",
+                  "name": "doer-unsigned.ipa",
+                  "browser_download_url": "https://example.com/doer-unsigned.ipa",
                   "size": 12345678
                 }
               """
@@ -295,9 +295,9 @@ final class AppUpdateServiceTests: XCTestCase {
             """
             {
               "tag_name": "\(tagName)",
-              "name": "DexoFlux 1.2 build 8",
+              "name": "Doer 1.2 build 8",
               "body": "Release notes",
-              "html_url": "https://github.com/moliango/dexoflux/releases/tag/v1.2-build.8",
+              "html_url": "https://github.com/moliango/doer/releases/tag/v1.2-build.8",
               "draft": \(draft),
               "prerelease": \(prerelease),
               "published_at": "2026-07-18T10:00:00Z",

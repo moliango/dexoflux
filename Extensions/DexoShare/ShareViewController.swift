@@ -2,7 +2,7 @@ import Social
 import UIKit
 import UniformTypeIdentifiers
 
-/// Share sheet: send a topic URL / text into DexoFlux via `dexo://` deep link.
+/// Share sheet: send a topic URL / text into Doer via `doer://` deep link.
 final class ShareViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -30,13 +30,13 @@ final class ShareViewController: UIViewController {
         }
 
         let raw = collectedURL?.absoluteString ?? collectedText
-        let deepLink = makeDeepLink(from: raw) ?? URL(string: "dexo://read-later")!
+        let deepLink = makeDeepLink(from: raw) ?? URL(string: "doer://read-later")!
         _ = openURL(deepLink)
         extensionContext?.completeRequest(returningItems: nil)
     }
 
     private func makeDeepLink(from raw: String) -> URL? {
-        // Prefer /t/{id}/{floor?} → dexo://topic/{id}/{floor}
+        // Prefer /t/{id}/{floor?} → doer://topic/{id}/{floor}
         let patterns = [
             #"/t/(\d+)(?:/(\d+))?"#,
             #"/t/[^/]+/(\d+)(?:/(\d+))?"#,
@@ -47,7 +47,7 @@ final class ShareViewController: UIViewController {
                match.numberOfRanges >= 2,
                let idRange = Range(match.range(at: 1), in: raw),
                let topicId = Int(raw[idRange]), topicId > 0 {
-                var path = "dexo://topic/\(topicId)"
+                var path = "doer://topic/\(topicId)"
                 if match.numberOfRanges >= 3, match.range(at: 2).location != NSNotFound,
                    let postRange = Range(match.range(at: 2), in: raw),
                    let postNumber = Int(raw[postRange]), postNumber > 0 {
@@ -58,7 +58,7 @@ final class ShareViewController: UIViewController {
         }
         // Non-topic share → open read-later landing
         if raw.contains("http") {
-            return URL(string: "dexo://read-later")
+            return URL(string: "doer://read-later")
         }
         return nil
     }
