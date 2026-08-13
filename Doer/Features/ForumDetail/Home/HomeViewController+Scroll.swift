@@ -177,7 +177,7 @@ extension HomeViewController: UITableViewDelegate {
     ) -> UISwipeActionsConfiguration? {
         guard let topicId = dataSource.itemIdentifier(for: indexPath),
               Self.xiaohongshuRowIndex(from: topicId) == nil,
-              let topic = viewModel.topics.first(where: { $0.id == topicId })
+              let topic = viewModel.topic(id: topicId)
         else { return nil }
 
         let username = AuthManager.shared.username(for: api.baseURL)
@@ -238,7 +238,7 @@ extension HomeViewController: UITableViewDelegate {
     ) -> UISwipeActionsConfiguration? {
         guard let topicId = dataSource.itemIdentifier(for: indexPath),
               Self.xiaohongshuRowIndex(from: topicId) == nil,
-              let topic = viewModel.topics.first(where: { $0.id == topicId })
+              let topic = viewModel.topic(id: topicId)
         else { return nil }
 
         let notify = UIContextualAction(
@@ -285,11 +285,9 @@ extension HomeViewController: UITableViewDelegate {
             )
         }
         // Single-row reconfigure
-        if let index = viewModel.topics.firstIndex(where: { $0.id == topic.id }) {
-            let indexPath = IndexPath(row: index, section: 0)
-            if tableView.indexPathsForVisibleRows?.contains(indexPath) == true {
-                tableView.reloadRows(at: [indexPath], with: .none)
-            }
+        if let indexPath = dataSource.indexPath(for: topic.id),
+           tableView.indexPathsForVisibleRows?.contains(indexPath) == true {
+            tableView.reloadRows(at: [indexPath], with: .none)
         }
     }
 

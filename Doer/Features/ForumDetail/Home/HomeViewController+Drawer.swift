@@ -5,6 +5,7 @@ import UIKit
 // MARK: - Drawer
 extension HomeViewController {
     func handleSettingsChanged() {
+        topicListLayout = HomeTopicListLayoutFactory.make(style: AppSettings.shared.themeStyle)
         setHomeTabBarHidden(false, animated: false)
         updateMiniProgramButtonVisibility()
         updateCategoryDrawerModeUI()
@@ -167,7 +168,7 @@ extension HomeViewController {
     }
 
     func openTopic(_ topicId: Int) {
-        let topic = viewModel.topics.first(where: { $0.id == topicId })
+        let topic = viewModel.topic(id: topicId)
         let username = AuthManager.shared.username(for: api.baseURL)
         let mergedLastRead = TopicReadProgressStore.shared.mergedLastRead(
             serverLastRead: topic?.lastReadPostNumber,
@@ -177,8 +178,7 @@ extension HomeViewController {
         )
         // Resume at first unread floor when we know last_read (server and/or local).
         let resumeFloor = Self.resumeReadingFloor(for: topic, mergedLastRead: mergedLastRead)
-        let detailVC = TopicDetailFactory.make(
-            api: api,
+        let detailVC = makeHomeTopicDetail(
             topicId: topicId,
             initialFloor: resumeFloor,
             lastReadPostNumber: mergedLastRead > 0 ? mergedLastRead : topic?.lastReadPostNumber

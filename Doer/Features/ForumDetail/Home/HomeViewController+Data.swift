@@ -56,27 +56,10 @@ extension HomeViewController {
     }
 
     func topicSnapshotItemIdentifiers() -> [Int] {
-        let orderedTopics = HomeTopicListOrdering.withPinnedFirst(
-            viewModel.topics,
+        topicListLayout.snapshotItemIdentifiers(
+            topics: viewModel.topics,
             pinnedIds: viewModel.pinnedTopicIds
         )
-
-        if usesXiaohongshuCardLayout {
-            let pinnedIds = orderedTopics.compactMap { topic -> Int? in
-                HomeTopicListOrdering.isPinned(topic, pinnedIds: viewModel.pinnedTopicIds) ? topic.id : nil
-            }
-            let unpinnedCount = orderedTopics.filter {
-                !HomeTopicListOrdering.isPinned($0, pinnedIds: viewModel.pinnedTopicIds)
-            }.count
-            let rowCount = Int(ceil(Double(unpinnedCount) / 2.0))
-            return pinnedIds + (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
-        }
-
-        var seen = Set<Int>()
-        return orderedTopics.compactMap { topic -> Int? in
-            guard seen.insert(topic.id).inserted else { return nil }
-            return topic.id
-        }
     }
 
     func reloadTopics(resetCategoryMetadata: Bool = false, detectIncoming: Bool = true) {
@@ -181,8 +164,7 @@ extension HomeViewController {
         )
         notificationsVC.onTopicSelected = { [weak self] topicId, postNumber, postId in
             guard let self else { return }
-            let detailVC = TopicDetailFactory.make(
-                api: self.api,
+            let detailVC = self.makeHomeTopicDetail(
                 topicId: topicId,
                 initialFloor: postNumber,
                 initialPostId: postId

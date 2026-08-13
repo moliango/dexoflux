@@ -316,11 +316,7 @@ final class HomeViewController: ObservableViewController {
     lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
-        tv.register(TopicCell.self, forCellReuseIdentifier: TopicCell.reuseIdentifier)
-        tv.register(CompactPinnedTopicCell.self, forCellReuseIdentifier: CompactPinnedTopicCell.reuseIdentifier)
-        tv.register(XiaohongshuTopicGridCell.self, forCellReuseIdentifier: XiaohongshuTopicGridCell.reuseIdentifier)
-        tv.register(WeChatTopicListCell.self, forCellReuseIdentifier: WeChatTopicListCell.reuseIdentifier)
-        tv.register(TelegramTopicListCell.self, forCellReuseIdentifier: TelegramTopicListCell.reuseIdentifier)
+        HomeTopicListLayoutSupport.registerAllCells(in: tv)
         tv.delegate = self
         tv.separatorStyle = .none
         tv.backgroundColor = .systemGroupedBackground
@@ -335,127 +331,21 @@ final class HomeViewController: ObservableViewController {
         guard let self else {
             return UITableViewCell()
         }
-        if let rowIndex = Self.xiaohongshuRowIndex(from: topicId) {
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: XiaohongshuTopicGridCell.reuseIdentifier,
-                for: indexPath
-            ) as? XiaohongshuTopicGridCell else {
-                return UITableViewCell()
-            }
-            let pair = self.xiaohongshuTopicPair(at: rowIndex)
-            cell.configure(
-                left: pair.left.map { self.xiaohongshuCardModel(for: $0) },
-                right: pair.right.map { self.xiaohongshuCardModel(for: $0) },
-                staggered: AppSettings.shared.xiaohongshuCardsStaggered,
-                rowIndex: rowIndex
-            )
-            cell.onTopicSelected = { [weak self] topicId in
-                self?.openTopic(topicId)
-            }
-            return cell
-        }
-
-        if let topic = self.viewModel.topics.first(where: { $0.id == topicId }),
-           HomeTopicListOrdering.isPinned(topic, pinnedIds: self.viewModel.pinnedTopicIds) {
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
-                for: indexPath
-            ) as? CompactPinnedTopicCell else {
-                return UITableViewCell()
-            }
-            let category = self.viewModel.category(for: topic)
-            cell.configure(
-                with: topic,
-                categoryColor: category.flatMap { Self.color(fromHex: $0.color) },
-                categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
-                categoryBaseURL: self.api.baseURL
-            )
-            return cell
-        }
-
-        if self.homeListLayoutKind == .telegram,
-           let cell = tableView.dequeueReusableCell(
-                withIdentifier: TelegramTopicListCell.reuseIdentifier,
-                for: indexPath
-           ) as? TelegramTopicListCell,
-           let topic = self.viewModel.topics.first(where: { $0.id == topicId }) {
-            let baseURL = self.api.baseURL
-            let avatarURL = AvatarImageLoader.url(
-                from: self.viewModel.avatarTemplate(for: topic),
-                baseURL: baseURL,
-                size: AvatarImageLoader.primaryAvatarPixelSize
-            )
-            let category = self.viewModel.category(for: topic)
-            cell.configure(
-                with: topic,
-                avatarURL: avatarURL,
-                avatarUserId: self.viewModel.avatarUserId(for: topic),
-                categoryName: self.viewModel.categoryDisplayName(for: category),
-                tags: topic.tags ?? [],
-                categoryBaseURL: baseURL
-            )
-            return cell
-        }
-
-        if self.homeListLayoutKind == .weChat,
-           let cell = tableView.dequeueReusableCell(
-                withIdentifier: WeChatTopicListCell.reuseIdentifier,
-                for: indexPath
-           ) as? WeChatTopicListCell,
-           let topic = self.viewModel.topics.first(where: { $0.id == topicId }) {
-            let baseURL = self.api.baseURL
-            let avatarURL = AvatarImageLoader.url(
-                from: self.viewModel.avatarTemplate(for: topic),
-                baseURL: baseURL,
-                size: AvatarImageLoader.primaryAvatarPixelSize
-            )
-            let category = self.viewModel.category(for: topic)
-            let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
-            cell.configure(
-                with: topic,
-                avatarURL: avatarURL,
-                avatarUserId: self.viewModel.avatarUserId(for: topic),
-                categoryName: self.viewModel.categoryDisplayName(for: category),
-                categoryColor: categoryColor,
-                tags: topic.tags ?? [],
-                categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
-                categoryBaseURL: baseURL
-            )
-            return cell
-        }
-
-        guard let cell = tableView.dequeueReusableCell(withIdentifier: TopicCell.reuseIdentifier, for: indexPath) as? TopicCell,
-              let topic = self.viewModel.topics.first(where: { $0.id == topicId }) else {
-            return UITableViewCell()
-        }
-        let baseURL = self.api.baseURL
-        let avatarURL = AvatarImageLoader.url(
-            from: self.viewModel.avatarTemplate(for: topic),
-            baseURL: baseURL,
-            size: AvatarImageLoader.primaryAvatarPixelSize
+        return self.topicListLayout.cell(
+            tableView: tableView,
+            indexPath: indexPath,
+            itemId: topicId,
+            context: self.homeTopicListCellContext()
         )
-        let category = self.viewModel.category(for: topic)
-        let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
-        cell.configure(
-            with: topic,
-            avatarURL: avatarURL,
-            avatarUserId: self.viewModel.avatarUserId(for: topic),
-            categoryName: self.viewModel.categoryDisplayName(for: category),
-            categoryColor: categoryColor,
-            tags: topic.tags ?? [],
-            categoryPresentation: self.viewModel.categoryBadgePresentation(for: topic),
-            categoryBaseURL: baseURL
-        )
-        return cell
     }
 
     var usesXiaohongshuCardLayout: Bool {
-        AppSettings.shared.themeStyle == .xiaohongshu
+        topicListLayout.kind == .xiaohongshu
     }
 
     /// Chat session-list layout (WeChat / Telegram) via `WeChatTopicListCell`.
     var usesChatHomeListLayout: Bool {
-        AppSettings.shared.themeStyle.usesChatHomeList
+        topicListLayout.kind == .weChat || topicListLayout.kind == .telegram
     }
 
     /// Legacy alias used by older call sites; prefer `usesChatHomeListLayout`.
@@ -468,64 +358,41 @@ final class HomeViewController: ObservableViewController {
         case telegram
     }
 
-    var homeListLayoutKind: HomeListLayoutKind {
-        if usesXiaohongshuCardLayout { return .xiaohongshu }
-        switch AppSettings.shared.themeStyle {
-        case .weChat: return .weChat
-        case .telegram: return .telegram
-        default: return .standard
-        }
-    }
+    var homeListLayoutKind: HomeListLayoutKind { topicListLayout.kind }
 
     /// Last applied list layout — when this changes, force cell-class swap.
     var lastAppliedHomeListLayoutKind: HomeListLayoutKind?
+    var topicListLayout: any HomeTopicListLayout
 
     static func xiaohongshuRowIdentifier(for rowIndex: Int) -> Int {
-        -(rowIndex + 1)
+        XiaohongshuHomeTopicListLayout.rowIdentifier(for: rowIndex)
     }
 
     static func xiaohongshuRowIndex(from identifier: Int) -> Int? {
-        guard identifier < 0 else { return nil }
-        return abs(identifier) - 1
+        XiaohongshuHomeTopicListLayout.rowIndex(from: identifier)
     }
 
-    func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
-        let topics = viewModel.topics.filter {
-            !HomeTopicListOrdering.isPinned($0, pinnedIds: viewModel.pinnedTopicIds)
-        }
-        let leftIndex = rowIndex * 2
-        guard topics.indices.contains(leftIndex) else {
-            return (nil, nil)
-        }
-        let rightIndex = leftIndex + 1
-        let rightTopic = topics.indices.contains(rightIndex) ? topics[rightIndex] : nil
-        return (topics[leftIndex], rightTopic)
-    }
-
-    func xiaohongshuCardModel(for topic: DiscourseTopicList.Topic) -> XiaohongshuTopicCardModel {
-        let avatarURL = AvatarImageLoader.url(
-            from: viewModel.avatarTemplate(for: topic),
-            baseURL: api.baseURL,
-            size: AvatarImageLoader.primaryAvatarPixelSize
+    func homeTopicListCellContext() -> HomeTopicListCellContext {
+        HomeTopicListCellContext(
+            viewModel: viewModel,
+            api: api,
+            colorFromHex: Self.color(fromHex:),
+            onOpenTopic: { [weak self] id in self?.openTopic(id) }
         )
-        let category = viewModel.category(for: topic)
-        let categoryColor: UIColor? = category.flatMap { Self.color(fromHex: $0.color) }
-        return XiaohongshuTopicCardModel(
-            id: topic.id,
-            title: TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title),
-            excerpt: topic.excerpt,
-            avatarURL: avatarURL,
-            avatarUserId: viewModel.avatarUserId(for: topic),
-            username: viewModel.username(for: topic),
-            categoryName: viewModel.categoryDisplayName(for: category),
-            categoryColor: categoryColor,
-            categoryPresentation: viewModel.categoryBadgePresentation(for: topic),
-            categoryBaseURL: api.baseURL,
-            tags: topic.tags ?? [],
-            replyCount: max(topic.postsCount - 1, 0),
-            views: topic.views,
-            timeText: TopicCell.formatDate(topic.lastPostedAt ?? topic.createdAt),
-            isUnread: topic.isUnreadForDisplay
+    }
+
+    func makeHomeTopicDetail(
+        topicId: Int,
+        initialFloor: Int? = nil,
+        initialPostId: Int? = nil,
+        lastReadPostNumber: Int? = nil
+    ) -> UIViewController {
+        topicListLayout.makeTopicDetail(
+            api: api,
+            topicId: topicId,
+            initialFloor: initialFloor,
+            initialPostId: initialPostId,
+            lastReadPostNumber: lastReadPostNumber
         )
     }
 
@@ -803,6 +670,7 @@ final class HomeViewController: ObservableViewController {
         self.viewModel = HomeViewModel(api: api)
         self.authGate = authGate
         self.notificationCoordinator = notificationCoordinator
+        self.topicListLayout = HomeTopicListLayoutFactory.make(style: AppSettings.shared.themeStyle)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -1092,30 +960,69 @@ final class HomeViewController: ObservableViewController {
     override func updateUI() {
         applyThemeStyle()
         updateNotificationBadge()
-        // Login-required state
+        let scope = viewModel.consumePendingUIScope()
+
         if viewModel.requiresLogin {
-            setCreateMenuVisible(false, animated: false)
-            isInitialTopicLoadPending = false
-            errorLabel.text = viewModel.errorMessage
-            errorLabel.isHidden = false
-            loginButton.isHidden = false
-            loginPromptCard.isHidden = false
-            tableView.isHidden = true
-            headerContainer.isHidden = true
-            floatingActionButton.isHidden = true
-            setIncomingTopicsBannerVisible(false, animated: false)
-            setIncomingTopicsInlineBannerVisible(false)
-            loadingSkeletonView.setSkeletonActive(false, animated: false)
-            emptyStateView.setVisible(false, animated: false)
-            activityIndicator.stopAnimating()
+            applyLoginRequiredUI()
             return
         }
 
+        if scope.contains(.login) {
+            applyLoggedInChrome()
+        }
+        if scope.contains(.chrome) {
+            applyCategoryChrome()
+        }
+        if scope.contains(.incoming) {
+            updateIncomingTopicsHeader()
+        }
+        if scope.contains(.list) || scope.contains(.loading) {
+            applyHomeContentVisibility()
+        }
+        if scope.contains(.list) {
+            applyTopicSnapshot()
+            if shouldFreezeTabBarScrollControl {
+                lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
+            }
+        }
+        if scope.contains(.loading) {
+            applyHomeLoadingChrome()
+            syncTabBarFreezeWithLoadMoreState()
+        }
+    }
+
+    private func applyLoginRequiredUI() {
+        setCreateMenuVisible(false, animated: false)
+        isInitialTopicLoadPending = false
+        errorLabel.text = viewModel.errorMessage
+        errorLabel.isHidden = false
+        loginButton.isHidden = false
+        loginPromptCard.isHidden = false
+        tableView.isHidden = true
+        headerContainer.isHidden = true
+        floatingActionButton.isHidden = true
+        setIncomingTopicsBannerVisible(false, animated: false)
+        setIncomingTopicsInlineBannerVisible(false)
+        loadingSkeletonView.setSkeletonActive(false, animated: false)
+        emptyStateView.setVisible(false, animated: false)
+        activityIndicator.stopAnimating()
+    }
+
+    private func applyLoggedInChrome() {
         loginButton.isHidden = true
         loginPromptCard.isHidden = true
         headerContainer.isHidden = false
         floatingActionButton.isHidden = false
+    }
 
+    private func applyCategoryChrome() {
+        categoryButton.menu = UIMenu(title: "", children: buildCategoryMenuElements())
+        updateCategoryButton()
+        rebuildCategoryTabs()
+        updateFilterButton()
+    }
+
+    private func applyHomeContentVisibility() {
         let showsInitialSkeleton = (viewModel.isLoading || isInitialTopicLoadPending)
             && viewModel.topics.isEmpty
             && viewModel.errorMessage == nil
@@ -1128,12 +1035,6 @@ final class HomeViewController: ObservableViewController {
             || showsEmptyState
             || (viewModel.topics.isEmpty && viewModel.errorMessage != nil)
 
-        categoryButton.menu = UIMenu(title: "", children: buildCategoryMenuElements())
-        updateCategoryButton()
-        rebuildCategoryTabs()
-        updateFilterButton()
-        updateIncomingTopicsHeader()
-        // Show non-login errors (e.g. rate limit) when topic list is empty
         if let error = viewModel.errorMessage, viewModel.topics.isEmpty {
             errorLabel.text = error
             errorLabel.isHidden = false
@@ -1141,11 +1042,12 @@ final class HomeViewController: ObservableViewController {
         } else {
             errorLabel.isHidden = true
         }
-        applyTopicSnapshot()
-        if shouldFreezeTabBarScrollControl {
-            lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
-        }
+    }
 
+    private func applyHomeLoadingChrome() {
+        let showsInitialSkeleton = (viewModel.isLoading || isInitialTopicLoadPending)
+            && viewModel.topics.isEmpty
+            && viewModel.errorMessage == nil
         if viewModel.isLoading && !showsInitialSkeleton && viewModel.topics.isEmpty {
             activityIndicator.startAnimating()
         } else {
@@ -1166,6 +1068,5 @@ final class HomeViewController: ObservableViewController {
             footerSpinner.stopAnimating()
             tableView.tableFooterView = emptyFooterView
         }
-        syncTabBarFreezeWithLoadMoreState()
     }
 }

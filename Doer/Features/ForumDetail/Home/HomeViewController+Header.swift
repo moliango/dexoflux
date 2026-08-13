@@ -132,17 +132,7 @@ extension HomeViewController {
         let pageBackground = themeStyle.topicListBackgroundColor
         view.backgroundColor = pageBackground
         tableView.backgroundColor = pageBackground
-        if usesXiaohongshuCardLayout {
-            tableView.estimatedRowHeight = AppSettings.shared.xiaohongshuCardsStaggered
-                ? XiaohongshuTopicGridCell.staggeredEstimatedHeight
-                : XiaohongshuTopicGridCell.estimatedHeight
-        } else if homeListLayoutKind == .telegram {
-            tableView.estimatedRowHeight = TelegramTopicListCell.estimatedHeight
-        } else if homeListLayoutKind == .weChat {
-            tableView.estimatedRowHeight = WeChatTopicListCell.estimatedHeight
-        } else {
-            tableView.estimatedRowHeight = TopicCell.estimatedHeight
-        }
+        tableView.estimatedRowHeight = topicListLayout.estimatedRowHeight
         headerContainer.backgroundColor = pageBackground
         if var config = searchButton.configuration {
             if themeStyle == .telegram {

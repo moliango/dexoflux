@@ -57,6 +57,19 @@ enum HomeTopicListOrdering {
     }
 }
 
+/// Home `updateUI` work that a `notifyChanged` actually needs.
+struct HomeUIScope: OptionSet {
+    let rawValue: Int
+
+    static let list = HomeUIScope(rawValue: 1 << 0)
+    static let chrome = HomeUIScope(rawValue: 1 << 1)
+    static let incoming = HomeUIScope(rawValue: 1 << 2)
+    static let loading = HomeUIScope(rawValue: 1 << 3)
+    static let login = HomeUIScope(rawValue: 1 << 4)
+
+    static let all: HomeUIScope = [.list, .chrome, .incoming, .loading, .login]
+}
+
 enum HomeListMode: CaseIterable, Hashable {
     case latest
     case newTopics
@@ -99,7 +112,9 @@ private enum TopicAccessState {
 final class HomeViewModel: DoerObservableObject {
     var pinnedTopicIds: Set<Int> = []
     var listMode: HomeListMode = .latest
-    var topics: [DiscourseTopicList.Topic] = []
+    var topics: [DiscourseTopicList.Topic] = [] {
+        didSet { rebuildTopicIndex() }
+    }
     var incomingTopicIds: [Int] = []
     var isLoadingIncomingTopics = false
     var shouldRetryIncomingTopicsAfterCloudflare = false
@@ -124,6 +139,9 @@ final class HomeViewModel: DoerObservableObject {
     private var loggedTopicCategoryIds = Set<Int>()
     private var categoryMetadataTask: Task<Void, Never>?
     private var hasLoadedFullCategoryMetadata = false
+    private var topicsById: [Int: DiscourseTopicList.Topic] = [:]
+    private var pendingUIScope: HomeUIScope = []
+    private var uiFlushScheduled = false
 
     init(
         api: DiscourseAPI,
@@ -135,6 +153,41 @@ final class HomeViewModel: DoerObservableObject {
 
     private var canBrowseTopics: Bool {
         AuthManager.shared.isAuthenticated(for: api.baseURL)
+    }
+
+    func topic(id: Int) -> DiscourseTopicList.Topic? {
+        topicsById[id]
+    }
+
+    func notifyChanged(_ scope: HomeUIScope) {
+        pendingUIScope.formUnion(scope)
+        guard !uiFlushScheduled else { return }
+        uiFlushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.flushPendingUI()
+        }
+    }
+
+    /// Apply coalesced UI work now. Used so load-more can paint new rows while `isLoadingMore` is still true.
+    func flushPendingUI() {
+        uiFlushScheduled = false
+        guard !pendingUIScope.isEmpty else { return }
+        super.notifyChanged()
+    }
+
+    func consumePendingUIScope() -> HomeUIScope {
+        let scope = pendingUIScope.isEmpty ? HomeUIScope.all : pendingUIScope
+        pendingUIScope = []
+        return scope
+    }
+
+    private func rebuildTopicIndex() {
+        var index: [Int: DiscourseTopicList.Topic] = [:]
+        index.reserveCapacity(topics.count)
+        for topic in topics where index[topic.id] == nil {
+            index[topic.id] = topic
+        }
+        topicsById = index
     }
 
     func avatarTemplate(for topic: DiscourseTopicList.Topic) -> String? {
@@ -232,7 +285,7 @@ final class HomeViewModel: DoerObservableObject {
         }
         // Callers that only need a single-row reconfigure pass `notify: false` (Phase 7).
         if notify {
-            notifyChanged()
+            notifyChanged(.list)
         }
         return true
     }
@@ -253,7 +306,7 @@ final class HomeViewModel: DoerObservableObject {
         // shows a stale "查看 N 个新话题" chip on every cold launch.
         backgroundTopicUpdateStore.replaceForegroundBaseline(topics, baseURL: api.baseURL)
         incomingTopicIds = []
-        notifyChanged()
+        notifyChanged([.list, .incoming, .loading])
     }
 
     func loadTopics(retryingExplicitCancellation: Bool = false) async {
@@ -268,14 +321,14 @@ final class HomeViewModel: DoerObservableObject {
         isBlockedByCloudflare = false
         currentPage = 0
         DohDebugLog.record("refresh begin", subsystem: "home.refresh")
-        notifyChanged()
+        notifyChanged([.loading, .login])
         defer {
             isLoading = false
             DohDebugLog.record(
                 "refresh end topics=\(topics.count) error=\(errorMessage != nil) cf=\(isBlockedByCloudflare)",
                 subsystem: "home.refresh"
             )
-            notifyChanged()
+            notifyChanged(.all)
         }
 
         switch await validateTopicAccess() {
@@ -362,14 +415,15 @@ final class HomeViewModel: DoerObservableObject {
         loadMoreErrorMessage = nil
         shouldRetryLoadMoreAfterCloudflare = false
         DohDebugLog.record("loadmore begin page=\(currentPage + 1)", subsystem: "home.loadmore")
-        notifyChanged()
+        notifyChanged(.loading)
         defer {
+            flushPendingUI()
             isLoadingMore = false
             DohDebugLog.record(
                 "loadmore end page=\(currentPage) can=\(canLoadMore) error=\(loadMoreErrorMessage != nil) cfRetry=\(shouldRetryLoadMoreAfterCloudflare)",
                 subsystem: "home.loadmore"
             )
-            notifyChanged()
+            notifyChanged(.loading)
         }
 
         let nextPage = currentPage + 1
@@ -392,7 +446,7 @@ final class HomeViewModel: DoerObservableObject {
             logTopicCategoryDiagnostics(context: "loadMore", topics: newTopics)
             // 仍在 isLoadingMore=true 时通知 UI：方便冻结 tab bar，避免 contentSize 突增时显隐打架。
             if !newTopics.isEmpty {
-                notifyChanged()
+                notifyChanged([.list, .loading])
             }
         } catch is CancellationError {
             // A newer refresh replaced this request.
@@ -456,7 +510,7 @@ final class HomeViewModel: DoerObservableObject {
                 incomingTopicIds = incomingIds
                 indexUsers(latestUsers)
                 indexCategories(latestCategories, source: .topicList)
-                notifyChanged()
+                notifyChanged(.incoming)
             }
         } catch is CancellationError {
             // A foreground refresh or a newer detection replaced this poll.
@@ -474,10 +528,10 @@ final class HomeViewModel: DoerObservableObject {
         guard !ids.isEmpty, !isLoadingIncomingTopics else { return }
         shouldRetryIncomingTopicsAfterCloudflare = false
         isLoadingIncomingTopics = true
-        notifyChanged()
+        notifyChanged(.incoming)
         defer {
             isLoadingIncomingTopics = false
-            notifyChanged()
+            notifyChanged([.list, .incoming])
         }
 
         switch await validateTopicAccess() {
@@ -493,7 +547,7 @@ final class HomeViewModel: DoerObservableObject {
             } else {
                 errorMessage = error.localizedDescription
             }
-            notifyChanged()
+            notifyChanged(.incoming)
             return
         }
 
@@ -556,7 +610,7 @@ final class HomeViewModel: DoerObservableObject {
         if clearSelection {
             selectedCategoryId = nil
         }
-        notifyChanged()
+        notifyChanged([.chrome, .list])
     }
 
     func restoreBackgroundTopicUpdates() {
@@ -564,7 +618,7 @@ final class HomeViewModel: DoerObservableObject {
         let persistedTopicIDs = backgroundTopicUpdateStore.pendingTopicIDs(for: api.baseURL)
         guard persistedTopicIDs != incomingTopicIds else { return }
         incomingTopicIds = persistedTopicIDs
-        notifyChanged()
+        notifyChanged(.incoming)
     }
 
     func finishLoadingAfterTimeout(message: String) {
@@ -579,7 +633,7 @@ final class HomeViewModel: DoerObservableObject {
         if topics.isEmpty {
             errorMessage = message
         }
-        notifyChanged()
+        notifyChanged([.list, .loading, .incoming])
     }
 
     private func validateTopicAccess() async -> TopicAccessState {
@@ -627,7 +681,7 @@ final class HomeViewModel: DoerObservableObject {
         if invalidateSession {
             AuthManager.shared.invalidateWebSession(for: api.baseURL)
         }
-        notifyChanged()
+        notifyChanged(.all)
     }
 
     private func isCloudflareChallenge(_ error: Error) -> Bool {
@@ -699,7 +753,7 @@ final class HomeViewModel: DoerObservableObject {
             categories = DiscourseCategory.hierarchy(fromFlat: visibleCategories)
             indexCategories(visibleCategories, source: .site)
             hasLoadedFullCategoryMetadata = true
-            notifyChanged()
+            notifyChanged([.chrome, .list])
             return
         }
         guard DiscourseTaxonomySessionStore.beginRefresh(for: api.baseURL) else {
@@ -709,7 +763,7 @@ final class HomeViewModel: DoerObservableObject {
             categories = DiscourseCategory.hierarchy(fromFlat: visibleCategories)
             indexCategories(visibleCategories, source: .site)
             hasLoadedFullCategoryMetadata = true
-            notifyChanged()
+            notifyChanged([.chrome, .list])
             return
         }
         defer { DiscourseTaxonomySessionStore.endRefresh(for: api.baseURL) }
@@ -731,7 +785,7 @@ final class HomeViewModel: DoerObservableObject {
                 logCategoryMetadata(source: "categories", categories: categories)
             }
             hasLoadedFullCategoryMetadata = true
-            notifyChanged()
+            notifyChanged([.chrome, .list])
         } catch {
             // Non-critical — cells just won't show category names
             DohDebugLog.record("metadata load failed: \(error.localizedDescription)", subsystem: "Category")

@@ -322,7 +322,7 @@ extension HomeViewController {
             composer.onTopicCreated = { [weak self] topicId in
                 guard let self else { return }
                 self.reloadTopics()
-                let detailVC = TopicDetailFactory.make(api: self.api, topicId: topicId)
+                let detailVC = self.makeHomeTopicDetail(topicId: topicId)
                 self.navigationController?.pushViewController(detailVC, animated: true)
             }
             let nav = UINavigationController(rootViewController: composer)

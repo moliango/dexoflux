@@ -101,10 +101,14 @@ extension HomeViewController {
 
     func handleConnectivityChanged(isConnected: Bool) {
         applyConnectivityUI(isConnected: isConnected, animated: true)
-        // 网络从断开恢复：重置会话/DoH 缓存并刷新列表（原 NWPathMonitor 行为）
-        if isConnected {
-            recoverTransportAndReload()
-        }
+        guard isConnected else { return }
+        api.resetSession()
+        LightweightDohProxyService.shared.clearCache()
+        guard HomeConnectivityRecoveryPolicy.shouldReloadTopicList(
+            topicsEmpty: viewModel.topics.isEmpty,
+            hasError: viewModel.errorMessage != nil
+        ) else { return }
+        reloadTopics()
     }
 
     func applyConnectivityUI(isConnected: Bool, animated: Bool) {
