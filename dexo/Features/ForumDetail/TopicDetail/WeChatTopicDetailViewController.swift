@@ -1,5 +1,4 @@
 import CookedHTML
-import SafariServices
 import UIKit
 
 /// Chat-style Topic Detail for WeChat / Telegram themes.
@@ -96,7 +95,8 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 topicCategoryPresentation: self.viewModel.categoryPresentation
             )
             let isDark = self.traitCollection.userInterfaceStyle == .dark
-            // Denser body for chat bubbles — classic topic detail stays roomier.
+            // Keep body typography on the shared content scale — do not densify fonts
+            // per chat theme (that made WeChat/Telegram look smaller than classic).
             config = NativeRenderConfig(
                 baseFont: config.baseFont,
                 baseColor: post.yours
@@ -113,8 +113,8 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 galleryImageURLs: config.galleryImageURLs,
                 topicTagNames: config.topicTagNames,
                 topicCategoryPresentation: config.topicCategoryPresentation,
-                defaultLineSpacing: max(1, config.defaultLineSpacing - 1),
-                defaultParagraphSpacing: max(2, config.defaultParagraphSpacing - 1)
+                defaultLineSpacing: config.defaultLineSpacing,
+                defaultParagraphSpacing: config.defaultParagraphSpacing
             )
 
             let dateSeparator: String? = {
@@ -358,6 +358,13 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
     }
 
+    private var lastContentFontSize = AppSettings.shared.contentFontSize
+    private var lastContentFontScalePercent = AppSettings.shared.contentFontScalePercent
+    private var lastContentFontFamily = AppSettings.shared.contentFontFamily
+    private var lastContentFontScope = AppSettings.shared.contentFontScope
+    private var lastInterfaceFontScalePercent = AppSettings.shared.interfaceFontScalePercent
+    private var lastReadingComfortMode = AppSettings.shared.readingComfortMode
+
     override func updateUI() {
         tableView.showsVerticalScrollIndicator = !AppSettings.shared.hideScrollIndicators
         tableView.showsHorizontalScrollIndicator = false
@@ -371,6 +378,20 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         }
         configureTopicActions()
 
+        let settings = AppSettings.shared
+        let shouldReloadVisibleContent = lastReadingComfortMode != settings.readingComfortMode
+            || lastContentFontSize != settings.contentFontSize
+            || lastContentFontScalePercent != settings.contentFontScalePercent
+            || lastContentFontFamily != settings.contentFontFamily
+            || lastContentFontScope != settings.contentFontScope
+            || lastInterfaceFontScalePercent != settings.interfaceFontScalePercent
+        lastReadingComfortMode = settings.readingComfortMode
+        lastContentFontSize = settings.contentFontSize
+        lastContentFontScalePercent = settings.contentFontScalePercent
+        lastContentFontFamily = settings.contentFontFamily
+        lastContentFontScope = settings.contentFontScope
+        lastInterfaceFontScalePercent = settings.interfaceFontScalePercent
+
         let showsInitialLoading = viewModel.isLoading && !viewModel.isReady && viewModel.errorMessage == nil
         loadingSkeletonView.setSkeletonActive(showsInitialLoading, animated: view.window != nil)
         tableView.isHidden = showsInitialLoading
@@ -379,12 +400,17 @@ final class WeChatTopicDetailViewController: ObservableViewController {
         if let error = viewModel.errorMessage, !viewModel.isReady {
             errorLabel.isHidden = false
             errorLabel.text = error
+            errorLabel.font = TopicDetailTypography.chromeFont(.error, weight: .regular)
         } else {
             errorLabel.isHidden = true
         }
 
         if viewModel.isReady {
             applySnapshot()
+            if shouldReloadVisibleContent {
+                // Force body/chrome re-render with the shared content scale.
+                tableView.reloadData()
+            }
             updateSuggestedTopicsFooter()
         }
     }
@@ -757,7 +783,12 @@ final class WeChatTopicDetailViewController: ObservableViewController {
                 )
             }
         } else {
-            present(SFSafariViewController(url: linkURL), animated: true)
+            DexoSafariPresenter.present(
+                url: linkURL,
+                from: self,
+                api: api,
+                username: AuthManager.shared.username(for: api.baseURL)
+            )
         }
     }
 

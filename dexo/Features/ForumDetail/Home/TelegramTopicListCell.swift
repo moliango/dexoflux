@@ -299,21 +299,16 @@ final class TelegramTopicListCell: UITableViewCell {
             ? UIColor.white.withAlphaComponent(0.08)
             : UIColor(red: 0.88, green: 0.89, blue: 0.90, alpha: 1)
 
-        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 17)
-        let previewPoint = AppSettings.shared.effectiveInterfacePointSize(for: 15)
-        let timePoint = AppSettings.shared.effectiveInterfacePointSize(for: 14)
         let hasUnread = topic.unreadPosts > 0
-
-        // Unread titles stay semibold (Telegram); fully-read can be slightly lighter.
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: hasUnread ? .semibold : .medium)
+        titleLabel.font = TopicListTypography.font(
+            for: .title,
+            weight: hasUnread ? .semibold : .medium
         )
-        previewLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: previewPoint, weight: .regular)
-        )
-        timeLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: timePoint, weight: .regular)
-        )
+        previewLabel.font = TopicListTypography.font(for: .subtitle, weight: .regular)
+        timeLabel.font = TopicListTypography.font(for: .meta, weight: .regular)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        previewLabel.adjustsFontForContentSizeCategory = true
+        timeLabel.adjustsFontForContentSizeCategory = true
 
         titleLabel.textColor = isDark ? .white : UIColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1)
         previewLabel.textColor = isDark
@@ -352,9 +347,7 @@ final class TelegramTopicListCell: UITableViewCell {
 
         if let count = badgeCount {
             let text = count > 999 ? "999+" : "\(count)"
-            let font = AppSettings.shared.appInterfaceFont(
-                matching: .systemFont(ofSize: 13, weight: .semibold)
-            )
+            let font = TopicListTypography.font(for: .badge, weight: .semibold)
             badgeLabel.font = font
             badgeLabel.text = text
             badgeLabel.textColor = .white
@@ -399,18 +392,15 @@ final class TelegramTopicListCell: UITableViewCell {
             ? UIColor.white.withAlphaComponent(0.08)
             : UIColor(red: 0.88, green: 0.89, blue: 0.90, alpha: 1)
 
-        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 17)
-        let previewPoint = AppSettings.shared.effectiveInterfacePointSize(for: 15)
-        let timePoint = AppSettings.shared.effectiveInterfacePointSize(for: 14)
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: item.isEmphasized ? .semibold : .medium)
+        titleLabel.font = TopicListTypography.font(
+            for: .title,
+            weight: item.isEmphasized ? .semibold : .medium
         )
-        previewLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: previewPoint, weight: .regular)
-        )
-        timeLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: timePoint, weight: .regular)
-        )
+        previewLabel.font = TopicListTypography.font(for: .subtitle, weight: .regular)
+        timeLabel.font = TopicListTypography.font(for: .meta, weight: .regular)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        previewLabel.adjustsFontForContentSizeCategory = true
+        timeLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = isDark ? .white : UIColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1)
         previewLabel.textColor = isDark
             ? UIColor.white.withAlphaComponent(0.55)
@@ -433,9 +423,7 @@ final class TelegramTopicListCell: UITableViewCell {
         timeLabel.text = item.timeText
 
         if let badge = item.badgeText, !badge.isEmpty {
-            let font = AppSettings.shared.appInterfaceFont(
-                matching: .systemFont(ofSize: 13, weight: .semibold)
-            )
+            let font = TopicListTypography.font(for: .badge, weight: .semibold)
             badgeLabel.font = font
             badgeLabel.text = badge
             badgeLabel.textColor = .white

@@ -1,10 +1,19 @@
 import UIKit
 
-/// Horizontal FluxDo-style sort chips (old / new / top) shown under OP in nested tree mode.
+/// Horizontal FluxDo-style sort chips (top / new / old) shown under OP in nested tree mode.
 final class NestedSortBarCell: UITableViewCell {
     static let reuseIdentifier = "NestedSortBarCell"
 
     var onSelectSort: ((NestedReplySort) -> Void)?
+
+    private let scrollView: UIScrollView = {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.alwaysBounceHorizontal = true
+        scroll.clipsToBounds = false
+        return scroll
+    }()
 
     private let stack: UIStackView = {
         let stack = UIStackView()
@@ -23,25 +32,35 @@ final class NestedSortBarCell: UITableViewCell {
         selectionStyle = .none
         backgroundColor = .clear
         contentView.backgroundColor = .clear
+        contentView.clipsToBounds = false
+        clipsToBounds = false
 
-        contentView.addSubview(stack)
+        contentView.addSubview(scrollView)
+        scrollView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -16),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
-            stack.heightAnchor.constraint(equalToConstant: 32)
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            scrollView.heightAnchor.constraint(equalToConstant: 32),
+
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            stack.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
         ])
 
-        for sort in NestedReplySort.allCases {
+        for sort in NestedReplySort.chipOrder {
             let button = UIButton(type: .system)
             button.translatesAutoresizingMaskIntoConstraints = false
             button.setTitle(sort.title, for: .normal)
-            button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            button.titleLabel?.font = TopicDetailTypography.chromeFont(.sortChip, weight: .semibold)
             button.layer.cornerRadius = 14
             button.layer.cornerCurve = .continuous
             button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
             button.accessibilityLabel = sort.title
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
             button.addAction(UIAction { [weak self] _ in
                 self?.onSelectSort?(sort)
             }, for: .touchUpInside)
@@ -58,6 +77,11 @@ final class NestedSortBarCell: UITableViewCell {
 
     func configure(selected: NestedReplySort) {
         currentSort = selected
+        for (sort, button) in buttons {
+            button.setTitle(sort.title, for: .normal)
+            button.titleLabel?.font = TopicDetailTypography.chromeFont(.sortChip, weight: .semibold)
+            button.accessibilityLabel = sort.title
+        }
         applyTheme()
     }
 
@@ -68,11 +92,15 @@ final class NestedSortBarCell: UITableViewCell {
             button.isUserInteractionEnabled = !selected
             button.accessibilityTraits = selected ? [.button, .selected] : .button
             if selected {
-                button.backgroundColor = accent.withAlphaComponent(0.16)
+                button.backgroundColor = accent.withAlphaComponent(0.22)
                 button.setTitleColor(accent, for: .normal)
+                button.layer.borderWidth = 1
+                button.layer.borderColor = accent.withAlphaComponent(0.35).cgColor
             } else {
-                button.backgroundColor = UIColor.tertiarySystemFill.withAlphaComponent(0.8)
+                button.backgroundColor = UIColor.tertiarySystemFill.withAlphaComponent(0.55)
                 button.setTitleColor(.secondaryLabel, for: .normal)
+                button.layer.borderWidth = 0
+                button.layer.borderColor = UIColor.clear.cgColor
             }
         }
     }

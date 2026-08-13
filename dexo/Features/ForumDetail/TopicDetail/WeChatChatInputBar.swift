@@ -173,7 +173,8 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         addSubview(replyBanner)
 
         replyLabel.translatesAutoresizingMaskIntoConstraints = false
-        replyLabel.font = .systemFont(ofSize: 12)
+        replyLabel.font = TopicDetailTypography.chromeFont(.inputMeta, weight: .regular)
+        replyLabel.adjustsFontForContentSizeCategory = true
         replyLabel.textColor = .secondaryLabel
         replyLabel.numberOfLines = 1
         replyLabel.lineBreakMode = .byTruncatingTail
@@ -206,7 +207,8 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
 
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.backgroundColor = .clear
-        textView.font = .systemFont(ofSize: 16)
+        textView.font = TopicDetailTypography.chromeFont(.inputBody, weight: .regular)
+        textView.adjustsFontForContentSizeCategory = true
         textView.textColor = .label
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textView.textContainer.lineFragmentPadding = 0
@@ -217,7 +219,8 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         textBackground.addSubview(textView)
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeholderLabel.font = .systemFont(ofSize: 16)
+        placeholderLabel.font = TopicDetailTypography.chromeFont(.inputBody, weight: .regular)
+        placeholderLabel.adjustsFontForContentSizeCategory = true
         placeholderLabel.textColor = .tertiaryLabel
         placeholderLabel.isUserInteractionEnabled = false
         textBackground.addSubview(placeholderLabel)
@@ -310,6 +313,9 @@ final class WeChatChatInputBar: UIView, UITextViewDelegate {
         textBackground.layer.borderWidth = 0
 
         textView.tintColor = style.accentColor
+        textView.font = TopicDetailTypography.chromeFont(.inputBody, weight: .regular)
+        placeholderLabel.font = TopicDetailTypography.chromeFont(.inputBody, weight: .regular)
+        replyLabel.font = TopicDetailTypography.chromeFont(.inputMeta, weight: .regular)
         placeholderLabel.text = style.inputPlaceholder
 
         let iconConfig = UIImage.SymbolConfiguration(pointSize: style == .telegram ? 20 : 22, weight: .regular)

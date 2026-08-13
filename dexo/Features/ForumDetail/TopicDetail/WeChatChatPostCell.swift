@@ -355,7 +355,8 @@ final class WeChatChatPostCell: UITableViewCell {
         ]
         let symbol = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         voteCountLabel.translatesAutoresizingMaskIntoConstraints = false
-        voteCountLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        voteCountLabel.font = TopicDetailTypography.chromeFont(.action, weight: .semibold)
+        voteCountLabel.adjustsFontForContentSizeCategory = true
         voteCountLabel.textColor = .secondaryLabel
         voteCountLabel.setContentHuggingPriority(.required, for: .horizontal)
         for (button, name, sel) in buttons {
@@ -431,7 +432,8 @@ final class WeChatChatPostCell: UITableViewCell {
             nameLabel.textAlignment = isMine ? .right : .left
             nameLabel.isHidden = isMine
             nameHeightConstraint?.constant = isMine ? 0 : 16
-            nameLabel.font = .systemFont(ofSize: 12, weight: .regular)
+            nameLabel.font = TopicDetailTypography.chromeFont(.authorMeta, weight: .regular)
+            nameLabel.adjustsFontForContentSizeCategory = true
             nameLabel.textColor = .secondaryLabel
         }
 
@@ -442,6 +444,8 @@ final class WeChatChatPostCell: UITableViewCell {
         } else {
             timeLabel.text = "#\(floorNumber) · \(TopicCell.formatDate(post.createdAt))"
         }
+        timeLabel.font = TopicDetailTypography.chromeFont(.time, weight: .regular)
+        timeLabel.adjustsFontForContentSizeCategory = true
         timeLabel.textColor = style.bubbleTimeColor(isMine: isMine, isDark: isDark)
         timeLabel.textAlignment = .right
 
@@ -531,7 +535,7 @@ final class WeChatChatPostCell: UITableViewCell {
         likeButton.tintColor = liked ? .systemPink : .secondaryLabel
         if likeCount > 0 {
             likeButton.setTitle(" \(likeCount)", for: .normal)
-            likeButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+            likeButton.titleLabel?.font = TopicDetailTypography.chromeFont(.action, weight: .medium)
             likeButton.setTitleColor(likeButton.tintColor, for: .normal)
         } else {
             likeButton.setTitle(nil, for: .normal)
@@ -631,6 +635,8 @@ final class WeChatChatPostCell: UITableViewCell {
         if let text, !text.isEmpty {
             dateChipLabel.isHidden = false
             dateChipLabel.text = "  \(text)  "
+            dateChipLabel.font = TopicDetailTypography.chromeFont(.dateChip, weight: .medium)
+            dateChipLabel.adjustsFontForContentSizeCategory = true
             dateChipTopConstraint?.constant = 8
             dateChipHeightConstraint?.constant = 22
             let isDark = traitCollection.userInterfaceStyle == .dark
@@ -659,7 +665,8 @@ final class WeChatChatPostCell: UITableViewCell {
         row.tag = 88001
 
         let name = UILabel()
-        name.font = .systemFont(ofSize: 14, weight: .semibold)
+        name.font = TopicDetailTypography.chromeFont(.authorName, weight: .semibold)
+        name.adjustsFontForContentSizeCategory = true
         name.textColor = chatStyle.nameColor(for: post.username)
         name.text = displayName
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -667,7 +674,8 @@ final class WeChatChatPostCell: UITableViewCell {
 
         if post.admin || post.moderator || post.groupModerator {
             let badge = UILabel()
-            badge.font = .systemFont(ofSize: 11, weight: .semibold)
+            badge.font = TopicDetailTypography.chromeFont(.adminBadge, weight: .semibold)
+            badge.adjustsFontForContentSizeCategory = true
             badge.textColor = .white
             badge.backgroundColor = UIColor(red: 0.35, green: 0.78, blue: 0.45, alpha: 1)
             badge.text = "  " + String(localized: "telegram_chat.admin_badge", defaultValue: "管理员") + "  "
@@ -704,13 +712,15 @@ final class WeChatChatPostCell: UITableViewCell {
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         let name = UILabel()
-        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        name.font = TopicDetailTypography.chromeFont(.authorMeta, weight: .semibold)
+        name.adjustsFontForContentSizeCategory = true
         name.textColor = color
         name.text = replyUser.username
         name.translatesAutoresizingMaskIntoConstraints = false
 
         let preview = UILabel()
-        preview.font = .systemFont(ofSize: 13, weight: .regular)
+        preview.font = TopicDetailTypography.chromeFont(.replyChip, weight: .regular)
+        preview.adjustsFontForContentSizeCategory = true
         preview.textColor = isDark ? UIColor.white.withAlphaComponent(0.7) : .secondaryLabel
         preview.numberOfLines = 2
         // Prefer a short plain preview of this post's reply target if available via cooked quote;

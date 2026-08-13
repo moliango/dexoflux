@@ -180,19 +180,19 @@ final class WeChatTopicListCell: UITableViewCell {
         backgroundColor = theme.topicListBackgroundColor
         separator.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
 
-        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
-        let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
         let unread = topic.isUnreadForDisplay
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: unread ? .semibold : .regular)
+        titleLabel.font = TopicListTypography.font(
+            for: .title,
+            weight: unread ? .semibold : .regular
         )
-        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: subPoint, weight: .regular)
-        )
-        timeLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: 12, weight: .regular)
-        )
+        subtitleLabel.font = TopicListTypography.font(for: .subtitle, weight: .regular)
+        timeLabel.font = TopicListTypography.font(for: .meta, weight: .regular)
         replyLabel.font = timeLabel.font
+
+        titleLabel.adjustsFontForContentSizeCategory = true
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+        timeLabel.adjustsFontForContentSizeCategory = true
+        replyLabel.adjustsFontForContentSizeCategory = true
 
         titleLabel.textColor = unread ? .label : .secondaryLabel
         emojiBaseURL = categoryBaseURL
@@ -241,18 +241,18 @@ final class WeChatTopicListCell: UITableViewCell {
         backgroundColor = theme.topicListBackgroundColor
         separator.backgroundColor = UIColor.separator.withAlphaComponent(0.28)
 
-        let titlePoint = AppSettings.shared.effectiveInterfacePointSize(for: 16)
-        let subPoint = AppSettings.shared.effectiveInterfacePointSize(for: 13)
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: titlePoint, weight: item.isEmphasized ? .semibold : .regular)
+        titleLabel.font = TopicListTypography.font(
+            for: .title,
+            weight: item.isEmphasized ? .semibold : .regular
         )
-        subtitleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: subPoint, weight: .regular)
-        )
-        timeLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(ofSize: 12, weight: .regular)
-        )
+        subtitleLabel.font = TopicListTypography.font(for: .subtitle, weight: .regular)
+        timeLabel.font = TopicListTypography.font(for: .meta, weight: .regular)
         replyLabel.font = timeLabel.font
+
+        titleLabel.adjustsFontForContentSizeCategory = true
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+        timeLabel.adjustsFontForContentSizeCategory = true
+        replyLabel.adjustsFontForContentSizeCategory = true
 
         titleLabel.textColor = item.isEmphasized ? .label : .secondaryLabel
         emojiBaseURL = item.baseURL

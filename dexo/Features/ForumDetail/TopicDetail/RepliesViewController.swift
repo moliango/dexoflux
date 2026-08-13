@@ -1,5 +1,4 @@
 import CookedHTML
-import SafariServices
 import UIKit
 
 final class RepliesViewController: UIViewController {
@@ -476,12 +475,12 @@ extension RepliesViewController: PostCellDelegate {
     }
 
     private func presentSafari(_ url: URL) {
-        guard AppSettings.shared.openExternalLinksInAppBrowser else {
-            UIApplication.shared.open(url)
-            return
-        }
-        let safari = SFSafariViewController(url: url)
-        present(safari, animated: true)
+        DexoSafariPresenter.present(
+            url: url,
+            from: self,
+            api: api,
+            username: AuthManager.shared.username(for: api.baseURL)
+        )
     }
 
     private func showPostActionError(_ error: Error) {

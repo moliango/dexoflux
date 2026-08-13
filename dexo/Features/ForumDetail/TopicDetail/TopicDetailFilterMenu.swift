@@ -17,31 +17,40 @@ enum TopicDetailFilterMenu {
 
         let topLevel = UIAction(
             title: String(localized: "topic.filter_top_level", defaultValue: "只看顶层"),
-            image: UIImage(systemName: "arrow.up.to.line"),
+            image: UIImage(systemName: "arrow.triangle.branch"),
             state: viewModel.isFilteringTopLevel ? .on : .off
         ) { _ in
             viewModel.setFilteringTopLevel(!viewModel.isFilteringTopLevel)
             onChanged()
         }
 
+        // FluxDo: nested sits below a divider, separate from flat filters.
         let nested = UIAction(
             title: String(localized: "topic.filter_nested", defaultValue: "树形视图"),
-            image: UIImage(systemName: "list.bullet.indent"),
+            image: UIImage(systemName: "bubble.left.and.bubble.right"),
             state: viewModel.isNestedViewEnabled ? .on : .off
         ) { _ in
-            viewModel.setNestedViewEnabled(!viewModel.isNestedViewEnabled)
+            let enabled = !viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            viewModel.setNestedViewEnabled(enabled)
             onChanged()
         }
 
-        var children: [UIMenuElement] = [author, topLevel, nested]
+        var children: [UIMenuElement] = [
+            author,
+            topLevel,
+            UIMenu(options: .displayInline, children: [nested]),
+        ]
 
-        if viewModel.isFilteringByOP || viewModel.isFilteringTopLevel {
+        // FluxDo: cancel appears whenever any filter (including nested) is active.
+        if viewModel.hasActiveTopicFilter {
             children.append(UIMenu(options: .displayInline, children: [
                 UIAction(
                     title: String(localized: "topic.filter_clear", defaultValue: "取消筛选"),
                     image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
                     attributes: .destructive
                 ) { _ in
+                    AppSettings.shared.nestedReplyViewEnabled = false
                     viewModel.clearTopicFilters()
                     onChanged()
                 }
@@ -58,8 +67,8 @@ enum TopicDetailFilterMenu {
         viewModel: TopicDetailViewModel,
         onChanged: @escaping () -> Void
     ) -> UIBarButtonItem {
-        // Fill icon for content filters; tree mode is visible via menu checkmark only.
-        let active = viewModel.isFilteringByOP || viewModel.isFilteringTopLevel
+        // FluxDo: filled/primary when any filter including nested is on.
+        let active = viewModel.hasActiveTopicFilter
         let imageName = active
             ? "line.3.horizontal.decrease.circle.fill"
             : "line.3.horizontal.decrease.circle"

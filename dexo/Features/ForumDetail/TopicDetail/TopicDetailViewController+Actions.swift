@@ -1,5 +1,4 @@
 import UIKit
-import SafariServices
 
 extension TopicDetailViewController {
     // MARK: - Auth / error helpers (used by Coordinator + cells)
@@ -228,7 +227,13 @@ extension TopicDetailViewController {
             viewModel.setFilteringTopLevel(!viewModel.isFilteringTopLevel)
             configureTopicActions()
         case .filterNested:
-            viewModel.setNestedViewEnabled(!viewModel.isNestedViewEnabled)
+            let enabled = !viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            viewModel.setNestedViewEnabled(enabled)
+            configureTopicActions()
+        case .filterClear:
+            AppSettings.shared.nestedReplyViewEnabled = false
+            viewModel.clearTopicFilters()
             configureTopicActions()
         case .notification(let level):
             Task { @MainActor in
@@ -379,14 +384,17 @@ extension TopicDetailViewController {
         }
         add(String(localized: "topic.filter_nested", defaultValue: "树形视图"), on: viewModel.isNestedViewEnabled) { [weak self] in
             guard let self else { return }
-            self.viewModel.setNestedViewEnabled(!self.viewModel.isNestedViewEnabled)
+            let enabled = !self.viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            self.viewModel.setNestedViewEnabled(enabled)
             self.configureTopicActions()
         }
-        if viewModel.isFilteringByOP || viewModel.isFilteringTopLevel {
+        if viewModel.hasActiveTopicFilter {
             sheet.addAction(UIAlertAction(
                 title: String(localized: "topic.filter_clear", defaultValue: "取消筛选"),
                 style: .destructive
             ) { [weak self] _ in
+                AppSettings.shared.nestedReplyViewEnabled = false
                 self?.viewModel.clearTopicFilters()
                 self?.configureTopicActions()
             })

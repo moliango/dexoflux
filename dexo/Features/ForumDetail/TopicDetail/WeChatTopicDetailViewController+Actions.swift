@@ -1,4 +1,3 @@
-import SafariServices
 import UIKit
 
 extension WeChatTopicDetailViewController {
@@ -113,7 +112,13 @@ extension WeChatTopicDetailViewController {
             viewModel.setFilteringTopLevel(!viewModel.isFilteringTopLevel)
             configureTopicActions()
         case .filterNested:
-            viewModel.setNestedViewEnabled(!viewModel.isNestedViewEnabled)
+            let enabled = !viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            viewModel.setNestedViewEnabled(enabled)
+            configureTopicActions()
+        case .filterClear:
+            AppSettings.shared.nestedReplyViewEnabled = false
+            viewModel.clearTopicFilters()
             configureTopicActions()
         case .notification(let level):
             setNotificationLevel(level)
@@ -276,15 +281,18 @@ extension WeChatTopicDetailViewController {
         }
         add(String(localized: "topic.filter_nested", defaultValue: "树形视图"), on: viewModel.isNestedViewEnabled) { [weak self] in
             guard let self else { return }
-            self.viewModel.setNestedViewEnabled(!self.viewModel.isNestedViewEnabled)
+            let enabled = !self.viewModel.isNestedViewEnabled
+            AppSettings.shared.nestedReplyViewEnabled = enabled
+            self.viewModel.setNestedViewEnabled(enabled)
             self.applySnapshot()
             self.configureTopicActions()
         }
-        if viewModel.isFilteringByOP || viewModel.isFilteringTopLevel {
+        if viewModel.hasActiveTopicFilter {
             sheet.addAction(UIAlertAction(
                 title: String(localized: "topic.filter_clear", defaultValue: "取消筛选"),
                 style: .destructive
             ) { [weak self] _ in
+                AppSettings.shared.nestedReplyViewEnabled = false
                 self?.viewModel.clearTopicFilters()
                 self?.applySnapshot()
                 self?.configureTopicActions()
@@ -495,7 +503,7 @@ extension WeChatTopicDetailViewController {
         let createdAtText: String? = post.createdAt.isEmpty ? nil : TopicCell.formatDate(post.createdAt)
         let avatarURL = AvatarImageLoader.url(from: post.avatarTemplate, baseURL: baseURL, size: 120)
         let hostName = URL(string: baseURL)?.host?.lowercased() ?? ""
-        let brandName = hostName.contains("linux.do") ? "LINUX DO" : "DexoFlux"
+        let brandName = hostName.contains("linux.do") ? "LINUX DO" : "Doer"
         let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let shareURL = "\(trimmedBase)/t/\(topicId)/\(post.postNumber)"
         let cookedTrimmed = post.cooked.trimmingCharacters(in: .whitespacesAndNewlines)

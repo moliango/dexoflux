@@ -32,6 +32,7 @@ final class TopicMoreMenuViewController: UIViewController {
         case filterOP
         case filterTopLevel
         case filterNested
+        case filterClear
         case notification(DiscourseTopicDetail.NotificationLevel)
         case export(TopicExportFormat, TopicExportRange)
     }
@@ -52,6 +53,34 @@ final class TopicMoreMenuViewController: UIViewController {
         case export
     }
 
+    private var themeStyle: AppSettings.ThemeStyle { AppSettings.shared.themeStyle }
+    private var accent: UIColor { themeStyle.accentColor }
+    private var menuSurface: UIColor { themeStyle.topicCardBackgroundColor }
+    private var menuCanvas: UIColor {
+        UIColor { trait in
+            let style = AppSettings.shared.themeStyle
+            let card = style.topicCardBackgroundColor.resolvedColor(with: trait)
+            let accent = style.accentColor.resolvedColor(with: trait)
+            let wash = trait.userInterfaceStyle == .dark ? 0.10 : 0.06
+            return TopicMoreMenuViewController.blend(card, onto: accent, alpha: wash)
+        }
+    }
+
+    fileprivate static func blend(_ base: UIColor, onto tint: UIColor, alpha: CGFloat) -> UIColor {
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        var tr: CGFloat = 0, tg: CGFloat = 0, tb: CGFloat = 0, ta: CGFloat = 0
+        guard base.getRed(&br, green: &bg, blue: &bb, alpha: &ba),
+              tint.getRed(&tr, green: &tg, blue: &tb, alpha: &ta)
+        else { return base }
+        let a = min(max(alpha, 0), 1)
+        return UIColor(
+            red: br * (1 - a) + tr * a,
+            green: bg * (1 - a) + tg * a,
+            blue: bb * (1 - a) + tb * a,
+            alpha: 1
+        )
+    }
+
     init(model: Model) {
         self.model = model
         super.init(nibName: nil, bundle: nil)
@@ -66,11 +95,7 @@ final class TopicMoreMenuViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(white: 0.14, alpha: 1)
-                : UIColor.systemBackground
-        }
+        view.backgroundColor = menuCanvas
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.alwaysBounceVertical = false
@@ -212,9 +237,15 @@ final class TopicMoreMenuViewController: UIViewController {
     private func makeQuickActionsRow() -> UIView {
         let card = UIView()
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = UIColor.tertiarySystemFill.withAlphaComponent(0.55)
-        card.layer.cornerRadius = 14
+        card.backgroundColor = menuSurface
+        card.layer.cornerRadius = themeStyle.chromeCornerRadius + 2
         card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1
+        card.layer.borderColor = accent.withAlphaComponent(0.14).cgColor
+        card.layer.shadowColor = accent.cgColor
+        card.layer.shadowOpacity = 0.08
+        card.layer.shadowRadius = 10
+        card.layer.shadowOffset = CGSize(width: 0, height: 4)
 
         let row = UIStackView()
         row.axis = .horizontal
@@ -223,7 +254,7 @@ final class TopicMoreMenuViewController: UIViewController {
         row.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(row)
 
-        let accent = AppSettings.shared.themeStyle.accentColor
+        let accent = self.accent
         let subscribed: Bool = {
             guard let level = model.notificationLevel else { return false }
             return level == .watching || level == .tracking
@@ -280,7 +311,6 @@ final class TopicMoreMenuViewController: UIViewController {
             card.heightAnchor.constraint(equalToConstant: 56),
         ])
 
-        // Inline expansion panels for quick-action driven sections sit below the card.
         let wrap = UIStackView()
         wrap.axis = .vertical
         wrap.spacing = 6
@@ -309,11 +339,13 @@ final class TopicMoreMenuViewController: UIViewController {
         button.layer.cornerRadius = 16
         button.layer.cornerCurve = .continuous
         button.backgroundColor = active
-            ? accent.withAlphaComponent(0.16)
-            : UIColor.secondarySystemGroupedBackground
+            ? accent.withAlphaComponent(0.20)
+            : accent.withAlphaComponent(0.08)
+        button.layer.borderWidth = active ? 1 : 0
+        button.layer.borderColor = accent.withAlphaComponent(0.28).cgColor
         let config = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         button.setImage(UIImage(systemName: symbol, withConfiguration: config), for: .normal)
-        button.tintColor = active ? accent : .label
+        button.tintColor = active ? accent : accent.withAlphaComponent(0.85)
         button.addAction(UIAction { _ in handler() }, for: .touchUpInside)
         NSLayoutConstraint.activate([
             button.widthAnchor.constraint(equalToConstant: 36),
@@ -332,7 +364,8 @@ final class TopicMoreMenuViewController: UIViewController {
             self?.emit(action)
         }, for: .touchUpInside)
 
-        let iconWell = makeIconWell(symbol: symbol, tint: destructive ? .systemRed : .label)
+        let tint = destructive ? UIColor.systemRed : accent
+        let iconWell = makeIconWell(symbol: symbol, tint: tint)
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = title
@@ -350,8 +383,9 @@ final class TopicMoreMenuViewController: UIViewController {
             label.centerYAnchor.constraint(equalTo: button.centerYAnchor),
             label.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -6),
         ])
+        let highlight = accent.withAlphaComponent(0.10)
         button.configurationUpdateHandler = { btn in
-            btn.backgroundColor = btn.isHighlighted ? UIColor.tertiarySystemFill : .clear
+            btn.backgroundColor = btn.isHighlighted ? highlight : .clear
             btn.layer.cornerRadius = 12
             btn.layer.cornerCurve = .continuous
         }
@@ -371,8 +405,7 @@ final class TopicMoreMenuViewController: UIViewController {
             self?.toggleExpand(section)
         }, for: .touchUpInside)
 
-        let accent = AppSettings.shared.themeStyle.accentColor
-        let iconWell = makeIconWell(symbol: symbol, tint: isActive ? accent : .label)
+        let iconWell = makeIconWell(symbol: symbol, tint: isActive ? accent : accent.withAlphaComponent(0.85))
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = title
@@ -381,7 +414,7 @@ final class TopicMoreMenuViewController: UIViewController {
 
         let chevron = UIImageView(image: UIImage(systemName: expandedSection == section ? "chevron.up" : "chevron.down"))
         chevron.translatesAutoresizingMaskIntoConstraints = false
-        chevron.tintColor = .tertiaryLabel
+        chevron.tintColor = accent.withAlphaComponent(0.55)
         chevron.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         chevron.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -398,8 +431,9 @@ final class TopicMoreMenuViewController: UIViewController {
             chevron.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -6),
             chevron.centerYAnchor.constraint(equalTo: button.centerYAnchor),
         ])
+        let highlight = accent.withAlphaComponent(0.10)
         button.configurationUpdateHandler = { btn in
-            btn.backgroundColor = btn.isHighlighted ? UIColor.tertiarySystemFill : .clear
+            btn.backgroundColor = btn.isHighlighted ? highlight : .clear
             btn.layer.cornerRadius = 12
             btn.layer.cornerCurve = .continuous
         }
@@ -409,7 +443,7 @@ final class TopicMoreMenuViewController: UIViewController {
     private func makeIconWell(symbol: String, tint: UIColor) -> UIView {
         let well = UIView()
         well.translatesAutoresizingMaskIntoConstraints = false
-        well.backgroundColor = UIColor.tertiarySystemFill.withAlphaComponent(0.7)
+        well.backgroundColor = tint.withAlphaComponent(0.14)
         well.layer.cornerRadius = 8
         well.layer.cornerCurve = .continuous
 
@@ -437,7 +471,7 @@ final class TopicMoreMenuViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = title.uppercased()
         label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = .tertiaryLabel
+        label.textColor = accent.withAlphaComponent(0.72)
         wrap.addSubview(label)
         NSLayoutConstraint.activate([
             wrap.heightAnchor.constraint(equalToConstant: 28),
@@ -456,13 +490,13 @@ final class TopicMoreMenuViewController: UIViewController {
         row.distribution = .fillEqually
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        let accent = AppSettings.shared.themeStyle.accentColor
+        let accent = self.accent
         for (title, active, handler) in items {
             var config = UIButton.Configuration.filled()
             config.title = title
             config.cornerStyle = .capsule
-            config.baseForegroundColor = active ? .white : .label
-            config.baseBackgroundColor = active ? accent : UIColor.tertiarySystemFill
+            config.baseForegroundColor = active ? .white : accent
+            config.baseBackgroundColor = active ? accent : accent.withAlphaComponent(0.12)
             config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)
             config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
                 var out = incoming
@@ -527,7 +561,7 @@ final class TopicMoreMenuViewController: UIViewController {
     }
 
     private func makeFilterPanel() -> UIView {
-        makeChipRow(items: [
+        var items: [(String, Bool, () -> Void)] = [
             (
                 String(localized: "topic.filter_op", defaultValue: "只看题主"),
                 model.isFilteringByOP,
@@ -543,7 +577,16 @@ final class TopicMoreMenuViewController: UIViewController {
                 model.isNestedViewEnabled,
                 { [weak self] in self?.emit(.filterNested) }
             ),
-        ])
+        ]
+        // FluxDo: cancel when any filter (including nested) is active.
+        if model.hasActiveFilter {
+            items.append((
+                String(localized: "topic.filter_clear", defaultValue: "取消筛选"),
+                false,
+                { [weak self] in self?.emit(.filterClear) }
+            ))
+        }
+        return makeChipRow(items: items)
     }
 
     private func makeNotificationPanel() -> UIView {
@@ -626,9 +669,11 @@ enum TopicMoreMenuPresenter {
             pop.permittedArrowDirections = [.up]
             pop.delegate = PassthroughPopoverDelegate.shared
             pop.backgroundColor = UIColor { trait in
-                trait.userInterfaceStyle == .dark
-                    ? UIColor(white: 0.14, alpha: 1)
-                    : UIColor.systemBackground
+                let style = AppSettings.shared.themeStyle
+                let card = style.topicCardBackgroundColor.resolvedColor(with: trait)
+                let accent = style.accentColor.resolvedColor(with: trait)
+                let wash = trait.userInterfaceStyle == .dark ? 0.10 : 0.06
+                return TopicMoreMenuViewController.blend(card, onto: accent, alpha: wash)
             }
         }
         host.present(menu, animated: true)

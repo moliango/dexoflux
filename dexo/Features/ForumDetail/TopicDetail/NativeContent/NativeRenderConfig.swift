@@ -67,21 +67,11 @@ struct NativeRenderConfig {
         let settings = AppSettings.shared
         let comfortMode = settings.readingComfortMode
         let themeStyle = settings.themeStyle
-        let comfortFontDelta: CGFloat = comfortMode ? 1 : 0
-        let basePointSize = settings.effectiveContentPointSize(
-            for: settings.contentFontSize.basePointSize + comfortFontDelta
-        )
-        let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentFont(ofSize: basePointSize)
-        )
-        let codeFont = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: settings.contentMonospacedFont(ofSize: max(basePointSize - 1, 1))
-        )
         return NativeRenderConfig(
-            baseFont: bodyFont,
+            baseFont: TopicDetailTypography.bodyContentFont(),
             baseColor: .label,
             linkColor: themeStyle.accentColor,
-            codeFont: codeFont,
+            codeFont: TopicDetailTypography.bodyCodeFont(),
             codeBackgroundColor: themeStyle.mutedContentBackgroundColor,
             contentWidth: contentWidth,
             baseURL: baseURL,

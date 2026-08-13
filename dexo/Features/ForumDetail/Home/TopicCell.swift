@@ -23,35 +23,6 @@ enum TopicTagVisualStyle {
     }
 }
 
-private enum TopicListTypography {
-    static func scaledFont(
-        ofSize pointSize: CGFloat,
-        weight: UIFont.Weight,
-        relativeTo textStyle: UIFont.TextStyle
-    ) -> UIFont {
-        let settings = AppSettings.shared
-        let adjustedPointSize = settings.effectiveInterfacePointSize(for: pointSize)
-        let baseFont = UIFont.systemFont(ofSize: adjustedPointSize, weight: weight)
-        let interfaceFont = settings.appInterfaceFont(matching: baseFont)
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: interfaceFont)
-    }
-
-    static func fixedFont(ofSize pointSize: CGFloat, weight: UIFont.Weight) -> UIFont {
-        let settings = AppSettings.shared
-        let adjustedPointSize = settings.effectiveInterfacePointSize(for: pointSize)
-        let baseFont = UIFont.systemFont(ofSize: adjustedPointSize, weight: weight)
-        return settings.appInterfaceFont(matching: baseFont)
-    }
-
-    static func topicTitleFont(relativeTo textStyle: UIFont.TextStyle) -> UIFont {
-        let settings = AppSettings.shared
-        let pointSize = settings.sourceInterfacePointSize(
-            matchingEffectivePointSize: AppSettings.topicTitleReferencePointSize
-        )
-        return scaledFont(ofSize: pointSize, weight: .semibold, relativeTo: textStyle)
-    }
-}
-
 struct XiaohongshuTopicCardModel {
     let id: Int
     let title: String
@@ -233,11 +204,9 @@ final class TopicCell: UITableViewCell {
         applyTypography()
         let unread = topic.isUnreadForDisplay
         titleLabel.textColor = unread ? .label : .secondaryLabel
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            matching: .systemFont(
-                ofSize: AppSettings.shared.effectiveInterfacePointSize(for: 16),
-                weight: unread ? .semibold : .regular
-            )
+        titleLabel.font = TopicListTypography.font(
+            for: .title,
+            weight: unread ? .semibold : .regular
         )
         emojiBaseURL = categoryBaseURL
         configureTitleWithEmoji(TitleEmojiRenderer.plainTitle(fancyTitle: topic.fancyTitle, title: topic.title))
@@ -269,8 +238,8 @@ final class TopicCell: UITableViewCell {
     }
 
     private func applyTypography() {
-        titleLabel.font = TopicListTypography.topicTitleFont(relativeTo: .headline)
-        timeLabel.font = TopicListTypography.fixedFont(ofSize: 12, weight: .regular)
+        titleLabel.font = TopicListTypography.font(for: .title, weight: .semibold)
+        timeLabel.font = TopicListTypography.font(for: .meta, weight: .regular)
     }
 
     override func prepareForReuse() {

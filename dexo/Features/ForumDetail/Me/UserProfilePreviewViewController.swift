@@ -287,9 +287,9 @@ final class UserProfilePreviewViewController: ObservableViewController {
 
     private func setupBody() {
         bioLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 14.67,
+            ofSize: AppSettings.interfaceFontReferencePointSize,
             weight: .regular,
-            fallback: .systemFont(ofSize: 14.67, weight: .regular)
+            fallback: .systemFont(ofSize: AppSettings.interfaceFontReferencePointSize, weight: .regular)
         )
         bioLabel.textColor = .label
         bioLabel.numberOfLines = 3
