@@ -58,9 +58,9 @@ extension HomeViewController {
     func topicSnapshotItemIdentifiers() -> [Int] {
         if usesXiaohongshuCardLayout {
             var seen = Set<Int>()
-            let pinnedIds = viewModel.topics.compactMap { topic -> Int? in
-                guard topic.pinned == true, seen.insert(topic.id).inserted else { return nil }
-                return topic.id
+            let pinnedIds = viewModel.pinnedTopicIds.compactMap { id -> Int? in
+                guard let topic = viewModel.topics.first(where: { $0.id == id }) else { return nil }
+                return id
             }
             let unpinnedCount = viewModel.topics.filter { $0.pinned != true }.count
             let rowCount = Int(ceil(Double(unpinnedCount) / 2.0))

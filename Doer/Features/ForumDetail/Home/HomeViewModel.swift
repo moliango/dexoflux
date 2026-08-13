@@ -50,6 +50,18 @@ private enum TopicAccessState {
 
 @MainActor
 final class HomeViewModel: DoerObservableObject {
+    var pinnedTopicIds: Set<Int> = []
+
+    var pinnedTopicIds: Set<Int> = []
+
+    var pinnedTopicIds: Set<Int> = []
+
+    var pinnedTopicIds: Set<Int> = []
+
+    var pinnedTopicIds: Set<Int> = []
+
+    var pinnedTopicIds: Set<Int> = []
+
     var listMode: HomeListMode = .latest
     var topics: [DiscourseTopicList.Topic] = []
     var incomingTopicIds: [Int] = []
@@ -250,6 +262,10 @@ final class HomeViewModel: DoerObservableObject {
             let result = try await fetchTopics(page: 0)
             try Task.checkCancellation()
             topics = applyLocalReadProgress(to: result.topicList.topics)
+
+            // Update global pinned state from the new page.
+            let newPinned = Set(result.topicList.topics.filter { $0.pinned == true }.map { $0.id })
+            pinnedTopicIds.formUnion(newPinned)
             if isGlobalLatestList {
                 // Full page-0 refresh is the source of truth — clear leftover
                 // background pending so cold start / foreground reload don't
@@ -323,6 +339,10 @@ final class HomeViewModel: DoerObservableObject {
             let existingIds = Set(topics.map(\.id))
             let newTopics = result.topicList.topics.filter { !existingIds.contains($0.id) }
             topics.append(contentsOf: applyLocalReadProgress(to: newTopics))
+
+            // Update global pinned state from the new page.
+            let newPinned = Set(newTopics.filter { $0.pinned == true }.map { $0.id })
+            pinnedTopicIds.formUnion(newPinned)
             canLoadMore = result.topicList.moreTopicsUrl != nil
             loadMoreErrorMessage = nil
             shouldRetryLoadMoreAfterCloudflare = false
