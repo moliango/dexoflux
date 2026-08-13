@@ -56,19 +56,24 @@ extension HomeViewController {
     }
 
     func topicSnapshotItemIdentifiers() -> [Int] {
+        let orderedTopics = HomeTopicListOrdering.withPinnedFirst(
+            viewModel.topics,
+            pinnedIds: viewModel.pinnedTopicIds
+        )
+
         if usesXiaohongshuCardLayout {
-            var seen = Set<Int>()
-            let pinnedIds = viewModel.pinnedTopicIds.compactMap { id -> Int? in
-                guard let topic = viewModel.topics.first(where: { $0.id == id }) else { return nil }
-                return id
+            let pinnedIds = orderedTopics.compactMap { topic -> Int? in
+                HomeTopicListOrdering.isPinned(topic, pinnedIds: viewModel.pinnedTopicIds) ? topic.id : nil
             }
-            let unpinnedCount = viewModel.topics.filter { $0.pinned != true }.count
+            let unpinnedCount = orderedTopics.filter {
+                !HomeTopicListOrdering.isPinned($0, pinnedIds: viewModel.pinnedTopicIds)
+            }.count
             let rowCount = Int(ceil(Double(unpinnedCount) / 2.0))
             return pinnedIds + (0..<rowCount).map(Self.xiaohongshuRowIdentifier(for:))
         }
 
         var seen = Set<Int>()
-        return viewModel.topics.compactMap { topic -> Int? in
+        return orderedTopics.compactMap { topic -> Int? in
             guard seen.insert(topic.id).inserted else { return nil }
             return topic.id
         }

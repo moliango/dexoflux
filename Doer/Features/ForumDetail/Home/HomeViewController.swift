@@ -355,7 +355,8 @@ final class HomeViewController: ObservableViewController {
             return cell
         }
 
-        if let topic = self.viewModel.topics.first(where: { $0.id == topicId }), topic.pinned == true {
+        if let topic = self.viewModel.topics.first(where: { $0.id == topicId }),
+           HomeTopicListOrdering.isPinned(topic, pinnedIds: self.viewModel.pinnedTopicIds) {
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: CompactPinnedTopicCell.reuseIdentifier,
                 for: indexPath
@@ -489,7 +490,9 @@ final class HomeViewController: ObservableViewController {
     }
 
     func xiaohongshuTopicPair(at rowIndex: Int) -> (left: DiscourseTopicList.Topic?, right: DiscourseTopicList.Topic?) {
-        let topics = viewModel.topics.filter { $0.pinned != true }
+        let topics = viewModel.topics.filter {
+            !HomeTopicListOrdering.isPinned($0, pinnedIds: viewModel.pinnedTopicIds)
+        }
         let leftIndex = rowIndex * 2
         guard topics.indices.contains(leftIndex) else {
             return (nil, nil)
