@@ -41,7 +41,9 @@ extension HomeViewController {
         if !needsInitialSnapshot, currentIds == itemIdentifiers, !layoutChanged {
             if !idsNeedingReconfigure.isEmpty {
                 var updatedSnapshot = currentSnapshot
-                updatedSnapshot.reconfigureItems(idsNeedingReconfigure)
+                // A topic can switch between pinned and regular cells without changing its id.
+                // Reload allows the data source to dequeue the new reuse identifier.
+                updatedSnapshot.reloadItems(idsNeedingReconfigure)
                 dataSource.apply(updatedSnapshot, animatingDifferences: false)
             }
         } else {
@@ -49,7 +51,7 @@ extension HomeViewController {
                 // Same topic ids but different cell class (TopicCell ↔ chat session list).
                 snapshot.reloadItems(itemIdentifiers)
             } else if !idsNeedingReconfigure.isEmpty {
-                snapshot.reconfigureItems(idsNeedingReconfigure)
+                snapshot.reloadItems(idsNeedingReconfigure)
             }
             dataSource.apply(snapshot, animatingDifferences: layoutChanged ? false : shouldAnimateSnapshot)
         }

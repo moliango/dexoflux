@@ -640,7 +640,6 @@ private extension ForumTabBarController {
 
     func rebuildTabs(preservingIdentifier preferredIdentifier: String?) {
         let specs = buildTabSpecs()
-        let previousIdentifiers = tabIdentifiers
         let existingControllers = Dictionary(uniqueKeysWithValues: zip(tabIdentifiers, navigationControllers))
         var controllers: [UINavigationController] = []
         var identifiers: [String] = []
@@ -683,41 +682,9 @@ private extension ForumTabBarController {
         tabIdentifiers = identifiers
         visibleTabItemIDs = AppSettings.shared.forumVisibleConfiguredTabItemIDs
 
-        // Always install classic viewControllers first. On some real devices, setting only
-        // `tabs` (iOS 18 UITab API) never materializes the selected content VC — Home never
-        // reaches viewDidLoad, launch overlay never gets initialContentReady, and the user
-        // is left on the cream LaunchBackground ("stuck on splash").
+        // Use the classic API on every supported OS. A controller returned by a custom
+        // `UITab` cannot also be owned by the tabs synthesized from `viewControllers`.
         viewControllers = controllers
-
-        if #available(iOS 18.0, *) {
-            let existingTabs = Dictionary(uniqueKeysWithValues: zip(previousIdentifiers, tabs))
-            self.tabs = zip(specs, controllers).map { spec, navigationController in
-                let tabImage: UIImage? = {
-                    if spec.identifier == "me", renderedMeAvatarKey != nil {
-                        return navigationController.tabBarItem.image
-                    }
-                    return DoerTabBarIconStyle.image(
-                        identifier: spec.identifier,
-                        fallbackSymbolName: spec.symbolName,
-                        selected: false
-                    )
-                }()
-
-                if let existingTab = existingTabs[spec.identifier] {
-                    existingTab.title = spec.title
-                    existingTab.image = tabImage
-                    return existingTab
-                }
-
-                return UITab(
-                    title: spec.title,
-                    image: tabImage,
-                    identifier: spec.identifier
-                ) { _ in
-                    navigationController
-                }
-            }
-        }
 
         let selectedIdentifier = preferredIdentifier ?? "home"
         if let selectedIndex = identifiers.firstIndex(of: selectedIdentifier) {
@@ -846,9 +813,6 @@ private extension ForumTabBarController {
         tabBarItem.image = normalImage
         tabBarItem.selectedImage = selectedImage
         tabBarItem.imageInsets = UIEdgeInsets(top: -1, left: 0, bottom: 1, right: 0)
-        if #available(iOS 18.0, *), index < tabs.count {
-            tabs[index].image = normalImage
-        }
         tabBar.setNeedsLayout()
     }
 
@@ -868,11 +832,6 @@ private extension ForumTabBarController {
             navigationController.viewControllers.first?.title = spec.title
         }
         refreshMeTabAvatarIcon()
-        if #available(iOS 18.0, *) {
-            for (index, tab) in tabs.enumerated() where index < specs.count {
-                tab.title = specs[index].title
-            }
-        }
         onNavigationControllersChanged?()
     }
 
@@ -985,9 +944,6 @@ private extension ForumTabBarController {
                   index < navigationControllers.count
             else { continue }
             navigationControllers[index].tabBarItem.badgeValue = nil
-            if #available(iOS 18.0, *), index < tabs.count {
-                tabs[index].badgeValue = nil
-            }
         }
 
         let targetIdentifier = tabIdentifiers.contains("notifications") ? "notifications" : "home"
@@ -998,9 +954,6 @@ private extension ForumTabBarController {
         let badgeValue = unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil
         navigationControllers[index].tabBarItem.badgeValue = badgeValue
         navigationControllers[index].tabBarItem.badgeColor = .systemRed
-        if #available(iOS 18.0, *), index < tabs.count {
-            tabs[index].badgeValue = badgeValue
-        }
     }
 }
 
