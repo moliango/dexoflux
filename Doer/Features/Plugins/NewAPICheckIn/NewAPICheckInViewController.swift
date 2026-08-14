@@ -11,16 +11,14 @@ final class NewAPICheckInViewController: UITableViewController {
     private let service: NewAPICheckInService
     private var platforms: [NewAPICheckInPlatform] = []
     private var runningPlatformIDs = Set<UUID>()
+    private var authenticatingPlatformIDs = Set<UUID>()
     private var isRunningBatch = false
     /// Fresh `/api/user/self` aggregates from pull-to-refresh (总消耗 / 总请求).
     private var dashboardUsedQuota: Int64?
     private var dashboardRequestCount: Int?
 
-    // Auto-relogin queue: platforms whose sign-in came back authenticationExpired.
-    private var reloginQueue: [UUID] = []
-    private var pendingResignPlatformID: UUID?
-    private var isAutoReloginActive = false
-    private var lastLoginSaved = false
+    private var pendingLoginContinuation: CheckedContinuation<Bool, Never>?
+    private var didSavePendingLogin = false
 
     init(store: NewAPICheckInStore, service: NewAPICheckInService) {
         self.store = store
@@ -78,23 +76,11 @@ final class NewAPICheckInViewController: UITableViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard isAutoReloginActive else { return }
-        isAutoReloginActive = false
-        if lastLoginSaved {
-            let platformID = pendingResignPlatformID
-            pendingResignPlatformID = nil
-            Task {
-                if let platformID,
-                   let platform = await store.platforms().first(where: { $0.id == platformID }) {
-                    // Fresh cookie just saved — retry once, but never loop back into relogin.
-                    await signIn(platform, allowAutoRelogin: false)
-                }
-                processReloginQueueIfIdle()
-            }
-        } else {
-            // User backed out of the login page — stop bothering them.
-            reloginQueue.removeAll()
-        }
+        guard let continuation = pendingLoginContinuation else { return }
+        pendingLoginContinuation = nil
+        let didSave = didSavePendingLogin
+        didSavePendingLogin = false
+        continuation.resume(returning: didSave)
     }
 
     // MARK: - Static cells
@@ -174,6 +160,7 @@ final class NewAPICheckInViewController: UITableViewController {
                 balance: balanceText(for: platform),
                 statusColor: tintColor(for: platform.lastStatus),
                 isRunning: runningPlatformIDs.contains(platform.id)
+                    || authenticatingPlatformIDs.contains(platform.id)
             )
             return cell
         }
@@ -421,30 +408,38 @@ final class NewAPICheckInViewController: UITableViewController {
         guard !isRunningBatch, !platforms.isEmpty else { return }
         isRunningBatch = true
         refreshSummary()
+        let batchPlatforms = platforms
         Task {
-            let summary = await service.signInAll()
+            var summary = NewAPICheckInBatchSummary(total: batchPlatforms.count)
+            for platform in batchPlatforms {
+                authenticatingPlatformIDs.insert(platform.id)
+                tableView.reloadData()
+                let result = await executeSignInFlow(platform)
+                authenticatingPlatformIDs.remove(platform.id)
+                tableView.reloadData()
+                if let result {
+                    summary.record(result.status)
+                } else {
+                    summary.record(.authenticationExpired)
+                }
+            }
             isRunningBatch = false
             await reload()
-            let expired = platforms.filter { $0.lastStatus == .authenticationExpired }
-            let autoRelogin = NewAPICheckInRuntime.autoReloginEnabled && !expired.isEmpty
-            var message = summary.localizedSummary
-            if autoRelogin {
-                message += "\n" + String(
-                    localized: "plugins.newapi.auto_relogin.starting",
-                    defaultValue: "即将自动打开登录页刷新失效的平台。"
-                )
-            }
-            let alert = UIAlertController(
-                title: String(localized: "plugins.newapi.batch_result", defaultValue: "签到结果"),
-                message: message,
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "确定"), style: .default) { [weak self] _ in
-                guard let self, autoRelogin else { return }
-                enqueueRelogin(expired.map(\.id))
-            })
-            present(alert, animated: true)
+            presentBatchSummary(summary)
         }
+    }
+
+    private func presentBatchSummary(_ summary: NewAPICheckInBatchSummary) {
+        let alert = UIAlertController(
+            title: String(localized: "plugins.newapi.batch_result", defaultValue: "签到结果"),
+            message: summary.localizedSummary,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(
+            title: String(localized: "common.ok", defaultValue: "确定"),
+            style: .default
+        ))
+        present(alert, animated: true)
     }
 
     private func savePlatform(fields: [UITextField]) async {
@@ -475,56 +470,91 @@ final class NewAPICheckInViewController: UITableViewController {
         }
     }
 
-    private func signIn(_ platform: NewAPICheckInPlatform, allowAutoRelogin: Bool = true) async {
-        guard !runningPlatformIDs.contains(platform.id) else { return }
+    private func signIn(_ platform: NewAPICheckInPlatform) async {
+        guard !isRunningBatch,
+              !runningPlatformIDs.contains(platform.id),
+              !authenticatingPlatformIDs.contains(platform.id)
+        else { return }
+        authenticatingPlatformIDs.insert(platform.id)
+        tableView.reloadData()
+        _ = await executeSignInFlow(platform)
+        authenticatingPlatformIDs.remove(platform.id)
+        tableView.reloadData()
+    }
+
+    // MARK: - Sign-in flow
+
+    private func executeSignInFlow(
+        _ platform: NewAPICheckInPlatform
+    ) async -> NewAPICheckInResult? {
+        var currentPlatform = platform
+        var didInteractiveLogin = false
+
+        if currentPlatform.requiresReloginBeforeSignIn,
+           !(await service.refreshAuthentication(currentPlatform)).isRefreshed {
+            guard await requestRelogin(for: currentPlatform) else { return nil }
+            didInteractiveLogin = true
+            currentPlatform = await freshPlatform(id: currentPlatform.id) ?? currentPlatform
+            _ = await service.refreshAuthentication(currentPlatform)
+        }
+
+        var result = await performSignIn(currentPlatform)
+        if result.status == .authenticationExpired,
+           NewAPICheckInRuntime.autoReloginEnabled,
+           !didInteractiveLogin {
+            if (await service.refreshAuthentication(currentPlatform)).isRefreshed {
+                result = await performSignIn(currentPlatform)
+            } else if await requestRelogin(for: currentPlatform) {
+                currentPlatform = await freshPlatform(id: currentPlatform.id) ?? currentPlatform
+                _ = await service.refreshAuthentication(currentPlatform)
+                result = await performSignIn(currentPlatform)
+            }
+        }
+        return result
+    }
+
+    private func performSignIn(_ platform: NewAPICheckInPlatform) async -> NewAPICheckInResult {
         runningPlatformIDs.insert(platform.id)
         tableView.reloadData()
         let result = await service.signIn(platform)
         runningPlatformIDs.remove(platform.id)
         await reload()
-        if allowAutoRelogin,
-           result.status == .authenticationExpired,
-           NewAPICheckInRuntime.autoReloginEnabled {
-            enqueueRelogin([platform.id])
-        }
+        return result
     }
 
-    // MARK: - Auto relogin
-
-    private func enqueueRelogin(_ platformIDs: [UUID]) {
-        for id in platformIDs where !reloginQueue.contains(id) {
-            reloginQueue.append(id)
-        }
-        processReloginQueueIfIdle()
+    private func freshPlatform(id: UUID) async -> NewAPICheckInPlatform? {
+        await store.platforms().first(where: { $0.id == id })
     }
 
-    private func processReloginQueueIfIdle() {
-        guard !isAutoReloginActive, !reloginQueue.isEmpty else { return }
-        guard presentedViewController == nil,
-              navigationController?.topViewController === self
-        else { return }
-        let platformID = reloginQueue.removeFirst()
-        guard let platform = platforms.first(where: { $0.id == platformID }),
-              let url = URL(string: platform.baseURL)
-        else {
-            processReloginQueueIfIdle()
-            return
-        }
-        isAutoReloginActive = true
-        lastLoginSaved = false
-        pendingResignPlatformID = nil
-        let controller = NewAPICheckInLoginViewController(
-            baseURL: url,
-            mode: (platform.platformType ?? .newAPI) == .custom ? .custom : .newAPI,
+    private func requestRelogin(for platform: NewAPICheckInPlatform) async -> Bool {
+        if await NewAPICheckInSilentLoginCoordinator.restore(
+            platform: platform,
             store: store,
-            service: service,
-            existingPlatform: platform
-        ) { [weak self] in
-            guard let self else { return }
-            lastLoginSaved = true
-            pendingResignPlatformID = platformID
+            service: service
+        ) {
+            return true
         }
-        navigationController?.pushViewController(controller, animated: true)
+        guard pendingLoginContinuation == nil,
+              presentedViewController == nil,
+              let navigationController,
+              navigationController.topViewController === self,
+              let url = URL(string: platform.baseURL)
+        else { return false }
+
+        return await withCheckedContinuation { continuation in
+            pendingLoginContinuation = continuation
+            didSavePendingLogin = false
+            let controller = NewAPICheckInLoginViewController(
+                baseURL: url,
+                mode: (platform.platformType ?? .newAPI) == .custom ? .custom : .newAPI,
+                store: store,
+                service: service,
+                existingPlatform: platform
+            ) { [weak self] in
+                self?.didSavePendingLogin = true
+            }
+            navigationController.pushViewController(controller, animated: true)
+        }
     }
 
     // MARK: - State

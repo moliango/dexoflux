@@ -38,6 +38,18 @@ struct NewAPICheckInCredential: Equatable, Codable, Sendable {
     }
 }
 
+enum NewAPICheckInAuthRefreshResult: Sendable {
+    case refreshed
+    case unavailable
+    case rejected(String?)
+    case failed(String?)
+
+    nonisolated var isRefreshed: Bool {
+        if case .refreshed = self { return true }
+        return false
+    }
+}
+
 struct NewAPICheckInLoginHints: Equatable, Sendable {
     let userID: String?
     let accessToken: String?
@@ -85,6 +97,8 @@ struct NewAPICheckInPlatform: Codable, Equatable, Identifiable, Sendable {
     var body: String?
     var platformType: NewAPICheckInPlatformType?
     var source: NewAPICheckInPlatformSource?
+    /// Opt-in because interactive Web login cannot run from background intents.
+    var reloginBeforeSignIn: Bool?
     var createdAt: Date
     var updatedAt: Date
     var lastStatus: NewAPICheckInStatus?
@@ -102,6 +116,7 @@ struct NewAPICheckInPlatform: Codable, Equatable, Identifiable, Sendable {
         body: String? = "{}",
         platformType: NewAPICheckInPlatformType? = .newAPI,
         source: NewAPICheckInPlatformSource? = .webView,
+        reloginBeforeSignIn: Bool? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         lastStatus: NewAPICheckInStatus? = nil,
@@ -118,6 +133,7 @@ struct NewAPICheckInPlatform: Codable, Equatable, Identifiable, Sendable {
         self.body = body
         self.platformType = platformType
         self.source = source
+        self.reloginBeforeSignIn = reloginBeforeSignIn
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastStatus = lastStatus
@@ -125,6 +141,10 @@ struct NewAPICheckInPlatform: Codable, Equatable, Identifiable, Sendable {
         self.lastMessage = lastMessage
         self.lastQuotaValue = lastQuotaValue
         self.lastQuotaUnit = lastQuotaUnit
+    }
+
+    nonisolated var requiresReloginBeforeSignIn: Bool {
+        reloginBeforeSignIn == true
     }
 }
 

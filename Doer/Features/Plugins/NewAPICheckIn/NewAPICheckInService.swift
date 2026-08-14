@@ -49,6 +49,90 @@ actor NewAPICheckInService {
         return result
     }
 
+    func refreshAuthentication(
+        _ platform: NewAPICheckInPlatform,
+        cookieHeaderOverride: String? = nil
+    ) async -> NewAPICheckInAuthRefreshResult {
+        guard (platform.platformType ?? .newAPI) == .newAPI,
+              let baseURL = URL(string: platform.baseURL)
+        else {
+            return .unavailable
+        }
+        let credential = (try? await store.credential(for: platform.id))
+            ?? NewAPICheckInCredential()
+        guard let cookieHeader = cookieHeaderOverride ?? credential.cookieHeader,
+              Self.cookieValue(named: "new_api_refresh", in: cookieHeader) != nil,
+              let request = Self.buildAuthRefreshRequest(baseURL: baseURL, cookieHeader: cookieHeader)
+        else {
+            return .unavailable
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse else {
+                return .failed(nil)
+            }
+            if response.statusCode == 404 || response.statusCode == 405 {
+                return .unavailable
+            }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let message = Self.extractMessage(json)
+            guard (200..<300).contains(response.statusCode) else {
+                if response.statusCode == 400 || response.statusCode == 401 || response.statusCode == 403 {
+                    return .rejected(message)
+                }
+                return .failed(message)
+            }
+            guard (json?["success"] as? Bool) == true,
+                  let values = json?["data"] as? [String: Any],
+                  let accessToken = values["access_token"] as? String,
+                  !accessToken.isEmpty
+            else {
+                return .rejected(message)
+            }
+
+            let responseCookies = Self.responseCookies(
+                from: response.allHeaderFields,
+                for: baseURL
+            )
+            let refreshedCredential = NewAPICheckInCredential(
+                accessToken: accessToken,
+                userID: Self.refreshUserID(from: values) ?? credential.userID,
+                cookieHeader: Self.mergingCookieHeader(cookieHeader, with: responseCookies),
+                additionalHeaders: credential.additionalHeaders
+            )
+            try await store.save(platform, credential: refreshedCredential)
+            return .refreshed
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func signInWithoutInteractiveRelogin(
+        _ platform: NewAPICheckInPlatform
+    ) async -> NewAPICheckInResult {
+        guard platform.requiresReloginBeforeSignIn else {
+            return await signIn(platform)
+        }
+        if (await refreshAuthentication(platform)).isRefreshed {
+            return await signIn(platform)
+        }
+        let result = NewAPICheckInResult(
+            status: .authenticationExpired,
+            statusCode: nil,
+            message: String(
+                localized: "plugins.newapi.relogin_required_in_app",
+                defaultValue: "需要先在 Doer 内重新登录后签到"
+            ),
+            rawResponse: nil,
+            durationMilliseconds: 0,
+            quotaValue: nil,
+            quotaUnit: nil
+        )
+        try? await store.record(result, for: platform.id)
+        return result
+    }
+
     func signInAll(maxConcurrent: Int = 3) async -> NewAPICheckInBatchSummary {
         let platforms = await store.platforms()
         var summary = NewAPICheckInBatchSummary(total: platforms.count)
@@ -60,14 +144,14 @@ actor NewAPICheckInService {
             for _ in 0..<concurrency {
                 let platform = platforms[nextIndex]
                 nextIndex += 1
-                group.addTask { await self.signIn(platform).status }
+                group.addTask { await self.signInWithoutInteractiveRelogin(platform).status }
             }
             while let status = await group.next() {
                 summary.record(status)
                 if nextIndex < platforms.count {
                     let platform = platforms[nextIndex]
                     nextIndex += 1
-                    group.addTask { await self.signIn(platform).status }
+                    group.addTask { await self.signInWithoutInteractiveRelogin(platform).status }
                 }
             }
         }
@@ -140,6 +224,80 @@ actor NewAPICheckInService {
                 message: error.localizedDescription
             )
         }
+    }
+
+    nonisolated static func buildAuthRefreshRequest(
+        baseURL: URL,
+        cookieHeader: String
+    ) -> URLRequest? {
+        guard let url = URL(string: "/api/user/auth/refresh", relativeTo: baseURL)?.absoluteURL,
+              let originURL = NewAPICheckInLoginSupport.siteOrigin(from: baseURL)
+        else { return nil }
+        let rawOrigin = originURL.absoluteString
+        let origin = rawOrigin.hasSuffix("/") ? String(rawOrigin.dropLast()) : rawOrigin
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        return request
+    }
+
+    nonisolated private static func responseCookies(
+        from headers: [AnyHashable: Any],
+        for url: URL
+    ) -> [HTTPCookie] {
+        headers.flatMap { key, value -> [HTTPCookie] in
+            guard String(describing: key).caseInsensitiveCompare("Set-Cookie") == .orderedSame else {
+                return []
+            }
+            let values = value as? [String] ?? [String(describing: value)]
+            return values.flatMap { header in
+                HTTPCookie.cookies(
+                    withResponseHeaderFields: ["Set-Cookie": header],
+                    for: url
+                )
+            }
+        }
+    }
+
+    nonisolated static func mergingCookieHeader(
+        _ existingHeader: String,
+        with responseCookies: [HTTPCookie]
+    ) -> String {
+        var pairs = cookiePairs(in: existingHeader)
+        for cookie in responseCookies {
+            pairs.removeAll { $0.name == cookie.name }
+            if cookie.expiresDate.map({ $0 > Date() }) ?? true, !cookie.value.isEmpty {
+                pairs.append((cookie.name, cookie.value))
+            }
+        }
+        return pairs.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    nonisolated static func cookieValue(named name: String, in header: String) -> String? {
+        cookiePairs(in: header).first(where: { $0.name == name })?.value
+    }
+
+    nonisolated private static func cookiePairs(in header: String) -> [(name: String, value: String)] {
+        header.split(separator: ";").compactMap { component in
+            let pair = component.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2 else { return nil }
+            let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            return (name, String(pair[1]).trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    nonisolated private static func refreshUserID(from values: [String: Any]) -> String? {
+        let user = values["user"] as? [String: Any]
+        let value = user?["id"] ?? values["id"]
+        if let value = value as? String, !value.isEmpty { return value }
+        if let value = value as? Int { return String(value) }
+        if let value = value as? Int64 { return String(value) }
+        return nil
     }
 
     nonisolated static func buildLoginProbeRequest(

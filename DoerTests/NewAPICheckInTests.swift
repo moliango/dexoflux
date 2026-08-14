@@ -39,6 +39,26 @@ final class NewAPICheckInTests: XCTestCase {
         XCTAssertFalse(raw.contains("secret-cookie"))
     }
 
+    func testPlatformReloginBeforeSignInRoundTripsAndDefaultsOffForLegacyData() throws {
+        let platform = NewAPICheckInPlatform(
+            name: "Example",
+            baseURL: "https://api.example.com",
+            reloginBeforeSignIn: true
+        )
+        let encoded = try JSONEncoder().encode(platform)
+        let decoded = try JSONDecoder().decode(NewAPICheckInPlatform.self, from: encoded)
+        XCTAssertTrue(decoded.requiresReloginBeforeSignIn)
+
+        var legacyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        legacyObject.removeValue(forKey: "reloginBeforeSignIn")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+        let legacy = try JSONDecoder().decode(NewAPICheckInPlatform.self, from: legacyData)
+        XCTAssertNil(legacy.reloginBeforeSignIn)
+        XCTAssertFalse(legacy.requiresReloginBeforeSignIn)
+    }
+
     func testServiceBuildsAuthenticatedRequestClassifiesAndPersistsResult() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -79,6 +99,203 @@ final class NewAPICheckInTests: XCTestCase {
         XCTAssertEqual(result.quotaValue, 1_000_000)
         XCTAssertEqual(attempts.first?.status, .success)
         XCTAssertEqual(storedPlatforms.first?.lastQuotaValue, 1_000_000)
+    }
+
+    func testRefreshAuthenticationRotatesTokenAndCookie() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NewAPICheckInStore(
+            scope: PluginScope(baseURL: "https://linux.do", username: "sam"),
+            directoryURL: directory,
+            credentialVault: MemoryNewAPICredentialVault()
+        )
+        let platform = NewAPICheckInPlatform(name: "Example", baseURL: "https://api.example.com")
+        try await store.save(
+            platform,
+            credential: NewAPICheckInCredential(
+                accessToken: "old-token",
+                userID: "7",
+                cookieHeader: "theme=dark; new_api_refresh=session.stored-secret"
+            )
+        )
+
+        MockNewAPIURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.example.com/api/user/auth/refresh")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Origin"), "https://api.example.com")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Cookie"),
+                "theme=light; new_api_refresh=session.webview-secret"
+            )
+            let headers = [
+                "Set-Cookie": "new_api_refresh=session.new-secret; Path=/; HttpOnly; Secure; SameSite=Lax",
+            ]
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: headers
+            )!
+            let body = Data(#"{"success":true,"data":{"access_token":"new-token","user":{"id":42}}}"#.utf8)
+            return (response, body)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockNewAPIURLProtocol.self]
+        let service = NewAPICheckInService(
+            store: store,
+            session: URLSession(configuration: configuration)
+        )
+
+        let result = await service.refreshAuthentication(
+            platform,
+            cookieHeaderOverride: "theme=light; new_api_refresh=session.webview-secret"
+        )
+        let credential = try await store.credential(for: platform.id)
+        XCTAssertTrue(result.isRefreshed)
+        XCTAssertEqual(credential?.accessToken, "new-token")
+        XCTAssertEqual(credential?.userID, "42")
+        XCTAssertEqual(
+            credential?.cookieHeader,
+            "theme=light; new_api_refresh=session.new-secret"
+        )
+    }
+
+    func testNonInteractiveBatchRefreshesBeforeSignIn() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NewAPICheckInStore(
+            scope: PluginScope(baseURL: "https://linux.do", username: "sam"),
+            directoryURL: directory,
+            credentialVault: MemoryNewAPICredentialVault()
+        )
+        let platform = NewAPICheckInPlatform(
+            name: "Example",
+            baseURL: "https://api.example.com",
+            reloginBeforeSignIn: true
+        )
+        try await store.save(
+            platform,
+            credential: NewAPICheckInCredential(
+                accessToken: "expired-token",
+                userID: "7",
+                cookieHeader: "new_api_refresh=session.old-secret"
+            )
+        )
+
+        MockNewAPIURLProtocol.handler = { request in
+            switch request.url?.path {
+            case "/api/user/auth/refresh":
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Set-Cookie": "new_api_refresh=session.new-secret; Path=/; HttpOnly; Secure"]
+                )!
+                let body = Data(#"{"success":true,"data":{"access_token":"new-token","user":{"id":7}}}"#.utf8)
+                return (response, body)
+            case "/api/user/checkin":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer new-token")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "new_api_refresh=session.new-secret")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data(#"{"success":true,"message":"签到成功"}"#.utf8))
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockNewAPIURLProtocol.self]
+        let service = NewAPICheckInService(
+            store: store,
+            session: URLSession(configuration: configuration)
+        )
+
+        let summary = await service.signInAll()
+        XCTAssertEqual(summary.success, 1)
+        XCTAssertEqual(summary.authenticationExpired, 0)
+    }
+
+    func testRefreshAuthenticationTreatsMissingEndpointAsUnavailable() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NewAPICheckInStore(
+            scope: PluginScope(baseURL: "https://linux.do", username: "sam"),
+            directoryURL: directory,
+            credentialVault: MemoryNewAPICredentialVault()
+        )
+        let platform = NewAPICheckInPlatform(name: "Legacy", baseURL: "https://legacy.example.com")
+        let original = NewAPICheckInCredential(
+            accessToken: "legacy-token",
+            userID: "8",
+            cookieHeader: "new_api_refresh=legacy-cookie"
+        )
+        try await store.save(platform, credential: original)
+
+        MockNewAPIURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockNewAPIURLProtocol.self]
+        let service = NewAPICheckInService(
+            store: store,
+            session: URLSession(configuration: configuration)
+        )
+
+        let result = await service.refreshAuthentication(platform)
+        let credential = try await store.credential(for: platform.id)
+        guard case .unavailable = result else {
+            XCTFail("Expected an unavailable refresh endpoint")
+            return
+        }
+        XCTAssertEqual(credential, original)
+    }
+
+    func testNonInteractiveBatchDoesNotBypassRequiredRelogin() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NewAPICheckInStore(
+            scope: PluginScope(baseURL: "https://linux.do", username: "sam"),
+            directoryURL: directory,
+            credentialVault: MemoryNewAPICredentialVault()
+        )
+        let platform = NewAPICheckInPlatform(
+            name: "Example",
+            baseURL: "https://api.example.com",
+            reloginBeforeSignIn: true
+        )
+        try await store.save(platform)
+
+        MockNewAPIURLProtocol.handler = { request in
+            XCTFail("Non-interactive batch must not call \(request.url?.absoluteString ?? "the sign-in API")")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 500,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockNewAPIURLProtocol.self]
+        let service = NewAPICheckInService(
+            store: store,
+            session: URLSession(configuration: configuration)
+        )
+
+        let summary = await service.signInAll()
+        let attempts = await store.attempts(platformID: platform.id)
+        XCTAssertEqual(summary.authenticationExpired, 1)
+        XCTAssertEqual(attempts.first?.status, .authenticationExpired)
     }
 
     func testResponseClassificationRecognizesAlreadySignedAndExpiredAuthentication() {

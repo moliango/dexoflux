@@ -4,6 +4,7 @@ import UIKit
 final class NewAPICheckInDetailViewController: UITableViewController {
     private enum Section: Int, CaseIterable {
         case request
+        case signInBehavior
         case attachedHeaders
         case actions
         case history
@@ -25,6 +26,7 @@ final class NewAPICheckInDetailViewController: UITableViewController {
     private var attempts: [NewAPICheckInAttempt] = []
     private var isSigningIn = false
     private var isRefreshingAccount = false
+    private var isRecoveringLogin = false
     private let onChange: () -> Void
 
     init(
@@ -59,6 +61,7 @@ final class NewAPICheckInDetailViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section) {
         case .request: return 3
+        case .signInBehavior: return 1
         case .attachedHeaders: return attachedHeaderRows().count
         case .actions: return ActionRow.allCases.count
         case .history: return max(1, min(attempts.count, 5))
@@ -71,6 +74,8 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         switch Section(rawValue: section) {
         case .request:
             return String(localized: "plugins.newapi.detail.request", defaultValue: "签到请求")
+        case .signInBehavior:
+            return String(localized: "plugins.newapi.detail.sign_in_flow", defaultValue: "签到流程")
         case .actions:
             return String(localized: "plugins.newapi.detail.actions", defaultValue: "操作")
         case .history:
@@ -86,6 +91,11 @@ final class NewAPICheckInDetailViewController: UITableViewController {
             return String(
                 localized: "plugins.newapi.detail.custom_request",
                 defaultValue: "已自定义请求，将覆盖 NewAPI 默认值。"
+            )
+        case .signInBehavior:
+            return String(
+                localized: "plugins.newapi.detail.relogin_before_sign_in.help",
+                defaultValue: "开启后，签到前会优先无感刷新 Token；凭证失效时才打开网页登录。"
             )
         case .attachedHeaders:
             return String(
@@ -104,6 +114,8 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         switch Section(rawValue: indexPath.section) {
         case .request:
             return requestCell(at: indexPath)
+        case .signInBehavior:
+            return signInBehaviorCell()
         case .attachedHeaders:
             return attachedHeaderCell(at: indexPath)
         case .actions:
@@ -127,7 +139,9 @@ final class NewAPICheckInDetailViewController: UITableViewController {
                 Task { await signIn() }
             case .refreshBalance:
                 Task { await refreshBalance() }
-            case .webSignIn, .relogin:
+            case .webSignIn:
+                openManualSignIn()
+            case .relogin:
                 openWebLogin()
             case .editRequest:
                 presentRequestEditor()
@@ -157,6 +171,29 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
         cell.contentConfiguration = content
         cell.selectionStyle = .none
+        return cell
+    }
+
+    private func signInBehaviorCell() -> UITableViewCell {
+        let cell = reusableCell(identifier: "sign-in-behavior")
+        var content = cell.defaultContentConfiguration()
+        content.text = String(
+            localized: "plugins.newapi.detail.relogin_before_sign_in",
+            defaultValue: "签到前重新登录"
+        )
+        content.image = UIImage(systemName: "person.crop.circle.badge.clock")
+        content.imageProperties.tintColor = AppSettings.shared.themeStyle.accentColor
+        cell.contentConfiguration = content
+        cell.selectionStyle = .none
+
+        let toggle = UISwitch()
+        toggle.isOn = platform.requiresReloginBeforeSignIn
+        toggle.onTintColor = AppSettings.shared.themeStyle.accentColor
+        toggle.addAction(UIAction { [weak self] action in
+            guard let toggle = action.sender as? UISwitch else { return }
+            Task { await self?.setReloginBeforeSignIn(toggle.isOn) }
+        }, for: .valueChanged)
+        cell.accessoryView = toggle
         return cell
     }
 
@@ -193,7 +230,10 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         cell.accessoryType = presentation.showsDisclosure ? .disclosureIndicator : .none
         cell.accessoryView = nil
 
-        if (action == .signIn && isSigningIn) || (action == .refreshBalance && isRefreshingAccount) {
+        let isRecoveringAction = isRecoveringLogin && (action == .signIn || action == .relogin)
+        if (action == .signIn && isSigningIn)
+            || (action == .refreshBalance && isRefreshingAccount)
+            || isRecoveringAction {
             let indicator = UIActivityIndicatorView(style: .medium)
             indicator.startAnimating()
             cell.accessoryView = indicator
@@ -324,14 +364,14 @@ final class NewAPICheckInDetailViewController: UITableViewController {
             )
         case .webSignIn:
             return (
-                String(localized: "plugins.newapi.detail.web_sign_in", defaultValue: "网页登录"),
-                "globe.badge.chevron.backward",
+                String(localized: "plugins.newapi.detail.web_manual_sign_in", defaultValue: "网页签到"),
+                "globe",
                 .label,
                 true
             )
         case .relogin:
             return (
-                String(localized: "plugins.newapi.web_login", defaultValue: "重新登录"),
+                String(localized: "plugins.newapi.detail.relogin", defaultValue: "重新登录"),
                 "arrow.clockwise.circle.fill",
                 .label,
                 true
@@ -346,6 +386,22 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         }
     }
 
+    private func setReloginBeforeSignIn(_ enabled: Bool) async {
+        var updated = platform
+        updated.reloginBeforeSignIn = enabled
+        do {
+            try await store.save(updated)
+            platform = updated
+            onChange()
+        } catch {
+            await reload()
+            presentMessage(
+                title: String(localized: "common.error", defaultValue: "错误"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
     private func reload() async {
         if let fresh = await store.platforms().first(where: { $0.id == platform.id }) {
             platform = fresh
@@ -356,15 +412,37 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         tableView.reloadData()
     }
 
-    private func signIn() async {
+    private func signIn(
+        skippingConfiguredRelogin: Bool = false,
+        allowExpiredRelogin: Bool = true
+    ) async {
         guard !isSigningIn else { return }
+        if platform.requiresReloginBeforeSignIn,
+           !skippingConfiguredRelogin,
+           !(await service.refreshAuthentication(platform)).isRefreshed {
+            openWebLogin(signInAfterSave: true)
+            return
+        }
+
         isSigningIn = true
         reloadActionRow(.signIn)
         let result = await service.signIn(platform)
         isSigningIn = false
         await reload()
         onChange()
-        if result.status == .authenticationExpired {
+        if result.status == .authenticationExpired,
+           allowExpiredRelogin,
+           NewAPICheckInRuntime.autoReloginEnabled {
+            if (await service.refreshAuthentication(platform)).isRefreshed {
+                await reload()
+                await signIn(
+                    skippingConfiguredRelogin: true,
+                    allowExpiredRelogin: false
+                )
+            } else {
+                openWebLogin(signInAfterSave: true)
+            }
+        } else if result.status == .authenticationExpired {
             presentMessage(
                 title: String(localized: "plugins.newapi.detail.login_expired", defaultValue: "登录已失效"),
                 message: result.message
@@ -447,7 +525,37 @@ final class NewAPICheckInDetailViewController: UITableViewController {
         presentMessage(title: attempt.message ?? statusTitle(attempt.status), message: lines)
     }
 
-    private func openWebLogin() {
+    private func openWebLogin(signInAfterSave: Bool = false) {
+        guard !isRecoveringLogin else { return }
+        isRecoveringLogin = true
+        reloadActionRow(.signIn)
+        reloadActionRow(.relogin)
+        Task {
+            defer {
+                isRecoveringLogin = false
+                reloadActionRow(.signIn)
+                reloadActionRow(.relogin)
+            }
+            let restored = await NewAPICheckInSilentLoginCoordinator.restore(
+                platform: platform,
+                store: store,
+                service: service
+            )
+            if restored {
+                await reload()
+                if signInAfterSave {
+                    await signIn(
+                        skippingConfiguredRelogin: true,
+                        allowExpiredRelogin: false
+                    )
+                }
+                return
+            }
+            presentWebLogin(signInAfterSave: signInAfterSave)
+        }
+    }
+
+    private func presentWebLogin(signInAfterSave: Bool) {
         guard let url = URL(string: platform.baseURL) else { return }
         let controller = NewAPICheckInLoginViewController(
             baseURL: url,
@@ -456,11 +564,33 @@ final class NewAPICheckInDetailViewController: UITableViewController {
             service: service,
             existingPlatform: platform
         ) { [weak self] in
-            Task { await self?.reload() }
+            guard let self else { return }
+            Task {
+                await self.reload()
+                _ = await self.service.refreshAuthentication(self.platform)
+                if signInAfterSave {
+                    await self.signIn(
+                        skippingConfiguredRelogin: true,
+                        allowExpiredRelogin: false
+                    )
+                }
+            }
         }
         navigationController?.pushViewController(controller, animated: true)
     }
 
+    /// 「网页签到」— 对应原 NewAPSign `ManualSignInView`。
+    /// 打开站点、预注入已存 Cookie,让用户在网页里手动点签到按钮;
+    /// 不自动检测登录完成,导航结束后回写 Cookie。给被 WAF 拦截的站点用。
+    private func openManualSignIn() {
+        let controller = NewAPICheckInManualSignInViewController(
+            platform: platform,
+            store: store
+        ) { [weak self] in
+            Task { await self?.reload() }
+        }
+        navigationController?.pushViewController(controller, animated: true)
+    }
     private func confirmDelete() {
         let alert = UIAlertController(
             title: String(localized: "plugins.newapi.detail.delete_title", defaultValue: "删除平台？"),
