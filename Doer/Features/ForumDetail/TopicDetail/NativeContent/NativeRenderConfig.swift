@@ -375,7 +375,11 @@ private final class PollBlockView: UIView {
     private var selectedOptionIds: Set<String>
     private var optionControls: [PollOptionControl] = []
     private weak var submitButton: UIButton?
+    private weak var resultsToggleButton: UIButton?
+    private weak var pieChartView: UIView?
     private var isSubmitting = false
+    private let hasCastVote: Bool
+    private var showsResults: Bool
 
     private var isOpen: Bool {
         let status = poll.status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -394,6 +398,14 @@ private final class PollBlockView: UIView {
         isOpen && config.postId != nil && poll.name != nil && poll.options.contains { $0.id != nil }
     }
 
+    private var canToggleResults: Bool {
+        PollResultsPolicy.canToggleResults(
+            resultsMode: poll.resultsMode,
+            status: poll.status,
+            hasVoted: hasCastVote
+        )
+    }
+
     init(poll: PollBlock, config: NativeRenderConfig, delegate: PostCellDelegate?) {
         self.poll = poll
         self.config = config
@@ -401,6 +413,12 @@ private final class PollBlockView: UIView {
         self.selectedOptionIds = Set(poll.options.compactMap { option in
             option.isSelected ? option.id : nil
         })
+        self.hasCastVote = poll.options.contains(where: \.isSelected)
+        self.showsResults = PollResultsPolicy.shouldShowResults(
+            resultsMode: poll.resultsMode,
+            status: poll.status,
+            hasVoted: hasCastVote
+        )
         super.init(frame: .zero)
         setupUI()
     }
@@ -434,6 +452,8 @@ private final class PollBlockView: UIView {
 
         stack.addArrangedSubview(makeHeader())
         if let pie = makePieChartIfNeeded() {
+            pie.isHidden = !showsResults
+            pieChartView = pie
             stack.addArrangedSubview(pie)
         }
         for option in poll.options {
@@ -444,6 +464,11 @@ private final class PollBlockView: UIView {
         }
         if let votersText = votersDisplayText() {
             stack.addArrangedSubview(makeVotersLabel(votersText))
+        }
+        if canToggleResults {
+            let toggle = makeResultsToggleButton()
+            resultsToggleButton = toggle
+            stack.addArrangedSubview(toggle)
         }
         if canSubmitVote {
             let button = makeSubmitButton()
@@ -554,6 +579,23 @@ private final class PollBlockView: UIView {
         return button
     }
 
+    private func makeResultsToggleButton() -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = resultsToggleTitle
+        configuration.baseForegroundColor = AppSettings.shared.themeStyle.accentColor
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
+
+        let button = UIButton(configuration: configuration)
+        button.titleLabel?.font = TopicDetailTypography.interfaceFont(ofSize: 14, weight: .medium)
+        button.addTarget(self, action: #selector(resultsToggleTapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
+    private var resultsToggleTitle: String {
+        showsResults ? String(localized: "post.poll.vote") : String(localized: "post.poll.view_results")
+    }
+
     private func headerStatusText() -> String? {
         if isOpen {
             return votersDisplayText()
@@ -570,16 +612,32 @@ private final class PollBlockView: UIView {
 
     private func updateOptionStates() {
         let accentColor = AppSettings.shared.themeStyle.accentColor
+        pieChartView?.isHidden = !showsResults
         for control in optionControls {
             let optionId = control.option.id
             let isSelected = optionId.map { selectedOptionIds.contains($0) } ?? false
-            control.apply(isSelected: isSelected, canVote: canSubmitVote && !isSubmitting, accentColor: accentColor)
+            control.apply(
+                isSelected: isSelected,
+                canVote: canSubmitVote && !isSubmitting,
+                accentColor: accentColor,
+                showsResults: showsResults
+            )
+        }
+
+        if var toggleConfiguration = resultsToggleButton?.configuration {
+            toggleConfiguration.title = resultsToggleTitle
+            resultsToggleButton?.configuration = toggleConfiguration
         }
 
         guard var configuration = submitButton?.configuration else { return }
         configuration.title = selectedOptionIds.isEmpty ? String(localized: "post.poll.submit") : String(localized: "post.poll.update")
         submitButton?.configuration = configuration
         submitButton?.isEnabled = canSubmitVote && !isSubmitting && selectedOptionIds.count >= minSelections
+    }
+
+    @objc private func resultsToggleTapped() {
+        showsResults.toggle()
+        updateOptionStates()
     }
 
     @objc private func optionTapped(_ sender: UIControl) {
@@ -644,7 +702,7 @@ private final class PollOptionControl: UIControl {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func apply(isSelected: Bool, canVote: Bool, accentColor: UIColor) {
+    func apply(isSelected: Bool, canVote: Bool, accentColor: UIColor, showsResults: Bool) {
         isEnabled = canVote && option.id != nil
         backgroundColor = isSelected ? accentColor.withAlphaComponent(0.12) : TopicDetailContentStyle.cardBackground
         layer.borderColor = (isSelected ? accentColor : UIColor.separator.withAlphaComponent(0.18)).cgColor
@@ -652,12 +710,21 @@ private final class PollOptionControl: UIControl {
         indicatorView.tintColor = isSelected ? accentColor : .tertiaryLabel
         progressView.progressTintColor = accentColor.withAlphaComponent(isSelected ? 0.7 : 0.45)
 
+        let meta = showsResults ? metaText() : nil
+        metaLabel.text = meta
+        metaLabel.isHidden = meta == nil
+        let progress = showsResults ? progressValue() : nil
+        progressView.isHidden = progress == nil
+        if let progress {
+            progressView.setProgress(progress, animated: false)
+        }
+
         var traits: UIAccessibilityTraits = isEnabled ? [.button] : [.staticText]
         if isSelected {
             traits.insert(.selected)
         }
         accessibilityTraits = traits
-        accessibilityLabel = [option.text, metaLabel.text].compactMap { $0 }.joined(separator: "，")
+        accessibilityLabel = [option.text, meta].compactMap { $0 }.joined(separator: "，")
     }
 
     private func setupUI(config: NativeRenderConfig) {
@@ -679,19 +746,16 @@ private final class PollOptionControl: UIControl {
         titleLabel.textColor = config.baseColor
         titleLabel.numberOfLines = 0
 
-        metaLabel.text = metaText()
+        metaLabel.text = nil
         metaLabel.font = config.baseFont.withRelativeSize(-1).weighted(.medium)
         metaLabel.textColor = .secondaryLabel
         metaLabel.numberOfLines = 1
-        metaLabel.isHidden = metaLabel.text == nil
+        metaLabel.isHidden = true
 
         progressView.trackTintColor = UIColor.separator.withAlphaComponent(0.16)
         progressView.layer.cornerRadius = 2
         progressView.clipsToBounds = true
-        progressView.isHidden = progressValue() == nil
-        if let value = progressValue() {
-            progressView.setProgress(value, animated: false)
-        }
+        progressView.isHidden = true
         progressView.translatesAutoresizingMaskIntoConstraints = false
         progressView.heightAnchor.constraint(equalToConstant: 4).isActive = true
 
