@@ -41,7 +41,7 @@ protocol ComposerTextSurface: AnyObject {
 enum ComposerToolbarFactory {
     static func makeCircleButton(systemName: String, accessibilityLabel: String) -> UIButton {
         let button = makePlainButton(systemName: systemName, accessibilityLabel: accessibilityLabel, pointSize: 19, weight: .regular)
-        button.backgroundColor = .secondarySystemGroupedBackground
+        button.backgroundColor = ComposerTypography.mutedFill
         button.layer.cornerRadius = 22
         button.layer.cornerCurve = .continuous
         return button
@@ -70,7 +70,7 @@ enum ComposerToolbarFactory {
     static func makeRightPill() -> UIView {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .secondarySystemGroupedBackground
+        view.backgroundColor = ComposerTypography.mutedFill
         view.layer.cornerRadius = 22
         view.layer.cornerCurve = .continuous
         return view
@@ -108,46 +108,54 @@ enum ComposerToolbarFactory {
         return view
     }
 
-    /// Standard toolbar layout: emoji | status | [preview tools] pill.
+    /// Standard toolbar layout: emoji | status | [preview Aa tools] pill.
     static func installToolbarLayout(
         in toolbar: UIView,
         emojiButton: UIButton,
         uploadStatusLabel: UILabel,
         rightPill: UIView,
         previewButton: UIButton,
+        modeButton: UIButton,
         toolsButton: UIButton
     ) {
         toolbar.addSubview(emojiButton)
         toolbar.addSubview(uploadStatusLabel)
         toolbar.addSubview(rightPill)
         rightPill.addSubview(previewButton)
+        rightPill.addSubview(modeButton)
         rightPill.addSubview(toolsButton)
-        toolbar.heightAnchor.constraint(equalToConstant: 62).isActive = true
+        toolbar.heightAnchor.constraint(equalToConstant: 58).isActive = true
+        toolbar.backgroundColor = ComposerTypography.backgroundColor
 
         NSLayoutConstraint.activate([
-            emojiButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 24),
+            emojiButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 16),
             emojiButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             emojiButton.widthAnchor.constraint(equalToConstant: 44),
             emojiButton.heightAnchor.constraint(equalToConstant: 44),
 
-            rightPill.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -24),
+            rightPill.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -16),
             rightPill.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             rightPill.heightAnchor.constraint(equalToConstant: 44),
 
-            uploadStatusLabel.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 14),
-            uploadStatusLabel.trailingAnchor.constraint(equalTo: rightPill.leadingAnchor, constant: -14),
+            uploadStatusLabel.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 12),
+            uploadStatusLabel.trailingAnchor.constraint(equalTo: rightPill.leadingAnchor, constant: -12),
             uploadStatusLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
-            previewButton.leadingAnchor.constraint(equalTo: rightPill.leadingAnchor, constant: 10),
+            previewButton.leadingAnchor.constraint(equalTo: rightPill.leadingAnchor, constant: 6),
             previewButton.topAnchor.constraint(equalTo: rightPill.topAnchor),
             previewButton.bottomAnchor.constraint(equalTo: rightPill.bottomAnchor),
-            previewButton.widthAnchor.constraint(equalToConstant: 44),
+            previewButton.widthAnchor.constraint(equalToConstant: 40),
 
-            toolsButton.leadingAnchor.constraint(equalTo: previewButton.trailingAnchor, constant: 4),
-            toolsButton.trailingAnchor.constraint(equalTo: rightPill.trailingAnchor, constant: -10),
+            modeButton.leadingAnchor.constraint(equalTo: previewButton.trailingAnchor, constant: 2),
+            modeButton.topAnchor.constraint(equalTo: rightPill.topAnchor),
+            modeButton.bottomAnchor.constraint(equalTo: rightPill.bottomAnchor),
+            modeButton.widthAnchor.constraint(equalToConstant: 44),
+
+            toolsButton.leadingAnchor.constraint(equalTo: modeButton.trailingAnchor, constant: 2),
+            toolsButton.trailingAnchor.constraint(equalTo: rightPill.trailingAnchor, constant: -6),
             toolsButton.topAnchor.constraint(equalTo: rightPill.topAnchor),
             toolsButton.bottomAnchor.constraint(equalTo: rightPill.bottomAnchor),
-            toolsButton.widthAnchor.constraint(equalToConstant: 44),
+            toolsButton.widthAnchor.constraint(equalToConstant: 40),
         ])
     }
 
@@ -180,18 +188,34 @@ enum ComposerToolbarFactory {
     static func updateToolbarTints(
         emojiButton: UIButton,
         previewButton: UIButton,
+        modeButton: UIButton,
         toolsButton: UIButton,
         panel: ComposerPanelKind,
-        isPreviewing: Bool
+        isPreviewing: Bool,
+        editingMode: ComposerEditingMode
     ) {
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        let accent = ComposerTypography.accentColor
+        let idle = UIColor.label
+        let config = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         previewButton.setImage(
             UIImage(systemName: isPreviewing ? "eye.slash.fill" : "eye", withConfiguration: config),
             for: .normal
         )
-        previewButton.tintColor = isPreviewing ? .systemBlue : .label
-        toolsButton.tintColor = panel == .tools ? .systemBlue : .label
-        emojiButton.tintColor = panel == .emoji ? .systemBlue : .label
+        previewButton.tintColor = isPreviewing ? accent : idle
+        modeButton.setTitle(editingMode == .rich ? "Aa" : "MD", for: .normal)
+        modeButton.setTitleColor(editingMode == .rich ? accent : idle, for: .normal)
+        modeButton.tintColor = editingMode == .rich ? accent : idle
+        toolsButton.tintColor = panel == .tools ? accent : idle
+        emojiButton.tintColor = panel == .emoji ? accent : idle
+    }
+
+    static func makeModeButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .bold)
+        button.setTitle("Aa", for: .normal)
+        button.accessibilityLabel = String(localized: "reply.toolbar.rich_mode", defaultValue: "Rich text")
+        return button
     }
 }
 

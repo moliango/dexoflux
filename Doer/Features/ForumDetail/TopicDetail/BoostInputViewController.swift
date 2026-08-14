@@ -7,6 +7,31 @@ enum BoostInputResult {
     case reply(String)
 }
 
+enum BoostInputText {
+    static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":[\\w\\-+]+:")
+
+    static func rawText(from attributed: NSAttributedString) -> String {
+        var result = ""
+        attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, range, _ in
+            if let attachment = attributes[.attachment] as? EmojiTextAttachment,
+               let shortcode = attachment.shortcode {
+                result += shortcode
+                return
+            }
+            let text = attributed.attributedSubstring(from: range).string
+            result += text.replacingOccurrences(of: "\u{fffc}", with: "")
+        }
+        return result
+    }
+
+    static func visibleLength(of raw: String) -> Int {
+        let nsText = raw as NSString
+        let matches = emojiShortcodeRegex.matches(in: raw, range: NSRange(location: 0, length: nsText.length))
+        let shortcodeSavings = matches.reduce(0) { $0 + max($1.range.length - 1, 0) }
+        return max(nsText.length - shortcodeSavings, 0)
+    }
+}
+
 enum ReplyComposerSubmissionMode: Equatable {
     case reply
     case edit(postId: Int)
@@ -14,13 +39,13 @@ enum ReplyComposerSubmissionMode: Equatable {
 
 final class BoostInputViewController: UIViewController {
     private static let maxVisibleLength = 16
-    private static let emojiShortcodeRegex = try! NSRegularExpression(pattern: ":[\\w\\-+]+:")
 
     private let api: DiscourseAPI
     var onSubmit: ((BoostInputResult) -> Void)?
 
     private var isEmojiPickerVisible = true
     private var hasLoadedForumEmojis = false
+    private var isApplyingAttributedText = false
 
     private let grabberView: UIView = {
         let view = UIView()
@@ -47,16 +72,33 @@ final class BoostInputViewController: UIViewController {
         return view
     }()
 
-    private lazy var textField: UITextField = {
-        let field = UITextField()
-        field.translatesAutoresizingMaskIntoConstraints = false
-        field.placeholder = String(localized: "post.boost.placeholder")
-        field.font = .preferredFont(forTextStyle: .body)
-        field.adjustsFontForContentSizeCategory = true
-        field.returnKeyType = .send
-        field.delegate = self
-        field.addTarget(self, action: #selector(textChanged), for: .editingChanged)
-        return field
+    private lazy var textView: UITextView = {
+        let view = UITextView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .clear
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.textColor = .label
+        view.returnKeyType = .send
+        view.delegate = self
+        view.isScrollEnabled = false
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.typingAttributes = [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.label,
+        ]
+        return view
+    }()
+
+    private let placeholderLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = String(localized: "post.boost.placeholder")
+        label.font = .preferredFont(forTextStyle: .body)
+        label.textColor = .placeholderText
+        label.adjustsFontForContentSizeCategory = true
+        return label
     }()
 
     private let countLabel: UILabel = {
@@ -107,7 +149,8 @@ final class BoostInputViewController: UIViewController {
         inputRow.alignment = .center
         inputRow.spacing = 8
 
-        textContainer.addSubview(textField)
+        textContainer.addSubview(textView)
+        textContainer.addSubview(placeholderLabel)
         textContainer.addSubview(countLabel)
         view.addSubview(grabberView)
         view.addSubview(inputRow)
@@ -132,12 +175,15 @@ final class BoostInputViewController: UIViewController {
             sendButton.heightAnchor.constraint(equalToConstant: 40),
             textContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
 
-            textField.leadingAnchor.constraint(equalTo: textContainer.leadingAnchor, constant: 14),
-            textField.topAnchor.constraint(equalTo: textContainer.topAnchor, constant: 7),
-            textField.bottomAnchor.constraint(equalTo: textContainer.bottomAnchor, constant: -7),
-            countLabel.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8),
+            textView.leadingAnchor.constraint(equalTo: textContainer.leadingAnchor, constant: 14),
+            textView.topAnchor.constraint(equalTo: textContainer.topAnchor, constant: 7),
+            textView.bottomAnchor.constraint(equalTo: textContainer.bottomAnchor, constant: -7),
+            placeholderLabel.leadingAnchor.constraint(equalTo: textView.leadingAnchor),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -4),
+            placeholderLabel.centerYAnchor.constraint(equalTo: textView.centerYAnchor),
+            countLabel.leadingAnchor.constraint(equalTo: textView.trailingAnchor, constant: 8),
             countLabel.trailingAnchor.constraint(equalTo: textContainer.trailingAnchor, constant: -12),
-            countLabel.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
+            countLabel.centerYAnchor.constraint(equalTo: textView.centerYAnchor),
             countLabel.widthAnchor.constraint(equalToConstant: 46),
 
             emojiPickerView.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 8),
@@ -153,16 +199,27 @@ final class BoostInputViewController: UIViewController {
         loadForumEmojisIfNeeded()
     }
 
+    private var composerTextAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: textView.font ?? UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.label,
+        ]
+    }
+
+    private var attributedInput: NSAttributedString {
+        textView.attributedText ?? NSAttributedString()
+    }
+
+    private var rawSourceText: String {
+        BoostInputText.rawText(from: attributedInput)
+    }
+
     private var rawText: String {
-        textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        rawSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var visibleLength: Int {
-        let text = textField.text ?? ""
-        let nsText = text as NSString
-        let matches = Self.emojiShortcodeRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-        let shortcodeSavings = matches.reduce(0) { $0 + max($1.range.length - 1, 0) }
-        return max(nsText.length - shortcodeSavings, 0)
+        BoostInputText.visibleLength(of: rawSourceText)
     }
 
     private var isReplyIntent: Bool {
@@ -170,6 +227,7 @@ final class BoostInputViewController: UIViewController {
     }
 
     @objc private func textChanged() {
+        placeholderLabel.isHidden = !rawSourceText.isEmpty
         countLabel.text = "\(visibleLength)/\(Self.maxVisibleLength)"
         countLabel.textColor = isReplyIntent ? .systemRed : .tertiaryLabel
         sendButton.isEnabled = !rawText.isEmpty
@@ -184,10 +242,10 @@ final class BoostInputViewController: UIViewController {
         emojiPickerView.isHidden = !isEmojiPickerVisible
         emojiToggleButton.setImage(UIImage(systemName: isEmojiPickerVisible ? "keyboard" : "face.smiling"), for: .normal)
         if isEmojiPickerVisible {
-            textField.resignFirstResponder()
+            textView.resignFirstResponder()
             loadForumEmojisIfNeeded()
         } else {
-            textField.becomeFirstResponder()
+            textView.becomeFirstResponder()
         }
         UIView.animate(withDuration: 0.18) {
             self.view.layoutIfNeeded()
@@ -208,12 +266,78 @@ final class BoostInputViewController: UIViewController {
     }
 
     private func insertEmoji(_ emoji: String) {
-        if let range = textField.selectedTextRange {
-            textField.replace(range, withText: emoji)
-        } else {
-            textField.text = (textField.text ?? "") + emoji
-        }
+        replaceDisplayRange(textView.selectedRange, withRawText: emoji)
+    }
+
+    private func restylePreservingSelection() {
+        guard !isApplyingAttributedText, textView.markedTextRange == nil else { return }
+        let attributed = attributedInput
+        let selection = textView.selectedRange
+        let prefixLength = min(max(selection.location, 0), attributed.length)
+        let raw = BoostInputText.rawText(from: attributed)
+        let rawPrefix = BoostInputText.rawText(
+            from: attributed.attributedSubstring(from: NSRange(location: 0, length: prefixLength))
+        )
+        let styled = makeDisplayString(raw)
+        let caret = makeDisplayString(rawPrefix).length
+        applyAttributedText(styled, selectedRange: NSRange(location: min(caret, styled.length), length: 0))
+    }
+
+    private func replaceDisplayRange(_ range: NSRange, withRawText raw: String) {
+        let current = attributedInput
+        let validRange = clampedRange(range, length: current.length)
+        let prefix = BoostInputText.rawText(
+            from: current.attributedSubstring(from: NSRange(location: 0, length: validRange.location))
+        )
+        let suffixStart = validRange.location + validRange.length
+        let suffix = BoostInputText.rawText(
+            from: current.attributedSubstring(
+                from: NSRange(location: suffixStart, length: current.length - suffixStart)
+            )
+        )
+        let styled = makeDisplayString(prefix + raw + suffix)
+        let caret = makeDisplayString(prefix + raw).length
+        applyAttributedText(styled, selectedRange: NSRange(location: min(caret, styled.length), length: 0))
+    }
+
+    private func makeDisplayString(_ raw: String) -> NSAttributedString {
+        let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
+        return TitleEmojiRenderer.attributedTitle(
+            raw,
+            font: font,
+            textColor: .label,
+            baseURL: api.baseURL
+        )
+    }
+
+    private func applyAttributedText(_ attributed: NSAttributedString, selectedRange: NSRange) {
+        isApplyingAttributedText = true
+        textView.attributedText = attributed
+        textView.typingAttributes = composerTextAttributes
+        textView.selectedRange = clampedRange(selectedRange, length: attributed.length)
+        isApplyingAttributedText = false
+        loadEmojiImages(in: attributed)
         textChanged()
+    }
+
+    private func loadEmojiImages(in attributed: NSAttributedString) {
+        TitleEmojiRenderer.loadImages(in: attributed, cloudflareBaseURL: api.baseURL) { [weak self] _ in
+            guard let self else { return }
+            let length = self.textView.attributedText.length
+            self.textView.layoutManager.invalidateDisplay(
+                forCharacterRange: NSRange(location: 0, length: length)
+            )
+            self.textView.setNeedsDisplay()
+        }
+    }
+
+    private func clampedRange(_ range: NSRange, length: Int) -> NSRange {
+        guard range.location != NSNotFound else {
+            return NSRange(location: length, length: 0)
+        }
+        let location = min(max(range.location, 0), length)
+        let upperBound = min(max(range.location + range.length, location), length)
+        return NSRange(location: location, length: upperBound - location)
     }
 
     private func loadForumEmojisIfNeeded() {
@@ -246,13 +370,24 @@ final class BoostInputViewController: UIViewController {
     }
 }
 
-extension BoostInputViewController: UITextFieldDelegate {
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        submit()
+extension BoostInputViewController: UITextViewDelegate {
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if text == "\n" {
+            submit()
+            return false
+        }
         return true
     }
 
-    func textFieldDidBeginEditing(_ textField: UITextField) {
+    func textViewDidChange(_ textView: UITextView) {
+        guard !isApplyingAttributedText else { return }
+        if TitleEmojiRenderer.containsShortcode(textView.attributedText.string) {
+            restylePreservingSelection()
+        }
+        textChanged()
+    }
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
         guard isEmojiPickerVisible else { return }
         isEmojiPickerVisible = false
         emojiPickerView.isHidden = true

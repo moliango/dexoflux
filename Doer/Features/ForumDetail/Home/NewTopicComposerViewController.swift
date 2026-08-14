@@ -36,6 +36,8 @@ final class NewTopicComposerViewController: UIViewController {
     private let initialRaw: String
 
     private var currentPanel: ComposerPanelKind = .none
+    private var editingMode = ComposerEditingMode.stored
+    private let modeToggleButton = ComposerToolbarFactory.makeModeButton()
     private var hasLoadedForumEmojis = false
     private var isPreviewingMarkdown = false
     private var isUploading = false
@@ -51,8 +53,9 @@ final class NewTopicComposerViewController: UIViewController {
         let field = UITextField()
         field.translatesAutoresizingMaskIntoConstraints = false
         field.placeholder = String(localized: "new_topic.title.placeholder")
-        field.font = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 25, weight: .bold))
+        field.font = ComposerTypography.titleFont
         field.adjustsFontForContentSizeCategory = true
+        field.textColor = .label
         field.borderStyle = .none
         field.returnKeyType = .next
         field.clearButtonMode = .whileEditing
@@ -110,12 +113,7 @@ final class NewTopicComposerViewController: UIViewController {
     private let textView: UITextView = {
         let view = UITextView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 18, weight: .regular))
-        view.adjustsFontForContentSizeCategory = true
-        view.textContainerInset = UIEdgeInsets(top: 14, left: 20, bottom: 18, right: 20)
-        view.backgroundColor = .systemBackground
-        view.alwaysBounceVertical = true
-        view.keyboardDismissMode = .interactive
+        ComposerTypography.applyBody(to: view)
         return view
     }()
 
@@ -123,10 +121,7 @@ final class NewTopicComposerViewController: UIViewController {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = String(localized: "new_topic.body.placeholder")
-        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 18, weight: .regular))
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .placeholderText
-        label.numberOfLines = 0
+        ComposerTypography.applyBody(to: label)
         return label
     }()
 
@@ -176,7 +171,7 @@ final class NewTopicComposerViewController: UIViewController {
     private let rightToolbarPill: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .secondarySystemGroupedBackground
+        view.backgroundColor = ComposerTypography.mutedFill
         view.layer.cornerRadius = 22
         view.layer.cornerCurve = .continuous
         return view
@@ -263,7 +258,7 @@ final class NewTopicComposerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "new_topic.title")
-        view.backgroundColor = .systemBackground
+        ComposerTypography.applyChrome(to: view)
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "chevron.left"),
             style: .plain,
@@ -283,10 +278,10 @@ final class NewTopicComposerViewController: UIViewController {
             || !initialRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if hasExplicitInitial {
             titleField.text = initialTitle
-            textView.text = initialRaw
+            applyBodyMarkdown(initialRaw)
         } else if let draft = ComposerLocalDraftStore.loadNewTopic(baseURL: api.baseURL) {
             titleField.text = draft.title
-            textView.text = draft.raw
+            applyBodyMarkdown(draft.raw)
             if let categoryId = draft.categoryId {
                 selectedCategoryId = categoryId
             }
@@ -295,7 +290,7 @@ final class NewTopicComposerViewController: UIViewController {
             }
         } else {
             titleField.text = initialTitle
-            textView.text = initialRaw
+            applyBodyMarkdown(initialRaw)
         }
         titleField.delegate = self
         titleField.addTarget(self, action: #selector(textInputsChanged), for: .editingChanged)
@@ -304,6 +299,7 @@ final class NewTopicComposerViewController: UIViewController {
         categoryButton.addTarget(self, action: #selector(categoryButtonPressed), for: .touchDown)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
+        modeToggleButton.addTarget(self, action: #selector(toggleEditingMode), for: .touchUpInside)
         toolsToggleButton.addTarget(self, action: #selector(toggleToolsPanel), for: .touchUpInside)
 
         updateCategoryButton()
@@ -318,7 +314,7 @@ final class NewTopicComposerViewController: UIViewController {
     /// FluxDo parity: pull `new_topic` server draft when local composer is empty.
     private func hydrateServerDraftIfNeeded() async {
         let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let localRaw = (textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let localRaw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         // Local draft already restored — still refresh sequence from server.
         do {
             guard let server = try await api.fetchDraft(key: "new_topic") else { return }
@@ -332,7 +328,7 @@ final class NewTopicComposerViewController: UIViewController {
             guard localTitle.isEmpty, localRaw.isEmpty else { return }
             guard !serverTitle.isEmpty || !serverRaw.isEmpty else { return }
             titleField.text = server.data.title ?? ""
-            textView.text = server.data.reply ?? ""
+            applyBodyMarkdown(server.data.reply ?? "")
             if let categoryId = server.data.categoryId {
                 selectedCategoryId = categoryId
             }
@@ -398,7 +394,7 @@ final class NewTopicComposerViewController: UIViewController {
         ComposerLocalDraftStore.saveNewTopic(
             baseURL: api.baseURL,
             title: titleField.text ?? "",
-            raw: textView.text ?? "",
+            raw: bodyRaw,
             categoryId: selectedCategoryId,
             tags: selectedTags
         )
@@ -406,7 +402,7 @@ final class NewTopicComposerViewController: UIViewController {
 
     private func persistServerDraft() {
         let title = titleField.text ?? ""
-        let raw = textView.text ?? ""
+        let raw = bodyRaw
         let categoryId = selectedCategoryId
         let tags = selectedTags
         let api = self.api
@@ -491,6 +487,7 @@ final class NewTopicComposerViewController: UIViewController {
             uploadStatusLabel: uploadStatusLabel,
             rightPill: rightToolbarPill,
             previewButton: previewToggleButton,
+            modeButton: modeToggleButton,
             toolsButton: toolsToggleButton
         )
     }
@@ -615,14 +612,14 @@ final class NewTopicComposerViewController: UIViewController {
     }
 
     private func updateEditorState() {
-        placeholderLabel.isHidden = isPreviewingMarkdown || !textView.text.isEmpty
+        placeholderLabel.isHidden = isPreviewingMarkdown || !bodyRaw.isEmpty
         characterCountLabel.text = String(
             format: String(localized: "new_topic.character_count_format", defaultValue: "%lld 字符"),
-            Int64(textView.text.count)
+            Int64(bodyRaw.count)
         )
         let submission = NewTopicSubmission.make(
             title: titleField.text ?? "",
-            raw: textView.text,
+            raw: bodyRaw,
             categoryId: selectedCategoryId,
             tags: selectedTags
         )
@@ -630,7 +627,7 @@ final class NewTopicComposerViewController: UIViewController {
         publishButton.alpha = publishButton.isEnabled ? 1 : 0.55
         discardButton.isEnabled = !isUploading && !isSubmitting
         if isPreviewingMarkdown {
-            previewView.update(markdown: textView.text)
+            previewView.update(markdown: bodyRaw)
         }
     }
 
@@ -647,7 +644,7 @@ final class NewTopicComposerViewController: UIViewController {
         if isPreviewingMarkdown {
             closePanel(returnToKeyboard: false)
             textView.resignFirstResponder()
-            previewView.update(markdown: textView.text)
+            previewView.update(markdown: bodyRaw)
         } else {
             textView.becomeFirstResponder()
         }
@@ -701,10 +698,69 @@ final class NewTopicComposerViewController: UIViewController {
         ComposerToolbarFactory.updateToolbarTints(
             emojiButton: emojiToggleButton,
             previewButton: previewToggleButton,
+            modeButton: modeToggleButton,
             toolsButton: toolsToggleButton,
             panel: currentPanel,
-            isPreviewing: isPreviewingMarkdown
+            isPreviewing: isPreviewingMarkdown,
+            editingMode: editingMode
         )
+    }
+
+    @objc private func toggleEditingMode() {
+        let raw = bodyRaw
+        editingMode = editingMode.toggled
+        ComposerEditingMode.stored = editingMode
+        applyBodyMarkdown(raw)
+        if isPreviewingMarkdown {
+            isPreviewingMarkdown = false
+            textView.isHidden = false
+            previewView.isHidden = true
+        }
+        updateToolbarState()
+        updateEditorState()
+        textView.becomeFirstResponder()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private var bodyRaw: String {
+        guard let attributed = textView.attributedText, attributed.length > 0 else {
+            return textView.text ?? ""
+        }
+        if editingMode == .rich {
+            return ComposerMarkdownCodec.markdown(from: attributed)
+        }
+        return attributed.string
+    }
+
+    private func applyBodyMarkdown(_ raw: String) {
+        if editingMode == .rich {
+            textView.attributedText = ComposerMarkdownCodec.richAttributedString(from: raw)
+        } else {
+            textView.attributedText = ComposerMarkdownRenderer.styleSource(
+                raw,
+                baseAttributes: ComposerTypography.typingAttributes
+            )
+        }
+        textView.typingAttributes = ComposerTypography.typingAttributes
+    }
+
+    private func insertRichSnippet(_ markdown: String) {
+        let snippet = NSMutableAttributedString(
+            attributedString: ComposerMarkdownCodec.richAttributedString(from: markdown)
+        )
+        if snippet.string.hasSuffix("\n"), snippet.length > 0 {
+            snippet.deleteCharacters(in: NSRange(location: snippet.length - 1, length: 1))
+        }
+        let current = NSMutableAttributedString(
+            attributedString: textView.attributedText ?? NSAttributedString(string: "", attributes: ComposerTypography.typingAttributes)
+        )
+        let selection = textView.selectedRange
+        let location = min(max(selection.location, 0), current.length)
+        let length = min(max(selection.length, 0), current.length - location)
+        current.replaceCharacters(in: NSRange(location: location, length: length), with: snippet)
+        textView.attributedText = current
+        textView.selectedRange = NSRange(location: location + snippet.length, length: 0)
+        textView.typingAttributes = ComposerTypography.typingAttributes
     }
 
 
@@ -728,7 +784,7 @@ final class NewTopicComposerViewController: UIViewController {
 
     @objc private func discardTapped() {
         let hasContent = !(titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !textView.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !selectedTags.isEmpty
         guard hasContent else {
             dismiss(animated: true)
@@ -750,7 +806,7 @@ final class NewTopicComposerViewController: UIViewController {
         guard !isSubmitting,
               let submission = NewTopicSubmission.make(
                   title: titleField.text ?? "",
-                  raw: textView.text,
+                  raw: bodyRaw,
                   categoryId: selectedCategoryId,
                   tags: selectedTags
               )
@@ -853,32 +909,51 @@ extension NewTopicComposerViewController: ComposerTextSurface {
     var composerTextView: UITextView { textView }
     var composerToolsAnchorView: UIView { toolsToggleButton }
     var composerIsUploading: Bool { isUploading }
-    var composerRawText: String { textView.text ?? "" }
+    var composerRawText: String { bodyRaw }
 
     func composerSelectedRawText() -> String {
-        ComposerPlainTextEditing.selectedText(in: textView)
+        let selection = textView.selectedRange
+        guard selection.length > 0, let attributed = textView.attributedText else { return "" }
+        if editingMode == .rich {
+            return ComposerMarkdownCodec.markdown(from: attributed.attributedSubstring(from: selection))
+        }
+        return ComposerPlainTextEditing.selectedText(in: textView)
     }
 
     func composerInsertRaw(_ text: String) {
-        ComposerPlainTextEditing.replaceSelection(in: textView, with: text)
+        if editingMode == .rich {
+            insertRichSnippet(text)
+        } else {
+            ComposerPlainTextEditing.replaceSelection(in: textView, with: text)
+        }
         updateEditorState()
         scheduleLocalDraftSave()
     }
 
     func composerWrapSelection(start: String, end: String, placeholder: String) {
-        ComposerPlainTextEditing.wrapSelection(in: textView, start: start, end: end, placeholder: placeholder)
+        if editingMode == .rich {
+            let selected = composerSelectedRawText()
+            let body = selected.isEmpty ? placeholder : selected
+            insertRichSnippet("\(start)\(body)\(end)")
+        } else {
+            ComposerPlainTextEditing.wrapSelection(in: textView, start: start, end: end, placeholder: placeholder)
+        }
         updateEditorState()
         scheduleLocalDraftSave()
     }
 
     func composerApplyLinePrefix(_ prefix: String) {
-        ComposerPlainTextEditing.applyLinePrefix(in: textView, prefix: prefix)
+        if editingMode == .rich {
+            insertRichSnippet(prefix)
+        } else {
+            ComposerPlainTextEditing.applyLinePrefix(in: textView, prefix: prefix)
+        }
         updateEditorState()
         scheduleLocalDraftSave()
     }
 
     func composerReplaceFullRaw(_ raw: String) {
-        textView.text = raw
+        applyBodyMarkdown(raw)
         updateEditorState()
         scheduleLocalDraftSave()
     }

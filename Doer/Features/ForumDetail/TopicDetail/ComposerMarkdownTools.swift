@@ -113,7 +113,7 @@ final class ComposerToolPanelView: UIView {
     private let customizeButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "reply.customize")
-        config.baseForegroundColor = UIColor(red: 0.18, green: 0.42, blue: 0.62, alpha: 1)
+        config.baseForegroundColor = ComposerTypography.accentColor
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -243,12 +243,13 @@ final class ComposerMarkdownPreviewView: UIView {
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.isEditable = false
         tv.isScrollEnabled = true
-        tv.backgroundColor = .systemBackground
-        tv.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 24, right: 20)
-        tv.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 23, weight: .regular))
+        tv.backgroundColor = ComposerTypography.backgroundColor
+        tv.textContainerInset = UIEdgeInsets(top: 16, left: 20, bottom: 24, right: 20)
+        tv.font = ComposerTypography.bodyFont
         tv.adjustsFontForContentSizeCategory = true
+        tv.tintColor = ComposerTypography.accentColor
         tv.linkTextAttributes = [
-            .foregroundColor: UIColor.systemBlue,
+            .foregroundColor: ComposerTypography.accentColor,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
         return tv
@@ -280,13 +281,14 @@ final class ComposerMarkdownPreviewView: UIView {
 /// Local Discourse-ish markdown approximation for composer preview / source tinting.
 /// FluxDo ships a full cook JS bundle; Doer stays native UIKit without that dependency.
 enum ComposerMarkdownRenderer {
-    private static let bodyPointSize: CGFloat = 23
-    private static let monoPointSize: CGFloat = 18
+    private static var bodyFont: UIFont { ComposerTypography.bodyFont }
+    private static var codeFont: UIFont { ComposerTypography.codeFont }
+    private static var bodyPointSize: CGFloat { bodyFont.pointSize }
 
     static func renderPreview(_ markdown: String) -> NSAttributedString {
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        let bodyFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .regular))
-        let paragraph = baseParagraphStyle(lineSpacing: 5, paragraphSpacing: 10)
+        let bodyFont = self.bodyFont
+        let paragraph = ComposerTypography.paragraphStyle(paragraphSpacing: 10)
 
         guard !trimmed.isEmpty else {
             return NSAttributedString(
@@ -362,11 +364,9 @@ enum ComposerMarkdownRenderer {
 
         let ns = raw as NSString
         let full = NSRange(location: 0, length: ns.length)
-        let mono = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
-        )
+        let mono = ComposerTypography.codeFont
         let markerColor = UIColor.tertiaryLabel
-        let codeFill = UIColor.secondarySystemFill
+        let codeFill = ComposerTypography.mutedFill
 
         // Fenced code blocks first so inline rules skip them less painfully.
         if let fenceRegex = try? NSRegularExpression(
@@ -387,9 +387,7 @@ enum ComposerMarkdownRenderer {
                 if lang.length > 0 {
                     attributed.addAttributes([
                         .foregroundColor: UIColor.secondaryLabel,
-                        .font: UIFontMetrics(forTextStyle: .caption1).scaledFont(
-                            for: .monospacedSystemFont(ofSize: 13, weight: .semibold)
-                        ),
+                        .font: ComposerTypography.codeFont,
                     ], range: lang)
                 }
                 // Dim the opening/closing fences.
@@ -424,7 +422,7 @@ enum ComposerMarkdownRenderer {
             pattern: #"\*\*([^*\n]+)\*\*"#,
             in: attributed,
             attributes: [
-                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .bold)),
+                .font: AppSettings.shared.contentFont(ofSize: bodyPointSize, weight: .bold),
             ],
             markerColor: markerColor,
             markerLength: 2
@@ -433,7 +431,7 @@ enum ComposerMarkdownRenderer {
             pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#,
             in: attributed,
             attributes: [
-                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: bodyPointSize, weight: .regular).withItalicTrait()),
+                .font: ComposerTypography.bodyFont.withItalicTrait(),
             ],
             markerColor: markerColor,
             markerLength: 1
@@ -454,7 +452,7 @@ enum ComposerMarkdownRenderer {
                 attributed.addAttribute(.foregroundColor, value: markerColor, range: match.range(at: 1))
                 let lineRange = (attributed.string as NSString).lineRange(for: match.range)
                 let level = match.range(at: 1).length
-                let size: CGFloat = max(bodyPointSize + CGFloat(6 - level) * 2, bodyPointSize)
+                let size = ComposerTypography.headingFont(level: level).pointSize
                 attributed.addAttribute(
                     .font,
                     value: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: .bold)),
@@ -493,22 +491,22 @@ enum ComposerMarkdownRenderer {
 
         if line.hasPrefix("###### ") {
             line.removeFirst(7)
-            attributes[.font] = UIFontMetrics(forTextStyle: .headline).scaledFont(for: .systemFont(ofSize: 20, weight: .semibold))
+            attributes[.font] = ComposerTypography.headingFont(level: 6)
         } else if line.hasPrefix("##### ") {
             line.removeFirst(6)
-            attributes[.font] = UIFontMetrics(forTextStyle: .headline).scaledFont(for: .systemFont(ofSize: 22, weight: .semibold))
+            attributes[.font] = ComposerTypography.headingFont(level: 5)
         } else if line.hasPrefix("#### ") {
             line.removeFirst(5)
-            attributes[.font] = UIFontMetrics(forTextStyle: .title3).scaledFont(for: .systemFont(ofSize: 24, weight: .semibold))
+            attributes[.font] = ComposerTypography.headingFont(level: 4)
         } else if line.hasPrefix("### ") {
             line.removeFirst(4)
-            attributes[.font] = UIFontMetrics(forTextStyle: .title3).scaledFont(for: .systemFont(ofSize: 26, weight: .bold))
+            attributes[.font] = ComposerTypography.headingFont(level: 3)
         } else if line.hasPrefix("## ") {
             line.removeFirst(3)
-            attributes[.font] = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 28, weight: .bold))
+            attributes[.font] = ComposerTypography.headingFont(level: 2)
         } else if line.hasPrefix("# ") {
             line.removeFirst(2)
-            attributes[.font] = UIFontMetrics(forTextStyle: .title2).scaledFont(for: .systemFont(ofSize: 30, weight: .bold))
+            attributes[.font] = ComposerTypography.headingFont(level: 1)
         } else if line.hasPrefix("> ") {
             line.removeFirst(2)
             attributes[.foregroundColor] = UIColor.secondaryLabel
@@ -539,13 +537,9 @@ enum ComposerMarkdownRenderer {
     }
 
     private static func makeCodeBlock(language: String, lines: [String]) -> NSAttributedString {
-        let mono = UIFontMetrics(forTextStyle: .body).scaledFont(
-            for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
-        )
-        let headerFont = UIFontMetrics(forTextStyle: .caption1).scaledFont(
-            for: .monospacedSystemFont(ofSize: 12, weight: .semibold)
-        )
-        let fill = UIColor.secondarySystemFill
+        let mono = ComposerTypography.codeFont
+        let headerFont = AppSettings.shared.contentMonospacedFont(ofSize: max(ComposerTypography.bodyFont.pointSize - 2, 10), weight: .semibold)
+        let fill = ComposerTypography.mutedFill
         let block = NSMutableAttributedString()
 
         let headerStyle = baseParagraphStyle(lineSpacing: 2, paragraphSpacing: 2)
@@ -578,10 +572,8 @@ enum ComposerMarkdownRenderer {
             in: attributed,
             transform: { content, _ in
                 var attrs = attributes
-                attrs[.font] = UIFontMetrics(forTextStyle: .body).scaledFont(
-                    for: .monospacedSystemFont(ofSize: monoPointSize, weight: .regular)
-                )
-                attrs[.backgroundColor] = UIColor.secondarySystemFill
+                attrs[.font] = ComposerTypography.codeFont
+                attrs[.backgroundColor] = ComposerTypography.mutedFill
                 return NSAttributedString(string: content, attributes: attrs)
             }
         )
@@ -591,7 +583,7 @@ enum ComposerMarkdownRenderer {
             transform: { content, base in
                 var attrs = base
                 let size = (base[.font] as? UIFont)?.pointSize ?? bodyPointSize
-                attrs[.font] = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size, weight: .bold))
+                attrs[.font] = AppSettings.shared.contentFont(ofSize: size, weight: .bold)
                 return NSAttributedString(string: content, attributes: attrs)
             }
         )
@@ -600,7 +592,7 @@ enum ComposerMarkdownRenderer {
             in: attributed,
             transform: { content, base in
                 var attrs = base
-                let font = (base[.font] as? UIFont) ?? .systemFont(ofSize: bodyPointSize)
+                let font = (base[.font] as? UIFont) ?? ComposerTypography.bodyFont
                 attrs[.font] = font.withItalicTrait()
                 return NSAttributedString(string: content, attributes: attrs)
             }
@@ -650,7 +642,7 @@ enum ComposerMarkdownRenderer {
                 let urlString = (attributed.string as NSString).substring(with: match.range(at: 2))
                 if let url = URL(string: urlString) {
                     replacement.addAttribute(.link, value: url, range: NSRange(location: 0, length: replacement.length))
-                    replacement.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: NSRange(location: 0, length: replacement.length))
+                    replacement.addAttribute(.foregroundColor, value: ComposerTypography.accentColor, range: NSRange(location: 0, length: replacement.length))
                 }
             }
             attributed.replaceCharacters(in: fullRange, with: replacement)

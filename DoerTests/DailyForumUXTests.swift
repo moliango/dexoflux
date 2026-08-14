@@ -77,6 +77,25 @@ final class DailyForumUXTests: XCTestCase {
         XCTAssertEqual(loaded?.headlineItem?.remaining, 15000)
     }
 
+    func testBoostInputCountsEachShortcodeAsOneCharacter() {
+        XCTAssertEqual(BoostInputText.visibleLength(of: ":smile:"), 1)
+        XCTAssertEqual(BoostInputText.visibleLength(of: ":smile:hi"), 3)
+        XCTAssertEqual(BoostInputText.visibleLength(of: "hello"), 5)
+        XCTAssertEqual(BoostInputText.visibleLength(of: ""), 0)
+    }
+
+    func testBoostInputRawTextReadsEmojiAttachments() {
+        let attachment = EmojiTextAttachment()
+        attachment.shortcode = ":smile:"
+        let attributed = NSMutableAttributedString(attachment: attachment)
+        attributed.append(NSAttributedString(string: " hi"))
+        XCTAssertEqual(BoostInputText.rawText(from: attributed), ":smile: hi")
+        XCTAssertEqual(
+            BoostInputText.rawText(from: NSAttributedString(string: "plain")),
+            "plain"
+        )
+    }
+
     func testTrustDeepLinkRoutesToTrustPage() {
         XCTAssertEqual(
             DoerDeepLinkRouter.destination(from: URL(string: "doer://trust")!),

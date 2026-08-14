@@ -16,6 +16,9 @@ final class ReplyComposerViewController: UIViewController {
     var onPostCreated: (() -> Void)?
     var onPostUpdated: ((Int) -> Void)?
 
+    private var editingMode = ComposerEditingMode.stored
+    private let modeToggleButton = ComposerToolbarFactory.makeModeButton()
+
     private var currentPanel: ComposerPanelKind = .none
     private var hasLoadedForumEmojis = false
     private var isPreviewingMarkdown = false
@@ -62,7 +65,7 @@ final class ReplyComposerViewController: UIViewController {
     private let discardButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.title = String(localized: "reply.discard")
-        config.baseForegroundColor = .systemBlue
+        config.baseForegroundColor = ComposerTypography.accentColor
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
             var updated = attrs
@@ -77,7 +80,7 @@ final class ReplyComposerViewController: UIViewController {
     private let sendButton: UIButton = {
         var config = UIButton.Configuration.filled()
         config.title = String(localized: "reply.send")
-        config.baseBackgroundColor = UIColor(red: 0.18, green: 0.42, blue: 0.62, alpha: 1)
+        config.baseBackgroundColor = ComposerTypography.accentColor
         config.baseForegroundColor = .white
         config.cornerStyle = .capsule
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18)
@@ -102,12 +105,7 @@ final class ReplyComposerViewController: UIViewController {
     private let textView: UITextView = {
         let tv = UITextView()
         tv.translatesAutoresizingMaskIntoConstraints = false
-        tv.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 25, weight: .regular))
-        tv.adjustsFontForContentSizeCategory = true
-        tv.textContainerInset = UIEdgeInsets(top: 22, left: 22, bottom: 22, right: 22)
-        tv.backgroundColor = .systemBackground
-        tv.alwaysBounceVertical = true
-        tv.keyboardDismissMode = .interactive
+        ComposerTypography.applyBody(to: tv)
         tv.returnKeyType = .default
         return tv
     }()
@@ -115,9 +113,7 @@ final class ReplyComposerViewController: UIViewController {
     private let placeholderLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "reply.markdown_placeholder")
-        label.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 25, weight: .regular))
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .placeholderText
+        ComposerTypography.applyBody(to: label)
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -170,8 +166,8 @@ final class ReplyComposerViewController: UIViewController {
     private let rightToolbarPill: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .secondarySystemGroupedBackground
-        view.layer.cornerRadius = 28
+        view.backgroundColor = ComposerTypography.mutedFill
+        view.layer.cornerRadius = 22
         view.layer.cornerCurve = .continuous
         return view
     }()
@@ -241,7 +237,10 @@ final class ReplyComposerViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        ComposerTypography.applyChrome(to: view)
+        headerContainer.backgroundColor = ComposerTypography.backgroundColor
+        toolbarContainer.backgroundColor = ComposerTypography.backgroundColor
+        customPanelContainer.backgroundColor = ComposerTypography.backgroundColor
 
         switch submissionMode {
         case .reply:
@@ -341,6 +340,7 @@ final class ReplyComposerViewController: UIViewController {
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
+        modeToggleButton.addTarget(self, action: #selector(toggleEditingMode), for: .touchUpInside)
         toolsToggleButton.addTarget(self, action: #selector(toggleToolsPanel), for: .touchUpInside)
 
         textView.delegate = self
@@ -359,6 +359,7 @@ final class ReplyComposerViewController: UIViewController {
         }
         updatePlaceholder()
         updateSendButton()
+        updateToolbarState()
 
         if case .reply = submissionMode, initialText == nil || initialText?.isEmpty == true {
             Task { await self.hydrateServerDraftIfNeeded() }
@@ -476,6 +477,7 @@ final class ReplyComposerViewController: UIViewController {
             uploadStatusLabel: uploadStatusLabel,
             rightPill: rightToolbarPill,
             previewButton: previewToggleButton,
+            modeButton: modeToggleButton,
             toolsButton: toolsToggleButton
         )
     }
@@ -496,6 +498,21 @@ final class ReplyComposerViewController: UIViewController {
     @objc private func toggleToolsPanel() {
         hideMentionPicker()
         setPanel(currentPanel == .tools ? .none : .tools)
+    }
+
+    @objc private func toggleEditingMode() {
+        hideMentionPicker()
+        let raw = composerRawText
+        editingMode = editingMode.toggled
+        ComposerEditingMode.stored = editingMode
+        if isPreviewingMarkdown {
+            isPreviewingMarkdown = false
+            updatePreviewState()
+        }
+        applyFullRawText(raw)
+        textView.becomeFirstResponder()
+        updateToolbarState()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     @objc private func toggleMarkdownPreview() {
@@ -591,10 +608,7 @@ final class ReplyComposerViewController: UIViewController {
     }
 
     private var composerTextAttributes: [NSAttributedString.Key: Any] {
-        [
-            .font: textView.font ?? UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 25)),
-            .foregroundColor: UIColor.label,
-        ]
+        ComposerTypography.typingAttributes
     }
 
     private func setRawComposerText(_ raw: String) {
@@ -610,25 +624,57 @@ final class ReplyComposerViewController: UIViewController {
     }
 
     private func rawText(from attributed: NSAttributedString) -> String {
+        let expanded = expandingEmojiShortcodes(in: attributed)
+        if editingMode == .rich {
+            return ComposerMarkdownCodec.markdown(from: expanded)
+        }
         var result = ""
-        attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, range, _ in
-            if let attachment = attributes[.attachment] as? EmojiTextAttachment,
-               let shortcode = attachment.shortcode {
-                result += shortcode
-                return
-            }
-
-            let text = attributed.attributedSubstring(from: range).string
+        expanded.enumerateAttributes(in: NSRange(location: 0, length: expanded.length)) { attributes, range, _ in
+            let text = expanded.attributedSubstring(from: range).string
             result += text.replacingOccurrences(of: "\u{fffc}", with: "")
         }
         return result
     }
 
+    private func expandingEmojiShortcodes(in attributed: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: attributed)
+        var location = result.length
+        while location > 0 {
+            location -= 1
+            let attrs = result.attributes(at: location, effectiveRange: nil)
+            guard let attachment = attrs[.attachment] as? EmojiTextAttachment,
+                  let shortcode = attachment.shortcode
+            else { continue }
+            var range = NSRange(location: location, length: 1)
+            result.attributes(at: location, effectiveRange: &range)
+            var textAttrs = attrs
+            textAttrs[.attachment] = nil
+            result.replaceCharacters(in: range, with: NSAttributedString(string: shortcode, attributes: textAttrs))
+            location = range.location
+        }
+        return result
+    }
+
     private func makeComposerAttributedString(_ raw: String) -> NSMutableAttributedString {
-        // 1) Soft markdown chrome on the full raw source (FluxDo source mode feel).
-        let styled = ComposerMarkdownRenderer.styleSource(raw, baseAttributes: composerTextAttributes)
-        // 2) Replace emoji shortcodes with attachments without losing surrounding styles.
-        let font = textView.font ?? UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 25))
+        let styled: NSMutableAttributedString
+        if editingMode == .rich {
+            styled = ComposerMarkdownCodec.richAttributedString(from: raw)
+        } else {
+            styled = ComposerMarkdownRenderer.styleSource(raw, baseAttributes: composerTextAttributes)
+        }
+        return attachEmojiShortcodes(in: styled)
+    }
+
+    private func makeComposerSnippet(_ raw: String) -> NSMutableAttributedString {
+        let styled = makeComposerAttributedString(raw)
+        if editingMode == .rich, styled.string.hasSuffix("\n"), styled.length > 0 {
+            styled.deleteCharacters(in: NSRange(location: styled.length - 1, length: 1))
+        }
+        return styled
+    }
+
+    private func attachEmojiShortcodes(in styled: NSMutableAttributedString) -> NSMutableAttributedString {
+        let font = ComposerTypography.bodyFont
         let matches = Self.emojiShortcodeRegex.matches(in: styled.string, range: NSRange(location: 0, length: styled.length))
         let result = NSMutableAttributedString()
         var cursor = 0
@@ -664,6 +710,7 @@ final class ReplyComposerViewController: UIViewController {
 
     private func scheduleSourceRestyle() {
         guard !isPreviewingMarkdown else { return }
+        guard editingMode == .source else { return }
         // Don't fight IME marked text — restyling mid-composition jumps the caret.
         guard textView.markedTextRange == nil else { return }
         sourceRestyleTask?.cancel()
@@ -694,7 +741,7 @@ final class ReplyComposerViewController: UIViewController {
     ) {
         let current = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString(string: textView.text ?? "", attributes: composerTextAttributes))
         let validRange = clampedRange(range, length: current.length)
-        let inserted = makeComposerAttributedString(raw)
+        let inserted = makeComposerSnippet(raw)
         current.replaceCharacters(in: validRange, with: inserted)
 
         let relativeSelection = selectedRangeInInsertedText ?? NSRange(location: inserted.length, length: 0)
@@ -712,6 +759,12 @@ final class ReplyComposerViewController: UIViewController {
         isApplyingAttributedText = true
         textView.attributedText = attributed
         textView.typingAttributes = composerTextAttributes
+        if editingMode == .rich {
+            textView.typingAttributes = ComposerMarkdownCodec.typingAttributes(
+                at: selectedRange.location,
+                in: attributed
+            )
+        }
         textView.selectedRange = clampedRange(selectedRange, length: attributed.length)
         isApplyingAttributedText = false
 
@@ -964,9 +1017,11 @@ final class ReplyComposerViewController: UIViewController {
         ComposerToolbarFactory.updateToolbarTints(
             emojiButton: emojiToggleButton,
             previewButton: previewToggleButton,
+            modeButton: modeToggleButton,
             toolsButton: toolsToggleButton,
             panel: currentPanel,
-            isPreviewing: isPreviewingMarkdown
+            isPreviewing: isPreviewingMarkdown,
+            editingMode: editingMode
         )
     }
 
@@ -1069,6 +1124,59 @@ final class ReplyComposerViewController: UIViewController {
         })
         present(alert, animated: true)
     }
+
+    private func applyRichLinePrefix(_ prefix: String) {
+        let attributed = textView.attributedText ?? NSAttributedString(string: "", attributes: composerTextAttributes)
+        guard attributed.length > 0 else {
+            replaceDisplayRange(NSRange(location: 0, length: 0), withRawText: prefix)
+            return
+        }
+        let ns = attributed.string as NSString
+        let selection = textView.selectedRange
+        let lineRange = ns.lineRange(for: NSRange(location: min(selection.location, ns.length), length: 0))
+        let hasNewline = ns.substring(with: lineRange).hasSuffix("\n")
+        let contentRange = NSRange(
+            location: lineRange.location,
+            length: max(lineRange.length - (hasNewline ? 1 : 0), 0)
+        )
+        guard contentRange.length > 0 else {
+            replaceDisplayRange(NSRange(location: lineRange.location, length: 0), withRawText: prefix)
+            return
+        }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        if prefix.hasPrefix("> ") {
+            let depth = (mutable.attribute(.composerQuoteDepth, at: contentRange.location, effectiveRange: nil) as? Int) ?? 0
+            let next = depth > 0 ? 0 : 1
+            mutable.addAttribute(.composerQuoteDepth, value: next, range: contentRange)
+            mutable.addAttribute(.foregroundColor, value: next > 0 ? UIColor.secondaryLabel : UIColor.label, range: contentRange)
+            mutable.addAttribute(
+                .paragraphStyle,
+                value: ComposerTypography.paragraphStyle(headIndent: next > 0 ? 14 : 0),
+                range: contentRange
+            )
+        } else if prefix == "- " || prefix.hasSuffix(". ") {
+            let existing = mutable.attribute(.composerListMarker, at: contentRange.location, effectiveRange: nil) as? String
+            if existing == prefix {
+                mutable.removeAttribute(.composerListMarker, range: contentRange)
+            } else {
+                mutable.addAttribute(.composerListMarker, value: prefix, range: contentRange)
+            }
+        } else if prefix.hasPrefix("#") {
+            let level = prefix.filter { $0 == "#" }.count
+            let existing = mutable.attribute(.composerHeadingLevel, at: contentRange.location, effectiveRange: nil) as? Int
+            if existing == level {
+                mutable.removeAttribute(.composerHeadingLevel, range: contentRange)
+                mutable.addAttribute(.font, value: ComposerTypography.bodyFont, range: contentRange)
+            } else {
+                mutable.addAttribute(.composerHeadingLevel, value: level, range: contentRange)
+                mutable.addAttribute(.font, value: ComposerTypography.headingFont(level: max(level, 1)), range: contentRange)
+            }
+        } else {
+            replaceDisplayRange(NSRange(location: lineRange.location, length: 0), withRawText: prefix)
+            return
+        }
+        applyComposerAttributedText(mutable, selectedRange: selection)
+    }
 }
 
 // MARK: - ComposerTextSurface
@@ -1099,18 +1207,34 @@ extension ReplyComposerViewController: ComposerTextSurface {
         let selection = textView.selectedRange
         let selected = selection.length > 0 ? rawText(inDisplayRange: selection) : placeholder
         let replacement = "\(start)\(selected)\(end)"
-        let selectedDisplayLength = makeComposerAttributedString(selected).length
-        replaceDisplayRange(
-            selection,
-            withRawText: replacement,
-            selectedRangeInInsertedText: NSRange(location: start.count, length: selectedDisplayLength)
-        )
+        if editingMode == .rich {
+            let visual = makeComposerSnippet(replacement)
+            replaceDisplayRange(
+                selection,
+                withRawText: replacement,
+                selectedRangeInInsertedText: NSRange(location: 0, length: visual.length)
+            )
+        } else {
+            let selectedDisplayLength = makeComposerAttributedString(selected).length
+            replaceDisplayRange(
+                selection,
+                withRawText: replacement,
+                selectedRangeInInsertedText: NSRange(location: start.count, length: selectedDisplayLength)
+            )
+        }
         updatePlaceholder()
         updateSendButton()
         scheduleLocalDraftSave()
     }
 
     func composerApplyLinePrefix(_ prefix: String) {
+        if editingMode == .rich {
+            applyRichLinePrefix(prefix)
+            updatePlaceholder()
+            updateSendButton()
+            scheduleLocalDraftSave()
+            return
+        }
         let text = composerDisplayText
         let nsText = text as NSString
         let selection = textView.selectedRange
@@ -1185,6 +1309,12 @@ extension ReplyComposerViewController: UITextViewDelegate {
 
     func textViewDidChangeSelection(_ textView: UITextView) {
         guard !isApplyingAttributedText else { return }
+        if editingMode == .rich, let attributed = textView.attributedText {
+            textView.typingAttributes = ComposerMarkdownCodec.typingAttributes(
+                at: textView.selectedRange.location,
+                in: attributed
+            )
+        }
         refreshMentionSuggestions()
     }
 

@@ -15,15 +15,18 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     private let titleField = UITextField()
     private let textView = UITextView()
     private let placeholderLabel = UILabel()
+    private var editingMode = ComposerEditingMode.stored
     private var isSending = false
+    private let initialRaw: String
+    private var modeBarItem: UIBarButtonItem?
 
     init(api: DiscourseAPI, recipient: String = "", initialTitle: String = "", initialRaw: String = "") {
         self.api = api
         self.recipient = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
         self.allowsEditingRecipient = self.recipient.isEmpty
+        self.initialRaw = initialRaw
         super.init(nibName: nil, bundle: nil)
         titleField.text = initialTitle
-        textView.text = initialRaw
         modalPresentationStyle = .pageSheet
     }
 
@@ -35,9 +38,10 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     override func viewDidLoad() {
         super.viewDidLoad()
         title = String(localized: "user.profile.private_message")
-        view.backgroundColor = AppSettings.shared.themeStyle.contentBackgroundColor
+        view.backgroundColor = ComposerTypography.backgroundColor
         setupNavigation()
         setupUI()
+        applyBodyMarkdown(initialRaw)
         restoreDraftIfNeeded()
         updateSendState()
         Task { await hydrateServerDraftIfNeeded() }
@@ -57,12 +61,23 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             target: self,
             action: #selector(cancelTapped)
         )
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+        let sendItem = UIBarButtonItem(
             title: String(localized: "reply.send"),
             style: .done,
             target: self,
             action: #selector(sendTapped)
         )
+        let modeItem = UIBarButtonItem(
+            title: editingMode == .rich ? "Aa" : "MD",
+            style: .plain,
+            target: self,
+            action: #selector(toggleEditingMode)
+        )
+        modeBarItem = modeItem
+        sendItem.tintColor = ComposerTypography.accentColor
+        modeItem.tintColor = ComposerTypography.accentColor
+        navigationItem.leftBarButtonItem?.tintColor = ComposerTypography.accentColor
+        navigationItem.rightBarButtonItems = [sendItem, modeItem]
     }
 
     private func setupUI() {
@@ -101,25 +116,22 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         titleField.returnKeyType = .next
         titleField.delegate = self
         titleField.addTarget(self, action: #selector(inputChanged), for: .editingChanged)
-        titleField.font = .preferredFont(forTextStyle: .body)
+        titleField.font = ComposerTypography.titleFont
         titleField.adjustsFontForContentSizeCategory = true
+        titleField.tintColor = ComposerTypography.accentColor
 
         textView.translatesAutoresizingMaskIntoConstraints = false
-        textView.font = AppSettings.shared.contentFont(ofSize: 17)
-        textView.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
-        textView.layer.cornerRadius = 14
+        ComposerTypography.applyBody(to: textView)
+        textView.layer.cornerRadius = ComposerTypography.chromeRadius
         textView.layer.cornerCurve = .continuous
         textView.layer.borderWidth = 1
         textView.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
-        textView.textContainerInset = UIEdgeInsets(top: 14, left: 12, bottom: 14, right: 12)
         textView.delegate = self
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeholderLabel.font = textView.font
-        placeholderLabel.textColor = .placeholderText
+        ComposerTypography.applyBody(to: placeholderLabel)
         placeholderLabel.text = String(localized: "reply.placeholder")
-        placeholderLabel.isHidden = !textView.text.isEmpty
-        placeholderLabel.adjustsFontForContentSizeCategory = true
+        placeholderLabel.isHidden = true
 
         view.addSubview(recipientLabel)
         view.addSubview(recipientField)
@@ -166,20 +178,51 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         return recipient
     }
 
+    private var bodyRaw: String {
+        guard let attributed = textView.attributedText, attributed.length > 0 else {
+            return textView.text ?? ""
+        }
+        if editingMode == .rich {
+            return ComposerMarkdownCodec.markdown(from: attributed)
+        }
+        return attributed.string
+    }
+
+    private func applyBodyMarkdown(_ raw: String) {
+        if editingMode == .rich {
+            textView.attributedText = ComposerMarkdownCodec.richAttributedString(from: raw)
+        } else {
+            textView.attributedText = ComposerMarkdownRenderer.styleSource(
+                raw,
+                baseAttributes: ComposerTypography.typingAttributes
+            )
+        }
+        textView.typingAttributes = ComposerTypography.typingAttributes
+        placeholderLabel.isHidden = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    @objc private func toggleEditingMode() {
+        let raw = bodyRaw
+        editingMode = editingMode.toggled
+        ComposerEditingMode.stored = editingMode
+        applyBodyMarkdown(raw)
+        modeBarItem?.title = editingMode == .rich ? "Aa" : "MD"
+        textView.becomeFirstResponder()
+    }
+
     private func restoreDraftIfNeeded() {
         let hasInitial = !(titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !textView.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard !hasInitial,
               let draft = ComposerLocalDraftStore.loadPrivateMessage(baseURL: api.baseURL, recipient: recipient)
         else { return }
         titleField.text = draft.title
-        textView.text = draft.raw
-        placeholderLabel.isHidden = !draft.raw.isEmpty
+        applyBodyMarkdown(draft.raw)
     }
 
     private func hydrateServerDraftIfNeeded() async {
         let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let localRaw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localRaw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             guard let server = try await api.fetchDraft(key: "new_private_message") else { return }
             ComposerLocalDraftStore.saveSequence(
@@ -202,8 +245,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
                 guard hit else { return }
             }
             titleField.text = serverTitle
-            textView.text = serverRaw
-            placeholderLabel.isHidden = !serverRaw.isEmpty
+            applyBodyMarkdown(serverRaw)
             ComposerLocalDraftStore.savePrivateMessage(
                 baseURL: api.baseURL,
                 recipient: recipient,
@@ -245,13 +287,13 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             baseURL: api.baseURL,
             recipient: to,
             title: titleField.text ?? "",
-            raw: textView.text ?? ""
+            raw: bodyRaw
         )
     }
 
     private func persistServerDraft() {
         let title = titleField.text ?? ""
-        let raw = textView.text ?? ""
+        let raw = bodyRaw
         let api = self.api
         let recipient = resolvedRecipient
         guard !recipient.isEmpty else { return }
@@ -267,9 +309,9 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
 
     private func updateSendState() {
         let title = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let raw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let to = resolvedRecipient
-        navigationItem.rightBarButtonItem?.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty && !to.isEmpty
+        navigationItem.rightBarButtonItems?.first?.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty && !to.isEmpty
         navigationItem.leftBarButtonItem?.isEnabled = !isSending
         titleField.isEnabled = !isSending
         recipientField.isEnabled = !isSending
@@ -295,7 +337,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
 
     @objc private func sendTapped() {
         let messageTitle = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let raw = textView.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let to = resolvedRecipient
         guard !messageTitle.isEmpty, !raw.isEmpty, !to.isEmpty, !isSending else { return }
         recipient = to
@@ -326,7 +368,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     }
 
     func textViewDidChange(_ textView: UITextView) {
-        placeholderLabel.isHidden = !textView.text.isEmpty
+        placeholderLabel.isHidden = !bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         updateSendState()
         scheduleDraftSave()
     }
