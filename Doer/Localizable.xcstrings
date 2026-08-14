@@ -2907,6 +2907,17 @@
         }
       }
     },
+    "common.reload" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "刷新"
+          }
+        }
+      }
+    },
     "common.rename" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -12439,17 +12450,6 @@
         }
       }
     },
-    "plugins.newapi.auto_relogin.starting" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "即将自动打开登录页刷新失效的平台。"
-          }
-        }
-      }
-    },
     "plugins.newapi.batch_result" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -12758,6 +12758,39 @@
         }
       }
     },
+    "plugins.newapi.detail.relogin" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重新登录"
+          }
+        }
+      }
+    },
+    "plugins.newapi.detail.relogin_before_sign_in" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "签到前重新登录"
+          }
+        }
+      }
+    },
+    "plugins.newapi.detail.relogin_before_sign_in.help" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开启后，签到前会优先无感刷新 Token；凭证失效时才打开网页登录。"
+          }
+        }
+      }
+    },
     "plugins.newapi.detail.request" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -12769,13 +12802,24 @@
         }
       }
     },
-    "plugins.newapi.detail.web_sign_in" : {
+    "plugins.newapi.detail.sign_in_flow" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "网页登录"
+            "value" : "签到流程"
+          }
+        }
+      }
+    },
+    "plugins.newapi.detail.web_manual_sign_in" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网页签到"
           }
         }
       }
@@ -13337,6 +13381,28 @@
         }
       }
     },
+    "plugins.newapi.manual.clear_all" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除全部 Cookie"
+          }
+        }
+      }
+    },
+    "plugins.newapi.manual.clear_platform" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除当前平台 Cookie"
+          }
+        }
+      }
+    },
     "plugins.newapi.name" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -13402,6 +13468,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自訂"
+          }
+        }
+      }
+    },
+    "plugins.newapi.relogin_required_in_app" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "需要先在 Doer 内重新登录后签到"
           }
         }
       }
@@ -14171,6 +14248,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新投票"
+          }
+        }
+      }
+    },
+    "post.poll.view_results" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View results"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看結果"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看結果"
+          }
+        }
+      }
+    },
+    "post.poll.vote" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vote"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "投票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "投票"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "投票"
           }
         }
       }
@@ -16180,6 +16313,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預覽"
+          }
+        }
+      }
+    },
+    "reply.toolbar.rich_mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rich text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "富文本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "富文本"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "富文本"
           }
         }
       }
