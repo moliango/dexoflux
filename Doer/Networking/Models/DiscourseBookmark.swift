@@ -2,6 +2,7 @@ import Foundation
 
 struct DiscourseBookmarkList: Decodable {
     let bookmarks: [DiscourseBookmark]
+    let moreBookmarksUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case bookmarks = "user_bookmark_list"
@@ -11,10 +12,17 @@ struct DiscourseBookmarkList: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let inner = try container.decode(InnerList.self, forKey: .bookmarks)
         self.bookmarks = inner.bookmarks
+        self.moreBookmarksUrl = inner.moreBookmarksUrl
     }
 
     private struct InnerList: Decodable {
         let bookmarks: [DiscourseBookmark]
+        let moreBookmarksUrl: String?
+
+        enum CodingKeys: String, CodingKey {
+            case bookmarks
+            case moreBookmarksUrl = "more_bookmarks_url"
+        }
     }
 }
 

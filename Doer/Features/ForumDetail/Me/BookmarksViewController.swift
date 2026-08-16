@@ -80,6 +80,51 @@ final class BookmarksViewController: ObservableViewController {
         return rc
     }()
 
+    private lazy var loadingFooter: UIView = {
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.startAnimating()
+        footer.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+        ])
+        return footer
+    }()
+
+    private lazy var loadMoreErrorFooter: UIView = {
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 68))
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = String(localized: "me.topic_list.load_more_failed", defaultValue: "加载更多失败，点击重试")
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .secondaryLabel
+
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setTitle(String(localized: "action.retry"), for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.addTarget(self, action: #selector(loadMoreRetryTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [label, button])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+        footer.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: footer.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: footer.trailingAnchor, constant: -20),
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        return footer
+    }()
+
+    private let emptyFooter = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
+
     init(api: DiscourseAPI, username: String, authGate: AuthGating? = nil) {
         self.api = api
         self.viewModel = BookmarksViewModel(api: api, username: username)
@@ -176,6 +221,14 @@ final class BookmarksViewController: ObservableViewController {
             )
         }
 
+        if viewModel.isLoadingMore {
+            tableView.tableFooterView = loadingFooter
+        } else if viewModel.loadMoreErrorMessage != nil {
+            tableView.tableFooterView = loadMoreErrorFooter
+        } else {
+            tableView.tableFooterView = emptyFooter
+        }
+
         tableView.reloadData()
         prefetchAvatars()
     }
@@ -239,6 +292,12 @@ final class BookmarksViewController: ObservableViewController {
     @objc private func retryTapped() {
         Task {
             await loadBookmarks()
+        }
+    }
+
+    @objc private func loadMoreRetryTapped() {
+        Task {
+            await viewModel.loadMore()
         }
     }
 
@@ -310,6 +369,11 @@ extension BookmarksViewController: UITableViewDelegate {
             let detailVC = TopicDetailFactory.make(api: api, topicId: topicId)
             navigationController?.pushViewController(detailVC, animated: true)
         }
+    }
+
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        guard indexPath.row >= viewModel.bookmarks.count - 5 else { return }
+        Task { await viewModel.loadMore() }
     }
 
     func tableView(

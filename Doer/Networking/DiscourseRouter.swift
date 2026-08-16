@@ -42,7 +42,7 @@ enum DiscourseRouter {
     case tagSearch(query: String, categoryId: Int?)
     /// Composer @-mention user search (`/u/search/users`).
     case userSearch(term: String, topicId: Int?)
-    case bookmarks(username: String)
+    case bookmarks(username: String, page: Int)
     case userSummary(username: String)
     case userProfile(username: String)
     case userCard(username: String)
@@ -188,8 +188,12 @@ enum DiscourseRouter {
                 path += "&topic_id=\(topicId)"
             }
             return path
-        case .bookmarks(let username):
-            return "/u/\(username)/bookmarks.json"
+        case .bookmarks(let username, let page):
+            var path = "/u/\(username)/bookmarks.json"
+            if page > 0 {
+                path += "?page=\(page)"
+            }
+            return path
         case .userSummary(let username):
             return "/u/\(username)/summary.json"
         case .userProfile(let username):

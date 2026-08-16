@@ -46,8 +46,8 @@ extension DiscourseAPI {
         }
     }
 
-    func fetchBookmarks(username: String) async throws -> DiscourseBookmarkList {
-        try await request(route: .bookmarks(username: username))
+    func fetchBookmarks(username: String, page: Int = 0) async throws -> DiscourseBookmarkList {
+        try await request(route: .bookmarks(username: username, page: page))
     }
 
     func fetchUserSummary(username: String) async throws -> DiscourseUserSummary {
