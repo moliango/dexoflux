@@ -1,6 +1,20 @@
 import Foundation
 import WebKit
 
+private enum CookieDeletionKind {
+    case emptyValue
+    case deletionSentinel
+    case expired
+
+    var logLabel: String {
+        switch self {
+        case .emptyValue: return "empty_value"
+        case .deletionSentinel: return "deletion_sentinel"
+        case .expired: return "expired"
+        }
+    }
+}
+
 /// In-memory + persisted cookie store used for web-login sessions.
 /// Cookies are keyed by "domain|name|path" for deduplication.
 final class WebCookieStore {
@@ -38,23 +52,47 @@ final class WebCookieStore {
     func setCookies(_ cookies: [HTTPCookie]) {
         let now = Date()
         var storedCookies: [HTTPCookie] = []
-        var removedNames: [String] = []
+        var removedEmptyNames: [String] = []
+        var removedSentinelNames: [String] = []
+        var removedExpiredNames: [String] = []
+        var skippedAuthDeletions: [String] = []
         var policyChanges: [String] = []
 
         lock.lock()
         for cookie in cookies {
             let key = key(for: cookie)
-            if Self.isDeletionCookie(cookie, now: now) {
+            if let kind = Self.deletionKind(cookie, now: now) {
+                if Self.isAuthCookieName(cookie.name),
+                   hasValidAuthCookieLocked(
+                    named: cookie.name,
+                    siteHost: Self.normalizedDomain(cookie.domain),
+                    now: now
+                   ) {
+                    skippedAuthDeletions.append("\(cookie.name)(\(kind.logLabel))")
+                    continue
+                }
                 if Self.isAuthCookieName(cookie.name) {
                     let removed = removeAuthCookieVariantsLocked(
                         named: cookie.name,
                         siteHost: Self.normalizedDomain(cookie.domain)
                     )
                     if removed > 0 {
-                        removedNames.append(cookie.name)
+                        Self.appendRemovedName(
+                            cookie.name,
+                            kind: kind,
+                            empty: &removedEmptyNames,
+                            sentinel: &removedSentinelNames,
+                            expired: &removedExpiredNames
+                        )
                     }
                 } else if jar.removeValue(forKey: key) != nil {
-                    removedNames.append(cookie.name)
+                    Self.appendRemovedName(
+                        cookie.name,
+                        kind: kind,
+                        empty: &removedEmptyNames,
+                        sentinel: &removedSentinelNames,
+                        expired: &removedExpiredNames
+                    )
                 }
             } else {
                 jar[key] = cookie
@@ -67,8 +105,20 @@ final class WebCookieStore {
         if !storedCookies.isEmpty {
             DohDebugLog.record("stored cookies: \(Self.cookieSummary(storedCookies))", subsystem: "Auth")
         }
-        if !removedNames.isEmpty {
-            DohDebugLog.record("removed expired cookies: \(removedNames.sorted().joined(separator: ","))", subsystem: "Auth")
+        if !removedEmptyNames.isEmpty {
+            DohDebugLog.record("removed empty cookies: \(removedEmptyNames.sorted().joined(separator: ","))", subsystem: "Auth")
+        }
+        if !removedSentinelNames.isEmpty {
+            DohDebugLog.record("removed deletion-sentinel cookies: \(removedSentinelNames.sorted().joined(separator: ","))", subsystem: "Auth")
+        }
+        if !removedExpiredNames.isEmpty {
+            DohDebugLog.record("removed expired cookies: \(removedExpiredNames.sorted().joined(separator: ","))", subsystem: "Auth")
+        }
+        if !skippedAuthDeletions.isEmpty {
+            DohDebugLog.record(
+                "kept valid auth cookies; skipped deletion: \(skippedAuthDeletions.joined(separator: ","))",
+                subsystem: "Auth"
+            )
         }
         if !policyChanges.isEmpty {
             DohDebugLog.record("normalized auth cookies: \(policyChanges.joined(separator: ","))", subsystem: "Auth")
@@ -160,6 +210,8 @@ final class WebCookieStore {
     }
 
     func mergeResponseHeaders(_ headers: [AnyHashable: Any], for url: URL) {
+        // Auth cookie deletions from failed/empty/challenge Set-Cookie are ignored
+        // inside setCookies when the jar still has a valid token.
         let newCookies = Self.cookies(fromResponseHeaders: headers, for: url)
         if !newCookies.isEmpty { setCookies(newCookies) }
     }
@@ -201,12 +253,19 @@ final class WebCookieStore {
             dataStore.httpCookieStore.getAllCookies { cont.resume(returning: $0) }
         }
         let now = Date()
+        var skippedAuthDeletions: [String] = []
         let cookies = webViewCookies.filter { cookie in
             if let names, !names.contains(cookie.name) {
                 return false
             }
+            if Self.isAuthCookieName(cookie.name),
+               let kind = Self.deletionKind(cookie, now: now),
+               shouldProtectAuthCookieFromDeletion(cookie, now: now) {
+                skippedAuthDeletions.append("\(cookie.name)(\(kind.logLabel))")
+                return false
+            }
             // Skip expired leftovers from WK — applying them would delete still-valid jar
-            // sessions via isDeletionCookie. Explicit empty-value deletions still flow through.
+            // sessions via isDeletionCookie.
             if Self.isExpired(cookie, now: now) {
                 return false
             }
@@ -214,6 +273,12 @@ final class WebCookieStore {
                 return true
             }
             return Self.domainMatches(host: host, cookieDomain: cookie.domain)
+        }
+        if !skippedAuthDeletions.isEmpty {
+            DohDebugLog.record(
+                "skipped WebView auth cookie deletion; jar still valid: \(skippedAuthDeletions.joined(separator: ","))",
+                subsystem: "Auth"
+            )
         }
         setCookies(cookies)
     }
@@ -445,7 +510,55 @@ final class WebCookieStore {
     }
 
     private static func isDeletionCookie(_ cookie: HTTPCookie, now: Date = Date()) -> Bool {
-        cookie.value.isEmpty || cookie.value == "del" || isExpired(cookie, now: now)
+        deletionKind(cookie, now: now) != nil
+    }
+
+    /// Empty / `del` / past-Expires are all deletions. Empty is classified first so
+    /// `Set-Cookie: _t=; Expires=1970` is not logged as a genuine expiry.
+    private static func deletionKind(_ cookie: HTTPCookie, now: Date = Date()) -> CookieDeletionKind? {
+        if cookie.value.isEmpty { return .emptyValue }
+        if cookie.value == "del" { return .deletionSentinel }
+        if isExpired(cookie, now: now) { return .expired }
+        return nil
+    }
+
+    private static func appendRemovedName(
+        _ name: String,
+        kind: CookieDeletionKind,
+        empty: inout [String],
+        sentinel: inout [String],
+        expired: inout [String]
+    ) {
+        switch kind {
+        case .emptyValue:
+            empty.append(name)
+        case .deletionSentinel:
+            sentinel.append(name)
+        case .expired:
+            expired.append(name)
+        }
+    }
+
+    private func hasValidAuthCookieLocked(named name: String, siteHost: String, now: Date) -> Bool {
+        guard Self.isAuthCookieName(name), !siteHost.isEmpty else { return false }
+        return jar.values.contains { cookie in
+            cookie.name == name
+                && Self.normalizedDomain(cookie.domain) == siteHost
+                && !cookie.value.isEmpty
+                && cookie.value != "del"
+                && !Self.isExpired(cookie, now: now)
+        }
+    }
+
+    private func shouldProtectAuthCookieFromDeletion(_ cookie: HTTPCookie, now: Date) -> Bool {
+        guard Self.isAuthCookieName(cookie.name) else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        return hasValidAuthCookieLocked(
+            named: cookie.name,
+            siteHost: Self.normalizedDomain(cookie.domain),
+            now: now
+        )
     }
 
     private static func isAuthCookieName(_ name: String) -> Bool {

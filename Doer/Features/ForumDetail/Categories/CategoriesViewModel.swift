@@ -27,7 +27,7 @@ final class CategoriesViewModel: DoerObservableObject {
                     .filter { $0.parentCategoryId == nil }
             }
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 requiresLogin = true
             }
             errorMessage = error.localizedDescription

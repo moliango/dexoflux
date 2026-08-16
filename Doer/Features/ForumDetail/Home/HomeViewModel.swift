@@ -384,7 +384,7 @@ final class HomeViewModel: DoerObservableObject {
             if await handleExplicitCancellationIfNeeded(error, retryingExplicitCancellation: retryingExplicitCancellation) {
                 return
             }
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
@@ -451,7 +451,7 @@ final class HomeViewModel: DoerObservableObject {
         } catch is CancellationError {
             // A newer refresh replaced this request.
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
@@ -515,7 +515,7 @@ final class HomeViewModel: DoerObservableObject {
         } catch is CancellationError {
             // A foreground refresh or a newer detection replaced this poll.
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
@@ -587,7 +587,7 @@ final class HomeViewModel: DoerObservableObject {
         } catch is CancellationError {
             // A newer refresh replaced this request.
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
@@ -645,7 +645,7 @@ final class HomeViewModel: DoerObservableObject {
             _ = try await api.fetchCurrentUser()
             return .allowed
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 return .loginRequired
             }
             return .unavailable(error)

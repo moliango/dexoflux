@@ -27,7 +27,7 @@ final class MessagesViewModel: DoerObservableObject {
             messages = result.topicList.topics
             usersById = Dictionary(uniqueKeysWithValues: (result.users ?? []).map { ($0.id, $0) })
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 requiresLogin = true
             }
             errorMessage = error.localizedDescription

@@ -102,7 +102,7 @@ final class BrowsingHistoryViewModel: DoerObservableObject {
             _ = try await api.fetchCurrentUser()
             return true
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
             } else if topics.isEmpty {
                 errorMessage = error.localizedDescription
@@ -113,7 +113,7 @@ final class BrowsingHistoryViewModel: DoerObservableObject {
     }
 
     private func handle(_ error: Error, clearOnAuthFailure: Bool = false) {
-        if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+        if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
             clearProtectedContent(invalidateSession: true)
             return
         }

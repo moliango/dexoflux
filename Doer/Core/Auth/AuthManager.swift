@@ -132,6 +132,7 @@ final class AuthManager: DoerObservableObject, @unchecked Sendable {
 
     func invalidateWebSession(for baseURL: String) {
         let baseURL = normalizedBaseURL(baseURL)
+        DohDebugLog.record("invalidate web session base=\(baseURL)", subsystem: "Auth")
         KeychainHelper.deleteLegacyCredential(for: baseURL)
         KeychainHelper.deleteLegacyRSAKeyPair(for: baseURL)
         WebCookieStore.shared.clearCookies(for: baseURL)

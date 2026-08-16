@@ -63,7 +63,7 @@ final class MeViewModel: DoerObservableObject {
                 summary: userSummary
             )
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 AuthManager.shared.invalidateWebSession(for: api.baseURL)
                 currentUser = nil
                 userProfile = nil

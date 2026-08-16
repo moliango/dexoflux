@@ -78,4 +78,97 @@ final class WebCookieStoreSessionTests: XCTestCase {
         XCTAssertEqual(prepared.name, "_forum_session")
         XCTAssertEqual(prepared.value, "anon-or-session")
     }
+
+    func testExpiredAuthSetCookieDoesNotWipeValidJarToken() throws {
+        try seedValidAuthCookie(name: "_t", value: "keep-me")
+
+        WebCookieStore.shared.mergeResponseHeaders(
+            ["Set-Cookie": "_t=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; Secure; HttpOnly"],
+            for: probeURL
+        )
+
+        XCTAssertEqual(
+            WebCookieStore.shared.cookieValue(named: "_t", for: probeURL),
+            "keep-me",
+            "Failed/empty Set-Cookie must not delete a still-valid jar _t"
+        )
+    }
+
+    func testEmptyForumSessionSetCookieDoesNotWipeValidJarToken() throws {
+        try seedValidAuthCookie(name: "_forum_session", value: "keep-session")
+
+        WebCookieStore.shared.mergeResponseHeaders(
+            ["Set-Cookie": "_forum_session=; Path=/"],
+            for: probeURL
+        )
+
+        XCTAssertEqual(
+            WebCookieStore.shared.cookieValue(named: "_forum_session", for: probeURL),
+            "keep-session"
+        )
+    }
+
+    func testWebViewStyleEmptyAuthDeletionDoesNotWipeValidJarToken() throws {
+        try seedValidAuthCookie(name: "_t", value: "keep-me")
+
+        let deletion = try XCTUnwrap(HTTPCookie(properties: [
+            .name: "_t",
+            .value: "del",
+            .domain: probeHost,
+            .path: "/",
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(-3600),
+        ]))
+        WebCookieStore.shared.setCookies([deletion])
+
+        XCTAssertEqual(
+            WebCookieStore.shared.cookieValue(named: "_t", for: probeURL),
+            "keep-me",
+            "WK empty/del/expired _t must not wipe a still-valid jar token"
+        )
+    }
+
+    func testFreshAuthSetCookieStillReplacesJarToken() throws {
+        try seedValidAuthCookie(name: "_t", value: "old-token")
+
+        WebCookieStore.shared.mergeResponseHeaders(
+            ["Set-Cookie": "_t=new-token; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/; Secure; HttpOnly"],
+            for: probeURL
+        )
+
+        XCTAssertEqual(WebCookieStore.shared.cookieValue(named: "_t", for: probeURL), "new-token")
+    }
+
+    func testNonAuthExpiredSetCookieStillDeletes() throws {
+        let tracking = try XCTUnwrap(HTTPCookie(properties: [
+            .name: "cf_clearance",
+            .value: "cf-token",
+            .domain: probeHost,
+            .path: "/",
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(3600),
+        ]))
+        WebCookieStore.shared.setCookies([tracking])
+        XCTAssertTrue(WebCookieStore.shared.hasCookie(named: "cf_clearance", for: probeURL))
+
+        WebCookieStore.shared.mergeResponseHeaders(
+            ["Set-Cookie": "cf_clearance=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"],
+            for: probeURL
+        )
+
+        XCTAssertFalse(WebCookieStore.shared.hasCookie(named: "cf_clearance", for: probeURL))
+    }
+
+    private func seedValidAuthCookie(name: String, value: String) throws {
+        let auth = try XCTUnwrap(HTTPCookie(properties: [
+            .name: name,
+            .value: value,
+            .domain: probeHost,
+            .path: "/",
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(3600 * 24 * 30),
+        ]))
+        WebCookieStore.shared.setCookies([auth])
+        XCTAssertEqual(WebCookieStore.shared.cookieValue(named: name, for: probeURL), value)
+    }
 }

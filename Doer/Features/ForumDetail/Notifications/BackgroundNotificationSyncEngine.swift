@@ -198,7 +198,7 @@ final class BackgroundNotificationSyncEngine {
                     message: error.localizedDescription
                 )
             }
-            if apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL) {
                 return BackgroundNotificationSyncFailure(
                     baseURL: baseURL,
                     kind: .authentication,

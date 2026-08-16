@@ -392,7 +392,7 @@ extension DiscourseAPI {
                 )
             }
             if statusCode == 403 {
-                throw DiscourseAPIError(messages: ["Session expired, please log in again"], errorType: "forbidden")
+                throw Self.errorFromForbiddenStatus(data: response.data)
             }
             throw DiscourseAPIError(messages: ["Failed to mark notifications read"], errorType: nil)
         }

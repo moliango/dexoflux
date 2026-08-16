@@ -41,7 +41,7 @@ private final class TagTopicsViewModel: DoerObservableObject {
             canLoadMore = result.topicList.moreTopicsUrl != nil
             indexUsers(result.users)
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
                 return
             }
@@ -69,7 +69,7 @@ private final class TagTopicsViewModel: DoerObservableObject {
             canLoadMore = result.topicList.moreTopicsUrl != nil
             indexUsers(result.users)
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
                 return
             }
@@ -93,7 +93,7 @@ private final class TagTopicsViewModel: DoerObservableObject {
             _ = try await api.fetchCurrentUser()
             return true
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
             }
             return false

@@ -62,7 +62,7 @@ private final class CategoryTopicsViewModel: DoerObservableObject {
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
                 return
             }
@@ -93,7 +93,7 @@ private final class CategoryTopicsViewModel: DoerObservableObject {
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
                 return
             }
@@ -150,7 +150,7 @@ private final class CategoryTopicsViewModel: DoerObservableObject {
             _ = try await api.fetchCurrentUser()
             return true
         } catch {
-            if let apiError = error as? DiscourseAPIError, apiError.isNotLoggedIn || apiError.isForbidden {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContent(invalidateSession: true)
             }
             return false

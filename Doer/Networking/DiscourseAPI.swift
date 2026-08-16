@@ -224,11 +224,7 @@ final class DiscourseAPI {
                 throw DiscourseAPIError(messages: [String(localized: "login.required.message")], errorType: "not_logged_in")
             }
             if statusCode == 403 {
-                let data = response.data ?? Data()
-                if let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data), !errBody.errors.isEmpty {
-                    throw DiscourseAPIError(messages: errBody.errors, errorType: "forbidden")
-                }
-                throw DiscourseAPIError(messages: ["Session expired, please log in again"], errorType: "forbidden")
+                throw Self.errorFromForbiddenStatus(data: response.data)
             }
             if let data = response.data {
                 if let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data), !errBody.errors.isEmpty {
@@ -265,16 +261,16 @@ final class DiscourseAPI {
         error: AFError?,
         data: Data?
     ) async -> Bool {
-        let isAuthStatus = statusCode == 401 || statusCode == 403
-        let isEmptySerializedBody = Self.isInputDataNilOrZeroLength(error) || data?.isEmpty == true
-        guard isAuthStatus || isEmptySerializedBody else { return false }
+        guard let reason = Self.webSessionRefreshRetryReason(
+            route: route,
+            statusCode: statusCode,
+            error: error,
+            data: data
+        ) else { return false }
         guard let base = URL(string: baseURL),
               WebCookieStore.shared.hasDiscourseWebSessionCookie(for: base)
         else { return false }
 
-        let reason = isAuthStatus
-            ? "api_auth_status_\(statusCode ?? 0)"
-            : "api_empty_auth_response"
         let refreshed = await WebSessionRefreshService.shared.ensureSynced(
             baseURL: baseURL,
             reason: reason,
@@ -318,6 +314,24 @@ final class DiscourseAPI {
         case .backgroundRefresh:
             return "api.background"
         }
+    }
+
+    /// 403 is often Cloudflare, CSRF, or a permission check — not logout.
+    /// Keep Discourse `error_type` so UI does not treat every 403 as `forbidden`.
+    static func errorFromForbiddenStatus(data: Data?) -> DiscourseAPIError {
+        if let data, !data.isEmpty,
+           let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data),
+           !errBody.errors.isEmpty {
+            let rawType = errBody.errorType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return DiscourseAPIError(
+                messages: errBody.errors,
+                errorType: rawType.isEmpty ? "forbidden" : rawType
+            )
+        }
+        return DiscourseAPIError(
+            messages: [String(format: String(localized: "error.http_status"), 403)],
+            errorType: "http_403"
+        )
     }
 
     static func serverUnavailableError(statusCode: Int) -> DiscourseAPIError {
@@ -365,6 +379,25 @@ final class DiscourseAPI {
               case .inputDataNilOrZeroLength = reason
         else { return false }
         return true
+    }
+
+    /// Reasons that should force a web-session refresh before retrying.
+    /// Empty 200/204 bodies are Alamofire success (`emptyResponseCodes`) and must not
+    /// be treated as logout. Only 401/403, or an empty `/session/current.json` body.
+    static func webSessionRefreshRetryReason(
+        route: DiscourseRouter,
+        statusCode: Int?,
+        error: AFError?,
+        data: Data?
+    ) -> String? {
+        if statusCode == 401 || statusCode == 403 {
+            return "api_auth_status_\(statusCode ?? 0)"
+        }
+        let isEmptySerializedBody = isInputDataNilOrZeroLength(error) || data?.isEmpty == true
+        if case .currentUser = route, isEmptySerializedBody {
+            return "api_empty_auth_response"
+        }
+        return nil
     }
 
     static func cloudflareChallengeError() -> DiscourseAPIError {
