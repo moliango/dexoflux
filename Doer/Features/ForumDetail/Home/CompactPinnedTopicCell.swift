@@ -9,7 +9,8 @@ final class CompactPinnedTopicCell: UITableViewCell {
     private let cardView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.layer.cornerRadius = 0
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
         return view
     }()
 
@@ -18,10 +19,19 @@ final class CompactPinnedTopicCell: UITableViewCell {
         let view = UIImageView(image: UIImage(systemName: "pin.fill", withConfiguration: configuration))
         view.translatesAutoresizingMaskIntoConstraints = false
         view.contentMode = .scaleAspectFit
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
         return view
     }()
 
-    private let categoryHost = UIView()
+    private let categoryHost: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }()
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -31,42 +41,54 @@ final class CompactPinnedTopicCell: UITableViewCell {
         return label
     }()
 
-    private let unreadBadge: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 10, weight: .medium)
-        label.textAlignment = .center
-        label.layer.cornerRadius = 10
-        label.layer.cornerCurve = .continuous
-        label.layer.masksToBounds = true
-        label.setContentHuggingPriority(.required, for: .horizontal)
-        return label
+    private let countBadge: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
     }()
 
-    private let replyStack: UIStackView = {
+    private let accessoryIcon: UIImageView = {
         let icon = UIImageView(
             image: UIImage(
                 systemName: "bubble.left.fill",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
             )
         )
-        icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.widthAnchor.constraint(equalToConstant: 12).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 12).isActive = true
+        icon.contentMode = .scaleAspectFit
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        return icon
+    }()
 
+    private let accessoryLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 10, weight: .regular)
-        label.tag = 1
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        label.textAlignment = .center
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }()
 
-        let stack = UIStackView(arrangedSubviews: [icon, label])
+    private let rowStack: UIStackView = {
+        let stack = UIStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 2
-        stack.setContentHuggingPriority(.required, for: .horizontal)
+        stack.spacing = 8
+        stack.isLayoutMarginsRelativeArrangement = true
         return stack
     }()
+
+    private var cardTop: NSLayoutConstraint!
+    private var cardLeading: NSLayoutConstraint!
+    private var cardTrailing: NSLayoutConstraint!
+    private var cardBottom: NSLayoutConstraint!
+    private var accessoryWidth: NSLayoutConstraint!
 
     private var emojiBaseURL: String?
     private var renderedTitle: String?
@@ -86,47 +108,54 @@ final class CompactPinnedTopicCell: UITableViewCell {
         contentView.backgroundColor = .clear
         selectionStyle = .none
 
-        categoryHost.translatesAutoresizingMaskIntoConstraints = false
-        categoryHost.setContentHuggingPriority(.required, for: .horizontal)
+        let accessoryStack = UIStackView(arrangedSubviews: [accessoryIcon, accessoryLabel])
+        accessoryStack.translatesAutoresizingMaskIntoConstraints = false
+        accessoryStack.axis = .horizontal
+        accessoryStack.alignment = .center
+        accessoryStack.spacing = 4
+        accessoryStack.isLayoutMarginsRelativeArrangement = true
+        accessoryStack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
+
+        countBadge.addSubview(accessoryStack)
+        rowStack.addArrangedSubview(pinView)
+        rowStack.addArrangedSubview(categoryHost)
+        rowStack.addArrangedSubview(titleLabel)
+        rowStack.addArrangedSubview(countBadge)
 
         contentView.addSubview(cardView)
-        cardView.addSubview(pinView)
-        cardView.addSubview(categoryHost)
-        cardView.addSubview(titleLabel)
-        cardView.addSubview(unreadBadge)
-        cardView.addSubview(replyStack)
+        cardView.addSubview(rowStack)
+
+        cardTop = cardView.topAnchor.constraint(equalTo: contentView.topAnchor)
+        cardLeading = cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
+        cardTrailing = cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
+        cardBottom = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        accessoryWidth = countBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 32)
 
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            cardTop, cardLeading, cardTrailing, cardBottom,
             cardView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
 
-            pinView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
-            pinView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            rowStack.topAnchor.constraint(equalTo: cardView.topAnchor),
+            rowStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+            rowStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            rowStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
+
             pinView.widthAnchor.constraint(equalToConstant: 14),
             pinView.heightAnchor.constraint(equalToConstant: 14),
 
-            categoryHost.leadingAnchor.constraint(equalTo: pinView.trailingAnchor, constant: 8),
-            categoryHost.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
             categoryHost.widthAnchor.constraint(equalToConstant: 12),
             categoryHost.heightAnchor.constraint(equalToConstant: 12),
 
-            titleLabel.leadingAnchor.constraint(equalTo: categoryHost.trailingAnchor, constant: 8),
-            titleLabel.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
-            titleLabel.topAnchor.constraint(greaterThanOrEqualTo: cardView.topAnchor, constant: 10),
-            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -10),
+            countBadge.heightAnchor.constraint(equalToConstant: 22),
+            accessoryWidth,
 
-            unreadBadge.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
-            unreadBadge.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            unreadBadge.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
-            unreadBadge.heightAnchor.constraint(equalToConstant: 18),
-            unreadBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            accessoryIcon.widthAnchor.constraint(equalToConstant: 12),
+            accessoryIcon.heightAnchor.constraint(equalToConstant: 12),
 
-            replyStack.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
-            replyStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            replyStack.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            accessoryStack.topAnchor.constraint(equalTo: countBadge.topAnchor),
+            accessoryStack.leadingAnchor.constraint(equalTo: countBadge.leadingAnchor),
+            accessoryStack.trailingAnchor.constraint(equalTo: countBadge.trailingAnchor),
+            accessoryStack.bottomAnchor.constraint(equalTo: countBadge.bottomAnchor),
         ])
     }
 
@@ -137,7 +166,7 @@ final class CompactPinnedTopicCell: UITableViewCell {
         categoryBaseURL: String?
     ) {
         let theme = AppSettings.shared.themeStyle
-        cardView.backgroundColor = theme.topicCardBackgroundColor.withAlphaComponent(0.72)
+        applyCardChrome(theme: theme)
         pinView.tintColor = theme.accentColor
 
         let unread = topic.isUnreadForDisplay
@@ -165,20 +194,25 @@ final class CompactPinnedTopicCell: UITableViewCell {
         let unreadCount = topic.unreadPosts
         let replies = max(topic.postsCount - 1, 0)
         if unreadCount > 0 {
-            unreadBadge.isHidden = false
-            replyStack.isHidden = true
-            unreadBadge.text = unreadCount > 99 ? " 99+ " : " \(unreadCount) "
-            unreadBadge.textColor = theme.accentColor
-            unreadBadge.backgroundColor = theme.accentColor.withAlphaComponent(0.16)
+            countBadge.isHidden = false
+            accessoryIcon.isHidden = true
+            accessoryLabel.text = unreadCount > 99 ? "99+" : "\(unreadCount)"
+            accessoryLabel.textColor = theme.accentColor
+            countBadge.backgroundColor = theme.accentColor.withAlphaComponent(0.16)
+            countBadge.layer.cornerRadius = 11
+            accessoryWidth.constant = unreadCount > 99 ? 44 : (unreadCount > 9 ? 36 : 32)
         } else if replies > 0 {
-            unreadBadge.isHidden = true
-            replyStack.isHidden = false
-            (replyStack.arrangedSubviews.first as? UIImageView)?.tintColor = .tertiaryLabel
-            (replyStack.viewWithTag(1) as? UILabel)?.text = "\(replies)"
-            (replyStack.viewWithTag(1) as? UILabel)?.textColor = .tertiaryLabel
+            countBadge.isHidden = false
+            accessoryIcon.isHidden = false
+            accessoryIcon.tintColor = theme.topicCountForegroundColor
+            accessoryLabel.text = "\(min(replies, 9_999))"
+            accessoryLabel.textColor = theme.topicCountForegroundColor
+            countBadge.backgroundColor = theme.topicCountBackgroundColor
+            countBadge.layer.cornerRadius = max(theme.chromeCornerRadius - 1, 8)
+            accessoryWidth.constant = Self.replyBadgeWidth(for: replies)
         } else {
-            unreadBadge.isHidden = true
-            replyStack.isHidden = true
+            countBadge.isHidden = true
+            accessoryLabel.text = nil
         }
     }
 
@@ -188,8 +222,37 @@ final class CompactPinnedTopicCell: UITableViewCell {
         emojiBaseURL = nil
         titleLabel.text = nil
         titleLabel.attributedText = nil
-        unreadBadge.text = nil
+        accessoryLabel.text = nil
+        countBadge.isHidden = false
+        accessoryIcon.isHidden = false
         categoryHost.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    private func applyCardChrome(theme: AppSettings.ThemeStyle) {
+        let fullBleed = theme.usesChatHomeList
+        cardTop.constant = fullBleed ? 0 : 4
+        cardLeading.constant = fullBleed ? 0 : 16
+        cardTrailing.constant = fullBleed ? 0 : -16
+        cardBottom.constant = fullBleed ? 0 : -4
+        cardView.layer.cornerRadius = fullBleed ? 0 : theme.chromeCornerRadius
+        cardView.backgroundColor = fullBleed
+            ? theme.topicCardBackgroundColor.withAlphaComponent(0.72)
+            : theme.topicCardBackgroundColor
+        rowStack.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 10,
+            leading: fullBleed ? 16 : 12,
+            bottom: 10,
+            trailing: fullBleed ? 16 : 12
+        )
+    }
+
+    private static func replyBadgeWidth(for replies: Int) -> CGFloat {
+        switch "\(min(replies, 9_999))".count {
+        case 0, 1: return 38
+        case 2: return 46
+        case 3: return 54
+        default: return 62
+        }
     }
 
     private func installCategoryMark(
