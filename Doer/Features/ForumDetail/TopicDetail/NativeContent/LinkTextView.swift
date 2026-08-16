@@ -23,7 +23,21 @@ final class LinkTextView: UITextView {
     private static let blurFraction: CGFloat = 0.7
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
-        super.init(frame: frame, textContainer: textContainer)
+        if textContainer == nil {
+            // iOS 16+ `UITextView()` uses TextKit 2, which often skips
+            // `NSBackgroundColorAttributeName` — CJK inline ``code`` then looks
+            // like plain body text. Force TextKit 1 so the chip fill paints.
+            let storage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            let container = NSTextContainer(size: .zero)
+            storage.addLayoutManager(layoutManager)
+            layoutManager.addTextContainer(container)
+            container.lineFragmentPadding = 0
+            container.widthTracksTextView = true
+            super.init(frame: frame, textContainer: container)
+        } else {
+            super.init(frame: frame, textContainer: textContainer)
+        }
         commonInit()
     }
 

@@ -60,7 +60,10 @@ enum ListExtractor {
                         children: &childBlocks
                     )
                 } else {
-                    inlineNodes.append(contentsOf: InlineExtractor.extract(from: element, options: options, style: []))
+                    // extractNode keeps the wrapping tag (`<code>`, `<strong>`, `<a>`).
+                    // extract(from:) only walks children, so tight-list `<code>x</code>`
+                    // would collapse to plain `.text("x")`.
+                    inlineNodes.append(contentsOf: InlineExtractor.extractNode(element, options: options))
                 }
             } else if let textNode = child as? TextNode {
                 let text = textNode.getWholeText()
@@ -70,7 +73,10 @@ enum ListExtractor {
             }
         }
 
-        return ListItem(content: inlineNodes, children: childBlocks)
+        return ListItem(
+            content: InlineExtractor.applyMarkdownEmphasis(inlineNodes),
+            children: childBlocks
+        )
     }
 
     /// Fold paragraph blocks into list-item inlines; keep media / nested blocks as children.

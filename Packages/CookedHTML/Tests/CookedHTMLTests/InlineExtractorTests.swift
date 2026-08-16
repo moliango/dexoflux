@@ -28,6 +28,92 @@ final class InlineExtractorTests: XCTestCase {
         XCTAssertEqual(inlines, [.styledText("bold", .bold)])
     }
 
+    func testMarkdownBoldInTextNode() {
+        let inlines = parseInlines("before **bold text** after")
+        XCTAssertEqual(inlines, [
+            .text("before "),
+            .styledText("bold text", .bold),
+            .text(" after"),
+        ])
+    }
+
+    func testMarkdownBoldInListItemTextNode() {
+        let blocks = CookedHTMLParser.parse(html: "<ul><li>**项目介绍**：是</li></ul>")
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .styledText("项目介绍", .bold),
+            .text("：是"),
+        ])
+    }
+
+    func testUnpairedMarkdownBoldAtStartOfListItem() {
+        let blocks = CookedHTMLParser.parse(
+            html: "<ul><li>**以上选择我承诺是永久有效的，接受社区和佬友监督：是</li></ul>"
+        )
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .styledText("以上选择我承诺是永久有效的，接受社区和佬友监督：是", .bold),
+        ])
+    }
+
+    func testMarkdownBoldWrappingLinkAcrossLineBreaks() {
+        let inlines = parseInlines("**<br><a href=\"https://linux.do\">地址：点击即可</a><br>**")
+        XCTAssertEqual(inlines, [
+            .link(href: "https://linux.do", children: [.styledText("地址：点击即可", .bold)]),
+        ])
+    }
+
+    func testTightListPreservesInlineCode() {
+        let blocks = CookedHTMLParser.parse(
+            html: "<ul><li>支持<code>授权登录</code>和<code>web登录</code></li></ul>"
+        )
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .text("支持"),
+            .code("授权登录"),
+            .text("和"),
+            .code("web登录"),
+        ])
+    }
+
+    func testParagraphWrappedListItemPreservesInlineCode() {
+        let blocks = CookedHTMLParser.parse(
+            html: "<ul><li><p>支持<code>x</code></p></li></ul>"
+        )
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .text("支持"),
+            .code("x"),
+        ])
+    }
+
+    func testListItemMarkdownBoldWithInlineCode() {
+        let blocks = CookedHTMLParser.parse(
+            html: "<ul><li>**项目**：<code>Dexo</code></li></ul>"
+        )
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .styledText("项目", .bold),
+            .text("："),
+            .code("Dexo"),
+        ])
+    }
+
     // MARK: - Italic
 
     func testItalic() {
@@ -80,6 +166,45 @@ final class InlineExtractorTests: XCTestCase {
     func testInlineCode() {
         let inlines = parseInlines("<code>let x = 1</code>")
         XCTAssertEqual(inlines, [.code("let x = 1")])
+    }
+
+    func testLeftoverMarkdownBackticksBecomeInlineCode() {
+        let inlines = parseInlines("支持`授权登录`和`web登录`")
+        XCTAssertEqual(inlines, [
+            .text("支持"),
+            .code("授权登录"),
+            .text("和"),
+            .code("web登录"),
+        ])
+    }
+
+    func testLeftoverFullwidthBackticksBecomeInlineCode() {
+        let inlines = parseInlines("支持｀表格｀")
+        XCTAssertEqual(inlines, [
+            .text("支持"),
+            .code("表格"),
+        ])
+    }
+
+    func testUnmatchedBacktickStaysLiteral() {
+        let inlines = parseInlines("use `unclosed")
+        XCTAssertEqual(inlines, [.text("use `unclosed")])
+    }
+
+    func testTightListLeftoverBackticksBecomeInlineCode() {
+        let blocks = CookedHTMLParser.parse(
+            html: "<ul><li>支持`授权登录`和`web登录`</li></ul>"
+        )
+        guard case .list(_, _, let items) = blocks.first else {
+            XCTFail("Expected list")
+            return
+        }
+        XCTAssertEqual(items.first?.content, [
+            .text("支持"),
+            .code("授权登录"),
+            .text("和"),
+            .code("web登录"),
+        ])
     }
 
     // MARK: - Inline Image

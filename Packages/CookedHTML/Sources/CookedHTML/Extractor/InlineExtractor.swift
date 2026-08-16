@@ -9,7 +9,211 @@ enum InlineExtractor {
         for child in element.getChildNodes() {
             nodes.append(contentsOf: extractNode(child, options: options, style: style))
         }
-        return mergeAdjacentText(nodes)
+        return applyMarkdownEmphasis(mergeAdjacentText(nodes))
+    }
+
+    /// linux.do 公益推广 / checklist forms leave unpaired `**` in cooked HTML
+    /// (`**项目：是` or `**<br>link<br>**`). Paired CommonMark already works;
+    /// this pass also treats leftover `**` / `__` as a bold toggle across nodes.
+    /// Leftover `` `code` `` spans are applied first so they win over emphasis.
+    static func applyMarkdownEmphasis(_ nodes: [InlineNode]) -> [InlineNode] {
+        applyMarkdownEmphasis(applyMarkdownCodeSpans(nodes), bold: false)
+    }
+
+    private static func applyMarkdownEmphasis(_ nodes: [InlineNode], bold initialBold: Bool) -> [InlineNode] {
+        var bold = initialBold
+        var result: [InlineNode] = []
+        var justConsumedDelimiter = false
+
+        func appendSplit(_ text: String, style: TextStyle) {
+            let parts = splitBoldDelimiters(text)
+            guard parts.count > 1 || text.contains("**") || text.contains("__") else {
+                emit(text, style: style)
+                justConsumedDelimiter = false
+                return
+            }
+            for (index, part) in parts.enumerated() {
+                if index > 0 {
+                    bold.toggle()
+                    justConsumedDelimiter = true
+                }
+                if !part.isEmpty {
+                    emit(part, style: style)
+                    justConsumedDelimiter = false
+                }
+            }
+        }
+
+        func emit(_ text: String, style: TextStyle) {
+            guard !text.isEmpty else { return }
+            let resolved = bold ? style.union(.bold) : style
+            result.append(resolved.isEmpty ? .text(text) : .styledText(text, resolved))
+        }
+
+        for (index, node) in nodes.enumerated() {
+            switch node {
+            case .text(let text):
+                appendSplit(text, style: [])
+            case .styledText(let text, let style):
+                appendSplit(text, style: style)
+            case .link(let href, let children):
+                justConsumedDelimiter = false
+                result.append(.link(
+                    href: href,
+                    children: applyMarkdownEmphasis(children, bold: bold)
+                ))
+            case .spoiler(let children):
+                justConsumedDelimiter = false
+                result.append(.spoiler(children: applyMarkdownEmphasis(children, bold: bold)))
+            case .lineBreak:
+                let nextIsDelimiter = nodes.dropFirst(index + 1).first.map(isDelimiterOnlyNode) ?? false
+                if justConsumedDelimiter || nextIsDelimiter {
+                    continue
+                }
+                result.append(.lineBreak)
+            default:
+                justConsumedDelimiter = false
+                result.append(node)
+            }
+        }
+
+        return mergeAdjacentText(result)
+    }
+
+    /// Discourse usually cooks `` `code` `` to `<code>`, but checklist / 公益推广
+    /// HTML sometimes leaves the backticks as text — same class of leftover as `**`.
+    private static func applyMarkdownCodeSpans(_ nodes: [InlineNode]) -> [InlineNode] {
+        var result: [InlineNode] = []
+        for node in nodes {
+            switch node {
+            case .text(let text):
+                result.append(contentsOf: splitCodeSpans(text, style: []))
+            case .styledText(let text, let style):
+                result.append(contentsOf: splitCodeSpans(text, style: style))
+            case .link(let href, let children):
+                result.append(.link(href: href, children: applyMarkdownCodeSpans(children)))
+            case .spoiler(let children):
+                result.append(.spoiler(children: applyMarkdownCodeSpans(children)))
+            default:
+                result.append(node)
+            }
+        }
+        return mergeAdjacentText(result)
+    }
+
+    private static func splitCodeSpans(_ text: String, style: TextStyle) -> [InlineNode] {
+        guard text.contains("`") || text.contains("｀") else {
+            return styledTextNodes(text, style: style)
+        }
+
+        var nodes: [InlineNode] = []
+        var cursor = text.startIndex
+
+        func flush(upTo end: String.Index) {
+            guard cursor < end else { return }
+            nodes.append(contentsOf: styledTextNodes(String(text[cursor..<end]), style: style))
+            cursor = end
+        }
+
+        while cursor < text.endIndex {
+            let character = text[cursor]
+            guard character == "`" || character == "｀" else {
+                let next = text[cursor...].firstIndex(where: { $0 == "`" || $0 == "｀" }) ?? text.endIndex
+                flush(upTo: next)
+                continue
+            }
+
+            var runEnd = cursor
+            while runEnd < text.endIndex, text[runEnd] == character {
+                runEnd = text.index(after: runEnd)
+            }
+            let runLength = text.distance(from: cursor, to: runEnd)
+            if let closing = findClosingCodeDelimiter(
+                in: text,
+                from: runEnd,
+                delimiter: character,
+                count: runLength
+            ) {
+                let raw = String(text[runEnd..<closing.start])
+                let content = stripCodeSpanPadding(raw)
+                if !content.isEmpty {
+                    nodes.append(.code(content))
+                }
+                cursor = closing.end
+            } else {
+                flush(upTo: runEnd)
+            }
+        }
+
+        return nodes
+    }
+
+    private static func findClosingCodeDelimiter(
+        in text: String,
+        from start: String.Index,
+        delimiter: Character,
+        count: Int
+    ) -> (start: String.Index, end: String.Index)? {
+        var index = start
+        while index < text.endIndex {
+            if text[index] == delimiter {
+                var runEnd = index
+                while runEnd < text.endIndex, text[runEnd] == delimiter {
+                    runEnd = text.index(after: runEnd)
+                }
+                if text.distance(from: index, to: runEnd) == count {
+                    return (index, runEnd)
+                }
+                index = runEnd
+            } else {
+                index = text.index(after: index)
+            }
+        }
+        return nil
+    }
+
+    private static func stripCodeSpanPadding(_ content: String) -> String {
+        guard content.count >= 2, content.hasPrefix(" "), content.hasSuffix(" ") else {
+            return content
+        }
+        return String(content.dropFirst().dropLast())
+    }
+
+    private static func styledTextNodes(_ text: String, style: TextStyle) -> [InlineNode] {
+        guard !text.isEmpty else { return [] }
+        return [style.isEmpty ? .text(text) : .styledText(text, style)]
+    }
+
+    private static func isDelimiterOnlyNode(_ node: InlineNode) -> Bool {
+        switch node {
+        case .text(let text), .styledText(let text, _):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed == "**" || trimmed == "__"
+        default:
+            return false
+        }
+    }
+
+    private static func splitBoldDelimiters(_ text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"\*\*|__"#) else {
+            return [text]
+        }
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let matches = regex.matches(in: text, range: fullRange)
+        guard !matches.isEmpty else { return [text] }
+
+        var parts: [String] = []
+        var cursor = 0
+        for match in matches {
+            parts.append(nsText.substring(with: NSRange(
+                location: cursor,
+                length: match.range.location - cursor
+            )))
+            cursor = match.range.location + match.range.length
+        }
+        parts.append(nsText.substring(from: cursor))
+        return parts
     }
 
     /// Extract inline nodes from a single DOM node.
@@ -20,13 +224,8 @@ enum InlineExtractor {
                 // Collapse pure whitespace containing newlines to a single space
                 return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [.text(" ")] : [.text(text)]
             }
-            if style.isEmpty {
-                return [.text(text)]
-            } else {
-                return [.styledText(text, style)]
-            }
+            return style.isEmpty ? [.text(text)] : [.styledText(text, style)]
         }
-
         guard let element = node as? Element else { return [] }
         let tagName = element.tagName().lowercased()
 

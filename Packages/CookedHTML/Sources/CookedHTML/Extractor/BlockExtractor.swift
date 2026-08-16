@@ -126,6 +126,9 @@ enum BlockExtractor {
             return [ListExtractor.extract(from: element, ordered: true, options: options)]
 
         case "table":
+            if isHighlightJSLineNumberTable(element) {
+                return extractCodeBlock(from: element)
+            }
             return [TableExtractor.extract(from: element, options: options)]
 
         case "details":
@@ -195,6 +198,11 @@ enum BlockExtractor {
             if childTag == "div" || childTag == "figure" {
                 return extractDiv(from: onlyChild, options: options)
             }
+
+            // Invalid HTML some themes emit: <p><pre><code>…</code></pre></p>
+            if childTag == "pre" {
+                return extractCodeBlock(from: onlyChild)
+            }
         }
 
         let inlines = InlineExtractor.extract(from: element, options: options)
@@ -205,20 +213,11 @@ enum BlockExtractor {
     private static func extractCodeBlock(from element: Element) -> [ContentBlock] {
         let codeElement = element.children().first { $0.tagName().lowercased() == "code" }
             ?? element
-
-        let language: String? = {
-            guard let cls = try? codeElement.attr("class"), !cls.isEmpty else { return nil }
-            // Discourse uses class="lang-xxx" or "language-xxx"
-            let parts = cls.split(separator: " ")
-            for part in parts {
-                let s = String(part)
-                if s.hasPrefix("lang-") { return String(s.dropFirst(5)) }
-                if s.hasPrefix("language-") { return String(s.dropFirst(9)) }
-            }
-            return nil
-        }()
-
-        let code = (try? codeElement.text()) ?? ""
+        let language = codeLanguage(from: element, codeElement: codeElement)
+        let code = codeText(from: codeElement)
+        if code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return []
+        }
         return [.codeBlock(language: language, code: code)]
     }
 
@@ -228,10 +227,20 @@ enum BlockExtractor {
             return [QuoteExtractor.extract(from: element, options: options)]
         }
         if classAttr.contains("onebox") {
-            return [OneboxExtractor.extract(from: element, options: options)]
+            // FluxDo keeps OneboxNode.rawHtml and the app's GitHub/gist builder
+            // renders nested <pre><code>. CookedHTML only stores title/description,
+            // so lift those nested code fences into sibling `.codeBlock`s.
+            let onebox = OneboxExtractor.extract(from: element, options: options)
+            return [onebox] + nestedCodeBlocks(from: element)
         }
         // Generic aside — recurse
         return extract(from: element, options: options)
+    }
+
+    /// GitHub blob/gist (and pastebin) oneboxes embed file contents in `<pre>`.
+    private static func nestedCodeBlocks(from element: Element) -> [ContentBlock] {
+        let pres = (try? element.select("pre")) ?? Elements()
+        return pres.array().flatMap { extractCodeBlock(from: $0) }
     }
 
     private static func extractDetails(from element: Element, options: ParseOptions) -> [ContentBlock] {
@@ -272,6 +281,28 @@ enum BlockExtractor {
             let code = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
             if !code.isEmpty {
                 return [.codeBlock(language: "mermaid", code: code)]
+            }
+        }
+
+        if let wrap = mermaidWrapName(from: element) {
+            let nested = nestedCodeBlocks(from: element)
+            if !nested.isEmpty {
+                return nested
+            }
+            let code = rawText(from: element).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !code.isEmpty {
+                return [.codeBlock(language: wrap, code: code)]
+            }
+        }
+
+        // Discourse / highlight.js wrappers that are not a bare `<pre>`.
+        if isHighlightedCodeWrapper(classAttr) || hasClassToken("mermaid-wrapper", in: classAttr) {
+            let nested = nestedCodeBlocks(from: element)
+            if !nested.isEmpty {
+                return nested
+            }
+            if let table = try? element.select("table.hljs-ln").first() {
+                return extractCodeBlock(from: table)
             }
         }
 
@@ -513,6 +544,88 @@ enum BlockExtractor {
             }
         }
         return result
+    }
+
+    /// Discourse uses `lang-xxx` / `language-xxx` on `<code>` or `<pre>`.
+    private static func codeLanguage(from element: Element, codeElement: Element) -> String? {
+        languageClass(from: codeElement) ?? languageClass(from: element)
+    }
+
+    private static func languageClass(from element: Element) -> String? {
+        let cls = (try? element.attr("class")) ?? ""
+        for part in cls.split(whereSeparator: { $0.isWhitespace }) {
+            let token = String(part)
+            if token.hasPrefix("lang-") {
+                return String(token.dropFirst(5)).lowercased()
+            }
+            if token.hasPrefix("language-") {
+                return String(token.dropFirst(9)).lowercased()
+            }
+        }
+        return nil
+    }
+
+    /// Preserve newlines. SwiftSoup `.text()` flattens highlight.js spans/tables.
+    private static func codeText(from element: Element) -> String {
+        if let table = highlightJSLineNumberTable(in: element) {
+            let cells = (try? table.select("td.hljs-ln-code")) ?? Elements()
+            let lines = cells.array().map { cell in
+                rawText(from: cell).replacingOccurrences(of: "<br>", with: "\n")
+            }
+            if !lines.isEmpty {
+                return trimCodeFenceNewlines(lines.joined(separator: "\n"))
+            }
+        }
+        return trimCodeFenceNewlines(
+            rawText(from: element).replacingOccurrences(of: "<br>", with: "\n")
+        )
+    }
+
+    private static func trimCodeFenceNewlines(_ code: String) -> String {
+        var result = code
+        while result.hasPrefix("\n") {
+            result.removeFirst()
+        }
+        while result.hasSuffix("\n") {
+            result.removeLast()
+        }
+        return result
+    }
+
+    private static func isHighlightJSLineNumberTable(_ element: Element) -> Bool {
+        let classAttr = (try? element.attr("class")) ?? ""
+        return hasClassToken("hljs-ln", in: classAttr)
+    }
+
+    private static func highlightJSLineNumberTable(in element: Element) -> Element? {
+        if isHighlightJSLineNumberTable(element) {
+            return element
+        }
+        return try? element.select("table.hljs-ln").first()
+    }
+
+    /// Discourse / highlight.js wrappers that are not a bare `<pre>`.
+    private static func isHighlightedCodeWrapper(_ classAttr: String) -> Bool {
+        ["highlighted", "codeblock", "d-code", "hljs"].contains { token in
+            hasClassToken(token, in: classAttr)
+        }
+    }
+
+    private static func mermaidWrapName(from element: Element) -> String? {
+        let attributes = ["data-code-wrap", "data-wrap"]
+        for name in attributes {
+            let value = ((try? element.attr(name)) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if value == "mermaid" {
+                return "mermaid"
+            }
+        }
+        let classAttr = (try? element.attr("class")) ?? ""
+        if hasClassToken("mermaid-wrapper", in: classAttr) {
+            return "mermaid"
+        }
+        return nil
     }
 
     private static func firstInteger(in text: String) -> Int? {

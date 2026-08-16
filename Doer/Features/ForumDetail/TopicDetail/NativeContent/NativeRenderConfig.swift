@@ -52,8 +52,19 @@ struct NativeRenderConfig {
             baseColor: baseColor,
             linkColor: linkColor,
             codeFont: codeFont,
-            codeBackgroundColor: codeBackgroundColor
+            // Inline ``code`` is often CJK; monospace does not change the glyphs.
+            // Use a contrast fill so chips stay visible on white post backgrounds.
+            // Code blocks keep `codeBackgroundColor` for their own chrome.
+            codeBackgroundColor: Self.inlineCodeFill
         )
+    }
+
+    private static var inlineCodeFill: UIColor {
+        UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor.white.withAlphaComponent(0.16)
+                : UIColor.black.withAlphaComponent(0.10)
+        }
     }
 
     static func `default`(

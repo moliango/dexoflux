@@ -88,6 +88,84 @@ final class BlockExtractorTests: XCTestCase {
         }
     }
 
+    func testHighlightedJSLineNumberTablePreservesNewlines() {
+        let html = """
+        <div class="highlighted">
+        <pre><code class="hljs language-swift">
+        <table class="hljs-ln"><tbody>
+        <tr><td class="hljs-ln-numbers"><div class="hljs-ln-n" data-line-number="1"></div></td>
+        <td class="hljs-ln-code"><div class="hljs-ln-line"><span class="hljs-keyword">let</span> x = 1</div></td></tr>
+        <tr><td class="hljs-ln-numbers"><div class="hljs-ln-n" data-line-number="2"></div></td>
+        <td class="hljs-ln-code"><div class="hljs-ln-line"><span class="hljs-keyword">let</span> y = 2</div></td></tr>
+        </tbody></table>
+        </code></pre>
+        </div>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1, "Expected one code block, got \(blocks)")
+        if case .codeBlock(let lang, let code) = blocks[0] {
+            XCTAssertEqual(lang, "swift")
+            XCTAssertEqual(code, "let x = 1\nlet y = 2")
+        } else {
+            XCTFail("Expected codeBlock, got \(blocks[0])")
+        }
+    }
+
+    func testParagraphWrappedPreExtractsAsCodeBlock() {
+        let html = "<p><pre><code class=\"lang-bash\">echo hi</code></pre></p>"
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1, "Expected one code block, got \(blocks)")
+        if case .codeBlock(let lang, let code) = blocks[0] {
+            XCTAssertEqual(lang, "bash")
+            XCTAssertEqual(code, "echo hi")
+        } else {
+            XCTFail("Expected codeBlock, got \(blocks[0])")
+        }
+    }
+
+    func testMermaidWrapAttributeExtractsAsCodeBlock() {
+        let html = """
+        <div class="d-wrap" data-code-wrap="mermaid">
+        <pre><code class="lang-mermaid">flowchart TD
+            A --> B</code></pre>
+        </div>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 1, "Expected one mermaid block, got \(blocks)")
+        if case .codeBlock(let lang, let code) = blocks[0] {
+            XCTAssertEqual(lang, "mermaid")
+            XCTAssertTrue(code.contains("flowchart TD"))
+            XCTAssertTrue(code.contains("A --> B"))
+        } else {
+            XCTFail("Expected mermaid codeBlock, got \(blocks[0])")
+        }
+    }
+
+    func testGitHubGistOneboxLiftsNestedCodeBlock() {
+        let html = """
+        <aside class="onebox githubgist">
+          <header class="source"><a href="https://gist.github.com/user/abc">gist.github.com</a></header>
+          <article class="onebox-body">
+            <h4><a href="https://gist.github.com/user/abc">file.swift</a></h4>
+            <pre><code class="lang-swift">func hello() {\n  print("hi")\n}</code></pre>
+          </article>
+        </aside>
+        """
+        let blocks = CookedHTMLParser.parse(html: html)
+        XCTAssertEqual(blocks.count, 2, "Expected onebox + code, got \(blocks)")
+        if case .onebox(let sourceURL, _, _, _, _, _, _) = blocks[0] {
+            XCTAssertEqual(sourceURL, "https://gist.github.com/user/abc")
+        } else {
+            XCTFail("Expected onebox, got \(blocks[0])")
+        }
+        if case .codeBlock(let lang, let code) = blocks[1] {
+            XCTAssertEqual(lang, "swift")
+            XCTAssertEqual(code, "func hello() {\n  print(\"hi\")\n}")
+        } else {
+            XCTFail("Expected nested codeBlock, got \(blocks[1])")
+        }
+    }
+
     // MARK: - Blockquote
 
     func testBlockquote() {
