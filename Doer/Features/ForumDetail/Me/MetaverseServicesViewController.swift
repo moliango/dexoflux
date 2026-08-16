@@ -69,11 +69,14 @@ enum LinuxDoExtensionCFGate {
     private static var lastUserInfoAtByHost: [String: Date] = [:]
 
     /// After a real CF challenge, block network to this host for this long.
-    private static let challengeCooldown: TimeInterval = 90
+    private static let defaultChallengeCooldown: TimeInterval = 90
+    /// cdk.linux.do is a separate CF zone and trips if Me/tab refresh hammers user-info.
+    private static let cdkChallengeCooldown: TimeInterval = 10 * 60
     /// Don't re-log / re-report CF more often than this.
     private static let reportCooldown: TimeInterval = 30
-    /// Min interval between successful user-info refreshes per host.
-    private static let userInfoMinInterval: TimeInterval = 45
+    /// Min interval between automatic user-info refreshes per host.
+    private static let defaultUserInfoMinInterval: TimeInterval = 45
+    private static let cdkUserInfoMinInterval: TimeInterval = 10 * 60
 
     private static func hostKey(for url: URL) -> String {
         (url.host ?? url.absoluteString).lowercased()
@@ -92,7 +95,7 @@ enum LinuxDoExtensionCFGate {
     static func markChallenged(for url: URL, now: Date = Date()) {
         let key = hostKey(for: url)
         lock.lock()
-        challengedUntilByHost[key] = now.addingTimeInterval(challengeCooldown)
+        challengedUntilByHost[key] = now.addingTimeInterval(challengeCooldown(forHost: key))
         lock.unlock()
     }
 
@@ -120,10 +123,19 @@ enum LinuxDoExtensionCFGate {
         let key = hostKey(for: url)
         lock.lock()
         defer { lock.unlock() }
-        if let last = lastUserInfoAtByHost[key], now.timeIntervalSince(last) < userInfoMinInterval {
+        if let last = lastUserInfoAtByHost[key], now.timeIntervalSince(last) < userInfoMinInterval(forHost: key) {
             return true
         }
         return false
+    }
+
+    /// Record that we actually hit the network, including failures, so Me-tab
+    /// retries cannot stampede cdk.linux.do.
+    static func markUserInfoAttempt(for url: URL, now: Date = Date()) {
+        let key = hostKey(for: url)
+        lock.lock()
+        lastUserInfoAtByHost[key] = now
+        lock.unlock()
     }
 
     static func markUserInfoSuccess(for url: URL, now: Date = Date()) {
@@ -132,6 +144,26 @@ enum LinuxDoExtensionCFGate {
         lastUserInfoAtByHost[key] = now
         challengedUntilByHost[key] = nil
         lock.unlock()
+    }
+
+    static func resetForTesting() {
+        lock.lock()
+        challengedUntilByHost.removeAll()
+        lastReportAtByHost.removeAll()
+        lastUserInfoAtByHost.removeAll()
+        lock.unlock()
+    }
+
+    private static func isCDKHost(_ key: String) -> Bool {
+        key == "cdk.linux.do" || key.hasSuffix(".cdk.linux.do")
+    }
+
+    private static func userInfoMinInterval(forHost key: String) -> TimeInterval {
+        isCDKHost(key) ? cdkUserInfoMinInterval : defaultUserInfoMinInterval
+    }
+
+    private static func challengeCooldown(forHost key: String) -> TimeInterval {
+        isCDKHost(key) ? cdkChallengeCooldown : defaultChallengeCooldown
     }
 }
 
@@ -462,6 +494,7 @@ final class LinuxDoExtensionOAuthCoordinator {
         if LinuxDoExtensionCFGate.isInChallengeCooldown(for: infoURL) {
             throw LinuxDoExtensionError.cloudflare(service.baseURL, infoURL)
         }
+        LinuxDoExtensionCFGate.markUserInfoAttempt(for: infoURL)
         let data = try await client.request(infoURL)
         let info = try JSONDecoder().decode(LinuxDoExtensionEnvelope<LinuxDoExtensionUserInfo>.self, from: data).data
         LinuxDoExtensionCFGate.markUserInfoSuccess(for: infoURL)

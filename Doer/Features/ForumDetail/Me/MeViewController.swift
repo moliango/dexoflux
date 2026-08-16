@@ -628,6 +628,10 @@ final class MeViewController: ObservableViewController {
         balanceRefreshTask = Task { [weak self] in
             guard let self else { return }
             for service in services {
+                let infoURL = service.baseURL.appendingPathComponent("api/v1/oauth/user-info")
+                if LinuxDoExtensionCFGate.shouldSkipUserInfoRefresh(for: infoURL) {
+                    continue
+                }
                 do {
                     let info = try await LinuxDoExtensionOAuthCoordinator(
                         service: service,
