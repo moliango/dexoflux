@@ -1,4 +1,5 @@
 import XCTest
+import CookedHTML
 @testable import Doer
 
 final class TopicReadStateTests: XCTestCase {
@@ -152,6 +153,10 @@ final class TopicReadStateTests: XCTestCase {
         XCTAssertEqual(TelegramChatPostCell().bubbleLongPressDuration(), 0.35)
         XCTAssertEqual(WeChatChatPostCell().dateChipCornerRadius(), 4)
         XCTAssertEqual(TelegramChatPostCell().dateChipCornerRadius(), 11)
+        XCTAssertEqual(ChatTopicStyle.weChat.actionTintColor(isActive: true), ChatTopicStyle.weChat.accentColor)
+        XCTAssertEqual(ChatTopicStyle.telegram.actionTintColor(isActive: true), ChatTopicStyle.telegram.accentColor)
+        XCTAssertEqual(ChatActionBarChrome.likeTitle(count: 3), "3")
+        XCTAssertNil(ChatActionBarChrome.likeTitle(count: 0))
     }
 
     func testUnopenedTopicOpensAtTopInsteadOfFirstPaintTail() {
@@ -223,5 +228,86 @@ final class TopicReadStateTests: XCTestCase {
         }
         """
         return try JSONDecoder().decode(DiscourseTopicList.self, from: Data(json.utf8)).topicList.topics[0]
+    }
+}
+
+final class ChatReplyQuoteTests: XCTestCase {
+    func testLineIncludesAnySenderNotOnlySelf() {
+        XCTAssertEqual(
+            ChatReplyQuoteFormatting.line(
+                displayName: "男人药帅",
+                preview: "20x 才七百多就太不正常了吧"
+            ),
+            "男人药帅: 20x 才七百多就太不正常了吧"
+        )
+        XCTAssertEqual(
+            ChatReplyQuoteFormatting.line(displayName: "呆逼", preview: "比如用的人太多"),
+            "呆逼: 比如用的人太多"
+        )
+    }
+
+    func testTruncatesLongPreview() {
+        let long = String(repeating: "啊", count: 80)
+        let clipped = ChatReplyQuoteFormatting.truncatedPreview(long)
+        XCTAssertTrue(clipped.hasSuffix("…"))
+        XCTAssertEqual(clipped.count, 73)
+    }
+
+    func testCollapsesWhitespace() {
+        XCTAssertEqual(
+            ChatReplyQuoteFormatting.truncatedPreview("hello\n\n  world"),
+            "hello world"
+        )
+    }
+
+    func testEmptyNameFallsBackToPreview() {
+        XCTAssertEqual(ChatReplyQuoteFormatting.line(displayName: "  ", preview: "原文"), "原文")
+        XCTAssertEqual(ChatReplyQuoteFormatting.line(displayName: "甲", preview: "  "), "甲")
+    }
+
+    func testDropsLeadingDiscourseQuoteWhenReplyChipIsShown() {
+        let quote = AnnotatedBlock(
+            block: .discourseQuote(
+                username: "甲",
+                avatarURL: nil,
+                topicTitle: nil,
+                topicURL: nil,
+                categoryName: nil,
+                categoryURL: nil,
+                quotePostNumber: 2,
+                content: []
+            ),
+            sourceHTML: "<aside></aside>"
+        )
+        let body = AnnotatedBlock(block: .paragraph([.text("不正常的可太多了")]), sourceHTML: "<p>不正常的可太多了</p>")
+        let dropped = WeChatChatPostCell.droppingLeadingDiscourseQuotes([quote, body], enabled: true)
+        XCTAssertEqual(dropped.count, 1)
+        if case .paragraph = dropped[0].block {
+        } else {
+            XCTFail("Expected remaining paragraph")
+        }
+        XCTAssertEqual(
+            WeChatChatPostCell.droppingLeadingDiscourseQuotes([quote, body], enabled: false).count,
+            2
+        )
+    }
+
+    func testVisibleReactionsKeepEmojiAndCount() throws {
+        let json = Data("""
+        [
+          {"id":"heart","type":"emoji","count":3},
+          {"id":"+1","type":"emoji","count":2},
+          {"id":"laughing","type":"emoji","count":1},
+          {"id":"tada","type":"emoji","count":1},
+          {"id":"empty","type":"emoji","count":0}
+        ]
+        """.utf8)
+        let reactions = try JSONDecoder().decode([DiscourseTopicDetail.Reaction].self, from: json)
+        XCTAssertEqual(
+            ChatActionBarChrome.summaryReactions(reactions).map(\.id),
+            ["heart", "+1", "laughing"]
+        )
+        XCTAssertEqual(ChatActionBarChrome.summaryCount(reactions: reactions, fallback: 0), 7)
+        XCTAssertEqual(ChatActionBarChrome.likeTitle(count: 7), "7")
     }
 }

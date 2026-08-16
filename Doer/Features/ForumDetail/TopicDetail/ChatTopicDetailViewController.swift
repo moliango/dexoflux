@@ -155,7 +155,8 @@ class ChatTopicDetailViewController: ObservableViewController {
                 baseURL: self.baseURL,
                 contentDelegate: self,
                 dateSeparatorText: dateSeparator,
-                chatStyle: style
+                chatStyle: style,
+                replyQuote: self.makeChatReplyQuote(for: post)
             )
             return cell
         }
@@ -663,6 +664,35 @@ class ChatTopicDetailViewController: ObservableViewController {
             previousCreatedAt = viewModel.posts.first(where: { $0.id == prevId })?.createdAt
         }
         return ChatDateSeparator.text(forCreatedAt: post.createdAt, previousCreatedAt: previousCreatedAt)
+    }
+
+    /// Quote for any reply (A→you and A→B). Parent body is used when that post is already loaded.
+    func makeChatReplyQuote(for post: DiscourseTopicDetail.Post) -> ChatReplyQuote? {
+        guard post.replyToUser != nil || post.replyToPostNumber != nil else { return nil }
+        let parent = post.replyToPostNumber.flatMap { viewModel.post(byPostNumber: $0) }
+        let displayName: String
+        if let parent {
+            displayName = (parent.name?.isEmpty == false ? parent.name : nil) ?? parent.username
+        } else {
+            displayName = post.replyToUser?.username ?? ""
+        }
+        let preview: String
+        if let parent {
+            preview = CookedContentPipeline.plainTextPreview(fromCooked: parent.cooked)
+        } else if let n = post.replyToPostNumber {
+            preview = String(
+                format: String(localized: "telegram_chat.reply_floor_fmt", defaultValue: "回复 #%d"),
+                n
+            )
+        } else {
+            preview = String(localized: "telegram_chat.reply", defaultValue: "回复")
+        }
+        return ChatReplyQuote(
+            displayName: displayName,
+            preview: preview,
+            postId: parent?.id,
+            postNumber: parent?.postNumber ?? post.replyToPostNumber
+        )
     }
 
     private func reloadPostCell(postId: Int) {
@@ -1326,6 +1356,16 @@ extension ChatTopicDetailViewController: WeChatChatPostCellDelegate {
             self.navigationController?.pushViewController(vc, animated: true)
         }
         present(previewVC, animated: true)
+    }
+
+    func weChatChatPostCell(_ cell: WeChatChatPostCell, didTapReplyQuote postId: Int?, postNumber: Int?) {
+        if let postId, dataSource.snapshot().indexOfItem(postId) != nil {
+            scrollToPostId(postId)
+            return
+        }
+        if let postNumber {
+            Task { await jumpToFloor(postNumber) }
+        }
     }
 }
 

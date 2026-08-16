@@ -651,6 +651,13 @@ final class TopicDetailViewModel: DoerObservableObject {
         return nil
     }
 
+    func post(byPostNumber number: Int) -> DiscourseTopicDetail.Post? {
+        if let p = posts.first(where: { $0.postNumber == number }) { return p }
+        if let p = nestedPostById.values.first(where: { $0.postNumber == number }) { return p }
+        if let op = nestedOpPost, op.postNumber == number { return op }
+        return nil
+    }
+
     func nestedRow(forPostId postId: Int) -> NestedDisplayRow? {
         nestedRows.first { $0.postId == postId }
     }

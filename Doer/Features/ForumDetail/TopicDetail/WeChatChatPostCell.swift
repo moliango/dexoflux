@@ -10,6 +10,56 @@ protocol WeChatChatPostCellDelegate: AnyObject {
     func weChatChatPostCell(_ cell: WeChatChatPostCell, didRequestBookmark post: DiscourseTopicDetail.Post)
     func weChatChatPostCell(_ cell: WeChatChatPostCell, didRequestBoost post: DiscourseTopicDetail.Post)
     func weChatChatPostCell(_ cell: WeChatChatPostCell, didTapAvatar username: String)
+    func weChatChatPostCell(_ cell: WeChatChatPostCell, didTapReplyQuote postId: Int?, postNumber: Int?)
+}
+
+/// Quoted parent post shown under a WeChat bubble (`Name: preview`).
+struct ChatReplyQuote {
+    let displayName: String
+    let preview: String
+    let postId: Int?
+    let postNumber: Int?
+}
+
+enum ChatReplyQuoteFormatting {
+    static func truncatedPreview(_ text: String, limit: Int = 72) -> String {
+        let collapsed = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > limit else { return collapsed }
+        let end = collapsed.index(collapsed.startIndex, offsetBy: limit)
+        return String(collapsed[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    static func line(displayName: String, preview: String) -> String {
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = truncatedPreview(preview)
+        if name.isEmpty { return text }
+        if text.isEmpty { return name }
+        return "\(name): \(text)"
+    }
+}
+
+enum ChatActionBarChrome {
+    static let summaryEmojiLimit = 3
+
+    static func likeTitle(count: Int) -> String? {
+        count > 0 ? "\(count)" : nil
+    }
+
+    static func summaryReactions(
+        _ reactions: [DiscourseTopicDetail.Reaction]
+    ) -> [DiscourseTopicDetail.Reaction] {
+        Array(reactions.filter { $0.count > 0 }.prefix(summaryEmojiLimit))
+    }
+
+    static func summaryCount(
+        reactions: [DiscourseTopicDetail.Reaction],
+        fallback: Int
+    ) -> Int {
+        let total = reactions.filter { $0.count > 0 }.reduce(0) { $0 + $1.count }
+        return total > 0 ? total : fallback
+    }
 }
 
 class WeChatChatPostCell: UITableViewCell {
@@ -54,6 +104,7 @@ class WeChatChatPostCell: UITableViewCell {
     weak var contentDelegate: PostCellDelegate?
 
     private var currentPost: DiscourseTopicDetail.Post?
+    private var currentReplyQuote: ChatReplyQuote?
     private var imageBaseURL: String?
     private var isMine = false
     private var heightReconcileGeneration = 0
@@ -156,6 +207,47 @@ class WeChatChatPostCell: UITableViewCell {
     private let voteDownButton = UIButton(type: .system)
     private let voteCountLabel = UILabel()
 
+    private let reactionSummaryControl: UIControl = {
+        let control = UIControl()
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.layer.cornerRadius = 12
+        control.layer.cornerCurve = .continuous
+        control.clipsToBounds = true
+        control.isHidden = true
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        control.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return control
+    }()
+
+    private let reactionSummaryStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 2
+        stack.alignment = .center
+        stack.isUserInteractionEnabled = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let reactionImageViews: [UIImageView] = (0 ..< ChatActionBarChrome.summaryEmojiLimit).map { _ in
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: 16),
+            imageView.heightAnchor.constraint(equalToConstant: 16),
+        ])
+        return imageView
+    }
+
+    private let reactionCountLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .secondaryLabel
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        return label
+    }()
+
     private var avatarLeadingConstraint: NSLayoutConstraint?
     private var avatarTrailingConstraint: NSLayoutConstraint?
     private var bubbleLeadingConstraint: NSLayoutConstraint?
@@ -183,6 +275,31 @@ class WeChatChatPostCell: UITableViewCell {
 
     private var underBubbleRowHeightConstraint: NSLayoutConstraint?
     private var underBubbleRowTopConstraint: NSLayoutConstraint?
+
+    /// WeChat: gray quote box below the bubble (`Name: original`). Hidden on Telegram.
+    private let weChatReplyQuoteView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = 4
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
+        view.isHidden = true
+        view.isUserInteractionEnabled = true
+        return view
+    }()
+
+    private let weChatReplyQuoteLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        return label
+    }()
+
+    private var weChatReplyQuoteTopConstraint: NSLayoutConstraint?
+    private var weChatReplyQuoteHeightConstraint: NSLayoutConstraint?
+    private var weChatReplyQuoteLeadingConstraint: NSLayoutConstraint?
+    private var weChatReplyQuoteTrailingConstraint: NSLayoutConstraint?
 
     /// Holds `BoostStripView` **below** the chat bubble (not inside it).
     private let boostHost: UIView = {
@@ -234,9 +351,14 @@ class WeChatChatPostCell: UITableViewCell {
         contentView.addSubview(avatarImageView)
         contentView.addSubview(nameLabel)
         contentView.addSubview(bubbleView)
+        contentView.addSubview(weChatReplyQuoteView)
+        weChatReplyQuoteView.addSubview(weChatReplyQuoteLabel)
         contentView.addSubview(underBubbleRow)
         contentView.addSubview(boostHost)
         bubbleView.addSubview(contentStack)
+
+        let quoteTap = UITapGestureRecognizer(target: self, action: #selector(handleReplyQuoteTap))
+        weChatReplyQuoteView.addGestureRecognizer(quoteTap)
 
         configureActionButtons()
         let actionSpacer = UIView()
@@ -268,6 +390,8 @@ class WeChatChatPostCell: UITableViewCell {
         let nameTrail = nameLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor)
         let underLead = underBubbleRow.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor)
         let underTrail = underBubbleRow.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor)
+        let quoteLead = weChatReplyQuoteView.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor)
+        let quoteTrail = weChatReplyQuoteView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor)
 
         avatarLeadingConstraint = avatarLead
         avatarTrailingConstraint = avatarTrail
@@ -278,6 +402,8 @@ class WeChatChatPostCell: UITableViewCell {
         nameTrailingConstraint = nameTrail
         underBubbleLeadingConstraint = underLead
         underBubbleTrailingConstraint = underTrail
+        weChatReplyQuoteLeadingConstraint = quoteLead
+        weChatReplyQuoteTrailingConstraint = quoteTrail
 
         let nameHeight = nameLabel.heightAnchor.constraint(equalToConstant: 16)
         nameHeightConstraint = nameHeight
@@ -312,8 +438,14 @@ class WeChatChatPostCell: UITableViewCell {
         contentStackBottomConstraint = stackBottom
         contentStackWidthConstraint = stackWidth
 
+        // Quote sits between bubble and the action/time row (WeChat). Height 0 when hidden.
+        let quoteTop = weChatReplyQuoteView.topAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: 0)
+        let quoteHeight = weChatReplyQuoteView.heightAnchor.constraint(equalToConstant: 0)
+        weChatReplyQuoteTopConstraint = quoteTop
+        weChatReplyQuoteHeightConstraint = quoteHeight
+
         // under bubble: actions + time, then boost chips, then bottom pad.
-        let underTop = underBubbleRow.topAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: 4)
+        let underTop = underBubbleRow.topAnchor.constraint(equalTo: weChatReplyQuoteView.bottomAnchor, constant: 4)
         let underHeight = underBubbleRow.heightAnchor.constraint(equalToConstant: Metrics.actionBarHeight)
         underBubbleRowTopConstraint = underTop
         underBubbleRowHeightConstraint = underHeight
@@ -349,6 +481,14 @@ class WeChatChatPostCell: UITableViewCell {
             bubbleWidth,
 
             stackTop, stackLead, stackTrail, stackBottom, stackWidth,
+
+            quoteTop,
+            quoteHeight,
+            quoteLead,
+            quoteTrail,
+            weChatReplyQuoteLabel.topAnchor.constraint(equalTo: weChatReplyQuoteView.topAnchor, constant: 6),
+            weChatReplyQuoteLabel.leadingAnchor.constraint(equalTo: weChatReplyQuoteView.leadingAnchor, constant: 8),
+            weChatReplyQuoteLabel.trailingAnchor.constraint(equalTo: weChatReplyQuoteView.trailingAnchor, constant: -8),
 
             underTop,
             underHeight,
@@ -388,18 +528,32 @@ class WeChatChatPostCell: UITableViewCell {
 
     private func configureActionButtons() {
         let buttons: [(UIButton, UIImage?, Selector)] = [
-            (voteUpButton, UIImage(systemName: "chevron.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteUpTapped)),
-            (voteDownButton, UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteDownTapped)),
             (likeButton, UIImage(systemName: "heart", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleLikeTapped)),
+            (boostActionButton, PostNativeCell.boostIconImage, #selector(handleBoostTapped)),
             (bookmarkButton, UIImage(systemName: "bookmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleBookmarkTapped)),
             (replyButton, UIImage(systemName: "arrowshape.turn.up.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleReplyTapped)),
-            (boostActionButton, PostNativeCell.boostIconImage, #selector(handleBoostTapped)),
+            (voteUpButton, UIImage(systemName: "chevron.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteUpTapped)),
+            (voteDownButton, UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)), #selector(handleVoteDownTapped)),
         ]
         voteCountLabel.translatesAutoresizingMaskIntoConstraints = false
         voteCountLabel.font = TopicDetailTypography.chromeFont(.action, weight: .semibold)
         voteCountLabel.adjustsFontForContentSizeCategory = true
         voteCountLabel.textColor = .secondaryLabel
         voteCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+        reactionSummaryControl.addSubview(reactionSummaryStack)
+        for imageView in reactionImageViews {
+            reactionSummaryStack.addArrangedSubview(imageView)
+            imageView.isHidden = true
+        }
+        reactionSummaryStack.addArrangedSubview(reactionCountLabel)
+        NSLayoutConstraint.activate([
+            reactionSummaryControl.heightAnchor.constraint(equalToConstant: 24),
+            reactionSummaryStack.topAnchor.constraint(equalTo: reactionSummaryControl.topAnchor),
+            reactionSummaryStack.bottomAnchor.constraint(equalTo: reactionSummaryControl.bottomAnchor),
+            reactionSummaryStack.leadingAnchor.constraint(equalTo: reactionSummaryControl.leadingAnchor, constant: 7),
+            reactionSummaryStack.trailingAnchor.constraint(equalTo: reactionSummaryControl.trailingAnchor, constant: -7),
+        ])
+        actionBar.addArrangedSubview(reactionSummaryControl)
         for (button, image, sel) in buttons {
             button.translatesAutoresizingMaskIntoConstraints = false
             var config = UIButton.Configuration.plain()
@@ -431,9 +585,11 @@ class WeChatChatPostCell: UITableViewCell {
         baseURL: String,
         contentDelegate: PostCellDelegate?,
         dateSeparatorText: String? = nil,
-        chatStyle: ChatTopicStyle
+        chatStyle: ChatTopicStyle,
+        replyQuote: ChatReplyQuote? = nil
     ) {
         currentPost = post
+        currentReplyQuote = replyQuote
         self.contentDelegate = contentDelegate
         imageBaseURL = baseURL
         isMine = post.yours
@@ -516,17 +672,21 @@ class WeChatChatPostCell: UITableViewCell {
             )
         }
 
-        // Telegram: reply quote strip.
-        if isTelegram, let replyUser = post.replyToUser {
+        // Telegram: reply quote strip inside the bubble.
+        if isTelegram, let replyQuote {
             pinArrangedSubview(
-                makeTelegramReplyQuote(replyUser: replyUser, post: post, isDark: isDark),
+                makeTelegramReplyQuote(quote: replyQuote, post: post, isDark: isDark),
                 contentWidth: innerWidth,
                 isTextMedia: false
             )
         }
 
-        let views = NativeContentRenderer.renderBlocks(
+        let bodyBlocks = Self.droppingLeadingDiscourseQuotes(
             annotatedBlocks,
+            enabled: replyQuote != nil
+        )
+        let views = NativeContentRenderer.renderBlocks(
+            bodyBlocks,
             config: config,
             delegate: contentDelegate
         )
@@ -558,6 +718,8 @@ class WeChatChatPostCell: UITableViewCell {
             }
         }
 
+        applyWeChatReplyQuote(replyQuote, bubbleWidth: bubbleWidth, isDark: isDark)
+
         // Boost chips under the action/time row (still outside the bubble).
         installBoostStrip(for: post, baseURL: baseURL)
 
@@ -574,38 +736,43 @@ class WeChatChatPostCell: UITableViewCell {
         let accent = style.accentColor
         let symbol = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
 
-        // Like
+        // One summary capsule (emojis + total) then the like icon — same as classic.
         let liked = post.currentUserReaction != nil
-        let likeCount = post.reactionUsersCount
-        let likeName = liked ? "heart.fill" : "heart"
-        likeButton.setImage(UIImage(systemName: likeName, withConfiguration: symbol), for: .normal)
-        likeButton.tintColor = liked ? .systemPink : .secondaryLabel
-        if likeCount > 0 {
-            likeButton.setTitle(" \(likeCount)", for: .normal)
-            likeButton.titleLabel?.font = TopicDetailTypography.chromeFont(.action, weight: .medium)
-            likeButton.setTitleColor(likeButton.tintColor, for: .normal)
-        } else {
-            likeButton.setTitle(nil, for: .normal)
-        }
+        applyChromeButton(
+            likeButton,
+            systemName: liked ? "heart.fill" : "heart",
+            title: nil,
+            color: style.actionTintColor(isActive: liked),
+            symbol: symbol
+        )
         likeButton.isHidden = post.yours
         likeButton.isEnabled = !post.yours
+        configureReactionSummary(
+            reactions: post.reactions,
+            totalCount: post.reactionUsersCount,
+            highlighted: liked,
+            style: style,
+            baseURL: imageBaseURL ?? ""
+        )
 
         // Bookmark
         let bookmarked = post.bookmarked
-        bookmarkButton.setImage(
-            UIImage(systemName: bookmarked ? "bookmark.fill" : "bookmark", withConfiguration: symbol),
-            for: .normal
+        applyChromeButton(
+            bookmarkButton,
+            systemName: bookmarked ? "bookmark.fill" : "bookmark",
+            title: nil,
+            color: style.actionTintColor(isActive: bookmarked),
+            symbol: symbol
         )
-        bookmarkButton.tintColor = bookmarked ? accent : .secondaryLabel
-        bookmarkButton.setTitle(nil, for: .normal)
 
         // Reply
-        replyButton.setImage(
-            UIImage(systemName: "arrowshape.turn.up.left", withConfiguration: symbol),
-            for: .normal
+        applyChromeButton(
+            replyButton,
+            systemName: "arrowshape.turn.up.left",
+            title: nil,
+            color: .secondaryLabel,
+            symbol: symbol
         )
-        replyButton.tintColor = .secondaryLabel
-        replyButton.setTitle(nil, for: .normal)
 
         // Post-voting (Q&A)
         let showVoting = post.postVotingHasVotes || post.postVotingVoteCount != 0 || post.postNumber > 1 && post.replyToPostNumber == nil
@@ -616,25 +783,125 @@ class WeChatChatPostCell: UITableViewCell {
         voteCountLabel.isHidden = !votingActive
         if votingActive {
             let dir = post.postVotingUserVotedDirection?.lowercased()
-            voteUpButton.tintColor = dir == "up" ? accent : .secondaryLabel
-            voteDownButton.tintColor = dir == "down" ? .systemOrange : .secondaryLabel
+            applyChromeButton(
+                voteUpButton,
+                systemName: "chevron.up",
+                title: nil,
+                color: dir == "up" ? accent : .secondaryLabel,
+                symbol: symbol
+            )
+            applyChromeButton(
+                voteDownButton,
+                systemName: "chevron.down",
+                title: nil,
+                color: dir == "down" ? .systemOrange : .secondaryLabel,
+                symbol: symbol
+            )
             voteCountLabel.text = "\(post.postVotingVoteCount)"
             _ = showVoting
         }
 
         // Boost
-        boostActionButton.setImage(
-            PostNativeCell.boostIconImage,
-            for: .normal
+        applyChromeButton(
+            boostActionButton,
+            systemName: nil,
+            customImage: PostNativeCell.boostIconImage,
+            title: nil,
+            color: .secondaryLabel,
+            symbol: symbol
         )
-        boostActionButton.tintColor = .secondaryLabel
         boostActionButton.isHidden = post.yours || !post.canBoost
         boostActionButton.isEnabled = post.canBoost
-        boostActionButton.setTitle(nil, for: .normal)
 
         underBubbleRowHeightConstraint?.constant = Metrics.actionBarHeight
         underBubbleRowTopConstraint?.constant = 4
         underBubbleRow.isHidden = false
+    }
+
+    private func applyChromeButton(
+        _ button: UIButton,
+        systemName: String?,
+        customImage: UIImage? = nil,
+        title: String?,
+        color: UIColor,
+        symbol: UIImage.SymbolConfiguration
+    ) {
+        var config = button.configuration ?? .plain()
+        config.image = customImage ?? systemName.flatMap { UIImage(systemName: $0, withConfiguration: symbol) }
+        config.title = title
+        config.baseForegroundColor = color
+        config.imagePadding = (title?.isEmpty == false) ? 3 : 0
+        let font = TopicDetailTypography.chromeFont(.action, weight: .medium)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = font
+            outgoing.foregroundColor = color
+            return outgoing
+        }
+        button.configuration = config
+        button.tintColor = color
+    }
+
+    private func configureReactionSummary(
+        reactions: [DiscourseTopicDetail.Reaction],
+        totalCount: Int,
+        highlighted: Bool,
+        style: ChatTopicStyle,
+        baseURL: String
+    ) {
+        let visible = ChatActionBarChrome.summaryReactions(reactions)
+        let count = ChatActionBarChrome.summaryCount(reactions: reactions, fallback: totalCount)
+        guard !visible.isEmpty, count > 0 else {
+            hideReactionSummary()
+            return
+        }
+
+        let accent = style.accentColor
+        reactionSummaryControl.isHidden = false
+        reactionSummaryControl.backgroundColor = highlighted
+            ? accent.withAlphaComponent(0.18)
+            : UIColor.secondarySystemFill
+        reactionCountLabel.text = "\(count)"
+        reactionCountLabel.isHidden = false
+        reactionCountLabel.font = TopicDetailTypography.chromeFont(.action, weight: .semibold)
+        reactionCountLabel.adjustsFontForContentSizeCategory = true
+        reactionCountLabel.textColor = highlighted ? accent : .secondaryLabel
+
+        for (index, imageView) in reactionImageViews.enumerated() {
+            if index < visible.count {
+                let reaction = visible[visible.index(visible.startIndex, offsetBy: index)]
+                imageView.isHidden = false
+                if let urlString = EmojiStore.resolvedURLString(
+                    for: reaction.id,
+                    baseURL: baseURL.isEmpty ? nil : baseURL
+                ), let url = URL(string: urlString) {
+                    ForumImageLoader.setImage(on: imageView, url: url)
+                } else if reaction.id == "heart" {
+                    let symbol = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+                    imageView.sd_cancelCurrentImageLoad()
+                    imageView.image = UIImage(systemName: "heart.fill", withConfiguration: symbol)
+                    imageView.tintColor = highlighted ? accent : .secondaryLabel
+                } else {
+                    imageView.sd_cancelCurrentImageLoad()
+                    imageView.image = nil
+                }
+            } else {
+                imageView.isHidden = true
+                imageView.sd_cancelCurrentImageLoad()
+                imageView.image = nil
+            }
+        }
+    }
+
+    private func hideReactionSummary() {
+        reactionSummaryControl.isHidden = true
+        reactionCountLabel.text = nil
+        reactionCountLabel.isHidden = true
+        for imageView in reactionImageViews {
+            imageView.isHidden = true
+            imageView.sd_cancelCurrentImageLoad()
+            imageView.image = nil
+        }
     }
 
     /// Place boost chips under the bubble, aligned to the same edge as the bubble.
@@ -702,6 +969,73 @@ class WeChatChatPostCell: UITableViewCell {
         }
     }
 
+    private func applyWeChatReplyQuote(
+        _ quote: ChatReplyQuote?,
+        bubbleWidth: CGFloat,
+        isDark: Bool
+    ) {
+        guard appliedChatStyle == .weChat else {
+            hideWeChatReplyQuote()
+            return
+        }
+        guard let quote else {
+            hideWeChatReplyQuote()
+            return
+        }
+        let line = ChatReplyQuoteFormatting.line(
+            displayName: quote.displayName,
+            preview: quote.preview
+        )
+        guard !line.isEmpty else {
+            hideWeChatReplyQuote()
+            return
+        }
+
+        weChatReplyQuoteLabel.text = line
+        weChatReplyQuoteLabel.font = TopicDetailTypography.chromeFont(.replyChip, weight: .regular)
+        weChatReplyQuoteLabel.adjustsFontForContentSizeCategory = true
+        weChatReplyQuoteLabel.textColor = .secondaryLabel
+        weChatReplyQuoteView.backgroundColor = isDark
+            ? UIColor.white.withAlphaComponent(0.12)
+            : UIColor.black.withAlphaComponent(0.08)
+
+        let maxWidth = max(bubbleWidth - 16, 80)
+        let font = weChatReplyQuoteLabel.font ?? UIFont.systemFont(ofSize: 12)
+        let bounding = (line as NSString).boundingRect(
+            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        let textHeight = min(ceil(bounding.height), ceil(font.lineHeight * 2))
+        weChatReplyQuoteView.isHidden = false
+        weChatReplyQuoteHeightConstraint?.constant = textHeight + 12
+        weChatReplyQuoteTopConstraint?.constant = 4
+    }
+
+    private func hideWeChatReplyQuote() {
+        weChatReplyQuoteView.isHidden = true
+        weChatReplyQuoteLabel.text = nil
+        weChatReplyQuoteHeightConstraint?.constant = 0
+        weChatReplyQuoteTopConstraint?.constant = 0
+    }
+
+    static func droppingLeadingDiscourseQuotes(
+        _ blocks: [AnnotatedBlock],
+        enabled: Bool
+    ) -> [AnnotatedBlock] {
+        guard enabled else { return blocks }
+        var result = blocks
+        while let first = result.first {
+            if case .discourseQuote = first.block {
+                result.removeFirst()
+                continue
+            }
+            break
+        }
+        return result
+    }
+
     private func makeTelegramNameHeader(
         displayName: String,
         post: DiscourseTopicDetail.Post
@@ -741,11 +1075,12 @@ class WeChatChatPostCell: UITableViewCell {
     }
 
     private func makeTelegramReplyQuote(
-        replyUser: DiscourseTopicDetail.ReplyToUser,
+        quote: ChatReplyQuote,
         post: DiscourseTopicDetail.Post,
         isDark: Bool
     ) -> UIView {
-        let color = chatStyle.nameColor(for: replyUser.username)
+        let colorKey = post.replyToUser?.username ?? quote.displayName
+        let color = chatStyle.nameColor(for: colorKey)
         let container = UIView()
         container.tag = 88002
         container.backgroundColor = isDark
@@ -754,6 +1089,9 @@ class WeChatChatPostCell: UITableViewCell {
         container.layer.cornerRadius = 6
         container.layer.cornerCurve = .continuous
         container.clipsToBounds = true
+        container.isUserInteractionEnabled = true
+        let quoteTap = UITapGestureRecognizer(target: self, action: #selector(handleReplyQuoteTap))
+        container.addGestureRecognizer(quoteTap)
 
         let bar = UIView()
         bar.backgroundColor = color
@@ -763,7 +1101,9 @@ class WeChatChatPostCell: UITableViewCell {
         name.font = TopicDetailTypography.chromeFont(.authorMeta, weight: .semibold)
         name.adjustsFontForContentSizeCategory = true
         name.textColor = color
-        name.text = replyUser.username
+        name.text = quote.displayName.isEmpty
+            ? (post.replyToUser?.username ?? "")
+            : quote.displayName
         name.translatesAutoresizingMaskIntoConstraints = false
 
         let preview = UILabel()
@@ -771,15 +1111,16 @@ class WeChatChatPostCell: UITableViewCell {
         preview.adjustsFontForContentSizeCategory = true
         preview.textColor = isDark ? UIColor.white.withAlphaComponent(0.7) : .secondaryLabel
         preview.numberOfLines = 2
-        // Prefer a short plain preview of this post's reply target if available via cooked quote;
-        // fall back to floor marker.
-        if let n = post.replyToPostNumber {
+        let clipped = ChatReplyQuoteFormatting.truncatedPreview(quote.preview)
+        if clipped.isEmpty, let n = quote.postNumber ?? post.replyToPostNumber {
             preview.text = String(
                 format: String(localized: "telegram_chat.reply_floor_fmt", defaultValue: "回复 #%d"),
                 n
             )
-        } else {
+        } else if clipped.isEmpty {
             preview.text = String(localized: "telegram_chat.reply", defaultValue: "回复")
+        } else {
+            preview.text = clipped
         }
         preview.translatesAutoresizingMaskIntoConstraints = false
 
@@ -845,9 +1186,11 @@ class WeChatChatPostCell: UITableViewCell {
         bubbleTrailingConstraint?.isActive = isMine
         nameLeadingConstraint?.isActive = !isMine
         nameTrailingConstraint?.isActive = isMine
-        // Action/time row always spans the bubble width.
+        // Action/time row and WeChat quote always span the bubble width.
         underBubbleLeadingConstraint?.isActive = true
         underBubbleTrailingConstraint?.isActive = true
+        weChatReplyQuoteLeadingConstraint?.isActive = true
+        weChatReplyQuoteTrailingConstraint?.isActive = true
     }
 
     private func applyChatChrome() {
@@ -973,6 +1316,15 @@ class WeChatChatPostCell: UITableViewCell {
         actionDelegate?.weChatChatPostCell(self, didTapAvatar: username)
     }
 
+    @objc private func handleReplyQuoteTap() {
+        guard let quote = currentReplyQuote else { return }
+        actionDelegate?.weChatChatPostCell(
+            self,
+            didTapReplyQuote: quote.postId,
+            postNumber: quote.postNumber
+        )
+    }
+
     @objc private func handleLikeTapped() {
         guard let post = currentPost, !post.yours else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -1013,9 +1365,21 @@ class WeChatChatPostCell: UITableViewCell {
 
     @objc private func handleBubbleTap(_ gesture: UITapGestureRecognizer) {
         // FluxDo chat: tap does not open like/reaction menus. Keep long-press + action bar.
+        let location = gesture.location(in: bubbleView)
+        if isReplyQuoteView(bubbleView.hitTest(location, with: nil)) { return }
         guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .tap) else { return }
         guard let post = currentPost else { return }
         presentActionSheet(actions: makeActionMenu(for: post))
+    }
+
+    private func isReplyQuoteView(_ view: UIView?) -> Bool {
+        var current = view
+        while let node = current {
+            if node.tag == 88002 { return true }
+            if node === bubbleView { break }
+            current = node.superview
+        }
+        return false
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -1192,6 +1556,7 @@ class WeChatChatPostCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         currentPost = nil
+        currentReplyQuote = nil
         imageBaseURL = nil
         heightReconcileGeneration += 1
         lastReconciledHeight = 0
@@ -1200,9 +1565,14 @@ class WeChatChatPostCell: UITableViewCell {
         boostHost.isHidden = true
         boostHostHeightConstraint?.constant = 0
         boostHostTopConstraint?.constant = 0
+        hideWeChatReplyQuote()
+        hideReactionSummary()
         nameLabel.text = nil
         timeLabel.text = nil
-        likeButton.setTitle(nil, for: .normal)
+        if var likeConfig = likeButton.configuration {
+            likeConfig.title = nil
+            likeButton.configuration = likeConfig
+        }
         applyDateSeparator(nil)
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil

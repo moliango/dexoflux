@@ -143,6 +143,11 @@ enum ChatTopicStyle: Equatable {
         }
     }
 
+    /// Like / bookmark (and other toggles) idle vs active. Active follows theme accent.
+    func actionTintColor(isActive: Bool) -> UIColor {
+        isActive ? accentColor : .secondaryLabel
+    }
+
     /// Telegram group-chat style: stable color per username seed.
     func nameColor(for seed: String) -> UIColor {
         switch self {
