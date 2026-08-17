@@ -14459,6 +14459,17 @@
         }
       }
     },
+    "post.solved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已解决"
+          }
+        }
+      }
+    },
     "post.submit_flag" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -14522,6 +14533,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已提交審核"
+          }
+        }
+      }
+    },
+    "post.unsolved" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "未解决"
           }
         }
       }
@@ -25576,6 +25598,29 @@
         }
       }
     },
+    "topic.browse.category" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read more? Browse %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "想阅读更多？浏览 %@ 分类"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "想閱讀更多？瀏覽 %@ 分類"
+          }
+        }
+      }
+    },
     "topic.details.toggle" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -26364,6 +26409,52 @@
         }
       }
     },
+    "topic.recommended.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested Topics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议话题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建議話題"
+          }
+        }
+      }
+    },
+    "topic.related.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Related Topics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相关话题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相關話題"
+          }
+        }
+      }
+    },
     "topic.search" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -26415,17 +26506,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "生成分享图片"
-          }
-        }
-      }
-    },
-    "topic.suggested.title" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "相关话题"
           }
         }
       }

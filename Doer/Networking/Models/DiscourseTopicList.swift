@@ -193,6 +193,40 @@ nonisolated struct DiscourseTopicList: Decodable {
             self.highestPostNumber = highestPostNumber
         }
 
+        /// Compact list-row payload for related / suggested topics (no unread watermark).
+        static func makeRecommendation(
+            id: Int,
+            title: String,
+            fancyTitle: String?,
+            postsCount: Int,
+            replyCount: Int,
+            categoryId: Int?,
+            createdAt: String,
+            lastPostedAt: String?,
+            tags: [String]
+        ) -> Topic {
+            let fancy = fancyTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return Topic(
+                id: id,
+                fancyTitle: fancy.isEmpty ? title : fancy,
+                title: title,
+                postsCount: postsCount,
+                replyCount: replyCount,
+                views: 0,
+                categoryId: categoryId,
+                createdAt: createdAt,
+                lastPostedAt: lastPostedAt,
+                pinned: nil,
+                excerpt: nil,
+                posters: nil,
+                tags: tags,
+                unseen: false,
+                unreadPosts: 0,
+                lastReadPostNumber: nil,
+                highestPostNumber: postsCount
+            )
+        }
+
         private static func decodeTags(from container: KeyedDecodingContainer<CodingKeys>) -> [String]? {
             if let names = try? container.decodeIfPresent([String].self, forKey: .tags) {
                 return names

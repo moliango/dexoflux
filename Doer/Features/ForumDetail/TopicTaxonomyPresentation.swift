@@ -442,6 +442,27 @@ struct TopicCategoryBadgePresentation: Equatable {
         )
     }
 
+    static func resolve(
+        categoryId: Int?,
+        displayName: String? = nil,
+        baseURL: String
+    ) -> TopicCategoryBadgePresentation? {
+        guard let categoryId else { return nil }
+        let category = DiscourseTaxonomySessionStore.category(id: categoryId, for: baseURL)
+            ?? LinuxDoCategoryCatalog.category(id: categoryId, baseURL: baseURL)
+        guard let category else { return nil }
+        let parent = category.parentCategoryId.flatMap { parentId in
+            DiscourseTaxonomySessionStore.category(id: parentId, for: baseURL)
+                ?? LinuxDoCategoryCatalog.category(id: parentId, baseURL: baseURL)
+        }
+        return resolve(
+            category: category,
+            parent: parent,
+            displayName: nonEmpty(displayName) ?? category.displayName(parent: parent),
+            baseURL: baseURL
+        )
+    }
+
     private static func nonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty

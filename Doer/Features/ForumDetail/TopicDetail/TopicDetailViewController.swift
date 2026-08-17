@@ -761,37 +761,52 @@ final class TopicDetailViewController: ObservableViewController {
     }
 
     func updateSuggestedTopicsFooter() {
-        let topics = viewModel.topic?.suggestedTopics ?? []
-        // Hide when still loading more, or when user disabled related expansion preference.
-        let show = viewModel.isReady
-            && !viewModel.canLoadMore
-            && !topics.isEmpty
-            && AppSettings.shared.showSuggestedTopics
-        guard show else {
-            if tableView.tableFooterView === suggestedTopicsFooter
-                || tableView.tableFooterView === footerSpinner {
-                tableView.tableFooterView = UIView(
-                    frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude)
-                )
-            }
-            return
-        }
-        suggestedTopicsFooter.onSelectTopic = { [weak self] id in
-            guard let self else { return }
-            let detail = TopicDetailFactory.make(
-                api: self.api,
-                topicId: id,
-                forum: self.coordinator.forum
+    let relatedTopics = viewModel.topic?.relatedTopics ?? []
+    let suggestedTopics = viewModel.topic?.suggestedTopics ?? []
+    // Hide when still loading more, or when the user disabled the recommendation preference.
+    let show = viewModel.isReady
+        && !viewModel.canLoadMore
+        && (!relatedTopics.isEmpty || !suggestedTopics.isEmpty)
+        && AppSettings.shared.showSuggestedTopics
+    guard show else {
+        if tableView.tableFooterView === suggestedTopicsFooter
+            || tableView.tableFooterView === footerSpinner {
+            tableView.tableFooterView = UIView(
+                frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude)
             )
-            self.navigationController?.pushViewController(detail, animated: true)
         }
-        suggestedTopicsFooter.configure(topics: topics)
-        let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
-        let height = suggestedTopicsFooter.preferredHeight(forWidth: width)
-        suggestedTopicsFooter.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        // Re-assign footer so UITableView picks up the new frame.
-        tableView.tableFooterView = suggestedTopicsFooter
+        return
     }
+    suggestedTopicsFooter.onSelectTopic = { [weak self] id in
+        guard let self else { return }
+        let detail = TopicDetailFactory.make(
+            api: self.api,
+            topicId: id,
+            forum: self.coordinator.forum
+        )
+        self.navigationController?.pushViewController(detail, animated: true)
+    }
+    suggestedTopicsFooter.onBrowseCategory = { [weak self] _, _ in
+        guard let self, let category = self.viewModel.category else { return }
+        self.navigationController?.pushViewController(
+            CategoryTopicsViewController(api: self.api, category: category),
+            animated: true
+        )
+    }
+    suggestedTopicsFooter.configure(
+        relatedTopics: relatedTopics,
+        suggestedTopics: suggestedTopics,
+        baseURL: baseURL,
+        categoryId: viewModel.topic?.categoryId,
+        categoryName: viewModel.category?.name
+    )
+    let width = tableView.bounds.width > 0 ? tableView.bounds.width : view.bounds.width
+    let height = suggestedTopicsFooter.preferredHeight(forWidth: width)
+    suggestedTopicsFooter.frame = CGRect(x: 0, y: 0, width: width, height: height)
+    // Re-assign footer so UITableView picks up the new frame.
+    tableView.tableFooterView = suggestedTopicsFooter
+    }
+
 
     func applyTypography() {
         titleLabel.font = TopicDetailTypography.topicTitleFont()

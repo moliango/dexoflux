@@ -42,6 +42,23 @@ final class TopicTaxonomyPresentationTests: XCTestCase {
         )
     }
 
+    func testResolveByCategoryIdUsesLinuxDoCatalogNameAndColor() throws {
+        let presentation = try XCTUnwrap(
+            TopicCategoryBadgePresentation.resolve(
+                categoryId: 11,
+                baseURL: "https://linux.do"
+            )
+        )
+        XCTAssertEqual(presentation.name, "搞七捻三")
+        XCTAssertEqual(presentation.colorHex.lowercased(), "3ab54a")
+        XCTAssertNil(
+            TopicCategoryBadgePresentation.resolve(
+                categoryId: 11,
+                baseURL: "https://example.com"
+            )
+        )
+    }
+
     func testLinuxDoBundledCategorySeedProvidesOfficialIconBeforeSiteRefresh() throws {
         let category = makeCategory(id: 32, name: "读书成诗")
         let presentation = try XCTUnwrap(

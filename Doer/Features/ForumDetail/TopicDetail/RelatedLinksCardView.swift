@@ -294,19 +294,32 @@ private struct RelatedLink: Hashable {
     let clicks: Int
 }
 
-/// End-of-topic related/suggested topics (FluxDo parity).
-/// Sized via frames for `tableFooterView` — do NOT override intrinsicContentSize with
-/// `systemLayoutSizeFitting(self)` (infinite recursion / EXC_BAD_ACCESS on stack).
+/// FluxDo-style topic recommendations shown after the last post.
+/// The footer is frame-sized by its table view; it never fits itself recursively.
 final class SuggestedTopicsFooterView: UIView {
     var onSelectTopic: ((Int) -> Void)?
+    var onBrowseCategory: ((Int, String) -> Void)?
 
-    private let titleLabel = UILabel()
-    private let stack = UIStackView()
-    private var topicCount = 0
+    private enum Selection {
+        case related
+        case suggested
+    }
+
+    private let filterStack = UIStackView()
+    private let topicsStack = UIStackView()
+    private let browseButton = UIButton(type: .system)
+    private var relatedButton: UIButton?
+    private var suggestedButton: UIButton?
+    private var rows: [SuggestedTopicRowControl] = []
+    private var relatedTopics: [DiscourseTopicDetail.SuggestedTopic] = []
+    private var suggestedTopics: [DiscourseTopicDetail.SuggestedTopic] = []
+    private var selection: Selection = .related
+    private var baseURL = ""
+    private var categoryId: Int?
+    private var categoryName: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        // tableFooterView is frame-based; keep autoresizing mask enabled.
         translatesAutoresizingMaskIntoConstraints = true
         autoresizingMask = [.flexibleWidth]
         setupUI()
@@ -318,98 +331,338 @@ final class SuggestedTopicsFooterView: UIView {
     }
 
     private func setupUI() {
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = AppSettings.shared.appInterfaceFont(
-            ofSize: 16,
-            weight: .heavy,
-            fallback: .systemFont(ofSize: 16, weight: .heavy)
-        )
-        titleLabel.textColor = .label
-        titleLabel.text = String(localized: "topic.suggested.title", defaultValue: "相关话题")
+        backgroundColor = .clear
 
-        stack.axis = .vertical
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        filterStack.axis = .horizontal
+        filterStack.alignment = .center
+        filterStack.spacing = 6
+        filterStack.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(titleLabel)
-        addSubview(stack)
+        topicsStack.axis = .vertical
+        topicsStack.spacing = 0
+        topicsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        var browseConfiguration = UIButton.Configuration.plain()
+        browseConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        browseButton.configuration = browseConfiguration
+        browseButton.contentHorizontalAlignment = .leading
+        browseButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        browseButton.addTarget(self, action: #selector(browseCategory), for: .touchUpInside)
+        browseButton.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(filterStack)
+        addSubview(topicsStack)
+        addSubview(browseButton)
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            filterStack.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            filterStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            filterStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+            filterStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 38),
 
-            stack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            // Pin bottom so Auto Layout can resolve height when we set bounds width.
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+            topicsStack.topAnchor.constraint(equalTo: filterStack.bottomAnchor, constant: 8),
+            topicsStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            topicsStack.trailingAnchor.constraint(equalTo: trailingAnchor),
+
+            browseButton.topAnchor.constraint(equalTo: topicsStack.bottomAnchor, constant: 6),
+            browseButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            browseButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            browseButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
     }
 
-    func configure(topics: [DiscourseTopicDetail.SuggestedTopic]) {
-        stack.arrangedSubviews.forEach {
-            stack.removeArrangedSubview($0)
+    func configure(
+        relatedTopics: [DiscourseTopicDetail.SuggestedTopic],
+        suggestedTopics: [DiscourseTopicDetail.SuggestedTopic],
+        baseURL: String,
+        categoryId: Int? = nil,
+        categoryName: String? = nil
+    ) {
+        self.relatedTopics = Array(relatedTopics.prefix(6))
+        self.suggestedTopics = Array(suggestedTopics.prefix(6))
+        self.baseURL = baseURL
+        self.categoryId = categoryId
+        self.categoryName = categoryName
+
+        let hasRelated = !self.relatedTopics.isEmpty
+        let hasSuggested = !self.suggestedTopics.isEmpty
+        guard hasRelated || hasSuggested else {
+            isHidden = true
+            return
+        }
+        isHidden = false
+        if selection == .related, !hasRelated { selection = .suggested }
+        if selection == .suggested, !hasSuggested { selection = .related }
+
+        rebuildFilters()
+        rebuildTopics()
+    }
+
+    func preferredHeight(forWidth width: CGFloat) -> CGFloat {
+        guard !isHidden, width > 0 else { return 0 }
+        let available = max(width, 1)
+        let rowsHeight = rows.reduce(CGFloat.zero) { $0 + $1.preferredHeight(forWidth: available) }
+        let browseHeight: CGFloat = categoryId != nil && categoryName != nil ? 40 : 0
+        return 12 + 38 + 8 + rowsHeight + (rows.isEmpty ? 0 : 6) + browseHeight + 8
+    }
+
+    private func rebuildFilters() {
+        filterStack.arrangedSubviews.forEach {
+            filterStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
-        let items = Array(topics.prefix(6))
-        topicCount = items.count
-        isHidden = items.isEmpty
-        guard !items.isEmpty else { return }
+        relatedButton = nil
+        suggestedButton = nil
 
-        let accent = AppSettings.shared.themeStyle.accentColor
-        for topic in items {
-            var config = UIButton.Configuration.plain()
-            config.title = topic.displayTitle
-            config.baseForegroundColor = .label
-            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
-            config.titleLineBreakMode = .byTruncatingTail
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                var outgoing = incoming
-                outgoing.font = AppSettings.shared.appInterfaceFont(
-                    ofSize: 15,
-                    weight: .semibold,
-                    fallback: .systemFont(ofSize: 15, weight: .semibold)
-                )
-                return outgoing
-            }
+        if !relatedTopics.isEmpty {
+            let button = makeFilterButton(
+                title: String(localized: "topic.related.title", defaultValue: "相关话题"),
+                symbolName: "sparkles",
+                selected: selection == .related,
+                action: #selector(selectRelated)
+            )
+            relatedButton = button
+            filterStack.addArrangedSubview(button)
+        }
+        if !suggestedTopics.isEmpty {
+            let button = makeFilterButton(
+                title: String(localized: "topic.recommended.title", defaultValue: "建议话题"),
+                symbolName: nil,
+                selected: selection == .suggested,
+                action: #selector(selectSuggested)
+            )
+            suggestedButton = button
+            filterStack.addArrangedSubview(button)
+        }
 
-            let button = UIButton(configuration: config)
-            button.tag = topic.id
-            button.contentHorizontalAlignment = .leading
-            button.backgroundColor = AppSettings.shared.themeStyle.topicCardBackgroundColor
-            button.layer.cornerRadius = 14
-            button.layer.cornerCurve = .continuous
-            button.layer.borderWidth = 1.0 / UIScreen.main.scale
-            button.layer.borderColor = UIColor.separator.withAlphaComponent(0.22).cgColor
-            button.addTarget(self, action: #selector(topicTapped(_:)), for: .touchUpInside)
-            if let replies = topic.replyCount ?? topic.postsCount {
-                button.accessibilityValue = "\(replies)"
-            }
-            let bar = UIView()
-            bar.backgroundColor = accent
-            bar.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(bar)
-            NSLayoutConstraint.activate([
-                bar.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-                bar.topAnchor.constraint(equalTo: button.topAnchor, constant: 10),
-                bar.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -10),
-                bar.widthAnchor.constraint(equalToConstant: 3),
-                button.heightAnchor.constraint(equalToConstant: 52),
-            ])
-            stack.addArrangedSubview(button)
+        let theme = AppSettings.shared.themeStyle
+        let browseTitle: String
+        if let categoryName, categoryId != nil {
+            browseTitle = String.localizedStringWithFormat(
+                String(localized: "topic.browse.category", defaultValue: "想阅读更多？浏览 %@ 分类"),
+                categoryName
+            )
+            browseButton.isHidden = false
+        } else {
+            browseTitle = ""
+            browseButton.isHidden = true
+        }
+        browseButton.setTitle(browseTitle, for: .normal)
+        browseButton.setTitleColor(theme.accentColor, for: .normal)
+        browseButton.titleLabel?.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 14,
+            weight: .semibold,
+            fallback: .preferredFont(forTextStyle: .subheadline)
+        )
+    }
+
+    private func makeFilterButton(
+        title: String,
+        symbolName: String?,
+        selected: Bool,
+        action: Selector
+    ) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.image = symbolName.flatMap { UIImage(systemName: $0) }
+        configuration.imagePadding = 6
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        configuration.cornerStyle = .capsule
+        let button = UIButton(configuration: configuration)
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.font = AppSettings.shared.appInterfaceFont(
+            ofSize: 16,
+            weight: selected ? .semibold : .medium,
+            fallback: .preferredFont(forTextStyle: .body)
+        )
+        applyFilterStyle(button, selected: selected)
+        return button
+    }
+
+    private func applyFilterStyle(_ button: UIButton, selected: Bool) {
+        let theme = AppSettings.shared.themeStyle
+        var configuration = button.configuration ?? .plain()
+        configuration.baseForegroundColor = selected ? theme.accentColor : .label
+        configuration.background.backgroundColor = selected
+            ? theme.accentColor.withAlphaComponent(0.14)
+            : .clear
+        button.configuration = configuration
+    }
+
+    private func rebuildTopics() {
+        topicsStack.arrangedSubviews.forEach {
+            topicsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        rows.removeAll(keepingCapacity: true)
+
+        let topics = selection == .related ? relatedTopics : suggestedTopics
+        for (index, topic) in topics.enumerated() {
+            let row = SuggestedTopicRowControl(
+                topic: topic,
+                baseURL: baseURL,
+                showsSeparator: index < topics.count - 1
+            )
+            row.addTarget(self, action: #selector(topicTapped(_:)), for: .touchUpInside)
+            rows.append(row)
+            topicsStack.addArrangedSubview(row)
         }
     }
 
-    /// Safe height for `tableFooterView` — never calls `systemLayoutSizeFitting` on self.
-    func preferredHeight(forWidth width: CGFloat) -> CGFloat {
-        guard topicCount > 0, width > 0 else { return 0 }
-        // title(16+22) + gap(12) + rows(52*n + 8*(n-1)) + bottom(20)
-        let rows = CGFloat(topicCount)
-        return 16 + 22 + 12 + rows * 52 + max(0, rows - 1) * 8 + 20
+    @objc private func selectRelated() {
+        guard !relatedTopics.isEmpty else { return }
+        selection = .related
+        rebuildFilters()
+        rebuildTopics()
+        invalidateTableHeight()
     }
 
-    @objc private func topicTapped(_ sender: UIButton) {
-        guard sender.tag > 0 else { return }
-        onSelectTopic?(sender.tag)
+    @objc private func selectSuggested() {
+        guard !suggestedTopics.isEmpty else { return }
+        selection = .suggested
+        rebuildFilters()
+        rebuildTopics()
+        invalidateTableHeight()
+    }
+
+    @objc private func topicTapped(_ sender: SuggestedTopicRowControl) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onSelectTopic?(sender.topicId)
+    }
+
+    @objc private func browseCategory() {
+        guard let categoryId, let categoryName else { return }
+        onBrowseCategory?(categoryId, categoryName)
+    }
+
+    private func invalidateTableHeight() {
+        setNeedsLayout()
+        layoutIfNeeded()
+        var view: UIView? = superview
+        while let current = view {
+            if let tableView = current as? UITableView {
+                tableView.doer_invalidateSelfSizingRows()
+                return
+            }
+            view = current.superview
+        }
+    }
+}
+
+enum SuggestedTopicListItem {
+    @MainActor
+    static func context(
+        from topic: DiscourseTopicDetail.SuggestedTopic,
+        baseURL: String,
+        showCategory: Bool,
+        showTags: Bool
+    ) -> TopicListTopicContext {
+        let presentation = showCategory
+            ? TopicCategoryBadgePresentation.resolve(
+                categoryId: topic.categoryId,
+                displayName: topic.categoryName,
+                baseURL: baseURL
+            )
+            : nil
+        let categoryName: String?
+        if showCategory {
+            let resolved = presentation?.name ?? topic.categoryName
+            let trimmed = resolved?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            categoryName = trimmed.isEmpty ? nil : trimmed
+        } else {
+            categoryName = nil
+        }
+        let postsCount = topic.postsCount ?? max((topic.replyCount ?? 0) + 1, 1)
+        let replyCount = topic.replyCount ?? max(postsCount - 1, 0)
+        let createdAt = topic.createdAt ?? topic.lastPostedAt ?? ""
+        let listTopic = DiscourseTopicList.Topic.makeRecommendation(
+            id: topic.id,
+            title: topic.title,
+            fancyTitle: topic.fancyTitle,
+            postsCount: postsCount,
+            replyCount: replyCount,
+            categoryId: topic.categoryId,
+            createdAt: createdAt,
+            lastPostedAt: topic.lastPostedAt ?? topic.createdAt,
+            tags: showTags ? topic.tags : []
+        )
+        return TopicListTopicContext(
+            topic: listTopic,
+            avatarURL: AvatarImageLoader.url(
+                from: topic.posters.first?.avatarTemplate,
+                baseURL: baseURL,
+                size: AvatarImageLoader.primaryAvatarPixelSize
+            ),
+            categoryName: categoryName,
+            categoryColor: TopicTaxonomyColor.resolve(hex: presentation?.colorHex ?? ""),
+            tags: showTags ? Array(topic.tags.prefix(2).filter { !$0.isEmpty }) : [],
+            categoryPresentation: presentation,
+            categoryBaseURL: baseURL
+        )
+    }
+}
+
+private final class SuggestedTopicRowControl: UIControl {
+    let topicId: Int
+
+    private let embeddedCell: UITableViewCell
+
+    init(topic: DiscourseTopicDetail.SuggestedTopic, baseURL: String, showsSeparator _: Bool) {
+        self.topicId = topic.id
+        let context = SuggestedTopicListItem.context(
+            from: topic,
+            baseURL: baseURL,
+            showCategory: AppSettings.shared.showTopicCardCategory,
+            showTags: AppSettings.shared.showTopicCardTags
+        )
+        self.embeddedCell = TopicListCellFactory.makeStandaloneTopicCell(context: context)
+        super.init(frame: .zero)
+        setupUI()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            embeddedCell.setHighlighted(isHighlighted, animated: true)
+        }
+    }
+
+    private func setupUI() {
+        backgroundColor = .clear
+        clipsToBounds = true
+        embeddedCell.translatesAutoresizingMaskIntoConstraints = false
+        embeddedCell.contentView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(embeddedCell)
+        NSLayoutConstraint.activate([
+            embeddedCell.topAnchor.constraint(equalTo: topAnchor),
+            embeddedCell.leadingAnchor.constraint(equalTo: leadingAnchor),
+            embeddedCell.trailingAnchor.constraint(equalTo: trailingAnchor),
+            embeddedCell.bottomAnchor.constraint(equalTo: bottomAnchor),
+            embeddedCell.contentView.topAnchor.constraint(equalTo: embeddedCell.topAnchor),
+            embeddedCell.contentView.leadingAnchor.constraint(equalTo: embeddedCell.leadingAnchor),
+            embeddedCell.contentView.trailingAnchor.constraint(equalTo: embeddedCell.trailingAnchor),
+            embeddedCell.contentView.bottomAnchor.constraint(equalTo: embeddedCell.bottomAnchor),
+        ])
+
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        accessibilityLabel = embeddedCell.accessibilityLabel
+    }
+
+    func preferredHeight(forWidth width: CGFloat) -> CGFloat {
+        let estimated = TopicListLayoutKind.current.estimatedRowHeight
+        let target = CGSize(width: max(width, 1), height: UIView.layoutFittingCompressedSize.height)
+        embeddedCell.bounds = CGRect(origin: .zero, size: CGSize(width: max(width, 1), height: estimated))
+        embeddedCell.contentView.bounds = embeddedCell.bounds
+        let fitted = embeddedCell.contentView.systemLayoutSizeFitting(
+            target,
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+        return max(estimated, ceil(fitted))
     }
 }

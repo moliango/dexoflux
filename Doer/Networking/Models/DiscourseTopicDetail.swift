@@ -36,7 +36,7 @@ struct DiscourseTopicDetail: Decodable {
     let lastReadPostNumber: Int?
     /// Suggested / related topics shown at the end of a thread (FluxDo parity).
     let suggestedTopics: [SuggestedTopic]
-
+    let relatedTopics: [SuggestedTopic]
     enum CodingKeys: String, CodingKey {
         case id, title, tags, bookmarked, views
         case fancyTitle = "fancy_title"
@@ -59,17 +59,147 @@ struct DiscourseTopicDetail: Decodable {
     }
 
     struct SuggestedTopic: Decodable, Equatable {
+        struct Poster: Decodable, Equatable {
+            let username: String?
+            let name: String?
+            let avatarTemplate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case username, name, user
+                case avatarTemplate = "avatar_template"
+            }
+
+            private struct UserPayload: Decodable {
+                let username: String?
+                let name: String?
+                let avatarTemplate: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case username, name
+                    case avatarTemplate = "avatar_template"
+                }
+            }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                let nested = (try? container.decodeIfPresent(UserPayload.self, forKey: .user)) ?? nil
+                let outerUsername = (try? container.decodeIfPresent(String.self, forKey: .username)) ?? nil
+                let outerName = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? nil
+                let outerAvatar = (try? container.decodeIfPresent(String.self, forKey: .avatarTemplate)) ?? nil
+                username = outerUsername ?? nested?.username
+                name = outerName ?? nested?.name
+                avatarTemplate = outerAvatar ?? nested?.avatarTemplate
+            }
+        }
+
         let id: Int
         let title: String
         let fancyTitle: String?
         let postsCount: Int?
         let replyCount: Int?
+        let createdAt: String?
+        let lastPostedAt: String?
+        let categoryId: Int?
+        let categoryName: String?
+        let tags: [String]
+        let posters: [Poster]
 
         enum CodingKeys: String, CodingKey {
-            case id, title
+            case id, title, tags, posters, category, topic
             case fancyTitle = "fancy_title"
             case postsCount = "posts_count"
             case replyCount = "reply_count"
+            case createdAt = "created_at"
+            case lastPostedAt = "last_posted_at"
+            case categoryId = "category_id"
+            case categoryName = "category_name"
+            case tagNames = "tag_names"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(Int.self, forKey: .id)
+            title = (try? container.decode(String.self, forKey: .title)) ?? ""
+            fancyTitle = try? container.decodeIfPresent(String.self, forKey: .fancyTitle)
+            postsCount = container.decodeLossyInt(forKey: .postsCount)
+            replyCount = container.decodeLossyInt(forKey: .replyCount)
+            createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
+            lastPostedAt = try? container.decodeIfPresent(String.self, forKey: .lastPostedAt)
+            let decodedCategoryName = try? container.decodeIfPresent(String.self, forKey: .categoryName)
+            let decodedCategory = (try? container.decodeIfPresent(CategoryPayload.self, forKey: .category)) ?? nil
+            let nestedTopic = (try? container.decodeIfPresent(TopicPayload.self, forKey: .topic)) ?? nil
+            categoryId = container.decodeLossyInt(forKey: .categoryId)
+                ?? nestedTopic?.categoryId
+                ?? decodedCategory?.id
+            categoryName = decodedCategoryName ?? decodedCategory?.name ?? nestedTopic?.categoryName
+
+            let directTags = Self.decodeTagNames(from: container)
+            tags = directTags.isEmpty ? (nestedTopic?.tags ?? []) : directTags
+            posters = (try? container.decodeIfPresent([Poster].self, forKey: .posters))
+                ?? nestedTopic?.posters
+                ?? []
+        }
+
+        private struct CategoryPayload: Decodable {
+            let id: Int?
+            let name: String?
+        }
+
+        private struct TopicPayload: Decodable {
+            let tags: [String]
+            let posters: [Poster]
+            let categoryName: String?
+            let categoryId: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case tags, posters, category
+                case categoryName = "category_name"
+                case tagNames = "tag_names"
+                case categoryId = "category_id"
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                tags = SuggestedTopic.decodeTagNames(from: container)
+                posters = (try? container.decodeIfPresent([Poster].self, forKey: .posters)) ?? []
+                let category = (try? container.decodeIfPresent(CategoryPayload.self, forKey: .category)) ?? nil
+                let directName = try? container.decodeIfPresent(String.self, forKey: .categoryName)
+                categoryName = directName ?? category?.name
+                categoryId = container.decodeLossyInt(forKey: .categoryId) ?? category?.id
+            }
+        }
+
+        private static func decodeTagNames<T: CodingKey>(from container: KeyedDecodingContainer<T>) -> [String] {
+            if let names = try? container.decodeIfPresent([String].self, forKey: T(stringValue: "tag_names")!),
+               !names.isEmpty {
+                return names.filter { !$0.isEmpty }
+            }
+            if let names = try? container.decodeIfPresent([String].self, forKey: T(stringValue: "tags")!),
+               !names.isEmpty {
+                return names.filter { !$0.isEmpty }
+            }
+            if let objects = try? container.decodeIfPresent([TopicTag].self, forKey: T(stringValue: "tags")!),
+               !objects.isEmpty {
+                return objects.compactMap(\.displayName)
+            }
+            return []
+        }
+
+        private struct TopicTag: Decodable {
+            let name: String?
+            let text: String?
+            let id: String?
+
+            enum CodingKeys: String, CodingKey { case name, text, id }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                name = try? container.decodeIfPresent(String.self, forKey: .name)
+                text = try? container.decodeIfPresent(String.self, forKey: .text)
+                id = (try? container.decodeIfPresent(String.self, forKey: .id))
+                    ?? (container.decodeLossyInt(forKey: .id).map(String.init))
+            }
+
+            var displayName: String? { name ?? text ?? id }
         }
 
         var displayTitle: String {
@@ -101,13 +231,8 @@ struct DiscourseTopicDetail: Decodable {
         lastReadPostNumber = container.decodeLossyInt(forKey: .lastReadPostNumber)
         let suggested = (try? container.decodeIfPresent([SuggestedTopic].self, forKey: .suggestedTopics)) ?? []
         let related = (try? container.decodeIfPresent([SuggestedTopic].self, forKey: .relatedTopics)) ?? []
-        // Prefer suggested; fall back to related; de-dupe by id.
-        var merged: [SuggestedTopic] = []
-        var seen = Set<Int>()
-        for item in suggested + related where item.id > 0 && seen.insert(item.id).inserted {
-            merged.append(item)
-        }
-        suggestedTopics = merged
+        suggestedTopics = suggested
+        relatedTopics = related
         let details = try? container.decodeIfPresent(Details.self, forKey: .details)
         notificationLevel = NotificationLevel(rawValue: details?.notificationLevel ?? 1) ?? .regular
         canEdit = details?.canEdit ?? false
@@ -500,6 +625,10 @@ struct DiscourseTopicDetail: Decodable {
         var postVotingVoteCount: Int
         var postVotingUserVotedDirection: String?
         let postVotingHasVotes: Bool
+        /// discourse-solved plugin: this post is the accepted answer.
+        let acceptedAnswer: Bool
+        let canAcceptAnswer: Bool
+        let canUnacceptAnswer: Bool
 
         enum CodingKeys: String, CodingKey {
             case id, name, username, cooked, raw, yours
@@ -540,6 +669,9 @@ struct DiscourseTopicDetail: Decodable {
             case postVotingVoteCount = "post_voting_vote_count"
             case postVotingUserVotedDirection = "post_voting_user_voted_direction"
             case postVotingHasVotes = "post_voting_has_votes"
+            case acceptedAnswer = "accepted_answer"
+            case canAcceptAnswer = "can_accept_answer"
+            case canUnacceptAnswer = "can_unaccept_answer"
         }
 
         init(from decoder: Decoder) throws {
@@ -590,6 +722,9 @@ struct DiscourseTopicDetail: Decodable {
             postVotingUserVotedDirection = try? container.decodeNonEmptyStringIfPresent(forKey: .postVotingUserVotedDirection)
             postVotingHasVotes = (try? container.decodeIfPresent(Bool.self, forKey: .postVotingHasVotes))
                 ?? (postVotingVoteCount != 0 || postVotingUserVotedDirection != nil)
+            acceptedAnswer = (try? container.decodeIfPresent(Bool.self, forKey: .acceptedAnswer)) ?? false
+            canAcceptAnswer = (try? container.decodeIfPresent(Bool.self, forKey: .canAcceptAnswer)) ?? false
+            canUnacceptAnswer = (try? container.decodeIfPresent(Bool.self, forKey: .canUnacceptAnswer)) ?? false
         }
 
         var showEditsIndicator: Bool { version > 1 || wiki }

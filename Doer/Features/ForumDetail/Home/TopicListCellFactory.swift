@@ -202,6 +202,53 @@ enum TopicListCellFactory {
         }
     }
 
+    /// Same Home topic-row chrome, allocated outside a table (related-topic footer).
+    static func makeStandaloneTopicCell(context: TopicListTopicContext) -> UITableViewCell {
+        let cell: UITableViewCell
+        switch TopicListLayoutKind.current {
+        case .telegram:
+            let row = TelegramTopicListCell(style: .default, reuseIdentifier: nil)
+            row.configure(
+                with: context.topic,
+                avatarURL: context.avatarURL,
+                avatarUserId: context.avatarUserId,
+                categoryName: context.categoryName,
+                tags: context.tags,
+                categoryBaseURL: context.categoryBaseURL
+            )
+            cell = row
+        case .weChat:
+            let row = WeChatTopicListCell(style: .default, reuseIdentifier: nil)
+            row.configure(
+                with: context.topic,
+                avatarURL: context.avatarURL,
+                avatarUserId: context.avatarUserId,
+                categoryName: context.categoryName,
+                categoryColor: context.categoryColor,
+                tags: context.tags,
+                categoryPresentation: context.categoryPresentation,
+                categoryBaseURL: context.categoryBaseURL
+            )
+            cell = row
+        case .standard, .xiaohongshu:
+            let row = TopicCell(style: .default, reuseIdentifier: nil)
+            row.configure(
+                with: context.topic,
+                avatarURL: context.avatarURL,
+                avatarUserId: context.avatarUserId,
+                categoryName: context.categoryName,
+                categoryColor: context.categoryColor,
+                tags: context.tags,
+                categoryPresentation: context.categoryPresentation,
+                categoryBaseURL: context.categoryBaseURL
+            )
+            cell = row
+        }
+        cell.selectionStyle = .none
+        cell.isUserInteractionEnabled = false
+        return cell
+    }
+
     private static func makePinnedCell(
         tableView: UITableView,
         indexPath: IndexPath,
