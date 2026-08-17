@@ -19,9 +19,9 @@
 
 ## Screenshots
 
-| Home | Topic Detail | Me |
+| Home | Mini Program | Me |
 |:---:|:---:|:---:|
-| ![Home](assets/home.png) | ![Topic Detail](assets/detail.png) | ![Me](assets/me.png) |
+| ![Home](assets/default.png) | ![Mini Program](assets/xiaochegnxu2.png) | ![Me](assets/me.png) |
 
 | Login | Default Theme | Eye-care Theme |
 |:---:|:---:|:---:|

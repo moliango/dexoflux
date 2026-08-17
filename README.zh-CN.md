@@ -19,9 +19,9 @@
 
 ## 截图
 
-| 论坛首页 | 帖子详情 | 我的 |
+| 论坛首页 | 小程序 | 我的 |
 |:---:|:---:|:---:|
-| ![论坛首页](assets/home.png) | ![帖子详情](assets/detail.png) | ![我的](assets/me.png) |
+| ![论坛首页](assets/default.png) | ![小程序](assets/xiaochegnxu2.png) | ![我的](assets/me.png) |
 
 | 登录页 | 默认主题 | 护眼主题 |
 |:---:|:---:|:---:|
