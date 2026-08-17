@@ -4,7 +4,7 @@
 
 <h1 align="center">Doer</h1>
 
-<p align="center">A native iOS Linux.do client, built with UIKit + Swift.</p>
+<p align="center">A native iOS client for Linux.do — UIKit + Swift, no SwiftUI in the main app.</p>
 
 <p align="center">
   English | <a href="README.zh-CN.md">中文</a>
@@ -23,16 +23,27 @@
 |:---:|:---:|:---:|
 | ![Home](assets/home.png) | ![Topic Detail](assets/detail.png) | ![Me](assets/me.png) |
 
+| Login | Default Theme | Eye-care Theme |
+|:---:|:---:|:---:|
+| ![Login](assets/login.png) | ![Default](assets/default.png) | ![Eye-care](assets/huyan.png) |
+
+| Xiaohongshu Theme | WeChat Theme | Telegram Theme |
+|:---:|:---:|:---:|
+| ![Xiaohongshu](assets/redbook.png) | ![WeChat](assets/wechat.png) | ![Telegram](assets/telegram.png) |
+
+| Default Topic Detail | WeChat Topic Detail | Telegram Topic Detail |
+|:---:|:---:|:---:|
+| ![Default Topic Detail](assets/default%20detail.png) | ![WeChat Topic Detail](assets/wechat%20topic%20Detail.png) | ![Telegram Topic Detail](assets/telegram%20Topic%20Detail.png) |
 ## Features
 
-- [x] **Linux.do browsing** — Latest, top, categories, tags, and search in a native UIKit UI.
+- [x] **Linux.do browsing** — Latest, top, categories, tags, and search, all rendered with native UIKit.
 - [x] **Topic detail** — Cooked HTML rendered as native text, images, quotes, code, polls, spoilers, oneboxes, tables, videos, and a timeline jumper.
 - [x] **Replies & reactions** — Reply to topics or floors, like posts, and use Linux.do emoji / Boost.
 - [x] **Image viewer** — Multi-image swipe, count, share, save, and close.
 - [x] **Account & Me** — Profile, badges, bookmarks, drafts, browsing history, notifications, and private messages.
-- [x] **Auth** — Web login, cookie reuse for native requests, and global Cloudflare challenge handling.
+- [x] **Auth** — Web login, cookie reuse for native requests, and global Cloudflare challenge handling, plus silent session recovery for third-party platforms.
 - [x] **Appearance** — Default, eye-care, Xiaohongshu, and Telegram themes, plus fonts, font size, and tab-bar layout.
-- [x] **Plugins** — Mini programs, NewAPI check-in, toolbox, and a plugin dock.
+- [x] **Plugins** — Mini programs, NewAPI check-in (with silent re-auth), toolbox, and a plugin dock.
 - [x] **Share & widget** — Share a topic URL into Doer, plus a home-screen quick-launch widget.
 - [x] **Data management** — Inspect and clear browsing data, image cache, cookies, and app storage.
 - [x] **Updates** — In-app check against [GitHub Releases](https://github.com/moliango/doer/releases).
@@ -46,7 +57,7 @@
 | Minimum Target | iOS 15.0 |
 | Bundle ID | `com.naine.doer` |
 | Architecture | MVVM-style view models + `DoerObservableObject` / observable view controllers |
-| Build Tool | [Tuist](https://tuist.dev) via `mise` |
+| Build Tool | [Tuist](https://tuist.dev) via `mise` (pinned in `.mise.toml`) |
 | Networking | [Alamofire](https://github.com/Alamofire/Alamofire), custom router, cookie-backed requests, DoH URLProtocol |
 | Web Session | `WKWebView` for login, Cloudflare verification, and session refresh |
 | Database | SQLite via [GRDB](https://github.com/groue/GRDB.swift) |
@@ -54,13 +65,40 @@
 | Image Loading | [SDWebImage](https://github.com/SDWebImage/SDWebImage) + [SDWebImageSVGCoder](https://github.com/SDWebImage/SDWebImageSVGCoder) |
 | Image Viewer | [Lightbox](https://github.com/hyperoslo/Lightbox) plus custom multi-image preview |
 | Persistence | Keychain, cookies, local settings, and GRDB-backed models |
+| Localization | `Localizable.xcstrings` — en / zh-Hans / zh-Hant / zh-HK |
+
+## Architecture Overview
+
+Doer follows a **thin ViewController / fat ViewModel** pattern with iOS 15-compatible observation. Since the project sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, all UI-adjacent code runs on the main actor by default.
+
+```text
+ViewController (renders state)
+      │  observes DoerObservableObject.didChangeNotification
+      ▼
+ViewModel  (owns state, calls notifyChanged())
+      │
+      ▼
+DiscourseAPI / DiscourseRouter  (per-forum Alamofire instance)
+```
+
+Key layers:
+
+- `Doer/Networking/` — `DiscourseAPI` (one instance per forum, Alamofire-based) + `DiscourseRouter` (all API routes as enum).
+- `Doer/Core/Auth/` — Web login via `WKWebView`, cookie reuse for native requests, Keychain-backed credentials, and session refresh.
+- `Doer/Core/Plugins/` — Plugin registry, runtime, and built-in plugins (mini programs, NewAPI check-in, toolbox).
+- `Doer/Database/` — GRDB `DatabasePool` with versioned migrations, stores `ForumInstance` records.
+- `Doer/Core/Settings/` — `AppSettings` (`DoerObservableObject` singleton) for user preferences.
+- `Packages/CookedHTML/` — Local Swift package that parses Discourse-cooked HTML into `BlockNode`/`InlineNode` trees with `NSAttributedString` rendering support.
+
+**Topic rendering** supports two paths: a WKWebView snapshot path (JS messaging extracts interactive regions) and native UIKit block renderers under `Doer/Features/ForumDetail/TopicDetail/NativeContent/`.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Xcode 16+
-- [mise](https://mise.jdx.dev) for tool versions
+- [mise](https://mise.jdx.dev) for tool versions (Tuist version is pinned in `.mise.toml`)
+- A development team ID in `.mise.local.toml` (not committed) as `TUIST_DEVELOPMENT_TEAM`
 
 ### Build
 
@@ -71,13 +109,25 @@ make setup
 # Re-generate the project only
 make generate
 
+# Build an unsigned IPA via ci_scripts
+make unsigned-ipa
+
 # Clean generated artifacts
 make clean
 ```
 
-Then open **`Doer.xcworkspace`** (not the leftover `.xcodeproj` alone), select the **Doer** scheme and your development team, and run.
+Then open **`Doer.xcworkspace`** (not the standalone `.xcodeproj`), select the **Doer** scheme and your development team, and run.
 
-The generated workspace is not committed. Run `make generate` again after changing `Project.swift`.
+> The generated workspace is **not committed**. Run `make generate` again after changing `Project.swift`.
+
+### Tests
+
+```bash
+# CookedHTML package tests
+cd Packages/CookedHTML && swift test
+
+# App unit tests: open Doer.xcworkspace and run the DoerTests scheme
+```
 
 ## Project Structure
 
@@ -122,7 +172,7 @@ The generated workspace is not committed. Run `make generate` again after changi
 
 ## Acknowledgements
 
-Doer is a native iOS client for Linux.do. The UIKit architecture started from Dexo; several interaction details came from FluxDo. The product name and repository are independent.
+Doer is a native iOS client for Linux.do. The UIKit architecture started from [Dexo](https://github.com/Eilgnaw/dexo); several interaction details came from [FluxDo](https://github.com/Lingyan000/fluxdo). The product name and repository are independent.
 
 ## Project Links
 
