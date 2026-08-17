@@ -258,6 +258,13 @@ final class PostNativeCell: UITableViewCell {
         return label
     }()
 
+    let solvedStampView: PostSolvedStampView = {
+        let view = PostSolvedStampView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
     let sourceButton: UIButton = {
         let button = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
@@ -526,6 +533,8 @@ final class PostNativeCell: UITableViewCell {
         cardView.addSubview(bottomLeftStack)
         cardView.addSubview(actionStackView)
         cardView.addSubview(separatorLine)
+        // Watermark sits above body, matching FluxDo's header-stack stamp.
+        cardView.addSubview(solvedStampView)
 
         let contentTopConstraint = contentStackView.topAnchor.constraint(equalTo: contentCardView.topAnchor)
         let contentLeadingConstraint = contentStackView.leadingAnchor.constraint(equalTo: contentCardView.leadingAnchor)
@@ -608,6 +617,8 @@ final class PostNativeCell: UITableViewCell {
 
             floorLabel.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 2),
             floorLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Metrics.cardInner),
+            solvedStampView.topAnchor.constraint(equalTo: floorLabel.bottomAnchor, constant: 6),
+            solvedStampView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -20),
             whisperBadge.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
             whisperBadge.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 6),
             editsButton.centerYAnchor.constraint(equalTo: floorLabel.centerYAnchor),
@@ -810,6 +821,10 @@ final class PostNativeCell: UITableViewCell {
         usernameLabel.text = "@\(post.username)"
         timeLabel.text = Self.formatDate(post.createdAt)
         floorLabel.text = "#\(floorNumber)"
+        solvedStampView.configure(
+            acceptedAnswer: post.acceptedAnswer,
+            canAcceptAnswer: post.canAcceptAnswer
+        )
         nameLabel.textColor = (post.moderator || post.groupModerator || post.admin) ? .systemBlue : .label
 
         if let userTitle = displayUserTitle(for: post) {
@@ -1339,6 +1354,7 @@ final class PostNativeCell: UITableViewCell {
         usernameLabel.text = nil
         timeLabel.text = nil
         floorLabel.text = nil
+        solvedStampView.configure(acceptedAnswer: false, canAcceptAnswer: false)
         replyToLabel.attributedText = nil
         replyToLabel.text = nil
         replyToLabel.isHidden = true

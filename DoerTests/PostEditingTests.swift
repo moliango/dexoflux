@@ -23,6 +23,43 @@ final class PostEditingTests: XCTestCase {
         XCTAssertNil(post.raw)
         XCTAssertFalse(post.canEdit)
         XCTAssertFalse(post.yours)
+        XCTAssertFalse(post.acceptedAnswer)
+        XCTAssertFalse(post.canAcceptAnswer)
+        XCTAssertFalse(post.canUnacceptAnswer)
+    }
+
+    func testPostDecodesAcceptedAnswerStamp() throws {
+        let solved = try decodePost(extra: [
+            "accepted_answer": true,
+            "can_accept_answer": false,
+            "can_unaccept_answer": true,
+        ])
+        XCTAssertTrue(solved.acceptedAnswer)
+        XCTAssertFalse(solved.canAcceptAnswer)
+        XCTAssertTrue(solved.canUnacceptAnswer)
+
+        let cell = PostNativeCell(style: .default, reuseIdentifier: PostNativeCell.reuseIdentifier)
+        configure(cell, post: solved)
+        XCTAssertFalse(cell.solvedStampView.isHidden)
+
+        cell.prepareForReuse()
+        configure(cell, post: try decodePost(extra: [:]))
+        XCTAssertTrue(cell.solvedStampView.isHidden)
+    }
+
+    func testChatCellsShowAcceptedAnswerStamp() throws {
+        let solved = try decodePost(extra: ["accepted_answer": true])
+        let wechat = WeChatChatPostCell(style: .default, reuseIdentifier: WeChatChatPostCell.reuseIdentifier)
+        configureChat(wechat, post: solved, style: .weChat)
+        XCTAssertFalse(wechat.solvedStampView.isHidden)
+
+        let telegram = TelegramChatPostCell(style: .default, reuseIdentifier: TelegramChatPostCell.reuseIdentifier)
+        configureChat(telegram, post: solved, style: .telegram)
+        XCTAssertFalse(telegram.solvedStampView.isHidden)
+
+        wechat.prepareForReuse()
+        configureChat(wechat, post: try decodePost(extra: [:]), style: .weChat)
+        XCTAssertTrue(wechat.solvedStampView.isHidden)
     }
 
     func testPostEditingRoutesUseSinglePostEndpoint() {
@@ -89,6 +126,22 @@ final class PostEditingTests: XCTestCase {
             cookedHTML: post.cooked,
             validReactions: [],
             sharedIssue: nil
+        )
+    }
+
+    private func configureChat(
+        _ cell: WeChatChatPostCell,
+        post: DiscourseTopicDetail.Post,
+        style: ChatTopicStyle
+    ) {
+        cell.configure(
+            with: post,
+            annotatedBlocks: [],
+            config: .default(contentWidth: 240, baseURL: "https://linux.do"),
+            floorNumber: post.postNumber,
+            baseURL: "https://linux.do",
+            contentDelegate: nil,
+            chatStyle: style
         )
     }
 

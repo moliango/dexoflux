@@ -301,6 +301,13 @@ class WeChatChatPostCell: UITableViewCell {
     private var weChatReplyQuoteLeadingConstraint: NSLayoutConstraint?
     private var weChatReplyQuoteTrailingConstraint: NSLayoutConstraint?
 
+    let solvedStampView: PostSolvedStampView = {
+        let view = PostSolvedStampView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
     /// Holds `BoostStripView` **below** the chat bubble (not inside it).
     private let boostHost: UIView = {
         let view = UIView()
@@ -355,6 +362,7 @@ class WeChatChatPostCell: UITableViewCell {
         weChatReplyQuoteView.addSubview(weChatReplyQuoteLabel)
         contentView.addSubview(underBubbleRow)
         contentView.addSubview(boostHost)
+        contentView.addSubview(solvedStampView)
         bubbleView.addSubview(contentStack)
 
         let quoteTap = UITapGestureRecognizer(target: self, action: #selector(handleReplyQuoteTap))
@@ -479,6 +487,8 @@ class WeChatChatPostCell: UITableViewCell {
 
             bubbleTopName,
             bubbleWidth,
+            solvedStampView.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
+            solvedStampView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
 
             stackTop, stackLead, stackTrail, stackBottom, stackWidth,
 
@@ -659,6 +669,11 @@ class WeChatChatPostCell: UITableViewCell {
         bubbleView.backgroundColor = isMine
             ? style.outgoingBubbleColor(isDark: isDark)
             : style.incomingBubbleColor(isDark: isDark)
+        solvedStampView.configure(
+            acceptedAnswer: post.acceptedAnswer,
+            canAcceptAnswer: post.canAcceptAnswer,
+            compact: true
+        )
 
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         contentStack.spacing = isTelegram ? 3 : Metrics.contentSpacing
@@ -1567,6 +1582,7 @@ class WeChatChatPostCell: UITableViewCell {
         boostHostTopConstraint?.constant = 0
         hideWeChatReplyQuote()
         hideReactionSummary()
+        solvedStampView.configure(acceptedAnswer: false, canAcceptAnswer: false, compact: true)
         nameLabel.text = nil
         timeLabel.text = nil
         if var likeConfig = likeButton.configuration {
