@@ -264,6 +264,13 @@ final class WebCookieStore {
                 skippedAuthDeletions.append("\(cookie.name)(\(kind.logLabel))")
                 return false
             }
+            if cookie.name == "cf_clearance",
+               let url,
+               Self.deletionKind(cookie, now: now) != nil,
+               hasCookie(named: "cf_clearance", for: url) {
+                skippedAuthDeletions.append("cf_clearance(keep_jar)")
+                return false
+            }
             // Skip expired leftovers from WK — applying them would delete still-valid jar
             // sessions via isDeletionCookie.
             if Self.isExpired(cookie, now: now) {

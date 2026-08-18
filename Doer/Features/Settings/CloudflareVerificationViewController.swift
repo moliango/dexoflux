@@ -12,15 +12,57 @@ enum CloudflareVerificationPolicy {
         value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
     }
 
+    /// Native API challenges allowed during grace before we admit the pass failed.
+    private static let graceApiChallengeLimit = 3
+    private static var graceApiChallengeCounts: [String: Int] = [:]
+
     static func markVerificationGrace(baseURL: String, duration: TimeInterval = verificationGraceDuration) {
         let key = normalizedBaseKey(baseURL)
         graceLock.lock()
         verificationGraceUntilByBaseURL[key] = Date().addingTimeInterval(duration)
+        graceApiChallengeCounts[key] = 0
         graceLock.unlock()
         // Allow avatar/upload fetches again once clearance is considered good.
         CloudflareImageGate.resume(baseURL: baseURL)
         DiscourseAPI.clearCloudflareForegroundGate(baseURL: baseURL)
         DohDebugLog.record("verification grace armed base=\(key) duration=\(Int(duration))s", subsystem: "CF")
+    }
+
+    static func clearVerificationGrace(baseURL: String) {
+        let key = normalizedBaseKey(baseURL)
+        graceLock.lock()
+        verificationGraceUntilByBaseURL[key] = nil
+        graceApiChallengeCounts[key] = nil
+        graceLock.unlock()
+        DohDebugLog.record("verification grace cleared base=\(key)", subsystem: "CF")
+    }
+
+    /// Returns true when grace was cleared because native API traffic is still challenged.
+    static func noteChallengeDuringGrace(baseURL: String, source: String) -> Bool {
+        guard source.hasPrefix("api.") else { return false }
+        let key = normalizedBaseKey(baseURL)
+        let clearedCount: Int?
+        graceLock.lock()
+        if let until = verificationGraceUntilByBaseURL[key], Date() < until {
+            let count = (graceApiChallengeCounts[key] ?? 0) + 1
+            graceApiChallengeCounts[key] = count
+            if count >= graceApiChallengeLimit {
+                verificationGraceUntilByBaseURL[key] = nil
+                graceApiChallengeCounts[key] = nil
+                clearedCount = count
+            } else {
+                clearedCount = nil
+            }
+        } else {
+            clearedCount = nil
+        }
+        graceLock.unlock()
+        guard let count = clearedCount else { return false }
+        DohDebugLog.record(
+            "verification grace cleared after repeated api challenges base=\(key) count=\(count) source=\(source)",
+            subsystem: "CF"
+        )
+        return true
     }
 
     static func markVerificationGrace(baseURL: URL, duration: TimeInterval = verificationGraceDuration) {
@@ -85,10 +127,24 @@ enum CloudflareVerificationPolicy {
               responseURL.path.lowercased() == "/challenge"
         else { return false }
 
+        // `/challenge?__cf_chl_tk=...` is still inside the Cloudflare hop.
+        // Treating that 404 as success cancels the navigation ("frame load
+        // interrupted") and auto-dismisses the global shield while Turnstile
+        // is still running.
+        if hasCloudflareChallengeToken(in: responseURL) {
+            return false
+        }
+
         let cfMitigated = response.allHeaderFields.first { key, _ in
             "\(key)".caseInsensitiveCompare("cf-mitigated") == .orderedSame
         }.map { "\($0.value)".lowercased() }
         return cfMitigated?.contains("challenge") != true
+    }
+
+    static func hasCloudflareChallengeToken(in url: URL) -> Bool {
+        let query = url.query?.lowercased() ?? ""
+        guard !query.isEmpty else { return false }
+        return query.contains("__cf_chl_") || query.contains("cf_chl_")
     }
 }
 
@@ -585,6 +641,15 @@ final class CloudflareVerificationViewController: UIViewController {
         try? await Task.sleep(nanoseconds: 150_000_000)
         await syncCloudflareCookieFromWebView()
         await updateStoredUserAgentFromWebView()
+        let clearanceValue = WebCookieStore.shared.cookieValue(named: "cf_clearance", for: baseURL)
+        guard CloudflareVerificationPolicy.hasUsableClearance(
+            currentValue: clearanceValue,
+            initialValue: initialClearanceValue,
+            requiresFreshValue: autoDismissOnSuccess
+        ) else {
+            log("foreground /challenge 404 without usable clearance; keep waiting")
+            return
+        }
         log("foreground complete from origin /challenge 404")
         completeVerification()
     }

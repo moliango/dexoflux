@@ -56,6 +56,15 @@ final class WebSessionRefreshService: NSObject {
             return false
         }
 
+        if DiscourseAPI.isCloudflareForegroundGateActive(baseURL: baseURL)
+            || CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL) {
+            DohDebugLog.record(
+                "web session refresh skipped reason=\(reason) skip=cf_gate_or_grace",
+                subsystem: "Auth"
+            )
+            return false
+        }
+
         let token = WebCookieStore.shared.cookieValue(named: "_t", for: base)
         if !force, let state = lastSuccess[baseURL],
            state.token == token,
@@ -392,14 +401,34 @@ final class WebSessionRefreshService: NSObject {
     }
 
     private func evaluate(_ script: String, in webView: WKWebView) async -> String? {
-        await withCheckedContinuation { continuation in
-            webView.evaluateJavaScript(script) { value, error in
-                if let error {
-                    continuation.resume(returning: "error:\(error.localizedDescription)")
-                    return
+        let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expression = trimmed.hasSuffix(";") ? String(trimmed.dropLast()) : trimmed
+        let body = "return await (\(expression));"
+        do {
+            let value: Any? = try await withCheckedThrowingContinuation { continuation in
+                webView.callAsyncJavaScript(
+                    body,
+                    arguments: [:],
+                    in: nil,
+                    in: .page
+                ) { result in
+                    switch result {
+                    case .success(let value):
+                        continuation.resume(returning: value)
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
                 }
-                continuation.resume(returning: value as? String)
             }
+            if let string = value as? String {
+                return string
+            }
+            if let value {
+                return String(describing: value)
+            }
+            return nil
+        } catch {
+            return "error:\(error.localizedDescription)"
         }
     }
 

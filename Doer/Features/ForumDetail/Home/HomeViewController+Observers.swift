@@ -193,6 +193,10 @@ extension HomeViewController {
     func reloadAfterBecomingVisibleIfNeeded() {
         guard isViewLoaded, view.window != nil, !viewModel.isLoading else { return }
         guard viewModel.topics.isEmpty || viewModel.errorMessage != nil else { return }
+        if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: api.baseURL) {
+            logCloudflareState("visible reload skipped during verification grace")
+            return
+        }
         recoverTransportAndReload()
     }
 

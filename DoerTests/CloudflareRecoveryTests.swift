@@ -107,6 +107,28 @@ final class CloudflareRecoveryTests: XCTestCase {
         )
     }
 
+    func testChallengeToken404IsNotAVerifiedLanding() throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://linux.do"))
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: try XCTUnwrap(URL(string: "https://linux.do/challenge?__cf_chl_tk=abc")),
+            statusCode: 404,
+            httpVersion: nil,
+            headerFields: ["Server": "nginx"]
+        ))
+
+        XCTAssertTrue(
+            CloudflareVerificationPolicy.hasCloudflareChallengeToken(
+                in: try XCTUnwrap(URL(string: "https://linux.do/challenge?__cf_chl_tk=abc"))
+            )
+        )
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.isVerifiedChallengeLanding(
+                response,
+                baseURL: baseURL
+            )
+        )
+    }
+
     func testCloudflareMitigatedChallenge404CannotCompleteAutomatically() throws {
         let baseURL = try XCTUnwrap(URL(string: "https://linux.do"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -161,9 +183,54 @@ final class CloudflareRecoveryTests: XCTestCase {
     }
     func testVerificationGraceSuppressesImmediateRepromptWindow() {
         let base = "https://linux.do"
+        CloudflareVerificationPolicy.clearVerificationGrace(baseURL: base)
         CloudflareVerificationPolicy.markVerificationGrace(baseURL: base, duration: 5)
         XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: base))
         XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: "https://LINUX.DO/"))
+    }
+
+    func testRepeatedApiChallengesClearVerificationGrace() {
+        let base = "https://linux.do"
+        CloudflareVerificationPolicy.clearVerificationGrace(baseURL: base)
+        CloudflareVerificationPolicy.markVerificationGrace(baseURL: base, duration: 30)
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.noteChallengeDuringGrace(baseURL: base, source: "image.avatar")
+        )
+        XCTAssertTrue(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: base))
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.noteChallengeDuringGrace(baseURL: base, source: "api.foreground")
+        )
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.noteChallengeDuringGrace(baseURL: base, source: "api.foreground")
+        )
+        XCTAssertTrue(
+            CloudflareVerificationPolicy.noteChallengeDuringGrace(baseURL: base, source: "api.foreground")
+        )
+        XCTAssertFalse(CloudflareVerificationPolicy.isInVerificationGrace(baseURL: base))
+    }
+
+    func testChallenge404StillRequiresUsableClearanceToFinish() {
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.hasUsableClearance(
+                currentValue: nil,
+                initialValue: "old",
+                requiresFreshValue: true
+            )
+        )
+        XCTAssertFalse(
+            CloudflareVerificationPolicy.hasUsableClearance(
+                currentValue: "old",
+                initialValue: "old",
+                requiresFreshValue: true
+            )
+        )
+        XCTAssertTrue(
+            CloudflareVerificationPolicy.hasUsableClearance(
+                currentValue: "new",
+                initialValue: "old",
+                requiresFreshValue: true
+            )
+        )
     }
 
     func testImageGatePausesMainDomainDownloadsAndResumes() throws {

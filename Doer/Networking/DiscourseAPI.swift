@@ -458,11 +458,18 @@ final class DiscourseAPI {
         }
 
         if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: baseURL) {
-            DohDebugLog.record(
-                "challenge ignored during grace \(details.joined(separator: " "))",
-                subsystem: "CF"
-            )
-            return
+            if CloudflareVerificationPolicy.noteChallengeDuringGrace(baseURL: baseURL, source: source) {
+                DohDebugLog.record(
+                    "challenge broke verification grace \(details.joined(separator: " "))",
+                    subsystem: "CF"
+                )
+            } else {
+                DohDebugLog.record(
+                    "challenge ignored during grace \(details.joined(separator: " "))",
+                    subsystem: "CF"
+                )
+                return
+            }
         }
         // Only pause the image pipeline for image/API forum traffic.
         // metaverse.oauth (cdk/credit.linux.do) is a separate CF zone — pausing it
