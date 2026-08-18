@@ -125,10 +125,12 @@ final class CompactPinnedTopicCell: UITableViewCell {
         contentView.addSubview(cardView)
         cardView.addSubview(rowStack)
 
-        cardTop = cardView.topAnchor.constraint(equalTo: contentView.topAnchor)
-        cardLeading = cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
-        cardTrailing = cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
-        cardBottom = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        // Start with the standard card geometry so the first layout pass cannot
+        // briefly render a full-width pinned row before configure() runs.
+        cardTop = cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4)
+        cardLeading = cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16)
+        cardTrailing = cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16)
+        cardBottom = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
         accessoryWidth = countBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 32)
 
         NSLayoutConstraint.activate([
@@ -225,6 +227,8 @@ final class CompactPinnedTopicCell: UITableViewCell {
         accessoryLabel.text = nil
         countBadge.isHidden = false
         accessoryIcon.isHidden = false
+        applyCardChrome(theme: AppSettings.shared.themeStyle)
+        accessoryWidth.constant = 32
         categoryHost.subviews.forEach { $0.removeFromSuperview() }
     }
 
