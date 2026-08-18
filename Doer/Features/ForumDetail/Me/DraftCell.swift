@@ -40,6 +40,16 @@ final class DraftCell: UITableViewCell {
 
     private let kindBadge = DraftKindBadgeView()
 
+    private let taxonomyLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
     private let excerptLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12)
@@ -72,7 +82,7 @@ final class DraftCell: UITableViewCell {
     }()
 
     private lazy var textStack: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [titleLabel, metaRow, excerptLabel])
+        let stack = UIStackView(arrangedSubviews: [titleLabel, taxonomyLabel, metaRow, excerptLabel])
         stack.axis = .vertical
         stack.alignment = .fill
         stack.spacing = 7
@@ -130,11 +140,15 @@ final class DraftCell: UITableViewCell {
         excerpt: String?,
         timeText: String?,
         kindTitle: String,
+        taxonomyText: String?,
         symbolName: String,
         accent: UIColor
     ) {
         applyThemeStyle(accent: accent)
         titleLabel.text = title
+        taxonomyLabel.text = taxonomyText
+        taxonomyLabel.isHidden = taxonomyText == nil
+        taxonomyLabel.textColor = accent.withAlphaComponent(0.82)
         let cleaned = excerpt?
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -159,6 +173,9 @@ final class DraftCell: UITableViewCell {
         excerptLabel.font = AppSettings.shared.appInterfaceFont(
             matching: .systemFont(ofSize: 12, weight: .regular)
         )
+        taxonomyLabel.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 12, weight: .medium)
+        )
         timeLabel.font = AppSettings.shared.appInterfaceFont(
             matching: .systemFont(ofSize: 12, weight: .regular)
         )
@@ -172,6 +189,8 @@ final class DraftCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         titleLabel.text = nil
+        taxonomyLabel.text = nil
+        taxonomyLabel.isHidden = false
         excerptLabel.text = nil
         excerptLabel.isHidden = false
         timeLabel.text = nil

@@ -228,7 +228,7 @@ final class HomeCategoryDrawerView: UIView {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(DrawerCategoryCell.self, forCellReuseIdentifier: DrawerCategoryCell.reuseID)
-        tableView.register(DrawerTagCell.self, forCellReuseIdentifier: DrawerTagCell.reuseID)
+        tableView.register(FluxDoTagCell.self, forCellReuseIdentifier: FluxDoTagCell.reuseID)
 
         let leading = panelView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -panelWidth)
         panelLeadingConstraint = leading
@@ -645,7 +645,7 @@ extension HomeCategoryDrawerView: UITableViewDataSource, UITableViewDelegate {
             let tag = groups[indexPath.section].tags[indexPath.row]
             let maxCount = groups[indexPath.section].tags.map(\.count).max() ?? 0
             let heat = maxCount > 0 ? CGFloat(tag.count) / CGFloat(maxCount) : 0
-            let cell = tableView.dequeueReusableCell(withIdentifier: DrawerTagCell.reuseID, for: indexPath) as! DrawerTagCell
+            let cell = tableView.dequeueReusableCell(withIdentifier: FluxDoTagCell.reuseID, for: indexPath) as! FluxDoTagCell
             cell.configure(tag: tag, heat: heat, countText: formatCount(tag.count))
             return cell
         }
@@ -805,8 +805,8 @@ private final class DrawerCategoryCell: UITableViewCell {
     }
 }
 
-private final class DrawerTagCell: UITableViewCell {
-    static let reuseID = "DrawerTagCell"
+final class FluxDoTagCell: UITableViewCell {
+    static let reuseID = "FluxDoTagCell"
 
     private let iconContainer = UIView()
     private let iconView = UIImageView()
@@ -882,7 +882,7 @@ private final class DrawerTagCell: UITableViewCell {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(tag: DiscourseTag, heat: CGFloat, countText: String) {
+    func configure(tag: DiscourseTag, heat: CGFloat, countText: String, selected: Bool = false) {
         let presentation = TopicTagIconCatalog.presentation(for: tag.name)
         let color = presentation.flatMap { TopicTaxonomyColor.resolve(hex: $0.colorHex) }
             ?? AppSettings.shared.themeStyle.accentColor
@@ -898,6 +898,8 @@ private final class DrawerTagCell: UITableViewCell {
         }
         heatFill.backgroundColor = color
         heatRatio = max(0.02, min(1, heat))
+        accessoryType = selected ? .checkmark : .none
+        tintColor = color
         setNeedsLayout()
     }
 

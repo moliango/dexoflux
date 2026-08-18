@@ -2,8 +2,11 @@ import UIKit
 
 final class PrivateMessageComposerViewController: UIViewController, UITextViewDelegate, UITextFieldDelegate {
     var onMessageSent: ((DiscourseCreatePostResponse) -> Void)?
+    var onDraftDeleted: (() -> Void)?
+    private var isDiscardingDraft = false
 
     private let api: DiscourseAPI
+    private let draftKey: String
     /// Empty means user must type/search a recipient (new-PM entry).
     private var recipient: String
     private let allowsEditingRecipient: Bool
@@ -17,11 +20,13 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     private let placeholderLabel = UILabel()
     private var editingMode = ComposerEditingMode.stored
     private var isSending = false
+    private var isSavingDraft = false
     private let initialRaw: String
     private var modeBarItem: UIBarButtonItem?
 
-    init(api: DiscourseAPI, recipient: String = "", initialTitle: String = "", initialRaw: String = "") {
+    init(api: DiscourseAPI, recipient: String = "", initialTitle: String = "", initialRaw: String = "", draftKey: String = "new_private_message") {
         self.api = api
+        self.draftKey = draftKey
         self.recipient = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
         self.allowsEditingRecipient = self.recipient.isEmpty
         self.initialRaw = initialRaw
@@ -42,21 +47,21 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         setupNavigation()
         setupUI()
         applyBodyMarkdown(initialRaw)
-        restoreDraftIfNeeded()
         updateSendState()
         Task { await hydrateServerDraftIfNeeded() }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if !isSending {
-            persistDraft()
-        }
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        guard !isSending, !isSavingDraft, !isDiscardingDraft else { return }
+        persistServerDraft()
     }
 
     private func setupNavigation() {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: String(localized: "action.cancel"),
+            title: String(localized: "reply.discard"),
             style: .plain,
             target: self,
             action: #selector(cancelTapped)
@@ -66,6 +71,12 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             style: .done,
             target: self,
             action: #selector(sendTapped)
+        )
+        let saveItem = UIBarButtonItem(
+            title: String(localized: "common.save", defaultValue: "保存草稿"),
+            style: .plain,
+            target: self,
+            action: #selector(saveDraftTapped)
         )
         let modeItem = UIBarButtonItem(
             title: editingMode == .rich ? "Aa" : "MD",
@@ -77,7 +88,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         sendItem.tintColor = ComposerTypography.accentColor
         modeItem.tintColor = ComposerTypography.accentColor
         navigationItem.leftBarButtonItem?.tintColor = ComposerTypography.accentColor
-        navigationItem.rightBarButtonItems = [sendItem, modeItem]
+        navigationItem.rightBarButtonItems = [sendItem, saveItem, modeItem]
     }
 
     private func setupUI() {
@@ -210,27 +221,17 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         textView.becomeFirstResponder()
     }
 
-    private func restoreDraftIfNeeded() {
-        let hasInitial = !(titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard !hasInitial,
-              let draft = ComposerLocalDraftStore.loadPrivateMessage(baseURL: api.baseURL, recipient: recipient)
-        else { return }
-        titleField.text = draft.title
-        applyBodyMarkdown(draft.raw)
-    }
-
     private func hydrateServerDraftIfNeeded() async {
-        let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let localRaw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            guard let server = try await api.fetchDraft(key: "new_private_message") else { return }
+            guard let server = try await api.fetchDraft(key: draftKey) else { return }
             ComposerLocalDraftStore.saveSequence(
                 baseURL: api.baseURL,
-                draftKey: "new_private_message",
+                draftKey: draftKey,
                 sequence: server.sequence
             )
             // Only fill empty composer; never clobber typing / explicit initial.
+            let localTitle = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let localRaw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard localTitle.isEmpty, localRaw.isEmpty else { return }
             let serverTitle = server.data.title ?? ""
             let serverRaw = server.data.reply ?? ""
@@ -238,20 +239,20 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
                 || !serverRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else { return }
             // Prefer drafts aimed at this recipient when recipients are present.
-            let recipients = server.data.recipients
-            if !recipients.isEmpty {
+            let recipients = server.data.recipients.isEmpty
+                ? (server.data.targetRecipients?.split(separator: ",").map(String.init) ?? [])
+                : server.data.recipients
+            if !recipients.isEmpty, !recipient.isEmpty {
                 let normalized = recipient.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let hit = recipients.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized }
                 guard hit else { return }
             }
+            if allowsEditingRecipient, let firstRecipient = recipients.first, recipient.isEmpty {
+                recipient = firstRecipient.trimmingCharacters(in: .whitespacesAndNewlines)
+                recipientField.text = recipient
+            }
             titleField.text = serverTitle
             applyBodyMarkdown(serverRaw)
-            ComposerLocalDraftStore.savePrivateMessage(
-                baseURL: api.baseURL,
-                recipient: recipient,
-                title: serverTitle,
-                raw: serverRaw
-            )
             updateSendState()
         } catch {
             // Offline / CF — keep local.
@@ -259,36 +260,12 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     }
 
     private func scheduleDraftSave() {
-        draftSaveTask?.cancel()
-        draftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistLocalDraftOnly()
-        }
         serverDraftSaveTask?.cancel()
         serverDraftSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard let self, !Task.isCancelled else { return }
             self.persistServerDraft()
         }
-    }
-
-    private func persistDraft() {
-        draftSaveTask?.cancel()
-        serverDraftSaveTask?.cancel()
-        persistLocalDraftOnly()
-        persistServerDraft()
-    }
-
-    private func persistLocalDraftOnly() {
-        let to = resolvedRecipient
-        guard !to.isEmpty else { return }
-        ComposerLocalDraftStore.savePrivateMessage(
-            baseURL: api.baseURL,
-            recipient: to,
-            title: titleField.text ?? "",
-            raw: bodyRaw
-        )
     }
 
     private func persistServerDraft() {
@@ -302,7 +279,8 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
                 api: api,
                 recipient: recipient,
                 title: title,
-                raw: raw
+                raw: raw,
+                draftKey: draftKey
             )
         }
     }
@@ -331,8 +309,50 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     }
 
     @objc private func cancelTapped() {
-        persistDraft()
-        dismiss(animated: true)
+        isDiscardingDraft = true
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        Task {
+            await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: draftKey)
+            await MainActor.run {
+                self.onDraftDeleted?()
+                self.dismiss(animated: true)
+            }
+        }
+    }
+
+    @objc private func saveDraftTapped() {
+        guard !isSending, !isSavingDraft else { return }
+        isSavingDraft = true
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        let title = titleField.text ?? ""
+        let raw = bodyRaw
+        let recipient = resolvedRecipient
+        let api = self.api
+        Task {
+            let saved = await ComposerServerDraftSync.syncPrivateMessage(
+                api: api,
+                recipient: recipient,
+                title: title,
+                raw: raw,
+                draftKey: draftKey
+            )
+            await MainActor.run {
+                guard saved else {
+                    self.isSavingDraft = false
+                    let alert = UIAlertController(
+                        title: String(localized: "common.save.failed", defaultValue: "保存草稿失败"),
+                        message: String(localized: "common.retry_later", defaultValue: "请检查网络后重试。"),
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+                    self.present(alert, animated: true)
+                    return
+                }
+                self.dismiss(animated: true) { self.isSavingDraft = false }
+            }
+        }
     }
 
     @objc private func sendTapped() {
@@ -348,9 +368,7 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             guard let self else { return }
             do {
                 let response = try await api.sendPrivateMessage(to: to, title: messageTitle, raw: raw)
-                ComposerLocalDraftStore.clearPrivateMessage(baseURL: api.baseURL, recipient: to)
-                let api = self.api
-                Task { await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: "new_private_message") }
+                await ComposerServerDraftSync.clearServerDraft(api: self.api, draftKey: self.draftKey)
                 dismiss(animated: true) { [onMessageSent] in
                     onMessageSent?(response)
                 }

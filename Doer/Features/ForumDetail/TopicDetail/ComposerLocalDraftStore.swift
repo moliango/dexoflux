@@ -148,6 +148,8 @@ enum ComposerLocalDraftStore {
         )
         let hasContent = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || categoryId != nil
+            || !tags.isEmpty
         let key = newTopicKey(baseURL: baseURL)
         if !hasContent {
             defaults.removeObject(forKey: key)
@@ -385,20 +387,17 @@ enum ComposerServerDraftSync {
         api: DiscourseAPI,
         topicId: Int,
         replyToPostNumber: Int?,
-        raw: String
-    ) async {
+        raw: String,
+        draftKey: String? = nil
+    ) async -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let draftKey = ComposerLocalDraftStore.discourseReplyDraftKey(
+        let draftKey = draftKey ?? ComposerLocalDraftStore.discourseReplyDraftKey(
             topicId: topicId,
             replyToPostNumber: replyToPostNumber
         )
         guard !trimmed.isEmpty else {
-            let sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
-            if sequence > 0 {
-                try? await api.deleteDraft(key: draftKey, sequence: sequence)
-            }
-            ComposerLocalDraftStore.clearSequence(baseURL: api.baseURL, draftKey: draftKey)
-            return
+            await clearServerDraft(api: api, draftKey: draftKey)
+            return true
         }
         let payload = DiscourseDraftData(
             reply: raw,
@@ -406,7 +405,7 @@ enum ComposerServerDraftSync {
             archetypeId: "regular",
             replyToPostNumber: replyToPostNumber
         )
-        await upsert(api: api, draftKey: draftKey, data: payload)
+        return await upsert(api: api, draftKey: draftKey, data: payload)
     }
 
     static func syncNewTopic(
@@ -414,18 +413,16 @@ enum ComposerServerDraftSync {
         title: String,
         raw: String,
         categoryId: Int?,
-        tags: [String]
-    ) async {
-        let draftKey = "new_topic"
+        tags: [String],
+        draftKey: String = "new_topic"
+    ) async -> Bool {
         let hasContent = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || categoryId != nil
+            || !tags.isEmpty
         guard hasContent else {
-            let sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
-            if sequence > 0 {
-                try? await api.deleteDraft(key: draftKey, sequence: sequence)
-            }
-            ComposerLocalDraftStore.clearSequence(baseURL: api.baseURL, draftKey: draftKey)
-            return
+            await clearServerDraft(api: api, draftKey: draftKey)
+            return true
         }
         let payload = DiscourseDraftData(
             title: title,
@@ -435,25 +432,21 @@ enum ComposerServerDraftSync {
             action: "create_topic",
             archetypeId: "regular"
         )
-        await upsert(api: api, draftKey: draftKey, data: payload)
+        return await upsert(api: api, draftKey: draftKey, data: payload)
     }
 
     static func syncPrivateMessage(
         api: DiscourseAPI,
         recipient: String,
         title: String,
-        raw: String
-    ) async {
-        let draftKey = "new_private_message"
+        raw: String,
+        draftKey: String = "new_private_message"
+    ) async -> Bool {
         let hasContent = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard hasContent else {
-            let sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
-            if sequence > 0 {
-                try? await api.deleteDraft(key: draftKey, sequence: sequence)
-            }
-            ComposerLocalDraftStore.clearSequence(baseURL: api.baseURL, draftKey: draftKey)
-            return
+            await clearServerDraft(api: api, draftKey: draftKey)
+            return true
         }
         let recipients = recipient
             .split(separator: ",")
@@ -467,23 +460,37 @@ enum ComposerServerDraftSync {
             recipients: recipients,
             targetRecipients: recipient
         )
-        await upsert(api: api, draftKey: draftKey, data: payload)
+        return await upsert(api: api, draftKey: draftKey, data: payload)
     }
 
     static func clearServerDraft(api: DiscourseAPI, draftKey: String) async {
-        let sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
-        if sequence > 0 {
-            try? await api.deleteDraft(key: draftKey, sequence: sequence)
+        var sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
+        var shouldDelete = sequence > 0
+        if let server = try? await api.fetchDraft(key: draftKey) {
+            sequence = server.sequence
+            shouldDelete = true
+        }
+        if shouldDelete {
+            do {
+                try await api.deleteDraft(key: draftKey, sequence: sequence)
+            } catch {
+                // Refresh once when a stale sequence was cached by another client.
+                if let current = try? await api.fetchDraft(key: draftKey),
+                   current.sequence != sequence {
+                    try? await api.deleteDraft(key: draftKey, sequence: current.sequence)
+                }
+            }
         }
         ComposerLocalDraftStore.clearSequence(baseURL: api.baseURL, draftKey: draftKey)
     }
 
-    private static func upsert(api: DiscourseAPI, draftKey: String, data: DiscourseDraftData) async {
-        guard let dataJSON = dataJSON(for: data) else { return }
+    private static func upsert(api: DiscourseAPI, draftKey: String, data: DiscourseDraftData) async -> Bool {
+        guard let dataJSON = dataJSON(for: data) else { return false }
         var sequence = ComposerLocalDraftStore.loadSequence(baseURL: api.baseURL, draftKey: draftKey)
         do {
             let next = try await api.saveDraft(key: draftKey, sequence: sequence, dataJSON: dataJSON)
             ComposerLocalDraftStore.saveSequence(baseURL: api.baseURL, draftKey: draftKey, sequence: next)
+            return true
         } catch {
             // FluxDo: 409 sequence conflict → retry once with force_save.
             let isConflict: Bool = {
@@ -500,14 +507,16 @@ enum ComposerServerDraftSync {
                     forceSave: true
                 ) {
                     ComposerLocalDraftStore.saveSequence(baseURL: api.baseURL, draftKey: draftKey, sequence: next)
-                    return
+                    return true
                 }
             }
             // Generic desync — bump sequence and retry once.
             sequence += 1
             if let next = try? await api.saveDraft(key: draftKey, sequence: sequence, dataJSON: dataJSON) {
                 ComposerLocalDraftStore.saveSequence(baseURL: api.baseURL, draftKey: draftKey, sequence: next)
+                return true
             }
         }
+        return false
     }
 }

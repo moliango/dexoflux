@@ -209,6 +209,7 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
     let username: String?
     let avatarTemplate: String?
     let topicId: Int?
+    let archetype: String?
 
     var replyToPostNumber: Int? {
         guard let match = draftKey.range(of: #"_post_\d+$"#, options: .regularExpression) else { return nil }
@@ -225,6 +226,7 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
     var isPrivateMessage: Bool {
         draftKey == "new_private_message"
             || draftKey.hasPrefix("new_private_message_")
+            || archetype == "private_message"
             || data.action == "privateMessage"
             || data.action == "private_message"
             || data.archetypeId == "private_message"
@@ -265,6 +267,7 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
         case username
         case avatarTemplate = "avatar_template"
         case topicId = "topic_id"
+        case archetype
     }
 
     init(from decoder: Decoder) throws {
@@ -279,6 +282,7 @@ struct DiscourseDraft: Decodable, Identifiable, Hashable {
             ?? container.decodeIfPresent(String.self, forKey: .createdAt)
         username = try container.decodeIfPresent(String.self, forKey: .username)
         avatarTemplate = try container.decodeIfPresent(String.self, forKey: .avatarTemplate)
+        archetype = try container.decodeIfPresent(String.self, forKey: .archetype)
 
         if let explicitTopicId = try container.decodeIfPresent(Int.self, forKey: .topicId) {
             topicId = explicitTopicId
@@ -338,6 +342,8 @@ struct DiscourseDraftData: Codable, Hashable {
         case title, reply, tags, action, recipients
         case categoryId
         case categoryIdSnake = "category_id"
+        case categoryIdString = "category"
+        case tagsSnake = "tag_names"
         case archetypeId
         case archetypeIdSnake = "archetype_id"
         case targetRecipients
@@ -346,13 +352,36 @@ struct DiscourseDraftData: Codable, Hashable {
         case replyToPostNumberSnake = "reply_to_post_number"
     }
 
+    private static func splitTags(_ value: String) -> [String] {
+        value.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func decodeInt(_ container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return value }
+        guard let value = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return Int(value)
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         reply = try container.decodeIfPresent(String.self, forKey: .reply)
-        categoryId = try container.decodeIfPresent(Int.self, forKey: .categoryId)
-            ?? container.decodeIfPresent(Int.self, forKey: .categoryIdSnake)
-        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        categoryId = Self.decodeInt(container, forKey: .categoryId)
+            ?? Self.decodeInt(container, forKey: .categoryIdSnake)
+            ?? Self.decodeInt(container, forKey: .categoryIdString)
+        if let decodedTags = try? container.decode([String].self, forKey: .tags) {
+            tags = decodedTags
+        } else if let decodedTagNames = try? container.decode([String].self, forKey: .tagsSnake) {
+            tags = decodedTagNames
+        } else if let encodedTags = try? container.decode(String.self, forKey: .tags) {
+            tags = Self.splitTags(encodedTags)
+        } else if let encodedTagNames = try? container.decode(String.self, forKey: .tagsSnake) {
+            tags = Self.splitTags(encodedTagNames)
+        } else {
+            tags = []
+        }
         action = try container.decodeIfPresent(String.self, forKey: .action)
         archetypeId = try container.decodeIfPresent(String.self, forKey: .archetypeId)
             ?? container.decodeIfPresent(String.self, forKey: .archetypeIdSnake)

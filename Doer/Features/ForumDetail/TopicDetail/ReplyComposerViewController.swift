@@ -11,9 +11,11 @@ final class ReplyComposerViewController: UIViewController {
     private let baseURL: String
     private let initialText: String?
     private let submissionMode: ReplyComposerSubmissionMode
+    private let serverDraftKey: String?
     /// Local @ candidates (topic posters) shown instantly while the API search runs — FluxDo parity.
     private let mentionSeedUsers: [DiscourseMentionUser]
     var onPostCreated: (() -> Void)?
+    var onDraftDeleted: (() -> Void)?
     var onPostUpdated: ((Int) -> Void)?
 
     private var editingMode = ComposerEditingMode.stored
@@ -24,6 +26,8 @@ final class ReplyComposerViewController: UIViewController {
     private var isPreviewingMarkdown = false
     private var isUploading = false
     private var isSubmitting = false
+    private var isDiscardingDraft = false
+    private var isSavingDraft = false
     private var isApplyingAttributedText = false
     private var draftSaveTask: Task<Void, Never>?
     private var serverDraftSaveTask: Task<Void, Never>?
@@ -72,6 +76,16 @@ final class ReplyComposerViewController: UIViewController {
             updated.font = .systemFont(ofSize: 15, weight: .medium)
             return updated
         }
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    private let saveDraftButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.title = String(localized: "common.save", defaultValue: "保存草稿")
+        config.baseForegroundColor = ComposerTypography.accentColor
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
@@ -218,7 +232,8 @@ final class ReplyComposerViewController: UIViewController {
         baseURL: String,
         initialText: String? = nil,
         submissionMode: ReplyComposerSubmissionMode = .reply,
-        mentionSeedUsers: [DiscourseMentionUser] = []
+        mentionSeedUsers: [DiscourseMentionUser] = [],
+        draftKey: String? = nil
     ) {
         self.api = api
         self.topicId = topicId
@@ -227,6 +242,11 @@ final class ReplyComposerViewController: UIViewController {
         self.initialText = initialText
         self.submissionMode = submissionMode
         self.mentionSeedUsers = mentionSeedUsers
+        if case .reply = submissionMode {
+            self.serverDraftKey = draftKey ?? ComposerLocalDraftStore.discourseReplyDraftKey(topicId: topicId, replyToPostNumber: replyToPost?.postNumber)
+        } else {
+            self.serverDraftKey = nil
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -254,12 +274,14 @@ final class ReplyComposerViewController: UIViewController {
             var configuration = sendButton.configuration
             configuration?.title = String(localized: "common.save")
             sendButton.configuration = configuration
+            saveDraftButton.isHidden = true
         }
 
         view.addSubview(grabberView)
         view.addSubview(headerContainer)
         headerContainer.addSubview(headerTitleLabel)
         headerContainer.addSubview(discardButton)
+        headerContainer.addSubview(saveDraftButton)
         headerContainer.addSubview(sendButton)
         headerContainer.addSubview(separatorView)
         view.addSubview(textView)
@@ -299,7 +321,7 @@ final class ReplyComposerViewController: UIViewController {
 
             headerTitleLabel.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 22),
             headerTitleLabel.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
-            headerTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: discardButton.leadingAnchor, constant: -12),
+            headerTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: saveDraftButton.leadingAnchor, constant: -8),
 
             sendButton.topAnchor.constraint(equalTo: headerContainer.topAnchor, constant: 4),
             sendButton.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -24),
@@ -307,6 +329,9 @@ final class ReplyComposerViewController: UIViewController {
 
             discardButton.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
             discardButton.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -12),
+
+            saveDraftButton.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
+            saveDraftButton.trailingAnchor.constraint(equalTo: discardButton.leadingAnchor, constant: -8),
 
             separatorView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
             separatorView.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor),
@@ -337,6 +362,7 @@ final class ReplyComposerViewController: UIViewController {
         ])
 
         discardButton.addTarget(self, action: #selector(discardTapped), for: .touchUpInside)
+        saveDraftButton.addTarget(self, action: #selector(saveDraftTapped), for: .touchUpInside)
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
@@ -346,33 +372,22 @@ final class ReplyComposerViewController: UIViewController {
         textView.delegate = self
         markdownCoordinator.surface = self
 
-        // Prefer explicit initial text (quote / Me→Drafts); else local, then server.
+        // Prefer explicit initial text from a cloud draft or quote.
         if let initialText, !initialText.isEmpty {
             setRawComposerText(initialText)
-        } else if case .reply = submissionMode,
-                  let saved = ComposerLocalDraftStore.loadReply(
-                      baseURL: baseURL,
-                      topicId: topicId,
-                      replyToPostNumber: replyToPost?.postNumber
-                  ) {
-            setRawComposerText(saved)
         }
         updatePlaceholder()
         updateSendButton()
         updateToolbarState()
 
-        if case .reply = submissionMode, initialText == nil || initialText?.isEmpty == true {
+        if case .reply = submissionMode {
             Task { await self.hydrateServerDraftIfNeeded() }
         }
     }
 
     /// FluxDo: merge server draft when local is empty / older sequence is unknown.
     private func hydrateServerDraftIfNeeded() async {
-        guard case .reply = submissionMode else { return }
-        let draftKey = ComposerLocalDraftStore.discourseReplyDraftKey(
-            topicId: topicId,
-            replyToPostNumber: replyToPost?.postNumber
-        )
+        guard case .reply = submissionMode, let draftKey = serverDraftKey else { return }
         do {
             guard let server = try await api.fetchDraft(key: draftKey) else { return }
             ComposerLocalDraftStore.saveSequence(
@@ -386,16 +401,10 @@ final class ReplyComposerViewController: UIViewController {
             // Only fill when the composer is still empty — never clobber in-progress typing.
             guard localRaw.isEmpty else { return }
             setRawComposerText(server.data.reply ?? "")
-            ComposerLocalDraftStore.saveReply(
-                baseURL: baseURL,
-                topicId: topicId,
-                replyToPostNumber: replyToPost?.postNumber,
-                raw: server.data.reply ?? ""
-            )
             updatePlaceholder()
             updateSendButton()
         } catch {
-            // Offline / CF — local draft remains authoritative.
+            // Offline / CF: keep the current composer unchanged.
         }
     }
 
@@ -413,19 +422,12 @@ final class ReplyComposerViewController: UIViewController {
         sourceRestyleTask?.cancel()
         // Successful send already cleared local + server drafts. Re-persisting here
         // would restore the just-posted body the next time the composer opens.
-        guard !isSubmitting else { return }
-        persistLocalDraftImmediately()
+        guard !isSubmitting, !isDiscardingDraft, !isSavingDraft else { return }
+        persistServerDraft()
     }
 
-    private func scheduleLocalDraftSave() {
+    private func scheduleDraftSave() {
         guard case .reply = submissionMode else { return }
-        // FluxDo: local ~400ms, server ~2s. Keep typing snappy and avoid 409 storms.
-        draftSaveTask?.cancel()
-        draftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistLocalDraftOnly()
-        }
         serverDraftSaveTask?.cancel()
         serverDraftSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -434,39 +436,15 @@ final class ReplyComposerViewController: UIViewController {
         }
     }
 
-    private func persistLocalDraftImmediately() {
-        guard case .reply = submissionMode else { return }
-        draftSaveTask?.cancel()
-        serverDraftSaveTask?.cancel()
-        persistLocalDraftOnly()
-        persistServerDraft()
-    }
-
-    private func persistLocalDraftOnly() {
-        guard case .reply = submissionMode else { return }
-        ComposerLocalDraftStore.saveReply(
-            baseURL: baseURL,
-            topicId: topicId,
-            replyToPostNumber: replyToPost?.postNumber,
-            raw: composerRawText
-        )
-    }
-
     private func persistServerDraft() {
-        guard case .reply = submissionMode else { return }
+        guard case .reply = submissionMode, let draftKey = serverDraftKey else { return }
         let raw = composerRawText
         let topicId = self.topicId
         let postNumber = replyToPost?.postNumber
         let api = self.api
-        Task {
-            await ComposerServerDraftSync.syncReply(
-                api: api,
-                topicId: topicId,
-                replyToPostNumber: postNumber,
-                raw: raw
-            )
-        }
+        Task { _ = await ComposerServerDraftSync.syncReply(api: api, topicId: topicId, replyToPostNumber: postNumber, raw: raw, draftKey: draftKey) }
     }
+
 
     private func setupToolbar() {
         bottomStackView.addArrangedSubview(toolbarContainer)
@@ -1027,7 +1005,7 @@ final class ReplyComposerViewController: UIViewController {
 
     @objc private func discardTapped() {
         hideMentionPicker()
-        guard !composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard case .reply = submissionMode, serverDraftKey != nil, !isSavingDraft else {
             dismiss(animated: true)
             return
         }
@@ -1038,9 +1016,55 @@ final class ReplyComposerViewController: UIViewController {
         )
         alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: String(localized: "reply.discard"), style: .destructive) { [weak self] _ in
-            self?.dismiss(animated: true)
+            guard let self, let draftKey = self.serverDraftKey else { return }
+            self.isDiscardingDraft = true
+            self.draftSaveTask?.cancel()
+            self.serverDraftSaveTask?.cancel()
+            Task {
+                await ComposerServerDraftSync.clearServerDraft(api: self.api, draftKey: draftKey)
+                await MainActor.run {
+                    self.onDraftDeleted?()
+                    self.dismiss(animated: true)
+                }
+            }
         })
         present(alert, animated: true)
+    }
+
+    @objc private func saveDraftTapped() {
+        guard case .reply = submissionMode,
+              let draftKey = serverDraftKey,
+              !isSubmitting,
+              !isSavingDraft
+        else { return }
+        isSavingDraft = true
+        draftSaveTask?.cancel()
+        serverDraftSaveTask?.cancel()
+        let raw = composerRawText
+        let api = self.api
+        Task {
+            let saved = await ComposerServerDraftSync.syncReply(
+                api: api,
+                topicId: topicId,
+                replyToPostNumber: replyToPost?.postNumber,
+                raw: raw,
+                draftKey: draftKey
+            )
+            await MainActor.run {
+                guard saved else {
+                    self.isSavingDraft = false
+                    let alert = UIAlertController(
+                        title: String(localized: "common.save.failed", defaultValue: "保存草稿失败"),
+                        message: String(localized: "common.retry_later", defaultValue: "请检查网络后重试。"),
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+                    self.present(alert, animated: true)
+                    return
+                }
+                self.dismiss(animated: true) { self.isSavingDraft = false }
+            }
+        }
     }
 
     @objc private func sendTapped() {
@@ -1066,15 +1090,7 @@ final class ReplyComposerViewController: UIViewController {
                         replyToPostNumber: replyToPost?.postNumber,
                         raw: raw
                     )
-                    ComposerLocalDraftStore.clearReply(
-                        baseURL: baseURL,
-                        topicId: topicId,
-                        replyToPostNumber: replyToPost?.postNumber
-                    )
-                    let draftKey = ComposerLocalDraftStore.discourseReplyDraftKey(
-                        topicId: topicId,
-                        replyToPostNumber: replyToPost?.postNumber
-                    )
+                    guard let draftKey = self.serverDraftKey else { return }
                     let api = self.api
                     // Await server draft delete before dismiss so hydrate on next open
                     // cannot race a late autosave / stale server body.
@@ -1200,7 +1216,7 @@ extension ReplyComposerViewController: ComposerTextSurface {
         replaceSelection(withRawText: text)
         updatePlaceholder()
         updateSendButton()
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
     }
 
     func composerWrapSelection(start: String, end: String, placeholder: String) {
@@ -1224,7 +1240,7 @@ extension ReplyComposerViewController: ComposerTextSurface {
         }
         updatePlaceholder()
         updateSendButton()
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
     }
 
     func composerApplyLinePrefix(_ prefix: String) {
@@ -1232,7 +1248,7 @@ extension ReplyComposerViewController: ComposerTextSurface {
             applyRichLinePrefix(prefix)
             updatePlaceholder()
             updateSendButton()
-            scheduleLocalDraftSave()
+            scheduleDraftSave()
             return
         }
         let text = composerDisplayText
@@ -1256,18 +1272,18 @@ extension ReplyComposerViewController: ComposerTextSurface {
         }
         updatePlaceholder()
         updateSendButton()
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
     }
 
     func composerReplaceFullRaw(_ raw: String) {
         applyFullRawText(raw)
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
     }
 
     func composerDidEditContent() {
         updatePlaceholder()
         updateSendButton()
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
     }
 
     func composerSetUploading(_ uploading: Bool, statusText: String?) {
@@ -1297,7 +1313,7 @@ extension ReplyComposerViewController: UITextViewDelegate {
         guard !isApplyingAttributedText else { return }
         updatePlaceholder()
         updateSendButton()
-        scheduleLocalDraftSave()
+        scheduleDraftSave()
         if isPreviewingMarkdown {
             previewView.update(markdown: composerRawText)
             hideMentionPicker()

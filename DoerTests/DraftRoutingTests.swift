@@ -44,6 +44,40 @@ final class DraftRoutingTests: XCTestCase {
         XCTAssertEqual(draft.destination, .unsupported)
     }
 
+    func testNewTopicDraftRestoresCategoryAndTags() throws {
+        let draft = try decodeDraft(
+            key: "new_topic",
+            data: #"{"title":"Hello","reply":"Body","category_id":"42","tags":["swift","ios"]}"#
+        )
+
+        XCTAssertEqual(draft.data.categoryId, 42)
+        XCTAssertEqual(draft.data.tags, ["swift", "ios"])
+    }
+
+    func testNewTopicDraftSerializationKeepsCategoryAndTags() throws {
+        let data = DiscourseDraftData(
+            title: "Hello",
+            reply: "Body",
+            categoryId: 42,
+            tags: ["swift", "ios"],
+            action: "create_topic",
+            archetypeId: "regular"
+        )
+
+        let json = try XCTUnwrap(ComposerServerDraftSync.dataJSON(for: data))
+        let decoded = try JSONDecoder().decode(DiscourseDraftData.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.categoryId, 42)
+        XCTAssertEqual(decoded.tags, ["swift", "ios"])
+    }
+
+    func testPrivateMessageReplyUsesTopLevelArchetype() throws {
+        let json = #"{"draft_key":"topic_42","draft_sequence":1,"archetype":"private_message","data":"{\"reply\":\"Body\",\"archetypeId\":\"regular\"}"}"#
+        let draft = try JSONDecoder().decode(DiscourseDraft.self, from: Data(json.utf8))
+
+        XCTAssertEqual(draft.destination, .privateMessage(recipient: nil))
+    }
+
     func testNewTopicSubmissionTrimsContentAndDeduplicatesTags() {
         let submission = NewTopicSubmission.make(
             title: "  A useful title  ",

@@ -2940,6 +2940,17 @@
         }
       }
     },
+    "common.retry_later" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请检查网络后重试。"
+          }
+        }
+      }
+    },
     "common.save" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -2947,6 +2958,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "保存"
+          }
+        }
+      }
+    },
+    "common.save.failed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存草稿失败"
           }
         }
       }
@@ -7087,28 +7109,6 @@
         }
       }
     },
-    "me.drafts.badge.local" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "本机"
-          }
-        }
-      }
-    },
-    "me.drafts.delete.local_message" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "仅删除本机草稿，云端副本不受影响。"
-          }
-        }
-      }
-    },
     "me.drafts.delete.message" : {
       "localizations" : {
         "en" : {
@@ -7189,17 +7189,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有已儲存的草稿"
-          }
-        }
-      }
-    },
-    "me.drafts.local" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "本地草稿"
           }
         }
       }
@@ -7351,17 +7340,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "云端草稿（与网页 / FluxDo 同步）"
-          }
-        }
-      }
-    },
-    "me.drafts.section.local" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "本机草稿"
           }
         }
       }
@@ -17175,6 +17153,7 @@
       }
     },
     "search.tag_picker.empty" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17203,6 +17182,7 @@
       }
     },
     "search.tag_picker.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

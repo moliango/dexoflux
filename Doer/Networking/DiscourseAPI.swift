@@ -120,12 +120,14 @@ final class DiscourseAPI {
         route: DiscourseRouter,
         parameters: Parameters? = nil,
         headers: HTTPHeaders? = nil,
+        encoding: ParameterEncoding? = nil,
         allowAuthRecovery: Bool = true
     ) async throws -> T {
         let response = try await performRequest(
             route: route,
             parameters: parameters,
             headers: headers,
+            encoding: encoding,
             allowAuthRecovery: allowAuthRecovery
         )
         do {
@@ -145,12 +147,14 @@ final class DiscourseAPI {
         route: DiscourseRouter,
         parameters: Parameters? = nil,
         headers: HTTPHeaders? = nil,
+        encoding: ParameterEncoding? = nil,
         allowAuthRecovery: Bool = true
     ) async throws {
         _ = try await performRequest(
             route: route,
             parameters: parameters,
             headers: headers,
+            encoding: encoding,
             allowAuthRecovery: allowAuthRecovery
         )
     }
@@ -159,6 +163,7 @@ final class DiscourseAPI {
         route: DiscourseRouter,
         parameters: Parameters? = nil,
         headers: HTTPHeaders? = nil,
+        encoding requestedEncoding: ParameterEncoding? = nil,
         allowAuthRecovery: Bool = true
     ) async throws -> RawDiscourseResponse {
         let url = baseURL + route.path
@@ -170,7 +175,7 @@ final class DiscourseAPI {
             )
             throw Self.cloudflareChallengeError()
         }
-        let encoding: ParameterEncoding = route.method == .post ? JSONEncoding.default : URLEncoding.default
+        let encoding = requestedEncoding ?? (route.method == .post ? JSONEncoding.default : URLEncoding.default)
         let response = await session.request(url, method: route.method, parameters: parameters, encoding: encoding, headers: headers)
             .serializingData(emptyResponseCodes: [200, 201, 202, 204, 205])
             .response
@@ -201,6 +206,7 @@ final class DiscourseAPI {
                 route: route,
                 parameters: parameters,
                 headers: headers,
+                encoding: encoding,
                 allowAuthRecovery: false
             )
         }

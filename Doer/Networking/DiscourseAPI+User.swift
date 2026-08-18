@@ -160,7 +160,8 @@ extension DiscourseAPI {
         }
         let response: DiscourseSaveDraftResponse = try await request(
             route: .saveDraft,
-            parameters: parameters
+            parameters: parameters,
+            encoding: URLEncoding.default
         )
         return response.draftSequence ?? (sequence + 1)
     }
