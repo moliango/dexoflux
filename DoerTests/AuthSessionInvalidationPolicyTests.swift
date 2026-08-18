@@ -28,17 +28,47 @@ final class AuthSessionInvalidationPolicyTests: XCTestCase {
         )
     }
 
-    func testNotLoggedInKeepsTicketWhenJarStillHasT() throws {
+    func testNotLoggedInInvalidatesEvenWhenJarStillHasT() throws {
         try installTicket()
         let error = DiscourseAPIError(messages: ["login"], errorType: "not_logged_in")
-        XCTAssertFalse(
+        XCTAssertTrue(
+            AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL)
+        )
+        XCTAssertTrue(WebCookieStore.shared.hasCookie(named: "_t", for: probeURL))
+    }
+
+    func testNotLoggedInInvalidatesWhenTicketIsGone() {
+        let error = DiscourseAPIError(messages: ["login"], errorType: "not_logged_in")
+        XCTAssertTrue(
             AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL)
         )
     }
 
-    func testNotLoggedInInvalidatesOnlyAfterTicketIsGone() {
-        let error = DiscourseAPIError(messages: ["login"], errorType: "not_logged_in")
+    func testCurrentUserForbiddenJSONIsNotLoggedIn() throws {
+        let data = try XCTUnwrap(#"{"errors":["You need to be logged in"],"error_type":"forbidden"}"#.data(using: .utf8))
+        let error = try XCTUnwrap(DiscourseAPI.currentUserFailure(statusCode: 403, data: data))
+        XCTAssertTrue(error.isNotLoggedIn)
         XCTAssertTrue(
+            AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL)
+        )
+    }
+
+    func testCurrentUserNotLoggedInJSONIsNotLoggedIn() throws {
+        let data = try XCTUnwrap(#"{"errors":["login required"],"error_type":"not_logged_in"}"#.data(using: .utf8))
+        let error = try XCTUnwrap(DiscourseAPI.currentUserFailure(statusCode: 403, data: data))
+        XCTAssertTrue(error.isNotLoggedIn)
+    }
+
+    func testCurrentUser401IsNotLoggedIn() throws {
+        let error = try XCTUnwrap(DiscourseAPI.currentUserFailure(statusCode: 401, data: nil))
+        XCTAssertTrue(error.isNotLoggedIn)
+    }
+
+    func testCurrentUserGeneric403IsNotSessionExpiry() throws {
+        let error = try XCTUnwrap(DiscourseAPI.currentUserFailure(statusCode: 403, data: nil))
+        XCTAssertEqual(error.errorType, "http_403")
+        XCTAssertFalse(error.isNotLoggedIn)
+        XCTAssertFalse(
             AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL)
         )
     }

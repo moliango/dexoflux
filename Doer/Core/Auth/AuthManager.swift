@@ -56,6 +56,10 @@ final class AuthManager: DoerObservableObject, @unchecked Sendable {
             notifyChanged()
             return true
         } catch {
+            if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: baseURL) {
+                invalidateWebSession(for: baseURL)
+                return false
+            }
             notifyChanged()
             return false
         }

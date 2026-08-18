@@ -220,8 +220,9 @@ final class DiscourseAPI {
                     errorType: "rate_limited"
                 )
             }
-            if case .currentUser = route, statusCode == 401 {
-                throw DiscourseAPIError(messages: [String(localized: "login.required.message")], errorType: "not_logged_in")
+            if case .currentUser = route,
+               let sessionError = Self.currentUserFailure(statusCode: statusCode, data: response.data) {
+                throw sessionError
             }
             if statusCode == 403 {
                 throw Self.errorFromForbiddenStatus(data: response.data)
@@ -314,6 +315,27 @@ final class DiscourseAPI {
         case .backgroundRefresh:
             return "api.background"
         }
+    }
+
+    /// `/session/current.json` 401, or 403 with Discourse `not_logged_in` /
+    /// `forbidden`, means the server no longer has this session.
+    /// Generic `http_403` (often undetected HTML) is left for Cloudflare handling.
+    static func currentUserFailure(statusCode: Int, data: Data?) -> DiscourseAPIError? {
+        if statusCode == 401 {
+            return DiscourseAPIError(
+                messages: [String(localized: "login.required.message")],
+                errorType: "not_logged_in"
+            )
+        }
+        guard statusCode == 403 else { return nil }
+        let error = errorFromForbiddenStatus(data: data)
+        if error.isNotLoggedIn || error.isForbidden {
+            return DiscourseAPIError(
+                messages: [String(localized: "login.required.message")],
+                errorType: "not_logged_in"
+            )
+        }
+        return error
     }
 
     /// 403 is often Cloudflare, CSRF, or a permission check — not logout.
