@@ -42,8 +42,6 @@ final class TopicDetailViewController: ObservableViewController {
     var lastInterfaceFontScalePercent = AppSettings.shared.interfaceFontScalePercent
     var lastThemeStyle = AppSettings.shared.themeStyle
     var hasPresentedInitialContent = false
-    var isHandlingBackSwipeFallback = false
-    weak var backSwipeFallbackHostView: UIView?
     lazy var readingTracker = TopicReadingTracker(api: api)
     var isShowingCollapsedNavigationTitle = false
     var lastBottomBarProgressState: (current: Int, total: Int)?
@@ -63,22 +61,6 @@ final class TopicDetailViewController: ObservableViewController {
             username: AuthManager.shared.username(for: api.baseURL)
         )
     }
-
-    enum BackSwipeFallbackMetrics {
-        static let edgeActivationWidth: CGFloat = 44
-        static let minimumCompletionTranslation: CGFloat = 64
-        static let minimumCompletionVelocity: CGFloat = 480
-    }
-
-    lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
-        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleBackSwipeFallback(_:)))
-        gesture.maximumNumberOfTouches = 1
-        // Don't cancel child touches by default — progress-bar pans live on a
-        // descendant and must keep receiving the touch sequence.
-        gesture.cancelsTouchesInView = false
-        gesture.delegate = self
-        return gesture
-    }()
 
     lazy var tableView: UITableView = {
         let tv = UITableView(frame: .zero, style: .plain)
@@ -498,9 +480,7 @@ final class TopicDetailViewController: ObservableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        installBackSwipeFallbackGesture()
-        isHandlingBackSwipeFallback = false
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = canNavigateBack
         syncOwningTabBarVisibility()
         bottomBar.refreshGestureRecognizers()
         // Soft live sync when returning to an already-open topic (no full reload wipe).
@@ -511,10 +491,7 @@ final class TopicDetailViewController: ObservableViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // The system edge-pop is unreliable with the hidden-home-navigation setup,
-        // so this page owns a narrow fallback edge gesture instead.
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        installBackSwipeFallbackGesture()
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = canNavigateBack
         readingTracker.start(topicId: topicId)
         updateVisibleReadingPosts()
         updateBottomBarProgress()
@@ -524,7 +501,6 @@ final class TopicDetailViewController: ObservableViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        uninstallBackSwipeFallbackGesture()
         readingTracker.stop()
         syncReadLaterProgressOnExit()
         stopLiveTopicSync()

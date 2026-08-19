@@ -887,9 +887,21 @@ final class HomeViewController: ObservableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Never animate nav-bar hide on appear: modal dismiss of mini-programs
-        // otherwise flashes the system bar while the host is still sliding away.
-        navigationController?.setNavigationBarHidden(true, animated: false)
+        // Mini-program dismiss must not animate the bar hide, or it flashes while
+        // the host is still sliding away. Interactive pops hide it along the swipe
+        // so the list does not snap.
+        if let coordinator = transitionCoordinator,
+           coordinator.isInteractive,
+           presentedViewController == nil,
+           coordinator.viewController(forKey: .from) !== self {
+            navigationController?.setNavigationBarHidden(true, animated: animated)
+            coordinator.notifyWhenInteractionChanges { [weak self] context in
+                guard let self, context.isCancelled else { return }
+                self.navigationController?.setNavigationBarHidden(false, animated: false)
+            }
+        } else {
+            navigationController?.setNavigationBarHidden(true, animated: false)
+        }
 
         let applyVisibleChrome = { [weak self] in
             guard let self else { return }
@@ -914,7 +926,8 @@ final class HomeViewController: ObservableViewController {
         if let coordinator = transitionCoordinator,
            presentedViewController == nil,
            coordinator.viewController(forKey: .from) !== self {
-            coordinator.animate(alongsideTransition: nil) { _ in
+            coordinator.animate(alongsideTransition: nil) { context in
+                guard !context.isCancelled else { return }
                 applyVisibleChrome()
             }
         } else {

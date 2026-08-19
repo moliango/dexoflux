@@ -46,22 +46,6 @@ class ChatTopicDetailViewController: ObservableViewController {
     private var didLoad = false
     private var cloudflareCompletionObservationToken: NSObjectProtocol?
     private var isRecoveringAfterCloudflare = false
-    private var isHandlingBackSwipeFallback = false
-    private weak var backSwipeFallbackHostView: UIView?
-
-    private enum BackSwipeFallbackMetrics {
-        static let edgeActivationWidth: CGFloat = 44
-        static let minimumCompletionTranslation: CGFloat = 64
-        static let minimumCompletionVelocity: CGFloat = 480
-    }
-
-    private lazy var backSwipeFallbackGesture: UIPanGestureRecognizer = {
-        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleBackSwipeFallback(_:)))
-        gesture.maximumNumberOfTouches = 1
-        gesture.cancelsTouchesInView = false
-        gesture.delegate = self
-        return gesture
-    }()
     private var isLoadingMore = false
     private var isLoadingEarlier = false
     private var postRowHeightCache: [Int: CGFloat] = [:]
@@ -388,17 +372,12 @@ class ChatTopicDetailViewController: ObservableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
-        // Same as classic Topic Detail: system edge-pop is unreliable with the
-        // hidden-home-navigation setup; own a narrow left-edge fallback instead.
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        installBackSwipeFallbackGesture()
-        isHandlingBackSwipeFallback = false
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = canNavigateBack
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        installBackSwipeFallbackGesture()
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = canNavigateBack
         readingTracker.start(topicId: topicId)
         updateVisibleReadingPosts()
         if !didLoad {
@@ -415,16 +394,10 @@ class ChatTopicDetailViewController: ObservableViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        uninstallBackSwipeFallbackGesture()
         readingTracker.stop()
         syncReadLaterProgressOnExit()
-        // Restore system pop for non-detail pages on the stack.
-        if let nav = navigationController, nav.viewControllers.count > 1 {
-            let stillDetail = nav.topViewController is TopicDetailViewController
-                || nav.topViewController is ChatTopicDetailViewController
-            nav.interactivePopGestureRecognizer?.isEnabled = !stillDetail
-        } else {
-            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        if let nav = navigationController {
+            nav.interactivePopGestureRecognizer?.isEnabled = nav.viewControllers.count > 1
         }
     }
 
@@ -1083,53 +1056,6 @@ class ChatTopicDetailViewController: ObservableViewController {
             && navigationController.viewControllers.first !== self
     }
 
-    private func installBackSwipeFallbackGesture() {
-        guard let hostView = navigationController?.view else { return }
-        if backSwipeFallbackHostView !== hostView {
-            backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
-            hostView.addGestureRecognizer(backSwipeFallbackGesture)
-            backSwipeFallbackHostView = hostView
-        }
-        backSwipeFallbackGesture.isEnabled = canNavigateBack
-    }
-
-    private func uninstallBackSwipeFallbackGesture() {
-        backSwipeFallbackGesture.view?.removeGestureRecognizer(backSwipeFallbackGesture)
-        backSwipeFallbackHostView = nil
-        backSwipeFallbackGesture.isEnabled = false
-    }
-
-    private var backSwipeCoordinateView: UIView {
-        backSwipeFallbackGesture.view ?? view
-    }
-
-    private func shouldCompleteBackSwipe(translation: CGPoint, velocity: CGPoint) -> Bool {
-        guard translation.x > 0 else { return false }
-        return translation.x > BackSwipeFallbackMetrics.minimumCompletionTranslation
-            || velocity.x > BackSwipeFallbackMetrics.minimumCompletionVelocity
-    }
-
-    @objc private func handleBackSwipeFallback(_ gesture: UIPanGestureRecognizer) {
-        guard canNavigateBack, presentedViewController == nil else { return }
-        switch gesture.state {
-        case .began:
-            isHandlingBackSwipeFallback = false
-        case .ended:
-            let coordinateView = backSwipeCoordinateView
-            let translation = gesture.translation(in: coordinateView)
-            let velocity = gesture.velocity(in: coordinateView)
-            guard shouldCompleteBackSwipe(translation: translation, velocity: velocity),
-                  !isHandlingBackSwipeFallback
-            else { return }
-            isHandlingBackSwipeFallback = true
-            navigationController?.popViewController(animated: true)
-        case .cancelled, .failed:
-            isHandlingBackSwipeFallback = false
-        default:
-            break
-        }
-    }
-
 
     // MARK: - Reading Tracking
 
@@ -1548,37 +1474,5 @@ extension ChatTopicDetailViewController: PostCellDelegate {
                 }
             }
         }
-    }
-}
-
-
-// MARK: - Back swipe gesture delegate
-
-extension ChatTopicDetailViewController: UIGestureRecognizerDelegate {
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard gestureRecognizer === backSwipeFallbackGesture else { return true }
-        guard canNavigateBack, presentedViewController == nil else { return false }
-        let coordinateView = backSwipeCoordinateView
-        let location = backSwipeFallbackGesture.location(in: coordinateView)
-        guard location.x <= BackSwipeFallbackMetrics.edgeActivationWidth else { return false }
-        let velocity = backSwipeFallbackGesture.velocity(in: coordinateView)
-        guard velocity.x >= 0 else { return false }
-        if abs(velocity.y) > abs(velocity.x), abs(velocity.y) > 40 {
-            return false
-        }
-        return true
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        guard gestureRecognizer === backSwipeFallbackGesture || otherGestureRecognizer === backSwipeFallbackGesture else {
-            return false
-        }
-        return otherGestureRecognizer === tableView.panGestureRecognizer
-            || gestureRecognizer === tableView.panGestureRecognizer
-            || otherGestureRecognizer.view is UIScrollView
-            || gestureRecognizer.view is UIScrollView
     }
 }

@@ -1,4 +1,5 @@
 import Combine
+import Hero
 import UIKit
 
 final class ForumTabBarController: UITabBarController {
@@ -985,9 +986,12 @@ extension ForumTabBarController: UINavigationControllerDelegate {
 
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         TopicDetailTransitionGeometry.normalize(viewController.view)
+        // Hero must not own this stack. Enabling it replaces the nav delegate and
+        // swallows the system follow-finger pop.
+        if navigationController.hero.isEnabled {
+            navigationController.hero.isEnabled = false
+        }
         let allowsSystemPop = navigationController.viewControllers.count > 1
-            && !(viewController is TopicDetailViewController)
-            && !(viewController is ChatTopicDetailViewController)
         navigationController.interactivePopGestureRecognizer?.isEnabled = allowsSystemPop
         if allowsSystemPop {
             popGestureEnablers[ObjectIdentifier(navigationController)]?.attach(to: navigationController)
@@ -999,4 +1003,3 @@ extension ForumTabBarController: UINavigationControllerDelegate {
         applyCurrentTabBarLayout()
     }
 }
-
