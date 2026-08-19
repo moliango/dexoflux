@@ -4,7 +4,18 @@ import UIKit
 /// (pin + category mark + title + unread/reply), not a full topic card.
 final class CompactPinnedTopicCell: UITableViewCell {
     static let reuseIdentifier = "CompactPinnedTopicCell"
-    static let estimatedHeight: CGFloat = 48
+    /// Inner row: 6pt padding + 22pt badge + 6pt padding.
+    static let innerContentHeight: CGFloat = 34
+    static let estimatedHeight: CGFloat = 42
+
+    static func rowHeight(for theme: AppSettings.ThemeStyle) -> CGFloat {
+        let outerInset: CGFloat = theme.usesChatHomeList ? 0 : 4
+        return outerInset * 2 + innerContentHeight
+    }
+
+    static var currentRowHeight: CGFloat {
+        rowHeight(for: AppSettings.shared.themeStyle)
+    }
 
     private let cardView: UIView = {
         let view = UIView()
@@ -133,9 +144,14 @@ final class CompactPinnedTopicCell: UITableViewCell {
         cardBottom = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
         accessoryWidth = countBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 32)
 
+        rowStack.setContentHuggingPriority(.required, for: .vertical)
+        rowStack.setContentCompressionResistancePriority(.required, for: .vertical)
+        cardView.setContentHuggingPriority(.required, for: .vertical)
+        cardView.setContentCompressionResistancePriority(.required, for: .vertical)
+
         NSLayoutConstraint.activate([
             cardTop, cardLeading, cardTrailing, cardBottom,
-            cardView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
+            cardView.heightAnchor.constraint(equalToConstant: Self.innerContentHeight),
 
             rowStack.topAnchor.constraint(equalTo: cardView.topAnchor),
             rowStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
@@ -243,11 +259,19 @@ final class CompactPinnedTopicCell: UITableViewCell {
             ? theme.topicCardBackgroundColor.withAlphaComponent(0.72)
             : theme.topicCardBackgroundColor
         rowStack.directionalLayoutMargins = NSDirectionalEdgeInsets(
-            top: 10,
+            top: 6,
             leading: fullBleed ? 16 : 12,
-            bottom: 10,
+            bottom: 6,
             trailing: fullBleed ? 16 : 12
         )
+    }
+
+    override func systemLayoutSizeFitting(
+        _ targetSize: CGSize,
+        withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority,
+        verticalFittingPriority: UILayoutPriority
+    ) -> CGSize {
+        CGSize(width: targetSize.width, height: Self.currentRowHeight)
     }
 
     private static func replyBadgeWidth(for replies: Int) -> CGFloat {

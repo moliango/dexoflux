@@ -423,6 +423,36 @@ extension HomeViewController: UITableViewDelegate {
         present(sheet, animated: true)
     }
 
+    func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
+        heightForHomeRow(at: indexPath, allowAutomatic: false)
+    }
+
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        heightForHomeRow(at: indexPath, allowAutomatic: true)
+    }
+
+    /// Pinned compact rows must not inherit `TopicCell`'s ~96pt estimate. That
+    /// estimate stretches the card, and pull-to-refresh caches the stretched height.
+    private func heightForHomeRow(at indexPath: IndexPath, allowAutomatic: Bool) -> CGFloat {
+        if isCompactPinnedHomeRow(at: indexPath) {
+            return CompactPinnedTopicCell.currentRowHeight
+        }
+        if allowAutomatic {
+            return UITableView.automaticDimension
+        }
+        return topicListLayout.estimatedRowHeight
+    }
+
+    private func isCompactPinnedHomeRow(at indexPath: IndexPath) -> Bool {
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              Self.xiaohongshuRowIndex(from: topicId) == nil,
+              let topic = viewModel.topic(id: topicId)
+        else {
+            return false
+        }
+        return HomeTopicListOrdering.isPinned(topic, pinnedIds: viewModel.pinnedTopicIds)
+    }
+
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         // Follow-scroll avatar warm-up (not only the first page of the list).
         prefetchAvatarsAroundVisibleRows(around: indexPath)
