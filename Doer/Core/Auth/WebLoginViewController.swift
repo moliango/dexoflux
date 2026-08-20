@@ -265,7 +265,9 @@ final class WebLoginViewController: UIViewController {
                 let hasSession = relevant.contains { $0.name == "_t" }
                 guard hasSession || force else { return }
                 self.didCallback = true
-                DispatchQueue.main.async { self.onCookiesReady(relevant) }
+                Task { @MainActor in
+                    self.onCookiesReady(relevant)
+                }
             }
         }
 

@@ -173,7 +173,7 @@ enum TitleEmojiRenderer {
         for entry in entries {
             ForumImageLoader.loadImage(with: entry.url, cloudflareBaseURL: cloudflareBaseURL) { image in
                 guard let image else { return }
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     entry.attachment.image = image
                     onImageLoaded(mutable)
                 }

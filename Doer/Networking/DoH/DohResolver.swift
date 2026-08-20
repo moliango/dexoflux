@@ -125,7 +125,7 @@ final class DohResolver {
 
     private func finish(host: String, result: Result<Answer, Error>) {
         let completions = inflight.removeValue(forKey: host) ?? []
-        DispatchQueue.main.async {
+        Task { @MainActor in
             completions.forEach { $0(result) }
         }
     }

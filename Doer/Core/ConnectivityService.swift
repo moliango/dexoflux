@@ -26,8 +26,8 @@ final class ConnectivityService {
     private let monitorQueue = DispatchQueue(label: "doer.connectivity.monitor")
     private var isMonitoring = false
 
-    private var disconnectDebounceWorkItem: DispatchWorkItem?
-    private var retryWorkItem: DispatchWorkItem?
+    private var disconnectDebounceWorkItem: Task<Void, Never>?
+    private var retryWorkItem: Task<Void, Never>?
     private var retryInFlight = false
     private var retryBackoffSeconds = 1
     private let maxRetryBackoffSeconds = 30
@@ -103,11 +103,11 @@ final class ConnectivityService {
 
     private func scheduleDisconnectDebounce() {
         cancelDisconnectDebounce()
-        let work = DispatchWorkItem { [weak self] in
-            self?.setConnected(false)
+        disconnectDebounceWorkItem = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            self.setConnected(false)
         }
-        disconnectDebounceWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     private func cancelDisconnectDebounce() {
@@ -147,13 +147,11 @@ final class ConnectivityService {
 
     private func scheduleNextRetry() {
         let delay = TimeInterval(retryBackoffSeconds)
-        let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                await self?.runRetryTick()
-            }
+        retryWorkItem = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self.runRetryTick()
         }
-        retryWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func runRetryTick() async {

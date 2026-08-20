@@ -623,7 +623,7 @@ extension AppSettings {
         }
 
         UIApplication.shared.setAlternateIconName(style.alternateIconName) { error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let error {
                     completion?(error)
                     return

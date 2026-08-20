@@ -61,8 +61,8 @@ final class DiscourseAPI {
     func retainRetiredSession(_ session: Session) {
         let id = ObjectIdentifier(session)
         retiredSessions.append(session)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000_000)
             self.sessionLock.lock()
             defer { self.sessionLock.unlock() }
             self.retiredSessions.removeAll { ObjectIdentifier($0) == id }
