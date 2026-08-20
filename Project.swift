@@ -53,7 +53,6 @@ let project = Project(
                 .external(name: "SDWebImage"),
                 .external(name: "SDWebImageSVGCoder"),
                 .external(name: "Lightbox"),
-                .external(name: "Hero"),
                 .package(product: "CookedHTML"),
                 .package(product: "SwiftSoup"),
                 .target(name: "DoerShare"),

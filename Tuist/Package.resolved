@@ -29,15 +29,6 @@
       }
     },
     {
-      "identity" : "hero",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/HeroTransitions/Hero.git",
-      "state" : {
-        "revision" : "670b81ed3d95f7183bbc009d0ec67c71506557b5",
-        "version" : "1.6.4"
-      }
-    },
-    {
       "identity" : "sdwebimage",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SDWebImage/SDWebImage.git",
