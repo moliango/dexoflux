@@ -104,9 +104,8 @@ final class OfflineIndicatorView: UIView {
         }
 
         if animated {
-            UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
-                updates()
-            } completion: { _ in
+            let targetAlpha: CGFloat = visible ? 1 : 0
+            AnimationOptimizer.animateAlpha(self, to: targetAlpha, duration: 0.28) {
                 self.isHidden = !visible
             }
         } else {

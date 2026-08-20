@@ -135,6 +135,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         if authManager.hasWebSession(for: forum.baseURL) {
             WebSessionRefreshService.shared.ensureInBackground(forum: forum, reason: "forum_container_loaded")
         }
+        Task { @MainActor in
+            await TrustLevelWidgetRefresher.refreshIfPossible()
+        }
 
         startObservingHomeInitialContent()
         setupTabBar()
@@ -258,8 +261,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
     func presentPendingNotificationRouteIfPossible() {
         guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
         guard ForumOverlayManager.shared.prepareForNotificationRoute(in: self) else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
-                self?.presentPendingNotificationRouteIfPossible()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 550_000_000)
+                self.presentPendingNotificationRouteIfPossible()
             }
             return
         }
@@ -368,8 +372,8 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         guard AppSettings.shared.clipboardTopicLinkPromptEnabled else { return }
         guard let info = ClipboardTopicLinkService.shared.check(forumBaseURL: forum.baseURL, enabled: true) else { return }
         // Defer slightly so we don't fight launch transitions.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
             // Re-check in case user already navigated away / disabled.
             guard AppSettings.shared.clipboardTopicLinkPromptEnabled else { return }
             guard self.presentedViewController == nil else { return }
@@ -429,8 +433,9 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         // Use GCD deadline in addition to Task sleep — more reliable if cooperative
         // tasks are delayed while the first frame is still installing tabs.
         let deadline = DispatchTime.now() + .milliseconds(Int(Self.launchOverlayMaximumDurationNanoseconds / 1_000_000))
-        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
-            guard let self, !self.launchOverlayDismissed else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(deadline.uptimeNanoseconds - DispatchTime.now().uptimeNanoseconds))
+            guard !self.launchOverlayDismissed else { return }
             DohDebugLog.record("launch overlay fallback dismiss", subsystem: "Launch")
             self.dismissLaunchLoadingOverlayRespectingMinimumDuration()
         }
@@ -475,7 +480,10 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         }
 
         if delay > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: dismiss)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                dismiss()
+            }
         } else {
             dismiss()
         }
@@ -913,7 +921,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             updates()
             return
         }
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut], animations: updates)
+        AnimationOptimizer.animateAlpha(authSyncOverlayView, to: 1, duration: 0.18)
     }
 
     private func hideAuthSyncOverlay(animated: Bool = true, completion: (() -> Void)? = nil) {
@@ -930,7 +938,7 @@ final class ForumContainerViewController: UIViewController, AuthGating {
             finish()
             return
         }
-        UIView.animate(withDuration: 0.20, delay: 0, options: [.curveEaseInOut], animations: updates) { _ in
+        AnimationOptimizer.animateAlpha(authSyncOverlayView, to: 0, duration: 0.20) {
             finish()
         }
     }
@@ -1147,4 +1155,3 @@ final class ForumContainerViewController: UIViewController, AuthGating {
         return authManager.username(for: baseURL)
     }
 }
-

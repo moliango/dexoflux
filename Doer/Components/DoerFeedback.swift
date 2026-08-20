@@ -34,9 +34,10 @@ enum DoerFeedback {
             stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
         ])
 
-        UIView.animate(withDuration: 0.2) { stack.alpha = 1 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            UIView.animate(withDuration: 0.2, animations: { stack.alpha = 0 }) { _ in
+        AnimationOptimizer.animateAlpha(stack, to: 1, duration: 0.2)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            AnimationOptimizer.animateAlpha(stack, to: 0, duration: 0.2) {
                 stack.removeFromSuperview()
             }
         }
@@ -101,7 +102,7 @@ enum DoerFeedback {
             stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -22),
         ])
         overlay.alpha = 0
-        UIView.animate(withDuration: 0.18) { overlay.alpha = 1 }
+        AnimationOptimizer.animateAlpha(overlay, to: 1, duration: 0.18)
     }
 
     @MainActor
@@ -111,7 +112,7 @@ enum DoerFeedback {
             overlay.removeFromSuperview()
             return
         }
-        UIView.animate(withDuration: 0.15, animations: { overlay.alpha = 0 }) { _ in
+        AnimationOptimizer.animateAlpha(overlay, to: 0, duration: 0.15) {
             overlay.removeFromSuperview()
         }
     }

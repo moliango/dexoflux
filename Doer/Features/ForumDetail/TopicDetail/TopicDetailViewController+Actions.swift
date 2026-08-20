@@ -586,18 +586,22 @@ extension TopicDetailViewController {
         if shouldShow {
             newRepliesBanner.isHidden = false
             view.bringSubviewToFront(newRepliesBanner)
-            UIView.animate(withDuration: 0.22) {
-                self.newRepliesBanner.alpha = 1
-                self.newRepliesBanner.transform = .identity
-            }
+            AnimationOptimizer.animateAlphaAndTransform(
+                newRepliesBanner,
+                alpha: 1,
+                transform: .identity,
+                duration: 0.22
+            )
         } else {
-            UIView.animate(withDuration: 0.18, animations: {
-                self.newRepliesBanner.alpha = 0
-                self.newRepliesBanner.transform = CGAffineTransform(translationX: 0, y: 8)
-            }, completion: { _ in
+            AnimationOptimizer.animateAlphaAndTransform(
+                newRepliesBanner,
+                alpha: 0,
+                transform: CGAffineTransform(translationX: 0, y: 8),
+                duration: 0.18
+            ) {
                 self.newRepliesBanner.isHidden = true
                 self.newRepliesBanner.transform = .identity
-            })
+            }
         }
     }
 
