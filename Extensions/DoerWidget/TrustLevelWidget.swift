@@ -158,7 +158,11 @@ struct TrustLevelWidgetView: View {
 
     private func progressCaption(_ item: TrustLevelWidgetItem) -> String {
         if item.isMet {
-            return String(localized: "trust.widget.met", defaultValue: "已达标")
+            let metText = String(localized: "trust.widget.met", defaultValue: "已达标")
+            if item.isReverse {
+                return "\(item.current) / ≤ \(item.target) · \(metText)"
+            }
+            return "\(item.current) / \(item.target) · \(metText)"
         }
         if item.isReverse {
             return String(localized: "trust.widget.keep_under", defaultValue: "需保持 ≤ \(item.target)")
