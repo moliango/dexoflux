@@ -427,7 +427,8 @@ final class InviteLinksViewController: UIViewController {
             UIPasteboard.general.string = urlString
             copyButton?.configuration?.title = String(localized: "invites.copied", defaultValue: "已复制")
             copyButton?.configuration?.image = UIImage(systemName: "checkmark")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak copyButton] in
+            Task { @MainActor [weak copyButton] in
+                try? await Task.sleep(nanoseconds: UInt64(1.5 * 1_000_000_000))
                 copyButton?.configuration?.title = String(localized: "invites.copy")
                 copyButton?.configuration?.image = UIImage(systemName: "doc.on.doc")
             }

@@ -133,10 +133,16 @@ final class InAppBrowserViewController: UIViewController {
             }
         }
         titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.updateTitleCapsule(); self?.updateControlState() }
+            Task { @MainActor in
+                self?.updateTitleCapsule()
+                self?.updateControlState()
+            }
         }
         urlObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.updateTitleCapsule(); self?.updateControlState() }
+            Task { @MainActor in
+                self?.updateTitleCapsule()
+                self?.updateControlState()
+            }
         }
 
         errorView.onRetry = { [weak self] in self?.reloadTapped() }

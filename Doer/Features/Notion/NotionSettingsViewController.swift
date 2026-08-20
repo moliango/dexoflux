@@ -569,7 +569,8 @@ final class NotionSettingsViewController: UIViewController {
         // Prefer lightweight feel: short auto-dismiss
         present(alert, animated: true)
         if !isError {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak alert] in
+            Task { @MainActor [weak alert] in
+                try? await Task.sleep(nanoseconds: UInt64(1.2 * 1_000_000_000))
                 alert?.dismiss(animated: true)
             }
         }

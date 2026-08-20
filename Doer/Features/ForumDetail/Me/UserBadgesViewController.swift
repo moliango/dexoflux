@@ -130,7 +130,7 @@ final class UserBadgesViewController: UIViewController {
         ])
 
         settingsObservation = AppSettings.shared.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.applyTheme()
                 self?.collectionView.reloadData()
             }

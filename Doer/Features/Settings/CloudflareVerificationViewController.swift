@@ -619,8 +619,8 @@ final class CloudflareVerificationViewController: UIViewController {
         isFinishing = true
         navigationItem.rightBarButtonItem?.isEnabled = false
         navigationItem.leftBarButtonItem?.isEnabled = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
             // Dismiss the whole presented nav (not just push), and always notify finish
             // so ForumContainer clears isPresentingCloudflareVerification / unsticks UI.
             let presenter = self.navigationController ?? self

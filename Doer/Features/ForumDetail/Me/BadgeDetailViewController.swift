@@ -80,7 +80,9 @@ final class BadgeDetailViewController: UIViewController {
 
         setupHierarchy()
         settingsObservation = AppSettings.shared.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.applyTheme() }
+            Task { @MainActor in
+                self?.applyTheme()
+            }
         }
         if let previewBadge {
             badge = previewBadge
