@@ -20,9 +20,30 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
     private let placeholderLabel = UILabel()
     private var editingMode = ComposerEditingMode.stored
     private var isSending = false
-    private var isSavingDraft = false
     private let initialRaw: String
     private var modeBarItem: UIBarButtonItem?
+
+    private lazy var closeButton: UIButton = {
+        let button = ComposerToolbarFactory.makeCloseIconButton()
+        button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        button.menu = UIMenu(children: [
+            UIAction(
+                title: String(localized: "reply.discard"),
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.discardTapped()
+            }
+        ])
+        button.showsMenuAsPrimaryAction = false
+        return button
+    }()
+
+    private lazy var sendButton: UIButton = {
+        let button = ComposerToolbarFactory.makeSendIconButton()
+        button.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
+        return button
+    }()
 
     init(api: DiscourseAPI, recipient: String = "", initialTitle: String = "", initialRaw: String = "", draftKey: String = "new_private_message") {
         self.api = api
@@ -55,29 +76,9 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         super.viewWillDisappear(animated)
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
-        guard !isSending, !isSavingDraft, !isDiscardingDraft else { return }
-        persistServerDraft()
     }
 
     private func setupNavigation() {
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: String(localized: "reply.discard"),
-            style: .plain,
-            target: self,
-            action: #selector(cancelTapped)
-        )
-        let sendItem = UIBarButtonItem(
-            title: String(localized: "reply.send"),
-            style: .done,
-            target: self,
-            action: #selector(sendTapped)
-        )
-        let saveItem = UIBarButtonItem(
-            title: String(localized: "common.save", defaultValue: "保存草稿"),
-            style: .plain,
-            target: self,
-            action: #selector(saveDraftTapped)
-        )
         let modeItem = UIBarButtonItem(
             title: editingMode == .rich ? "Aa" : "MD",
             style: .plain,
@@ -85,10 +86,13 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
             action: #selector(toggleEditingMode)
         )
         modeBarItem = modeItem
-        sendItem.tintColor = ComposerTypography.accentColor
         modeItem.tintColor = ComposerTypography.accentColor
-        navigationItem.leftBarButtonItem?.tintColor = ComposerTypography.accentColor
-        navigationItem.rightBarButtonItems = [sendItem, saveItem, modeItem]
+        navigationItem.leftBarButtonItem = nil
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(customView: sendButton),
+            UIBarButtonItem(customView: closeButton),
+            modeItem,
+        ]
     }
 
     private func setupUI() {
@@ -259,38 +263,15 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         }
     }
 
-    private func scheduleDraftSave() {
-        serverDraftSaveTask?.cancel()
-        serverDraftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistServerDraft()
-        }
-    }
-
-    private func persistServerDraft() {
-        let title = titleField.text ?? ""
-        let raw = bodyRaw
-        let api = self.api
-        let recipient = resolvedRecipient
-        guard !recipient.isEmpty else { return }
-        Task {
-            await ComposerServerDraftSync.syncPrivateMessage(
-                api: api,
-                recipient: recipient,
-                title: title,
-                raw: raw,
-                draftKey: draftKey
-            )
-        }
-    }
+    private func scheduleDraftSave() {}
 
     private func updateSendState() {
         let title = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let raw = bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let to = resolvedRecipient
-        navigationItem.rightBarButtonItems?.first?.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty && !to.isEmpty
-        navigationItem.leftBarButtonItem?.isEnabled = !isSending
+        sendButton.isEnabled = !isSending && !title.isEmpty && !raw.isEmpty && !to.isEmpty
+        closeButton.isEnabled = !isSending
+        modeBarItem?.isEnabled = !isSending
         titleField.isEnabled = !isSending
         recipientField.isEnabled = !isSending
         textView.isEditable = !isSending
@@ -308,51 +289,38 @@ final class PrivateMessageComposerViewController: UIViewController, UITextViewDe
         present(alert, animated: true)
     }
 
-    @objc private func cancelTapped() {
-        isDiscardingDraft = true
-        draftSaveTask?.cancel()
-        serverDraftSaveTask?.cancel()
-        Task {
-            await ComposerServerDraftSync.clearServerDraft(api: api, draftKey: draftKey)
-            await MainActor.run {
-                self.onDraftDeleted?()
-                self.dismiss(animated: true)
-            }
-        }
+    @objc private func closeTapped() {
+        dismiss(animated: true)
     }
 
-    @objc private func saveDraftTapped() {
-        guard !isSending, !isSavingDraft else { return }
-        isSavingDraft = true
-        draftSaveTask?.cancel()
-        serverDraftSaveTask?.cancel()
-        let title = titleField.text ?? ""
-        let raw = bodyRaw
-        let recipient = resolvedRecipient
-        let api = self.api
-        Task {
-            let saved = await ComposerServerDraftSync.syncPrivateMessage(
-                api: api,
-                recipient: recipient,
-                title: title,
-                raw: raw,
-                draftKey: draftKey
-            )
-            await MainActor.run {
-                guard saved else {
-                    self.isSavingDraft = false
-                    let alert = UIAlertController(
-                        title: String(localized: "common.save.failed", defaultValue: "保存草稿失败"),
-                        message: String(localized: "common.retry_later", defaultValue: "请检查网络后重试。"),
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-                    self.present(alert, animated: true)
-                    return
-                }
-                self.dismiss(animated: true) { self.isSavingDraft = false }
-            }
+    @objc private func discardTapped() {
+        let hasContent = !resolvedRecipient.isEmpty
+            || !(titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !bodyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasContent else {
+            dismiss(animated: true)
+            return
         }
+        let alert = UIAlertController(
+            title: String(localized: "reply.discard.confirm.title"),
+            message: String(localized: "reply.discard.confirm.message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "reply.discard"), style: .destructive) { [weak self] _ in
+            guard let self else { return }
+            self.isDiscardingDraft = true
+            self.draftSaveTask?.cancel()
+            self.serverDraftSaveTask?.cancel()
+            Task {
+                await ComposerServerDraftSync.clearServerDraft(api: self.api, draftKey: self.draftKey)
+                await MainActor.run {
+                    self.onDraftDeleted?()
+                    self.dismiss(animated: true)
+                }
+            }
+        })
+        present(alert, animated: true)
     }
 
     @objc private func sendTapped() {

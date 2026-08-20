@@ -53,6 +53,7 @@ final class NewTopicComposerViewController: UIViewController {
     private var isDiscardingDraft = false
     private var isSavingDraft = false
 
+
     private let titleField: UITextField = {
         let field = UITextField()
         field.translatesAutoresizingMaskIntoConstraints = false
@@ -212,26 +213,32 @@ final class NewTopicComposerViewController: UIViewController {
         return panel
     }()
 
-    private lazy var discardButton = UIBarButtonItem(
-        title: String(localized: "reply.discard"),
-        style: .plain,
-        target: self,
-        action: #selector(discardTapped)
-    )
+    private lazy var closeButton: UIButton = {
+        let button = ComposerToolbarFactory.makeCloseIconButton()
+        button.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        button.menu = UIMenu(children: [
+            UIAction(
+                title: String(localized: "reply.discard"),
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.discardTapped()
+            }
+        ])
+        button.showsMenuAsPrimaryAction = false
+        return button
+    }()
+
+    private lazy var saveDraftButton: UIButton = {
+        let button = ComposerToolbarFactory.makeSaveDraftIconButton()
+        button.addTarget(self, action: #selector(saveDraftTapped), for: .touchUpInside)
+        return button
+    }()
 
     private lazy var publishButton: UIButton = {
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = String(localized: "new_topic.publish", defaultValue: "发布")
-        configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor = AppSettings.shared.themeStyle.accentColor
-        configuration.baseForegroundColor = .white
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18)
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var attributes = attributes
-            attributes.font = .systemFont(ofSize: 15, weight: .semibold)
-            return attributes
-        }
-        let button = UIButton(configuration: configuration)
+        let button = ComposerToolbarFactory.makeSendIconButton(
+            accessibilityLabel: String(localized: "new_topic.publish", defaultValue: "发布")
+        )
         button.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         return button
     }()
@@ -265,21 +272,11 @@ final class NewTopicComposerViewController: UIViewController {
         super.viewDidLoad()
         title = String(localized: "new_topic.title")
         ComposerTypography.applyChrome(to: view)
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "chevron.left"),
-            style: .plain,
-            target: self,
-            action: #selector(cancelTapped)
-        )
-        navigationItem.leftBarButtonItem?.accessibilityLabel = String(localized: "reply.discard")
+        navigationItem.leftBarButtonItem = nil
         navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
-                title: String(localized: "common.save", defaultValue: "保存"),
-                style: .plain,
-                target: self,
-                action: #selector(saveDraftTapped)
-            ),
-            UIBarButtonItem(customView: publishButton)
+            UIBarButtonItem(customView: publishButton),
+            UIBarButtonItem(customView: saveDraftButton),
+            UIBarButtonItem(customView: closeButton),
         ]
 
         setupHierarchy()
@@ -344,27 +341,9 @@ final class NewTopicComposerViewController: UIViewController {
         super.viewWillDisappear(animated)
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
-        guard !isSubmitting, !isDiscardingDraft, !isSavingDraft else { return }
-        persistServerDraft()
     }
 
-    private func scheduleDraftSave() {
-        serverDraftSaveTask?.cancel()
-        serverDraftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistServerDraft()
-        }
-    }
-
-    private func persistServerDraft() {
-        let title = titleField.text ?? ""
-        let raw = bodyRaw
-        let categoryId = selectedCategoryId
-        let tags = selectedTags
-        let api = self.api
-        Task { _ = await ComposerServerDraftSync.syncNewTopic(api: api, title: title, raw: raw, categoryId: categoryId, tags: tags, draftKey: draftKey) }
-    }
+    private func scheduleDraftSave() {}
 
 
     private func setupHierarchy() {
@@ -580,8 +559,7 @@ final class NewTopicComposerViewController: UIViewController {
             tags: selectedTags
         )
         publishButton.isEnabled = submission != nil && !isUploading && !isSubmitting
-        publishButton.alpha = publishButton.isEnabled ? 1 : 0.55
-        discardButton.isEnabled = !isUploading && !isSubmitting
+        publishButton.alpha = 1
         if isPreviewingMarkdown {
             previewView.update(markdown: bodyRaw)
         }
@@ -734,8 +712,8 @@ final class NewTopicComposerViewController: UIViewController {
         }
     }
 
-    @objc private func cancelTapped() {
-        discardTapped()
+    @objc private func closeTapped() {
+        dismiss(animated: true)
     }
 
     @objc private func discardTapped() {
@@ -771,6 +749,7 @@ final class NewTopicComposerViewController: UIViewController {
     @objc private func saveDraftTapped() {
         guard !isSubmitting, !isSavingDraft else { return }
         isSavingDraft = true
+        saveDraftButton.isEnabled = false
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
         let api = self.api
@@ -779,10 +758,18 @@ final class NewTopicComposerViewController: UIViewController {
         let categoryId = selectedCategoryId
         let tags = selectedTags
         Task {
-            let saved = await ComposerServerDraftSync.syncNewTopic(api: api, title: title, raw: raw, categoryId: categoryId, tags: tags, draftKey: self.draftKey)
+            let saved = await ComposerServerDraftSync.syncNewTopic(
+                api: api,
+                title: title,
+                raw: raw,
+                categoryId: categoryId,
+                tags: tags,
+                draftKey: self.draftKey
+            )
             await MainActor.run {
                 guard saved else {
                     self.isSavingDraft = false
+                    self.saveDraftButton.isEnabled = true
                     let alert = UIAlertController(
                         title: String(localized: "common.save.failed", defaultValue: "保存草稿失败"),
                         message: String(localized: "common.retry_later", defaultValue: "请检查网络后重试。"),
@@ -859,7 +846,6 @@ final class NewTopicComposerViewController: UIViewController {
         textView.isEditable = enabled
         categoryButton.isEnabled = enabled
         tagsStack.isUserInteractionEnabled = enabled
-        publishButton.configuration?.showsActivityIndicator = !enabled
         updateEditorState()
     }
 

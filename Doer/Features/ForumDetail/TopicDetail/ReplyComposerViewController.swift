@@ -27,7 +27,6 @@ final class ReplyComposerViewController: UIViewController {
     private var isUploading = false
     private var isSubmitting = false
     private var isDiscardingDraft = false
-    private var isSavingDraft = false
     private var isApplyingAttributedText = false
     private var draftSaveTask: Task<Void, Never>?
     private var serverDraftSaveTask: Task<Void, Never>?
@@ -56,55 +55,58 @@ final class ReplyComposerViewController: UIViewController {
         return view
     }()
 
+    private let closeButton = ComposerToolbarFactory.makeCloseIconButton()
+
     private let headerTitleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = UIFontMetrics(forTextStyle: .headline).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold))
+        label.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 17, weight: .semibold)
+        )
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return label
     }()
 
-    private let discardButton: UIButton = {
-        var config = UIButton.Configuration.plain()
-        config.title = String(localized: "reply.discard")
-        config.baseForegroundColor = ComposerTypography.accentColor
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var updated = attrs
-            updated.font = .systemFont(ofSize: 15, weight: .medium)
-            return updated
-        }
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
+    private let headerSubtitleLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = AppSettings.shared.appInterfaceFont(
+            matching: .systemFont(ofSize: 13, weight: .regular)
+        )
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
     }()
 
-    private let saveDraftButton: UIButton = {
-        var config = UIButton.Configuration.plain()
-        config.title = String(localized: "common.save", defaultValue: "保存草稿")
-        config.baseForegroundColor = ComposerTypography.accentColor
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
+    private lazy var headerTitleStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [headerTitleLabel, headerSubtitleLabel])
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.spacing = 1
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return stack
+    }()
+
+    private lazy var headerActionsStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [closeButton, sendButton])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
 
     private let sendButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.title = String(localized: "reply.send")
-        config.baseBackgroundColor = ComposerTypography.accentColor
-        config.baseForegroundColor = .white
-        config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
-            var updated = attrs
-            updated.font = .systemFont(ofSize: 15, weight: .semibold)
-            return updated
-        }
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
+        let button = ComposerToolbarFactory.makeSendIconButton()
         button.isEnabled = false
         return button
     }()
@@ -262,27 +264,13 @@ final class ReplyComposerViewController: UIViewController {
         toolbarContainer.backgroundColor = ComposerTypography.backgroundColor
         customPanelContainer.backgroundColor = ComposerTypography.backgroundColor
 
-        switch submissionMode {
-        case .reply:
-            if let username = replyToPost?.username {
-                headerTitleLabel.text = String(format: String(localized: "reply.title.to %@"), username)
-            } else {
-                headerTitleLabel.text = String(localized: "reply.title.topic")
-            }
-        case .edit:
-            headerTitleLabel.text = String(localized: "post.edit.title", defaultValue: "编辑评论")
-            var configuration = sendButton.configuration
-            configuration?.title = String(localized: "common.save")
-            sendButton.configuration = configuration
-            saveDraftButton.isHidden = true
-        }
+        configureHeaderCopy()
+        configureCloseMenu()
 
         view.addSubview(grabberView)
         view.addSubview(headerContainer)
-        headerContainer.addSubview(headerTitleLabel)
-        headerContainer.addSubview(discardButton)
-        headerContainer.addSubview(saveDraftButton)
-        headerContainer.addSubview(sendButton)
+        headerContainer.addSubview(headerTitleStack)
+        headerContainer.addSubview(headerActionsStack)
         headerContainer.addSubview(separatorView)
         view.addSubview(textView)
         view.addSubview(previewView)
@@ -314,24 +302,17 @@ final class ReplyComposerViewController: UIViewController {
             grabberView.widthAnchor.constraint(equalToConstant: 42),
             grabberView.heightAnchor.constraint(equalToConstant: 5),
 
-            headerContainer.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 12),
+            headerContainer.topAnchor.constraint(equalTo: grabberView.bottomAnchor, constant: 8),
             headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             headerContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            headerContainer.heightAnchor.constraint(equalToConstant: 68),
+            headerContainer.heightAnchor.constraint(equalToConstant: 56),
 
-            headerTitleLabel.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 22),
-            headerTitleLabel.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
-            headerTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: saveDraftButton.leadingAnchor, constant: -8),
+            headerActionsStack.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -16),
+            headerActionsStack.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
 
-            sendButton.topAnchor.constraint(equalTo: headerContainer.topAnchor, constant: 4),
-            sendButton.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -24),
-            sendButton.heightAnchor.constraint(equalToConstant: 44),
-
-            discardButton.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
-            discardButton.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -12),
-
-            saveDraftButton.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
-            saveDraftButton.trailingAnchor.constraint(equalTo: discardButton.leadingAnchor, constant: -8),
+            headerTitleStack.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 16),
+            headerTitleStack.trailingAnchor.constraint(lessThanOrEqualTo: headerActionsStack.leadingAnchor, constant: -12),
+            headerTitleStack.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
 
             separatorView.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
             separatorView.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor),
@@ -361,8 +342,7 @@ final class ReplyComposerViewController: UIViewController {
             mentionPickerView.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -22),
         ])
 
-        discardButton.addTarget(self, action: #selector(discardTapped), for: .touchUpInside)
-        saveDraftButton.addTarget(self, action: #selector(saveDraftTapped), for: .touchUpInside)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
@@ -420,30 +400,9 @@ final class ReplyComposerViewController: UIViewController {
         draftSaveTask?.cancel()
         serverDraftSaveTask?.cancel()
         sourceRestyleTask?.cancel()
-        // Successful send already cleared local + server drafts. Re-persisting here
-        // would restore the just-posted body the next time the composer opens.
-        guard !isSubmitting, !isDiscardingDraft, !isSavingDraft else { return }
-        persistServerDraft()
     }
 
-    private func scheduleDraftSave() {
-        guard case .reply = submissionMode else { return }
-        serverDraftSaveTask?.cancel()
-        serverDraftSaveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistServerDraft()
-        }
-    }
-
-    private func persistServerDraft() {
-        guard case .reply = submissionMode, let draftKey = serverDraftKey else { return }
-        let raw = composerRawText
-        let topicId = self.topicId
-        let postNumber = replyToPost?.postNumber
-        let api = self.api
-        Task { _ = await ComposerServerDraftSync.syncReply(api: api, topicId: topicId, replyToPostNumber: postNumber, raw: raw, draftKey: draftKey) }
-    }
+    private func scheduleDraftSave() {}
 
 
     private func setupToolbar() {
@@ -765,7 +724,7 @@ final class ReplyComposerViewController: UIViewController {
 
             ForumImageLoader.loadImage(with: url) { [weak self, weak attachment] image in
                 guard let self, let attachment, let image else { return }
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     attachment.image = image
                     self.textView.layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: self.textView.attributedText.length))
                     self.textView.setNeedsDisplay()
@@ -978,10 +937,47 @@ final class ReplyComposerViewController: UIViewController {
         placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
     }
 
+    private func configureHeaderCopy() {
+        switch submissionMode {
+        case .reply:
+            if let username = replyToPost?.username, !username.isEmpty {
+                headerTitleLabel.text = String(localized: "reply.title", defaultValue: "回复")
+                headerSubtitleLabel.text = "@\(username)"
+                headerSubtitleLabel.isHidden = false
+            } else {
+                headerTitleLabel.text = String(localized: "reply.title.topic")
+                headerSubtitleLabel.text = nil
+                headerSubtitleLabel.isHidden = true
+            }
+        case .edit:
+            headerTitleLabel.text = String(localized: "post.edit.title", defaultValue: "编辑评论")
+            headerSubtitleLabel.text = nil
+            headerSubtitleLabel.isHidden = true
+            sendButton.accessibilityLabel = String(localized: "common.save")
+        }
+    }
+
+    private func configureCloseMenu() {
+        guard case .reply = submissionMode else {
+            closeButton.menu = nil
+            return
+        }
+        closeButton.menu = UIMenu(children: [
+            UIAction(
+                title: String(localized: "reply.discard"),
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.discardTapped()
+            }
+        ])
+        closeButton.showsMenuAsPrimaryAction = false
+    }
+
     private func updateSendButton() {
-        let enabled = !(composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        let enabled = !composerRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         sendButton.isEnabled = enabled && !isUploading
-        sendButton.alpha = sendButton.isEnabled ? 1 : 0.55
+        sendButton.alpha = 1
     }
 
     private func updatePreviewState() {
@@ -1003,9 +999,14 @@ final class ReplyComposerViewController: UIViewController {
         )
     }
 
+    @objc private func closeTapped() {
+        hideMentionPicker()
+        dismiss(animated: true)
+    }
+
     @objc private func discardTapped() {
         hideMentionPicker()
-        guard case .reply = submissionMode, serverDraftKey != nil, !isSavingDraft else {
+        guard case .reply = submissionMode, serverDraftKey != nil else {
             dismiss(animated: true)
             return
         }
@@ -1029,42 +1030,6 @@ final class ReplyComposerViewController: UIViewController {
             }
         })
         present(alert, animated: true)
-    }
-
-    @objc private func saveDraftTapped() {
-        guard case .reply = submissionMode,
-              let draftKey = serverDraftKey,
-              !isSubmitting,
-              !isSavingDraft
-        else { return }
-        isSavingDraft = true
-        draftSaveTask?.cancel()
-        serverDraftSaveTask?.cancel()
-        let raw = composerRawText
-        let api = self.api
-        Task {
-            let saved = await ComposerServerDraftSync.syncReply(
-                api: api,
-                topicId: topicId,
-                replyToPostNumber: replyToPost?.postNumber,
-                raw: raw,
-                draftKey: draftKey
-            )
-            await MainActor.run {
-                guard saved else {
-                    self.isSavingDraft = false
-                    let alert = UIAlertController(
-                        title: String(localized: "common.save.failed", defaultValue: "保存草稿失败"),
-                        message: String(localized: "common.retry_later", defaultValue: "请检查网络后重试。"),
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-                    self.present(alert, animated: true)
-                    return
-                }
-                self.dismiss(animated: true) { self.isSavingDraft = false }
-            }
-        }
     }
 
     @objc private func sendTapped() {

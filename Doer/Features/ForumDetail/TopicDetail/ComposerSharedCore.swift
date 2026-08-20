@@ -36,9 +36,144 @@ protocol ComposerTextSurface: AnyObject {
     func composerExitMarkdownPreviewIfNeeded()
 }
 
+// MARK: - Header icon button
+
+/// Own circle + glyph views so UIButton cannot stretch or offset the symbol.
+private final class ComposerChromeIconButton: UIButton {
+    private let filled: Bool
+    private let idleTint: UIColor
+    private let side: CGFloat
+    private let circleView = UIView()
+    private let glyphView = UIImageView()
+    private static let filledCircleDiameter: CGFloat = 32
+
+    init(
+        systemName: String,
+        pointSize: CGFloat,
+        weight: UIImage.SymbolWeight,
+        filled: Bool,
+        tint: UIColor,
+        size: CGFloat,
+        accessibilityLabel: String
+    ) {
+        self.filled = filled
+        self.idleTint = tint
+        self.side = size
+        super.init(frame: CGRect(x: 0, y: 0, width: size, height: size))
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
+        adjustsImageWhenHighlighted = false
+        adjustsImageWhenDisabled = false
+        self.accessibilityLabel = accessibilityLabel
+
+        circleView.isUserInteractionEnabled = false
+        circleView.translatesAutoresizingMaskIntoConstraints = false
+        circleView.isHidden = !filled
+        addSubview(circleView)
+
+        let symbol = UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        glyphView.translatesAutoresizingMaskIntoConstraints = false
+        glyphView.isUserInteractionEnabled = false
+        glyphView.contentMode = .center
+        glyphView.image = UIImage(systemName: systemName, withConfiguration: symbol)?
+            .withRenderingMode(.alwaysTemplate)
+        addSubview(glyphView)
+
+        let circleSide = filled ? Self.filledCircleDiameter : 0
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: size),
+            heightAnchor.constraint(equalToConstant: size),
+            circleView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            circleView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            circleView.widthAnchor.constraint(equalToConstant: circleSide),
+            circleView.heightAnchor.constraint(equalToConstant: circleSide),
+            glyphView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            glyphView.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        applyFilledChrome()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: CGSize { CGSize(width: side, height: side) }
+
+    override var isEnabled: Bool {
+        get { super.isEnabled }
+        set {
+            super.isEnabled = newValue
+            applyFilledChrome()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if filled {
+            circleView.layer.cornerRadius = circleView.bounds.height / 2
+            circleView.layer.cornerCurve = .continuous
+        }
+    }
+
+    private func applyFilledChrome() {
+        if filled {
+            circleView.backgroundColor = isEnabled
+                ? ComposerTypography.accentColor
+                : ComposerTypography.mutedFill
+            glyphView.tintColor = isEnabled ? .white : .tertiaryLabel
+        } else {
+            circleView.backgroundColor = .clear
+            glyphView.tintColor = isEnabled ? idleTint : .tertiaryLabel
+        }
+    }
+}
+
 // MARK: - Toolbar factory
 
 enum ComposerToolbarFactory {
+    static func makeCloseIconButton(
+        accessibilityLabel: String = String(localized: "common.close", defaultValue: "关闭")
+    ) -> UIButton {
+        ComposerChromeIconButton(
+            systemName: "xmark",
+            pointSize: 14,
+            weight: .semibold,
+            filled: false,
+            tint: .secondaryLabel,
+            size: 44,
+            accessibilityLabel: accessibilityLabel
+        )
+    }
+
+    static func makeSendIconButton(
+        accessibilityLabel: String = String(localized: "reply.send")
+    ) -> UIButton {
+        ComposerChromeIconButton(
+            systemName: "paperplane.fill",
+            pointSize: 18,
+            weight: .semibold,
+            filled: false,
+            tint: ComposerTypography.accentColor,
+            size: 44,
+            accessibilityLabel: accessibilityLabel
+        )
+    }
+
+    static func makeSaveDraftIconButton(
+        accessibilityLabel: String = String(localized: "common.save.draft", defaultValue: "保存草稿")
+    ) -> UIButton {
+        ComposerChromeIconButton(
+            systemName: "icloud.and.arrow.up",
+            pointSize: 18,
+            weight: .medium,
+            filled: false,
+            tint: ComposerTypography.accentColor,
+            size: 44,
+            accessibilityLabel: accessibilityLabel
+        )
+    }
+
     static func makeCircleButton(systemName: String, accessibilityLabel: String) -> UIButton {
         let button = makePlainButton(systemName: systemName, accessibilityLabel: accessibilityLabel, pointSize: 19, weight: .regular)
         button.backgroundColor = ComposerTypography.mutedFill
