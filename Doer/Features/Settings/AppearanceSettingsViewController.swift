@@ -674,6 +674,8 @@ final class AppearanceLanguageRow: UIControl {
         layer.shadowOpacity = 0.07
         layer.shadowRadius = 10
         layer.shadowOffset = CGSize(width: 0, height: 5)
+        // 性能优化：预计算阴影路径
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(greaterThanOrEqualToConstant: 68).isActive = true
 

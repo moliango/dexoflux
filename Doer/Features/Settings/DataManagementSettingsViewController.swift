@@ -259,7 +259,7 @@ final class DataManagementSettingsViewController: ObservableViewController {
 
     private func reloadCacheSizes() {
         SDImageCache.shared.calculateSize { [weak self] _, totalSize in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.imageCacheSize = Int64(totalSize)
                 self?.refreshDataViews()
             }
@@ -610,6 +610,8 @@ final class DataManagementActionRowView: UIControl {
         layer.shadowOpacity = 0.07
         layer.shadowRadius = 10
         layer.shadowOffset = CGSize(width: 0, height: 5)
+        // 性能优化：预计算阴影路径
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
 
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
         iconContainer.layer.cornerRadius = 13

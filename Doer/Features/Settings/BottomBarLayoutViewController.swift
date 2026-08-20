@@ -187,6 +187,11 @@ final class BottomBarLayoutViewController: ObservableViewController {
         card.layer.shadowRadius = 18
         card.layer.shadowOffset = CGSize(width: 0, height: 10)
         card.layer.shadowColor = settings.themeStyle.accentColor.cgColor
+        // 性能优化：预计算阴影路径
+        card.layer.shadowPath = UIBezierPath(
+            roundedRect: card.bounds,
+            cornerRadius: card.layer.cornerRadius
+        ).cgPath
 
         let eyebrow = makePillLabel(text: String(localized: "settings.bottom_bar.current_configuration", defaultValue: "当前配置"), color: settings.themeStyle.accentColor)
         let title = UILabel()

@@ -10,7 +10,6 @@ final class UserProfileViewController: ObservableViewController {
     private let contentView = UIView()
     private let heroView = UIView()
     private let backgroundImageView = UIImageView()
-    private let heroGradientLayer = CAGradientLayer()
     private let textureView = UIView()
     private let avatarImageView = UIImageView()
     private let displayNameLabel = UILabel()
@@ -119,7 +118,6 @@ final class UserProfileViewController: ObservableViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        heroGradientLayer.frame = heroView.bounds
         panelView.layer.shadowPath = UIBezierPath(
             roundedRect: panelView.bounds,
             byRoundingCorners: [.topLeft, .topRight],
@@ -209,8 +207,6 @@ final class UserProfileViewController: ObservableViewController {
         backgroundImageView.clipsToBounds = true
         backgroundImageView.alpha = 0
         heroView.addSubview(backgroundImageView)
-
-        heroView.layer.insertSublayer(heroGradientLayer, above: backgroundImageView.layer)
 
         textureView.translatesAutoresizingMaskIntoConstraints = false
         textureView.backgroundColor = UIColor(patternImage: Self.makeTextureImage())
@@ -815,20 +811,12 @@ final class UserProfileViewController: ObservableViewController {
     private func applyTheme() {
         let theme = AppSettings.shared.themeStyle
         scrollView.backgroundColor = .black
+        heroView.backgroundColor = theme.accentColor
         panelView.backgroundColor = theme.topicListBackgroundColor
         bioCard.backgroundColor = UIColor.white.withAlphaComponent(0.10)
         recencyPill.backgroundColor = UIColor.white.withAlphaComponent(0.16)
         levelLabel.backgroundColor = UIColor.white.withAlphaComponent(0.18)
         avatarImageView.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
-
-        let darkBase = UIColor.black
-        heroGradientLayer.colors = [
-            darkBase.withAlphaComponent(0.82).cgColor,
-            theme.accentColor.withAlphaComponent(0.36).cgColor,
-            darkBase.withAlphaComponent(0.92).cgColor,
-        ]
-        heroGradientLayer.startPoint = CGPoint(x: 0.05, y: 0)
-        heroGradientLayer.endPoint = CGPoint(x: 1, y: 1)
 
         profileContentView.backgroundColor = .clear
     }

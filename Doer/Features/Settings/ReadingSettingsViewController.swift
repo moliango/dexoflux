@@ -496,6 +496,8 @@ final class FontScaleCardView: UIView {
         layer.shadowOpacity = 0.07
         layer.shadowRadius = 14
         layer.shadowOffset = CGSize(width: 0, height: 8)
+        // 性能优化：预计算阴影路径
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
 
         iconContainer.translatesAutoresizingMaskIntoConstraints = false
         iconContainer.layer.cornerRadius = 15
