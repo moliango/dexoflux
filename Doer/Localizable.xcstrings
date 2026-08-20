@@ -522,6 +522,17 @@
         }
       }
     },
+    "action.share" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分享"
+          }
+        }
+      }
+    },
     "add_forum.button" : {
       "localizations" : {
         "en" : {
@@ -2958,6 +2969,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "保存"
+          }
+        }
+      }
+    },
+    "common.save.draft" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存草稿"
           }
         }
       }
@@ -15408,7 +15430,6 @@
       }
     },
     "reply.title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15437,6 +15458,7 @@
       }
     },
     "reply.title.to %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25787,6 +25809,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未有匯出記錄"
+          }
+        }
+      }
+    },
+    "topic.export.history.empty.html" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没有 HTML 导出记录"
+          }
+        }
+      }
+    },
+    "topic.export.history.empty.markdown" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没有 Markdown 导出记录"
           }
         }
       }
