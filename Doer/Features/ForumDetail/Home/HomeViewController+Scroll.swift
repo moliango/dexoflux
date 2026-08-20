@@ -306,7 +306,8 @@ extension HomeViewController: UITableViewDelegate {
                         ban.addAction(UIAlertAction(title: String(localized: "common.ok", defaultValue: "好"), style: .default))
                         // Avoid interrupting swipe animation heavily — brief toast-style alert.
                         self.present(ban, animated: true)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak ban] in
+                        Task { @MainActor [weak ban] in
+                            try? await Task.sleep(nanoseconds: 900_000_000)
                             ban?.dismiss(animated: true)
                         }
                     }

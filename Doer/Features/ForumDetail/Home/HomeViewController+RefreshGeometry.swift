@@ -16,11 +16,12 @@ extension HomeViewController {
         let lockID = topRefreshGeometryLockID
         normalizeTopRefreshGeometry(animated: false)
 
-        DispatchQueue.main.async { [weak self] in
-            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: false)
+        Task { @MainActor in
+            self.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.topRefreshGeometryReleaseDelay) { [weak self] in
-            self?.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: true)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.topRefreshGeometryReleaseDelay * 1_000_000_000))
+            self.normalizeTopRefreshGeometryIfStillLocked(lockID: lockID, release: true)
         }
     }
 
@@ -64,11 +65,12 @@ extension HomeViewController {
         updateBottomChrome(animated: false)
         lastHomeScrollY = tableView.contentOffset.y + tableView.contentInset.top
 
-        DispatchQueue.main.async { [weak self] in
-            self?.reassertBottomChromeIfVisible()
+        Task { @MainActor in
+            self.reassertBottomChromeIfVisible()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.reassertBottomChromeIfVisible()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            self.reassertBottomChromeIfVisible()
         }
     }
 

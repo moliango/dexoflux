@@ -50,7 +50,8 @@ extension HomeViewController {
         }
         categoryDrawer.onEditPinned = { [weak self] in
             self?.categoryDrawer.close(animated: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 200_000_000)
                 self?.presentCategoryPinManager()
             }
         }

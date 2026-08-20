@@ -31,8 +31,9 @@ extension HomeViewController {
         tabBarScrollFreezeID += 1
         let freezeID = tabBarScrollFreezeID
         // 稍晚解冻，吃掉 endRefreshing 回弹。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self, self.tabBarScrollFreezeID == freezeID else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard self.tabBarScrollFreezeID == freezeID else { return }
             self.isTabBarScrollFrozenForRefresh = false
             self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
             self.resyncTabBarVisibilityAfterFreeze()
@@ -67,8 +68,9 @@ extension HomeViewController {
 
     func scheduleLoadMoreTabBarUnfreeze(freezeID: Int, attempt: Int) {
         let delay: TimeInterval = attempt == 0 ? 0.28 : 0.18
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.tabBarLoadMoreFreezeID == freezeID else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard self.tabBarLoadMoreFreezeID == freezeID else { return }
             self.lastHomeScrollY = self.tableView.contentOffset.y + self.tableView.contentInset.top
             self.lastTopicListContentHeight = self.tableView.contentSize.height
             // Keep freezing only while load-more is actually running.

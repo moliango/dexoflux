@@ -163,8 +163,8 @@ final class HomeViewModel: DoerObservableObject {
         pendingUIScope.formUnion(scope)
         guard !uiFlushScheduled else { return }
         uiFlushScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            self?.flushPendingUI()
+        Task { @MainActor in
+            self.flushPendingUI()
         }
     }
 

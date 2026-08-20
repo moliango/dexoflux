@@ -157,11 +157,12 @@ extension HomeViewController {
         applyCloudflareTabBarReveal()
         // Sheet dismiss + topic list layout can hide/cover the bar one or two
         // runloops later; keep re-asserting briefly so it cannot stay gone.
-        DispatchQueue.main.async { [weak self] in
-            self?.applyCloudflareTabBarReveal()
+        Task { @MainActor in
+            self.applyCloudflareTabBarReveal()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self, self.view.window != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard self.view.window != nil else { return }
             self.applyCloudflareTabBarReveal()
         }
     }

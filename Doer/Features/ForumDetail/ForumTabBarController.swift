@@ -1,5 +1,4 @@
 import Combine
-import Hero
 import UIKit
 
 final class ForumTabBarController: UITabBarController {
@@ -257,11 +256,10 @@ final class ForumTabBarController: UITabBarController {
         // UIKit may perform a delayed UITabBarController layout pass after app
         // activation. Re-apply our scroll-hidden state so it does not leave a
         // stale bottom safe-area slab while the tab bar is still hidden.
-        DispatchQueue.main.async { [weak self] in
-            self?.reassertCurrentTabBarLayoutIfLoaded()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.reassertCurrentTabBarLayoutIfLoaded()
+        Task { @MainActor in
+            self.reassertCurrentTabBarLayoutIfLoaded()
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            self.reassertCurrentTabBarLayoutIfLoaded()
         }
     }
 
@@ -289,11 +287,10 @@ final class ForumTabBarController: UITabBarController {
         view.setNeedsLayout()
         view.layoutIfNeeded()
         // CF sheet dismiss / system layout can thrash frames one beat later.
-        DispatchQueue.main.async { [weak self] in
-            self?.reassertVisibleTabBarIfNeeded()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.reassertVisibleTabBarIfNeeded()
+        Task { @MainActor in
+            self.reassertVisibleTabBarIfNeeded()
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            self.reassertVisibleTabBarIfNeeded()
         }
     }
 
@@ -986,11 +983,6 @@ extension ForumTabBarController: UINavigationControllerDelegate {
 
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         TopicDetailTransitionGeometry.normalize(viewController.view)
-        // Hero must not own this stack. Enabling it replaces the nav delegate and
-        // swallows the system follow-finger pop.
-        if navigationController.hero.isEnabled {
-            navigationController.hero.isEnabled = false
-        }
         let allowsSystemPop = navigationController.viewControllers.count > 1
         navigationController.interactivePopGestureRecognizer?.isEnabled = allowsSystemPop
         if allowsSystemPop {
