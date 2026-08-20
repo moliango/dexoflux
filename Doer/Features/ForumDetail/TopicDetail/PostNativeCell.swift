@@ -727,8 +727,8 @@ final class PostNativeCell: UITableViewCell {
         heightReconcileGeneration += 1
         let generation = heightReconcileGeneration
         // Coalesce bursts from multiple images finishing in the same runloop turn.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.heightReconcileGeneration == generation, self.window != nil else { return }
+        Task { @MainActor in
+            guard self.heightReconcileGeneration == generation, self.window != nil else { return }
             self.needsHeightReconciliation = false
             self.reconcileTableRowHeightIfNeeded()
         }
@@ -739,8 +739,8 @@ final class PostNativeCell: UITableViewCell {
         heightReconcileGeneration += 1
         let generation = heightReconcileGeneration
         // Defer out of the current layout/update pass to avoid feedback loops.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.heightReconcileGeneration == generation, self.window != nil else { return }
+        Task { @MainActor in
+            guard self.heightReconcileGeneration == generation, self.window != nil else { return }
             self.reconcileTableRowHeightIfNeeded()
         }
     }
@@ -1010,8 +1010,8 @@ final class PostNativeCell: UITableViewCell {
     func scheduleProgressiveCompletion() {
         progressiveExpandGeneration += 1
         let generation = progressiveExpandGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.progressiveExpandGeneration == generation, self.window != nil else { return }
+        Task { @MainActor in
+            guard self.progressiveExpandGeneration == generation, self.window != nil else { return }
             self.completeProgressiveContentIfNeeded(force: true)
         }
     }

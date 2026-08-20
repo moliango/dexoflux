@@ -639,7 +639,10 @@ private final class MacStyleCodeBlockView: UIView {
             self?.scheduleCopyButtonHide()
         }
         resetCopyIconWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(1.2 * 1_000_000_000))
+            item.perform()
+        }
     }
 
     @objc private func handleHover(_ gesture: UIHoverGestureRecognizer) {
@@ -683,7 +686,10 @@ private final class MacStyleCodeBlockView: UIView {
             }
         }
         hideCopyButtonWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: item)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(1.6 * 1_000_000_000))
+            item.perform()
+        }
     }
 
     private func updateTraitDependentColors() {

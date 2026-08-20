@@ -134,7 +134,7 @@ extension StickerMarketViewController: UITableViewDataSource, UITableViewDelegat
             // Keep system image placeholder; async icon optional.
             content.image = UIImage(systemName: "face.smiling")
             SDWebImageManager.shared.loadImage(with: url, options: [], progress: nil) { image, _, _, _, _, _ in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     guard tableView.cellForRow(at: indexPath) != nil else { return }
                     var updated = cell.defaultContentConfiguration()
                     updated.text = group.name

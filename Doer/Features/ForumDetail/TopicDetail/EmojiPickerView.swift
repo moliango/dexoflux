@@ -257,8 +257,9 @@ final class EmojiPickerView: UIView {
         tabCollectionView.reloadData()
         isProgrammaticScroll = true
         collectionView.scrollToItem(at: IndexPath(item: 0, section: index), at: .top, animated: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.isProgrammaticScroll = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            self.isProgrammaticScroll = false
         }
     }
 

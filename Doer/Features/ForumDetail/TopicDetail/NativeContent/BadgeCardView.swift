@@ -263,7 +263,7 @@ final class BadgeCardView: UIView, WKNavigationDelegate {
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
 
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self, self.loadGeneration == generation else { return }
                 guard error == nil,
                       let data,
@@ -279,8 +279,9 @@ final class BadgeCardView: UIView, WKNavigationDelegate {
         task.resume()
 
         // Safety timeout: if load never finishes, keep native placeholder.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-            guard let self, self.loadGeneration == generation, !self.didLoadSVG else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard self.loadGeneration == generation, !self.didLoadSVG else { return }
             self.webView?.stopLoading()
         }
     }

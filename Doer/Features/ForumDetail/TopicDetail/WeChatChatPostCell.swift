@@ -1537,8 +1537,8 @@ class WeChatChatPostCell: UITableViewCell {
     func requestHeightReconciliation() {
         heightReconcileGeneration += 1
         let generation = heightReconcileGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.heightReconcileGeneration == generation, self.window != nil else { return }
+        Task { @MainActor in
+            guard self.heightReconcileGeneration == generation, self.window != nil else { return }
             self.reconcileTableRowHeightIfNeeded()
         }
         setNeedsLayout()

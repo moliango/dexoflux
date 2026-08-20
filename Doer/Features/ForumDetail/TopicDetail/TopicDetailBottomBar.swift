@@ -281,13 +281,13 @@ final class TopicDetailBottomBar: UIView {
         case .ended:
             finishRadialMenu()
             // Defer clear so the simultaneous tap (if any) still sees the flag this turn.
-            DispatchQueue.main.async { [weak self] in
-                self?.didConsumePanAsSwipe = false
+            Task { @MainActor in
+                self.didConsumePanAsSwipe = false
             }
         case .cancelled, .failed:
             dismissRadialMenu(trigger: false)
-            DispatchQueue.main.async { [weak self] in
-                self?.didConsumePanAsSwipe = false
+            Task { @MainActor in
+                self.didConsumePanAsSwipe = false
             }
         default:
             break
@@ -331,13 +331,13 @@ final class TopicDetailBottomBar: UIView {
                 didConsumePanAsSwipe = true
             }
             // Clear flag after the runloop so tapGesture still sees it this turn.
-            DispatchQueue.main.async { [weak self] in
-                self?.didConsumePanAsSwipe = false
+            Task { @MainActor in
+                self.didConsumePanAsSwipe = false
             }
         case .cancelled, .failed:
             clearSwipePreview()
-            DispatchQueue.main.async { [weak self] in
-                self?.didConsumePanAsSwipe = false
+            Task { @MainActor in
+                self.didConsumePanAsSwipe = false
             }
         default:
             break

@@ -298,7 +298,10 @@ final class ShareImagePreviewViewController: UIViewController {
             self?.markBodyReady()
         }
         bodyReadyTimeoutWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + bodyReadyTimeout, execute: work)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(bodyReadyTimeout * 1_000_000_000))
+            work.perform()
+        }
     }
 
     private func markBodyReady() {
@@ -332,7 +335,7 @@ final class ShareImagePreviewViewController: UIViewController {
     @objc private func saveTapped() {
         guard isBodyReady, let image = renderCardImage() else { return }
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self else { return }
                 guard status == .authorized || status == .limited else {
                     self.presentSimpleAlert(

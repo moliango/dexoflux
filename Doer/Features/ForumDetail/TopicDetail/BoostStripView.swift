@@ -862,7 +862,7 @@ final class BoostStripView: UIView {
                 with: entry.url,
                 cloudflareBaseURL: baseURL
             ) { [weak label] image in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     guard let label else { return }
                     guard let current = label.attributedText else { return }
                     let mutable = NSMutableAttributedString(attributedString: current)

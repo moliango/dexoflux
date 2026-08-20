@@ -189,7 +189,10 @@ final class TappableImageContainer: UIView {
             )
         }
         loadTimeoutWorkItem = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 18, execute: timeout)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 18_000_000_000)
+            timeout.perform()
+        }
 
         // Topic body images always use ExternalImageFetcher:
         // - attaches forum cookies for main host + upload CDN

@@ -82,8 +82,7 @@ final class LinkTextView: UITextView {
     }
 
     private func scheduleEnclosingTableHeightUpdate() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
             var view: UIView? = self.superview
             while let current = view {
                 // Prefer cell-level coalesced reconciliation when inside a PostNativeCell.
@@ -147,8 +146,8 @@ final class LinkTextView: UITextView {
         }
         if needsBlurLayout, bounds.width > 0 {
             needsBlurLayout = false
-            DispatchQueue.main.async { [weak self] in
-                self?.createBlurOverlays()
+            Task { @MainActor in
+                self.createBlurOverlays()
             }
         }
     }

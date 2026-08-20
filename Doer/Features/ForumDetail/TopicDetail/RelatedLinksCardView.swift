@@ -359,7 +359,7 @@ final class SuggestedTopicsFooterView: UIView {
             filterStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
             filterStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 38),
 
-            topicsStack.topAnchor.constraint(equalTo: filterStack.bottomAnchor, constant: 8),
+            topicsStack.topAnchor.constraint(equalTo: filterStack.bottomAnchor, constant: 2),
             topicsStack.leadingAnchor.constraint(equalTo: leadingAnchor),
             topicsStack.trailingAnchor.constraint(equalTo: trailingAnchor),
 

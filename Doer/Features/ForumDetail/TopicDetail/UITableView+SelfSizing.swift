@@ -98,7 +98,10 @@ extension UITableView {
         doer_scrollSettleWorkItem = work
         // Keep busy true until settle fires so mid-settle invalidates still queue.
         doer_isScrollBusy = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            work.perform()
+        }
     }
 
     /// Coalesced, mutation- and scroll-gated replacement for `beginUpdates()` / `endUpdates()`
@@ -116,8 +119,7 @@ extension UITableView {
         guard !doer_heightPassScheduled else { return }
         doer_heightPassScheduled = true
         // Next turn — never nest inside an existing layout / Diffable apply callback.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
             self.doer_heightPassScheduled = false
             self.doer_flushPendingSelfSizingUpdateIfNeeded()
         }

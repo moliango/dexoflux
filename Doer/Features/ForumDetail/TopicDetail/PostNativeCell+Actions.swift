@@ -34,8 +34,8 @@ extension PostNativeCell {
             backgroundColor: UIColor.systemGreen.withAlphaComponent(0.14),
             accessibilityLabel: "已复制"
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(1.0 * 1_000_000_000))
             self.configureMoreMenu(isBookmarked: self.isBookmarked)
         }
     }
@@ -45,9 +45,10 @@ extension PostNativeCell {
         let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         sourceButton.setImage(UIImage(systemName: "checkmark", withConfiguration: config), for: .normal)
         sourceButton.tintColor = .systemGreen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.sourceButton.setImage(UIImage(systemName: "doc.on.clipboard", withConfiguration: config), for: .normal)
-            self?.sourceButton.tintColor = .tertiaryLabel
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(1.0 * 1_000_000_000))
+            self.sourceButton.setImage(UIImage(systemName: "doc.on.clipboard", withConfiguration: config), for: .normal)
+            self.sourceButton.tintColor = .tertiaryLabel
         }
     }
 

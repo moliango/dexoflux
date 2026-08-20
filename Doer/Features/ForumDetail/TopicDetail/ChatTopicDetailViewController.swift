@@ -709,8 +709,8 @@ class ChatTopicDetailViewController: ObservableViewController {
         let ids = viewModel.allPostIds
         guard floor >= 1, floor <= ids.count else { return }
         let postId = ids[floor - 1]
-        DispatchQueue.main.async { [weak self] in
-            self?.scrollToPostId(postId)
+        Task { @MainActor in
+            self.scrollToPostId(postId)
         }
     }
 

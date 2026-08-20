@@ -354,7 +354,7 @@ final class ShareImageCardView: UIView {
         completion: @escaping () -> Void
     ) {
         let finish: (UIImage?) -> Void = { [weak self, weak imageView] image in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self, let imageView, self.loadGeneration == generation else {
                     completion()
                     return

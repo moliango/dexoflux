@@ -1263,7 +1263,7 @@ final class TopicDetailViewController: ObservableViewController {
             snapshot.appendSections([0])
             snapshot.appendItems(itemIDs, toSection: 0)
             dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     guard let self else { return }
                     if let earlierAnchor {
                         if let newIndexPath = self.dataSource.indexPath(for: earlierAnchor.postId) {

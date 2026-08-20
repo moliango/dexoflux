@@ -360,11 +360,10 @@ final class TopicImageGalleryViewController: UIViewController {
     private func showToast(_ text: String) {
         toastLabel.text = "  \(text)  "
         toastLabel.alpha = 0
-        UIView.animate(withDuration: 0.18) {
-            self.toastLabel.alpha = 1
-        } completion: { _ in
-            UIView.animate(withDuration: 0.20, delay: 1.2, options: [.curveEaseInOut]) {
-                self.toastLabel.alpha = 0
+        AnimationOptimizer.animateAlpha(toastLabel, to: 1, duration: 0.18) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                AnimationOptimizer.animateAlpha(self.toastLabel, to: 0, duration: 0.20)
             }
         }
     }
@@ -944,7 +943,8 @@ final class PostWebViewCell: UITableViewCell {
         let config = UIImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         copyLinkButton.setImage(UIImage(systemName: "checkmark", withConfiguration: config), for: .normal)
         copyLinkButton.tintColor = .systemGreen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(1.0 * 1_000_000_000))
             self?.copyLinkButton.setImage(UIImage(systemName: "link", withConfiguration: config), for: .normal)
             self?.copyLinkButton.tintColor = .tertiaryLabel
         }
