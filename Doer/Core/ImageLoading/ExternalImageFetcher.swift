@@ -145,7 +145,7 @@ enum ExternalImageFetcher {
                     let base = refererBaseURL
                         ?? CloudflareImageGate.originString(for: url)
                         ?? url.absoluteString
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         CloudflareImageGate.reportImageChallenge(
                             baseURL: base,
                             responseURL: http.url,
@@ -200,7 +200,7 @@ enum ExternalImageFetcher {
         inflightStartedAt.removeValue(forKey: cacheKey)
         inflightLock.unlock()
 
-        DispatchQueue.main.async {
+        Task { @MainActor in
             for callback in callbacks {
                 callback(image)
             }
@@ -227,7 +227,7 @@ enum ExternalImageFetcher {
             "external image reaped \(staleKeys.count) stale inflight key(s)",
             subsystem: "Avatar"
         )
-        DispatchQueue.main.async {
+        Task { @MainActor in
             for callback in staleCallbacks {
                 callback(nil)
             }

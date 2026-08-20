@@ -18,7 +18,14 @@ enum AvatarImageLoader {
         AppSettings.shared.avatarCacheSizeLimit.byteCount
     }
 
-    private static let inMemoryCache = NSCache<NSURL, UIImage>()
+    /// 内存缓存：快速二级缓存，避免反复解码同一头像。
+    /// 设置大小限制防止内存爆炸。
+    private static let inMemoryCache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 100  // 最多缓存 100 个头像
+        cache.totalCostLimit = 50 * 1024 * 1024  // 50MB
+        return cache
+    }()
     private static let userAvatarCacheLock = NSLock()
     private static var userAvatarCache: [String: UserAvatarCacheEntry] = [:]
     private static var userAvatarCacheStatsByBaseURL: [String: UserAvatarCacheStats] = [:]
@@ -140,7 +147,7 @@ enum AvatarImageLoader {
         prefetchLock.unlock()
         SDImageCache.shared.clearMemory()
         SDImageCache.shared.clearDisk {
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion?()
             }
         }
@@ -264,7 +271,7 @@ enum AvatarImageLoader {
                 if let maxUncached, uncached.count >= maxUncached { break }
             }
             guard !uncached.isEmpty else { return }
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 startNetworkPrefetch(urls: uncached, cloudflareBaseURL: cloudflareBaseURL)
             }
         }
@@ -839,7 +846,7 @@ enum CloudflareImageGate {
             DohDebugLog.record("image gate resume base=\(key)", subsystem: "CF")
             // Failed URL blacklist often holds CF-challenge misses from the pause window.
             AvatarImageLoader.clearFailedLoads(matchingBaseURL: baseURL)
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 NotificationCenter.default.post(
                     name: didResumeNotification,
                     object: nil,
@@ -872,7 +879,7 @@ enum CloudflareImageGate {
         if let expiredBase {
             DohDebugLog.record("image gate auto-expired base=\(expiredBase)", subsystem: "CF")
             AvatarImageLoader.clearFailedLoads(matchingBaseURL: baseURL)
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 NotificationCenter.default.post(
                     name: didResumeNotification,
                     object: nil,
