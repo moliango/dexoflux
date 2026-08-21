@@ -3639,6 +3639,22 @@
         }
       }
     },
+    "error.offline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're offline. The list will refresh when you're back online."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前无网络，连接后将自动刷新"
+          }
+        }
+      }
+    },
     "error.rate_limited" : {
       "localizations" : {
         "en" : {

@@ -11,9 +11,10 @@ enum HomePullToRefreshPolicy {
         isLoading: Bool,
         hasReloadTask: Bool
     ) -> Bool {
-        pullDistance >= triggerDistance
-            && !isRefreshing
-            && !isLoading
-            && !hasReloadTask
+        // A hung reload (DoH/offline) must still be replaceable. Only the
+        // visible spinner is treated as an in-flight pull.
+        _ = isLoading
+        _ = hasReloadTask
+        return pullDistance >= triggerDistance && !isRefreshing
     }
 }

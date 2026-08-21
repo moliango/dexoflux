@@ -73,7 +73,7 @@ extension HomeViewController {
         incomingTopicsRetryTask = nil
         reloadSequence += 1
         let sequence = reloadSequence
-        if viewModel.topics.isEmpty {
+        if viewModel.topics.isEmpty, ConnectivityService.shared.isConnected {
             isInitialTopicLoadPending = true
             updateUI()
         }

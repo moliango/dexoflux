@@ -122,11 +122,14 @@ final class HomeViewModel: DoerObservableObject {
     var shouldRetryLoadMoreAfterCloudflare = false
     var isLoading = false
     var isLoadingMore = false
+    /// True when the last refresh skipped or failed because the device was offline.
+    var isWaitingForNetwork = false
     var canLoadMore = false
     var errorMessage: String?
     var loadMoreErrorMessage: String?
     var requiresLogin = false
     var isBlockedByCloudflare = false
+    private var loadGeneration = 0
 
     var categories: [DiscourseCategory] = []
     var selectedCategoryId: Int?
@@ -310,9 +313,8 @@ final class HomeViewModel: DoerObservableObject {
     }
 
     func loadTopics(retryingExplicitCancellation: Bool = false) async {
-        // Single-flight refresh: concurrent pulls share one in-flight load.
-        guard !isLoading else { return }
-
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
         loadMoreErrorMessage = nil
@@ -321,38 +323,52 @@ final class HomeViewModel: DoerObservableObject {
         isBlockedByCloudflare = false
         currentPage = 0
         DohDebugLog.record("refresh begin", subsystem: "home.refresh")
-        notifyChanged([.loading, .login])
+        // Paint cache before any network so the skeleton cannot outlive offline.
+        if topics.isEmpty {
+            hydrateFromBackgroundCacheIfNeeded()
+        }
+        notifyChanged([.loading, .login, .list])
         defer {
-            isLoading = false
-            DohDebugLog.record(
-                "refresh end topics=\(topics.count) error=\(errorMessage != nil) cf=\(isBlockedByCloudflare)",
-                subsystem: "home.refresh"
-            )
-            notifyChanged(.all)
+            if generation == loadGeneration {
+                isLoading = false
+                DohDebugLog.record(
+                    "refresh end topics=\(topics.count) error=\(errorMessage != nil) cf=\(isBlockedByCloudflare) waitNet=\(isWaitingForNetwork)",
+                    subsystem: "home.refresh"
+                )
+                notifyChanged(.all)
+            }
+        }
+
+        guard ConnectivityService.shared.isConnected else {
+            isWaitingForNetwork = true
+            if topics.isEmpty {
+                errorMessage = Self.offlineErrorMessage
+            }
+            return
         }
 
         switch await validateTopicAccess() {
         case .allowed:
             break
         case .loginRequired:
+            guard generation == loadGeneration else { return }
             clearProtectedContentForLoginRequired(invalidateSession: true)
             return
         case .unavailable(let error):
             if await handleExplicitCancellationIfNeeded(error, retryingExplicitCancellation: retryingExplicitCancellation) {
                 return
             }
+            guard generation == loadGeneration else { return }
             isBlockedByCloudflare = isCloudflareChallenge(error)
             errorMessage = error.localizedDescription
+            isWaitingForNetwork = true
             return
         }
 
         do {
             startLoadingCategoriesIfNeeded()
-            // 网络返回前先露出后台缓存，避免首页空白只剩 incoming banner。
-            if topics.isEmpty {
-                hydrateFromBackgroundCacheIfNeeded()
-            }
             let result = try await fetchTopics(page: 0)
+            guard generation == loadGeneration else { return }
             try Task.checkCancellation()
             // Page 0 is source of truth for which topics are currently pinned.
             pinnedTopicIds = Set(result.topicList.topics.filter { $0.pinned == true }.map(\.id))
@@ -378,18 +394,21 @@ final class HomeViewModel: DoerObservableObject {
             indexUsers(result.users)
             indexCategories(result.categories, source: .topicList)
             logTopicCategoryDiagnostics(context: "loadTopics", topics: topics)
+            isWaitingForNetwork = false
         } catch is CancellationError {
             errorMessage = nil
         } catch {
             if await handleExplicitCancellationIfNeeded(error, retryingExplicitCancellation: retryingExplicitCancellation) {
                 return
             }
+            guard generation == loadGeneration else { return }
             if AuthSessionInvalidationPolicy.shouldInvalidateWebSession(error: error, baseURL: api.baseURL) {
                 clearProtectedContentForLoginRequired(invalidateSession: true)
                 return
             }
             isBlockedByCloudflare = isCloudflareChallenge(error)
             errorMessage = error.localizedDescription
+            isWaitingForNetwork = !isBlockedByCloudflare
         }
     }
 
@@ -633,7 +652,12 @@ final class HomeViewModel: DoerObservableObject {
         if topics.isEmpty {
             errorMessage = message
         }
+        isWaitingForNetwork = true
         notifyChanged([.list, .loading, .incoming])
+    }
+
+    private static var offlineErrorMessage: String {
+        String(localized: "error.offline", defaultValue: "当前无网络，连接后将自动刷新")
     }
 
     private func validateTopicAccess() async -> TopicAccessState {
@@ -677,6 +701,7 @@ final class HomeViewModel: DoerObservableObject {
         loggedTopicCategoryIds.removeAll()
         requiresLogin = true
         isBlockedByCloudflare = false
+        isWaitingForNetwork = false
         errorMessage = message
         if invalidateSession {
             AuthManager.shared.invalidateWebSession(for: api.baseURL)

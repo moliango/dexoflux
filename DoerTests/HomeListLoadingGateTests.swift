@@ -58,12 +58,20 @@ final class HomeListLoadingGateTests: XCTestCase {
         XCTAssertFalse(Gate(isLoading: true).allowsRefresh)
     }
 
-    func testPullPolicyStillBlocksInFlightReload() {
-        XCTAssertFalse(
+    func testPullPolicyAllowsReplacingAHungReload() {
+        XCTAssertTrue(
             HomePullToRefreshPolicy.shouldTrigger(
                 pullDistance: 80,
                 isRefreshing: false,
-                isLoading: false,
+                isLoading: true,
+                hasReloadTask: true
+            )
+        )
+        XCTAssertFalse(
+            HomePullToRefreshPolicy.shouldTrigger(
+                pullDistance: 80,
+                isRefreshing: true,
+                isLoading: true,
                 hasReloadTask: true
             )
         )

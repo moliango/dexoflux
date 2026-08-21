@@ -1071,6 +1071,13 @@ final class TopicDetailViewModel: DoerObservableObject {
         let generation = parseGeneration
         notifyChanged()
 
+        guard ConnectivityService.shared.isConnected else {
+            isLoading = false
+            errorMessage = String(localized: "error.offline", defaultValue: "当前无网络，连接后将自动刷新")
+            notifyChanged()
+            return
+        }
+
         do {
             let detail = try await api.fetchTopic(id: id, trackVisit: true)
             guard await applyLoadedTopicDetail(

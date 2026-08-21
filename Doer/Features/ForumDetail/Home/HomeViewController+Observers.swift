@@ -106,7 +106,9 @@ extension HomeViewController {
         LightweightDohProxyService.shared.clearCache()
         guard HomeConnectivityRecoveryPolicy.shouldReloadTopicList(
             topicsEmpty: viewModel.topics.isEmpty,
-            hasError: viewModel.errorMessage != nil
+            hasError: viewModel.errorMessage != nil,
+            isWaitingForNetwork: viewModel.isWaitingForNetwork,
+            isLoading: viewModel.isLoading
         ) else { return }
         reloadTopics()
     }
@@ -193,7 +195,10 @@ extension HomeViewController {
 
     func reloadAfterBecomingVisibleIfNeeded() {
         guard isViewLoaded, view.window != nil, !viewModel.isLoading else { return }
-        guard viewModel.topics.isEmpty || viewModel.errorMessage != nil else { return }
+        guard viewModel.topics.isEmpty
+            || viewModel.errorMessage != nil
+            || viewModel.isWaitingForNetwork
+        else { return }
         if CloudflareVerificationPolicy.isInVerificationGrace(baseURL: api.baseURL) {
             logCloudflareState("visible reload skipped during verification grace")
             return

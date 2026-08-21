@@ -134,12 +134,6 @@ extension HomeViewController {
     }
 
     @objc func pullToRefresh() {
-        guard topicReloadTask == nil, !viewModel.isLoading else {
-            if refreshControl.isRefreshing, !isTopRefreshGeometryLocked {
-                refreshControl.endRefreshing()
-            }
-            return
-        }
         beginTopRefreshGeometryLock(animated: false)
         reloadTopics()
     }
