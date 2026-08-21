@@ -2351,6 +2351,22 @@
         }
       }
     },
+    "chat.request.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求失败"
+          }
+        }
+      }
+    },
     "chat.title" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {

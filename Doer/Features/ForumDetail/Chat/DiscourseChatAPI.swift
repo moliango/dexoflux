@@ -261,11 +261,35 @@ struct DiscourseChatMessagesResponse: Decodable {
     }
 }
 
+// MARK: - Routes
+//
+// Discourse Chat keeps two families:
+// - REST `/chat/api/*` for list/read (linux.do + current Discourse)
+// - Legacy `POST /chat/:id` to create a message (linux.do / FluxDo).
+//   `POST /chat/api/channels/:id/messages` 404s on linux.do with
+//   `error_type: not_found` / 「找不到请求的 URL 或资源。」
+
+enum DiscourseChatEndpoint {
+    static func channels() -> String { "/chat/api/me/channels" }
+
+    static func messages(channelId: Int, pageSize: Int) -> String {
+        "/chat/api/channels/\(channelId)/messages?page_size=\(pageSize)"
+    }
+
+    static func sendMessage(channelId: Int) -> String {
+        "/chat/\(channelId)"
+    }
+
+    static func sendMessageModern(channelId: Int) -> String {
+        "/chat/api/channels/\(channelId)/messages"
+    }
+}
+
 // MARK: - API
 
 extension DiscourseAPI {
     func fetchChatChannels() async throws -> DiscourseChatChannelsResponse {
-        let url = baseURL + "/chat/api/me/channels"
+        let url = baseURL + DiscourseChatEndpoint.channels()
         let response = await session.request(url, method: .get).serializingData().response
         if let http = response.response, let responseURL = http.url,
            shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: responseURL) {
@@ -280,31 +304,64 @@ extension DiscourseAPI {
     }
 
     func fetchChatMessages(channelId: Int, pageSize: Int = 50) async throws -> [DiscourseChatMessage] {
-        let url = baseURL + "/chat/api/channels/\(channelId)/messages?page_size=\(pageSize)"
+        let url = baseURL + DiscourseChatEndpoint.messages(channelId: channelId, pageSize: pageSize)
         let response = await session.request(url, method: .get).serializingData().response
-        if let error = response.error { throw error }
+        try throwIfUnsuccessfulChatResponse(response)
         guard let data = response.data, !data.isEmpty else { return [] }
         let decoded = try JSONDecoder().decode(DiscourseChatMessagesResponse.self, from: data)
         return decoded.messages
     }
 
     func sendChatMessage(channelId: Int, message: String, inReplyToId: Int? = nil) async throws {
-        let url = baseURL + "/chat/api/channels/\(channelId)/messages"
         var parameters: Parameters = ["message": message]
         if let inReplyToId {
             parameters["in_reply_to_id"] = inReplyToId
         }
+        do {
+            try await postChatMessage(
+                path: DiscourseChatEndpoint.sendMessage(channelId: channelId),
+                parameters: parameters
+            )
+        } catch let error as DiscourseAPIError where error.errorType == "not_found" {
+            try await postChatMessage(
+                path: DiscourseChatEndpoint.sendMessageModern(channelId: channelId),
+                parameters: parameters
+            )
+        }
+    }
+
+    private func postChatMessage(path: String, parameters: Parameters) async throws {
         let response = await session.request(
-            url,
+            baseURL + path,
             method: .post,
             parameters: parameters,
             encoding: JSONEncoding.default
         ).serializingData().response
-        if let status = response.response?.statusCode, !(200 ..< 300).contains(status) {
-            let body = response.data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            throw DiscourseAPIError(messages: [body.isEmpty ? "chat send failed (\(status))" : body], errorType: "chat_send_failed")
+        try throwIfUnsuccessfulChatResponse(response)
+    }
+
+    private func throwIfUnsuccessfulChatResponse(_ response: AFDataResponse<Data>) throws {
+        if let http = response.response, let responseURL = http.url,
+           shouldMergeWebCookieResponseHeaders(baseURL: baseURL, responseURL: responseURL) {
+            WebCookieStore.shared.mergeResponseHeaders(http.allHeaderFields, for: responseURL)
+        }
+        if let newToken = response.response?.value(forHTTPHeaderField: "X-CSRF-Token") {
+            interceptor.updateCSRFToken(newToken)
         }
         if let error = response.error { throw error }
+        guard let status = response.response?.statusCode, !(200 ..< 300).contains(status) else {
+            return
+        }
+        if let data = response.data {
+            if let errBody = try? JSONDecoder().decode(DiscourseErrorResponse.self, from: data),
+               !errBody.errors.isEmpty {
+                throw DiscourseAPIError(messages: errBody.errors, errorType: errBody.errorType)
+            }
+        }
+        throw DiscourseAPIError(
+            messages: [String(localized: "chat.request.failed", defaultValue: "请求失败")],
+            errorType: "chat_request_failed"
+        )
     }
 
     func castPostVotingVote(postId: Int, direction: String) async throws {
