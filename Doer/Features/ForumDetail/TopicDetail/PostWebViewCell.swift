@@ -88,7 +88,7 @@ extension UIViewController {
         guard !galleryURLs.isEmpty else { return }
 
         let controller = TopicImageGalleryViewController(urls: galleryURLs, initialURL: currentURL)
-        controller.modalPresentationStyle = .fullScreen
+        controller.modalPresentationStyle = .overFullScreen
         controller.modalTransitionStyle = .crossDissolve
         present(controller, animated: true)
     }
@@ -120,31 +120,35 @@ final class TopicImageGalleryViewController: UIViewController {
     }()
 
     private let downloadButton = TopicImageGalleryViewController.makeToolbarButton(
-        symbolName: "arrow.down.to.line.compact",
+        symbolName: "arrow.down.to.line",
         fallbackSymbolName: "square.and.arrow.down",
         accessibilityLabel: String(localized: "image_viewer.action.save")
     )
 
     private let shareButton = TopicImageGalleryViewController.makeToolbarButton(
-        symbolName: "square.and.arrow.up",
+        symbolName: "arrowshape.turn.up.right.fill",
         fallbackSymbolName: "square.and.arrow.up",
         accessibilityLabel: String(localized: "topic_detail.action.share")
     )
 
-    private let closeButton = TopicImageGalleryViewController.makeToolbarButton(
-        symbolName: "xmark",
-        fallbackSymbolName: "xmark",
-        accessibilityLabel: String(localized: "image_viewer.action.close")
-    )
+    private let actionStack: UIStackView = {
+        let stack = UIStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 10
+        stack.isUserInteractionEnabled = true
+        return stack
+    }()
 
     private let counterLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .monospacedDigitSystemFont(ofSize: 17, weight: .semibold)
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         label.textColor = .white
         label.textAlignment = .center
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.24)
-        label.layer.cornerRadius = 14
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        label.layer.cornerRadius = 10
         label.layer.cornerCurve = .continuous
         label.clipsToBounds = true
         label.isAccessibilityElement = true
@@ -213,10 +217,10 @@ final class TopicImageGalleryViewController: UIViewController {
 
     private func setupUI() {
         view.addSubview(collectionView)
-        view.addSubview(downloadButton)
-        view.addSubview(shareButton)
-        view.addSubview(closeButton)
+        actionStack.addArrangedSubview(shareButton)
+        actionStack.addArrangedSubview(downloadButton)
         view.addSubview(counterLabel)
+        view.addSubview(actionStack)
         view.addSubview(toastLabel)
         view.addSubview(actionActivityIndicator)
 
@@ -226,28 +230,21 @@ final class TopicImageGalleryViewController: UIViewController {
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            downloadButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
-            downloadButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            downloadButton.widthAnchor.constraint(equalToConstant: 44),
-            downloadButton.heightAnchor.constraint(equalToConstant: 44),
+            shareButton.widthAnchor.constraint(equalToConstant: 32),
+            shareButton.heightAnchor.constraint(equalToConstant: 32),
+            downloadButton.widthAnchor.constraint(equalToConstant: 32),
+            downloadButton.heightAnchor.constraint(equalToConstant: 32),
 
-            shareButton.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
-            shareButton.leadingAnchor.constraint(equalTo: downloadButton.trailingAnchor, constant: 18),
-            shareButton.widthAnchor.constraint(equalToConstant: 44),
-            shareButton.heightAnchor.constraint(equalToConstant: 44),
-
-            closeButton.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 44),
+            actionStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            actionStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
 
             counterLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            counterLabel.centerYAnchor.constraint(equalTo: downloadButton.centerYAnchor),
-            counterLabel.heightAnchor.constraint(equalToConstant: 28),
-            counterLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 58),
+            counterLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            counterLabel.heightAnchor.constraint(equalToConstant: 20),
+            counterLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
 
             toastLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            toastLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -42),
+            toastLabel.bottomAnchor.constraint(equalTo: actionStack.topAnchor, constant: -18),
             toastLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
             toastLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 132),
 
@@ -257,7 +254,6 @@ final class TopicImageGalleryViewController: UIViewController {
 
         downloadButton.addTarget(self, action: #selector(downloadTapped), for: .touchUpInside)
         shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
     }
 
     private static func makeToolbarButton(
@@ -269,20 +265,21 @@ final class TopicImageGalleryViewController: UIViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
         button.tintColor = .white
         button.accessibilityLabel = accessibilityLabel
-        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        let configuration = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         let image = UIImage(systemName: symbolName, withConfiguration: configuration)
             ?? UIImage(systemName: fallbackSymbolName, withConfiguration: configuration)
         button.setImage(image, for: .normal)
-        button.backgroundColor = UIColor.black.withAlphaComponent(0.08)
-        button.layer.cornerRadius = 22
+        button.backgroundColor = UIColor(white: 0.26, alpha: 0.92)
+        button.layer.cornerRadius = 16
         button.layer.cornerCurve = .continuous
+        button.clipsToBounds = true
         return button
     }
 
     private func updateCounter() {
         counterLabel.isHidden = urls.count <= 1
-        counterLabel.text = "\(currentIndex + 1) / \(urls.count)"
-        counterLabel.accessibilityLabel = counterLabel.text
+        counterLabel.text = "  \(currentIndex + 1)/\(urls.count)  "
+        counterLabel.accessibilityLabel = "\(currentIndex + 1) / \(urls.count)"
     }
 
     private func currentCell() -> TopicImageGalleryCell? {
@@ -338,9 +335,9 @@ final class TopicImageGalleryViewController: UIViewController {
     @objc private func closeTapped() {
         guard !isDismissing, !isBeingDismissed else { return }
         isDismissing = true
+        view.isUserInteractionEnabled = false
         // Snap to the current page first so dismiss does not animate a mid-swipe
         // horizontal offset (reads as "slide out to the side, then close again").
-        collectionView.isUserInteractionEnabled = false
         let width = max(collectionView.bounds.width, 1)
         if urls.indices.contains(currentIndex) {
             collectionView.setContentOffset(
@@ -348,9 +345,33 @@ final class TopicImageGalleryViewController: UIViewController {
                 animated: false
             )
         }
-        dismiss(animated: true) { [weak self] in
-            self?.isDismissing = false
+
+        let finish = { [weak self] in
+            self?.dismiss(animated: false) {
+                self?.isDismissing = false
+            }
         }
+
+        if UIAccessibility.isReduceMotionEnabled {
+            finish()
+            return
+        }
+
+        DoerMotion.animate(
+            duration: DoerMotion.emphasized,
+            timingParameters: DoerMotion.easeInCubic,
+            animations: {
+                self.view.backgroundColor = .clear
+                self.collectionView.alpha = 0
+                self.collectionView.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+                self.actionStack.alpha = 0
+                self.counterLabel.alpha = 0
+                self.toastLabel.alpha = 0
+            },
+            completion: { _ in
+                finish()
+            }
+        )
     }
 
     @objc private func image(_ image: UIImage, didFinishSavingWithError error: NSError?, contextInfo: UnsafeRawPointer) {
@@ -383,6 +404,9 @@ extension TopicImageGalleryViewController: UICollectionViewDataSource, UICollect
         }
         guard urls.indices.contains(indexPath.item) else { return cell }
         cell.configure(url: urls[indexPath.item])
+        cell.onSingleTap = { [weak self] in
+            self?.closeTapped()
+        }
         return cell
     }
 
@@ -425,6 +449,8 @@ private final class TopicImageGalleryCell: UICollectionViewCell, UIScrollViewDel
     var loadedImage: UIImage? {
         imageView.image
     }
+
+    var onSingleTap: (() -> Void)?
 
     private let scrollView: UIScrollView = {
         let view = UIScrollView()
@@ -471,6 +497,7 @@ private final class TopicImageGalleryCell: UICollectionViewCell, UIScrollViewDel
     override func prepareForReuse() {
         super.prepareForReuse()
         representedURL = nil
+        onSingleTap = nil
         imageView.sd_cancelCurrentImageLoad()
         imageView.image = nil
         scrollView.zoomScale = 1
@@ -518,7 +545,11 @@ private final class TopicImageGalleryCell: UICollectionViewCell, UIScrollViewDel
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
         scrollView.addGestureRecognizer(doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -538,6 +569,10 @@ private final class TopicImageGalleryCell: UICollectionViewCell, UIScrollViewDel
             bottom: verticalInset,
             right: horizontalInset
         )
+    }
+
+    @objc private func handleSingleTap() {
+        onSingleTap?()
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {

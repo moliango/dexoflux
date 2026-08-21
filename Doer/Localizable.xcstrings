@@ -4793,6 +4793,7 @@
       }
     },
     "image_viewer.action.close" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
