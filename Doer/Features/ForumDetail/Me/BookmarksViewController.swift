@@ -195,8 +195,9 @@ final class BookmarksViewController: ObservableViewController {
             activityIndicator.stopAnimating()
         }
 
-        tableView.isHidden = !hasBookmarks
-        stateStackView.isHidden = hasBookmarks || viewModel.isLoading
+        let animated = view.window != nil
+        AnimationOptimizer.setVisible(tableView, hasBookmarks, animated: animated)
+        AnimationOptimizer.setVisible(stateStackView, !hasBookmarks && !viewModel.isLoading, animated: animated)
 
         if viewModel.requiresLogin {
             configureState(

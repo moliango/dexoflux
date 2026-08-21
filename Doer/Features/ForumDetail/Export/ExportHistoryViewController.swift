@@ -199,8 +199,9 @@ final class ExportHistoryViewController: ObservableViewController {
         filterBarHeightConstraint?.constant = hasStoreRecords ? 48 : 0
         refreshFilterTabs()
         tableView.reloadData()
-        tableView.isHidden = !hasVisibleRecords
-        stateStackView.isHidden = hasVisibleRecords
+        let animated = view.window != nil
+        AnimationOptimizer.setVisible(tableView, hasVisibleRecords, animated: animated)
+        AnimationOptimizer.setVisible(stateStackView, !hasVisibleRecords, animated: animated)
         navigationItem.rightBarButtonItem?.isEnabled = hasStoreRecords
         if !hasVisibleRecords {
             configureEmptyState()

@@ -246,6 +246,13 @@ final class CompactPinnedTopicCell: UITableViewCell {
         applyCardChrome(theme: AppSettings.shared.themeStyle)
         accessoryWidth.constant = 32
         categoryHost.subviews.forEach { $0.removeFromSuperview() }
+        cardView.transform = .identity
+        cardView.alpha = 1
+    }
+
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        AnimationOptimizer.animateCardPress(cardView, pressed: highlighted)
     }
 
     private func applyCardChrome(theme: AppSettings.ThemeStyle) {

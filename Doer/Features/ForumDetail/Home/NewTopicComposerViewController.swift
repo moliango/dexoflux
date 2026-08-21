@@ -582,8 +582,21 @@ final class NewTopicComposerViewController: UIViewController {
         } else {
             textView.becomeFirstResponder()
         }
-        textView.isHidden = isPreviewingMarkdown
-        previewView.isHidden = !isPreviewingMarkdown
+        let showPreview = isPreviewingMarkdown
+        if view.window != nil {
+            let shown = showPreview ? previewView : textView
+            let hidden = showPreview ? textView : previewView
+            shown.alpha = 0
+            shown.isHidden = false
+            AnimationOptimizer.animateAlpha(shown, to: 1, duration: 0.18)
+            AnimationOptimizer.animateAlpha(hidden, to: 0, duration: 0.18) {
+                hidden.isHidden = true
+                hidden.alpha = 1
+            }
+        } else {
+            textView.isHidden = showPreview
+            previewView.isHidden = !showPreview
+        }
         updateToolbarState()
         updateEditorState()
     }

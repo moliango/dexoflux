@@ -981,9 +981,25 @@ final class ReplyComposerViewController: UIViewController {
     }
 
     private func updatePreviewState() {
-        textView.isHidden = isPreviewingMarkdown
-        previewView.isHidden = !isPreviewingMarkdown
-        placeholderLabel.isHidden = isPreviewingMarkdown || !composerRawText.isEmpty
+        let showPreview = isPreviewingMarkdown
+        let needsSwitch = previewView.isHidden == showPreview
+        if view.window != nil, needsSwitch {
+            let shown = showPreview ? previewView : textView
+            let hidden = showPreview ? textView : previewView
+            shown.alpha = 0
+            shown.isHidden = false
+            AnimationOptimizer.animateAlpha(shown, to: 1, duration: 0.18)
+            AnimationOptimizer.animateAlpha(hidden, to: 0, duration: 0.18) {
+                hidden.isHidden = true
+                hidden.alpha = 1
+            }
+        } else {
+            textView.isHidden = showPreview
+            previewView.isHidden = !showPreview
+            textView.alpha = 1
+            previewView.alpha = 1
+        }
+        placeholderLabel.isHidden = showPreview || !composerRawText.isEmpty
         updateToolbarState()
     }
 

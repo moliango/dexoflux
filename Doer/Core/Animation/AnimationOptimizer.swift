@@ -115,6 +115,53 @@ enum AnimationOptimizer {
     ///   - highlighted: 是否高亮
     ///   - highlightColor: 高亮背景色
     ///   - normalColor: 正常背景色
+    /// Fade a view in or out, toggling `isHidden` after hide completes.
+    @MainActor
+    static func setVisible(_ view: UIView, _ visible: Bool, animated: Bool) {
+        let alreadyShown = !view.isHidden && view.alpha >= 0.99
+        let alreadyHidden = view.isHidden || view.alpha <= 0.01
+        if visible ? alreadyShown : alreadyHidden {
+            view.isHidden = !visible
+            view.alpha = visible ? 1 : 0
+            return
+        }
+        if !animated || UIAccessibility.isReduceMotionEnabled {
+            view.alpha = visible ? 1 : 0
+            view.isHidden = !visible
+            return
+        }
+        if visible {
+            if view.isHidden {
+                view.alpha = 0
+                view.isHidden = false
+            }
+            animateAlpha(view, to: 1, duration: 0.2)
+        } else {
+            animateAlpha(view, to: 0, duration: 0.18) {
+                view.isHidden = true
+                view.alpha = 1
+            }
+        }
+    }
+
+    /// Compact press feedback for card-style list rows.
+    @MainActor
+    static func animateCardPress(_ view: UIView, pressed: Bool) {
+        if UIAccessibility.isReduceMotionEnabled {
+            view.transform = .identity
+            view.alpha = 1
+            return
+        }
+        UIView.animate(
+            withDuration: 0.14,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            view.transform = pressed ? CGAffineTransform(scaleX: 0.98, y: 0.98) : .identity
+            view.alpha = pressed ? 0.92 : 1
+        }
+    }
+
     @MainActor
     static func animateCellHighlight(
         _ view: UIView,

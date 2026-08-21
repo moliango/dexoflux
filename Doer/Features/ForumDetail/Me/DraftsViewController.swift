@@ -166,8 +166,9 @@ final class DraftsViewController: ObservableViewController {
     private func updateState() {
         tableView.reloadData()
         let hasDrafts = !drafts.isEmpty
-        tableView.isHidden = !hasDrafts
-        stateStackView.isHidden = hasDrafts || isLoading
+        let animated = view.window != nil
+        AnimationOptimizer.setVisible(tableView, hasDrafts, animated: animated)
+        AnimationOptimizer.setVisible(stateStackView, !hasDrafts && !isLoading, animated: animated)
         retryButton.isHidden = errorMessage == nil
         if (isLoading && !hasDrafts) || isOpeningDraft { activityIndicator.startAnimating() } else { activityIndicator.stopAnimating() }
         tableView.isUserInteractionEnabled = !isOpeningDraft

@@ -159,6 +159,13 @@ final class BookmarkCell: UITableViewCell {
         bookmarkBadge.prepareForReuse()
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
+        cardView.transform = .identity
+        cardView.alpha = 1
+    }
+
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        AnimationOptimizer.animateCardPress(cardView, pressed: highlighted)
     }
 
     nonisolated private static func cleanedExcerpt(_ html: String) -> String {
