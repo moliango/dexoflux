@@ -76,9 +76,7 @@ final class DiscourseAPI {
         config.waitsForConnectivity = false
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 45
-        if let proxy = LightweightDohProxyService.shared.connectionProxyDictionary(for: baseURL) {
-            config.connectionProxyDictionary = proxy
-        }
+        LightweightDohProxyService.shared.apply(to: config, hostURL: baseURL)
         return Session(configuration: config, interceptor: interceptor)
     }
 

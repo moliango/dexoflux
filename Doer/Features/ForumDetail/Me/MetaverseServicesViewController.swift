@@ -248,9 +248,7 @@ final class LinuxDoExtensionHTTPClient {
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        if let proxy = LightweightDohProxyService.shared.connectionProxyDictionary(for: forumBaseURL) {
-            configuration.connectionProxyDictionary = proxy
-        }
+        LightweightDohProxyService.shared.apply(to: configuration, hostURL: forumBaseURL)
         let session = URLSession(
             configuration: configuration,
             delegate: LinuxDoExtensionRedirectDelegate(followRedirects: followRedirects),

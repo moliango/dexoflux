@@ -21,13 +21,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         BackgroundNotificationRefreshService.shared.scheduleIfNeeded()
         UNUserNotificationCenter.current().delegate = self
         APNsPushRegistration.register()
+        LightweightDohProxyService.shared.configureFromSettings()
         AvatarImageLoader.configureGlobalImageLoading()
         // Only wipe caches when the user explicitly enabled "clear on launch".
         // Otherwise process + disk avatar caches persist across launches.
         if AppSettings.shared.clearImageCacheOnLaunch {
             AvatarImageLoader.clearAllCaches()
         }
-        LightweightDohProxyService.shared.configureFromSettings()
         // FluxDo-style connectivity: path monitor + offline retry/backoff.
         ConnectivityService.shared.start()
         return true

@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-final class DohResolver {
+nonisolated final class DohResolver: @unchecked Sendable {
     struct Answer {
         let addresses: [String]
         let ttl: TimeInterval
@@ -81,7 +81,7 @@ final class DohResolver {
     }
 
     private func load(host: String) {
-        let provider = DohProviderConfiguration.current(settings: AppSettings.shared)
+        let provider = DohProviderConfiguration.currentFromDefaults()
         let types = ["A", "AAAA"]
         let group = DispatchGroup()
         let resultLock = NSLock()
@@ -125,9 +125,7 @@ final class DohResolver {
 
     private func finish(host: String, result: Result<Answer, Error>) {
         let completions = inflight.removeValue(forKey: host) ?? []
-        Task { @MainActor in
-            completions.forEach { $0(result) }
-        }
+        completions.forEach { $0(result) }
     }
 
     private func query(
@@ -698,6 +696,20 @@ struct DohProviderConfiguration {
     static func current(settings: AppSettings) -> DohProviderConfiguration {
         let provider = settings.dohProvider
         return DohProviderConfiguration(name: provider.title, url: settings.dohServerURL)
+    }
+
+    static func currentFromDefaults() -> DohProviderConfiguration {
+        let defaults = UserDefaults.standard
+        let raw = defaults.object(forKey: "dohProvider") as? Int
+        let provider = AppSettings.DoHProvider(rawValue: raw ?? AppSettings.DoHProvider.alidns.rawValue)
+            ?? .alidns
+        let url: String
+        if provider == .custom {
+            url = defaults.string(forKey: "dohCustomURL") ?? ""
+        } else {
+            url = provider.url
+        }
+        return DohProviderConfiguration(name: provider.title, url: url)
     }
 
     var prefersJSONFormat: Bool {

@@ -113,6 +113,10 @@ enum AvatarImageLoader {
         let cacheLimit = AppSettings.shared.avatarCacheSizeLimit
         let memoryBytes = cacheLimit.byteCount
         let diskBytes = cacheLimit.byteCount
+        let imageSession = SDWebImageDownloader.shared.config.sessionConfiguration
+            ?? URLSessionConfiguration.default
+        LightweightDohProxyService.shared.apply(to: imageSession)
+        SDWebImageDownloader.shared.config.sessionConfiguration = imageSession
         SDWebImageDownloader.shared.config.maxConcurrentDownloads = profile.maxConcurrentDownloads
         SDWebImagePrefetcher.shared.maxConcurrentPrefetchCount = UInt(profile.maxConcurrentPrefetchCount)
 

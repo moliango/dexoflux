@@ -344,6 +344,7 @@ final class TrustRequirementsViewController: UIViewController {
         config.httpCookieAcceptPolicy = .never
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 30
+        LightweightDohProxyService.shared.apply(to: config, hostURL: connectURLString)
         return URLSession(configuration: config)
     }()
 

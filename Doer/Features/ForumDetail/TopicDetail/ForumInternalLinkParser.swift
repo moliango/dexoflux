@@ -179,9 +179,10 @@ enum ForumAttachmentDownloader {
         let config = URLSessionConfiguration.default
         config.httpCookieAcceptPolicy = .never
         config.httpShouldSetCookies = false
-        if let proxy = LightweightDohProxyService.shared.connectionProxyDictionary(for: proxyBaseURL(for: url, fallback: baseURL)) {
-            config.connectionProxyDictionary = proxy
-        }
+        LightweightDohProxyService.shared.apply(
+            to: config,
+            hostURL: proxyBaseURL(for: url, fallback: baseURL)
+        )
 
         let session = URLSession(configuration: config)
         defer {

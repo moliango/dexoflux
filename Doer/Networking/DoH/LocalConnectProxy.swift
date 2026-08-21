@@ -1,14 +1,18 @@
 import Foundation
 import Network
 
-final class LocalConnectProxy {
+nonisolated final class LocalConnectProxy: @unchecked Sendable {
     private let queue = DispatchQueue(label: "doer.doh.connect-proxy")
+    private let stateLock = NSLock()
     private let resolver: DohResolver
     private let requestedPort: UInt16
     private var listener: NWListener?
     private var boundPort: UInt16?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var hostAttemptOffsets: [String: Int] = [:]
+    var onTLSHandshakeReset: ((String) -> Void)?
+    var onListening: ((UInt16) -> Void)?
+    var onFailed: ((Error) -> Void)?
 
     init(resolver: DohResolver, port: UInt16 = 0) {
         self.resolver = resolver
@@ -16,90 +20,78 @@ final class LocalConnectProxy {
     }
 
     var proxyPort: UInt16? {
-        boundPort
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return boundPort
     }
 
     var isRunning: Bool {
-        listener != nil && boundPort != nil
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return listener != nil && boundPort != nil
     }
 
+    /// Starts the loopback listener without blocking the caller.
+    /// Waiting here from the main thread deadlocks: NWListener callbacks can
+    /// hop to MainActor while launch is still inside `didFinishLaunching`.
     func start() throws {
         guard listener == nil else { return }
         guard let endpointPort = NWEndpoint.Port(rawValue: requestedPort) else {
             throw LocalConnectProxyError.invalidPort
         }
 
-        let parameters = NWParameters.tcp
+        let parameters = Self.streamTCPParameters()
         if let loopback = IPv4Address("127.0.0.1") {
             parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(loopback), port: endpointPort)
         }
         let listener = try NWListener(using: parameters, on: endpointPort)
-        let readySemaphore = DispatchSemaphore(value: 0)
-        let stateLock = NSLock()
-        var startError: Error?
 
         listener.newConnectionHandler = { [weak self] connection in
             self?.handleClient(connection)
         }
         listener.stateUpdateHandler = { [weak self, weak listener] state in
+            guard let self else { return }
             switch state {
             case .ready:
-                stateLock.lock()
-                self?.boundPort = listener?.port?.rawValue
-                if self?.boundPort == nil {
-                    startError = LocalConnectProxyError.invalidPort
+                guard let port = listener?.port?.rawValue else {
+                    self.onFailed?(LocalConnectProxyError.invalidPort)
+                    return
                 }
-                if let port = self?.boundPort {
-                    DohDebugLog.record("Local CONNECT proxy ready on 127.0.0.1:\(port)")
-                }
-                stateLock.unlock()
-                readySemaphore.signal()
+                self.stateLock.lock()
+                self.boundPort = port
+                self.stateLock.unlock()
+                DohDebugLog.record("Local CONNECT proxy ready on 127.0.0.1:\(port)")
+                self.onListening?(port)
             case .failed(let error):
-                stateLock.lock()
-                startError = LocalConnectProxyError.listenerFailed(error)
-                stateLock.unlock()
-                self?.stop()
-                readySemaphore.signal()
+                DohDebugLog.record("Local CONNECT proxy failed: \(error)")
+                self.stateLock.lock()
+                self.boundPort = nil
+                self.stateLock.unlock()
+                self.onFailed?(LocalConnectProxyError.listenerFailed(error))
             case .cancelled:
-                stateLock.lock()
-                if self?.boundPort == nil, startError == nil {
-                    startError = LocalConnectProxyError.startTimedOut
-                    readySemaphore.signal()
-                }
-                stateLock.unlock()
+                self.stateLock.lock()
+                self.boundPort = nil
+                self.stateLock.unlock()
             default:
                 break
             }
         }
-        self.listener = listener
-        listener.start(queue: queue)
-
-        guard readySemaphore.wait(timeout: .now() + 2) == .success else {
-            stop()
-            throw LocalConnectProxyError.startTimedOut
-        }
-
         stateLock.lock()
-        let error = startError
-        let hasPort = boundPort != nil
+        self.listener = listener
         stateLock.unlock()
-
-        if let error {
-            throw error
-        }
-        guard hasPort else {
-            stop()
-            throw LocalConnectProxyError.invalidPort
-        }
+        listener.start(queue: queue)
     }
 
     func stop() {
         let active = connections.values
         connections.removeAll()
         active.forEach { $0.cancel() }
-        listener?.cancel()
+        stateLock.lock()
+        let currentListener = listener
         listener = nil
         boundPort = nil
+        stateLock.unlock()
+        currentListener?.cancel()
     }
 
     private func handleClient(_ client: NWConnection) {
@@ -112,7 +104,7 @@ final class LocalConnectProxy {
             case .ready:
                 guard !didStartReading else { return }
                 didStartReading = true
-                self.readHeader(from: client, buffer: Data())
+                self.readFirstBytes(from: client, buffer: Data())
             case .failed(let error):
                 DohDebugLog.record("Client connection failed: \(error)")
                 self.close(client)
@@ -125,65 +117,189 @@ final class LocalConnectProxy {
         client.start(queue: queue)
     }
 
-    private func readHeader(from client: NWConnection, buffer: Data) {
+    private func readFirstBytes(from client: NWConnection, buffer: Data) {
         client.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
             guard let self else { return }
-            if error != nil || isComplete {
+            if let error {
+                DohDebugLog.record("Proxy greeting receive failed: \(error)")
                 self.close(client)
                 return
             }
-
             var nextBuffer = buffer
             if let data {
                 nextBuffer.append(data)
             }
-
-            guard nextBuffer.count <= 16_384 else {
-                self.reject(client, reason: "CONNECT header too large")
+            guard let first = nextBuffer.first else {
+                if isComplete { self.close(client) }
+                else { self.readFirstBytes(from: client, buffer: nextBuffer) }
                 return
             }
-
-            let headerSeparator = Data([13, 10, 13, 10])
-            guard let headerRange = nextBuffer.range(of: headerSeparator) else {
-                self.readHeader(from: client, buffer: nextBuffer)
-                return
-            }
-
-            let headerData = nextBuffer.subdata(in: nextBuffer.startIndex ..< headerRange.upperBound)
-            let remainder = nextBuffer.subdata(in: headerRange.upperBound ..< nextBuffer.endIndex)
-            do {
-                let request = try DohConnectRequest.parse(headerData)
-                guard request.port == 443, DohResolver.isAllowedHost(request.host) else {
-                    self.reject(client, reason: "unsupported target \(request.host):\(request.port)")
-                    return
-                }
-                DohDebugLog.record("CONNECT \(request.host):\(request.port)")
-                self.openTunnel(for: request, client: client, bufferedClientData: remainder)
-            } catch {
-                DohDebugLog.record("CONNECT parse failed: \(error), first bytes: \(Self.hexPrefix(nextBuffer))")
-                self.reject(client, reason: "invalid CONNECT request")
+            if first == Socks5Handshake.version {
+                self.readSocksGreeting(from: client, buffer: nextBuffer, isComplete: isComplete)
+            } else {
+                self.readHTTPConnectHeader(from: client, buffer: nextBuffer, isComplete: isComplete)
             }
         }
     }
 
-    private func openTunnel(for request: DohConnectRequest, client: NWConnection, bufferedClientData: Data) {
-        resolver.resolve(host: request.host) { [weak self, weak client] result in
+    private func readSocksGreeting(from client: NWConnection, buffer: Data, isComplete: Bool) {
+        do {
+            guard let rest = try Socks5Handshake.consumeGreeting(buffer) else {
+                if isComplete { close(client) }
+                else { readMore(from: client, buffer: buffer, socksGreeting: true) }
+                return
+            }
+            sendStreaming(client, content: Socks5Handshake.authOK) { [weak self, weak client] error in
+                guard let self, let client else { return }
+                if error != nil {
+                    self.close(client)
+                    return
+                }
+                self.readSocksConnect(from: client, buffer: rest)
+            }
+        } catch {
+            DohDebugLog.record("SOCKS5 greeting failed: \(error)")
+            close(client)
+        }
+    }
+
+    private func readSocksConnect(from client: NWConnection, buffer: Data) {
+        do {
+            if let parsed = try Socks5Handshake.consumeConnect(buffer) {
+                guard parsed.port == 443 else {
+                    reject(client, reason: "unsupported target \(parsed.host):\(parsed.port)", socks: true)
+                    return
+                }
+                DohDebugLog.record("SOCKS5 \(parsed.host):\(parsed.port)")
+                openTunnel(
+                    host: parsed.host,
+                    port: parsed.port,
+                    client: client,
+                    bufferedClientData: parsed.remainder,
+                    readyReply: Socks5Handshake.connectOK
+                )
+                return
+            }
+            readMore(from: client, buffer: buffer, socksGreeting: false)
+        } catch {
+            DohDebugLog.record("SOCKS5 connect failed: \(error)")
+            reject(client, reason: "invalid SOCKS5 request", socks: true)
+        }
+    }
+
+    private func readMore(from client: NWConnection, buffer: Data, socksGreeting: Bool) {
+        client.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
+            guard let self else { return }
+            if let error {
+                self.close(client)
+                return
+            }
+            var next = buffer
+            if let data { next.append(data) }
+            guard next.count <= 16_384 else {
+                self.close(client)
+                return
+            }
+            if socksGreeting {
+                self.readSocksGreeting(from: client, buffer: next, isComplete: isComplete)
+            } else if isComplete, next.isEmpty {
+                self.close(client)
+            } else {
+                self.readSocksConnect(from: client, buffer: next)
+            }
+        }
+    }
+
+    private func readHTTPConnectHeader(from client: NWConnection, buffer: Data, isComplete: Bool) {
+        var nextBuffer = buffer
+        guard nextBuffer.count <= 16_384 else {
+            reject(client, reason: "CONNECT header too large")
+            return
+        }
+
+        let headerSeparator = Data([13, 10, 13, 10])
+        if let headerRange = nextBuffer.range(of: headerSeparator) {
+            let headerData = nextBuffer.subdata(in: nextBuffer.startIndex ..< headerRange.upperBound)
+            let remainder = nextBuffer.subdata(in: headerRange.upperBound ..< nextBuffer.endIndex)
+            do {
+                let request = try DohConnectRequest.parse(headerData)
+                guard request.port == 443 else {
+                    reject(client, reason: "unsupported target \(request.host):\(request.port)")
+                    return
+                }
+                DohDebugLog.record("CONNECT \(request.host):\(request.port)")
+                openTunnel(
+                    host: request.host,
+                    port: request.port,
+                    client: client,
+                    bufferedClientData: remainder,
+                    readyReply: Self.connectSuccessResponse
+                )
+            } catch {
+                DohDebugLog.record("CONNECT parse failed: \(error), first bytes: \(Self.hexPrefix(nextBuffer))")
+                reject(client, reason: "invalid CONNECT request")
+            }
+            return
+        }
+
+        if isComplete {
+            close(client)
+            return
+        }
+        client.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, complete, error in
+            guard let self else { return }
+            if let error {
+                self.close(client)
+                return
+            }
+            var next = nextBuffer
+            if let data { next.append(data) }
+            self.readHTTPConnectHeader(from: client, buffer: next, isComplete: complete)
+        }
+    }
+
+    private func openTunnel(
+        host: String,
+        port: UInt16,
+        client: NWConnection,
+        bufferedClientData: Data,
+        readyReply: Data
+    ) {
+        guard let upstreamPort = NWEndpoint.Port(rawValue: port) else {
+            reject(client, reason: "invalid port", socks: readyReply == Socks5Handshake.connectOK)
+            return
+        }
+
+        // WKWebView may send every HTTPS host. Only linux.do uses DoH IPs.
+        guard DohResolver.isAllowedHost(host) else {
+            DohDebugLog.record("Proxy passthrough \(host):\(port) (system DNS)")
+            connectUpstream(
+                addresses: [host],
+                port: upstreamPort,
+                addressIndex: 0,
+                client: client,
+                bufferedClientData: bufferedClientData,
+                hostname: host,
+                readyReply: readyReply
+            )
+            return
+        }
+
+        resolver.resolve(host: host) { [weak self, weak client] result in
             guard let self, let client else { return }
             self.queue.async {
                 switch result {
                 case .failure(let error):
-                    DohDebugLog.record("Resolve failed for \(request.host): \(error.localizedDescription)")
-                    self.reject(client, reason: "resolve failed")
+                    DohDebugLog.record("Resolve failed for \(host): \(error.localizedDescription)")
+                    self.reject(client, reason: "resolve failed", socks: readyReply == Socks5Handshake.connectOK)
                 case .success(let answer):
-                    let resolvedAddresses = answer.addresses.sorted { lhs, rhs in
-                        !lhs.contains(":") && rhs.contains(":")
-                    }
-                    let addresses = self.rotatedAddresses(for: request.host, addresses: resolvedAddresses)
-                    DohDebugLog.record("Resolved \(request.host) -> \(addresses.joined(separator: ", "))")
-                    guard !addresses.isEmpty,
-                          let upstreamPort = NWEndpoint.Port(rawValue: request.port)
-                    else {
-                        self.reject(client, reason: "empty resolved address")
+                    let addresses = self.rotatedAddresses(
+                        for: host,
+                        addresses: Self.preferredUpstreamAddresses(answer.addresses)
+                    )
+                    DohDebugLog.record("Resolved \(host) -> \(addresses.joined(separator: ", "))")
+                    guard !addresses.isEmpty else {
+                        self.reject(client, reason: "empty resolved address", socks: readyReply == Socks5Handshake.connectOK)
                         return
                     }
                     self.connectUpstream(
@@ -191,7 +307,9 @@ final class LocalConnectProxy {
                         port: upstreamPort,
                         addressIndex: 0,
                         client: client,
-                        bufferedClientData: bufferedClientData
+                        bufferedClientData: bufferedClientData,
+                        hostname: host,
+                        readyReply: readyReply
                     )
                 }
             }
@@ -203,37 +321,65 @@ final class LocalConnectProxy {
         port: NWEndpoint.Port,
         addressIndex: Int,
         client: NWConnection,
-        bufferedClientData: Data
+        bufferedClientData: Data,
+        hostname: String,
+        readyReply: Data,
+        replayHello: Data? = nil
     ) {
         guard addressIndex < addresses.count else {
             reject(client, reason: "all upstream addresses failed")
             return
         }
 
-        let host = Self.endpointHost(from: addresses[addressIndex])
-        let upstream = NWConnection(host: host, port: port, using: .tcp)
+        let target = addresses[addressIndex]
+        let host = Self.endpointHost(from: target)
+        let upstream = NWConnection(host: host, port: port, using: Self.streamTCPParameters())
         let upstreamId = ObjectIdentifier(upstream)
-        var tunnelEstablished = false
+        var didBindTunnel = false
         connections[upstreamId] = upstream
         upstream.stateUpdateHandler = { [weak self, weak upstream, weak client] state in
             guard let self, let upstream else { return }
             switch state {
             case .ready:
-                tunnelEstablished = true
-                DohDebugLog.record("Upstream connected \(addresses[addressIndex]):\(port.rawValue)")
-                self.sendConnectSuccess(to: client, upstream: upstream, bufferedClientData: bufferedClientData)
+                guard !didBindTunnel else { return }
+                didBindTunnel = true
+                DohDebugLog.record("Upstream connected \(target):\(port.rawValue)")
+                if let replayHello, !replayHello.isEmpty {
+                    DohDebugLog.record("Replaying ClientHello to \(target)")
+                    self.startByteTunnel(
+                        client: client,
+                        upstream: upstream,
+                        bufferedClientData: replayHello,
+                        addresses: addresses,
+                        addressIndex: addressIndex,
+                        hostname: hostname,
+                        readyReply: readyReply
+                    )
+                } else {
+                    self.sendConnectSuccess(
+                        to: client,
+                        upstream: upstream,
+                        bufferedClientData: bufferedClientData,
+                        addresses: addresses,
+                        addressIndex: addressIndex,
+                        hostname: hostname,
+                        readyReply: readyReply
+                    )
+                }
             case .failed, .cancelled:
                 self.connections.removeValue(forKey: ObjectIdentifier(upstream))
-                if tunnelEstablished {
-                    self.close(client)
-                } else if case .failed = state, let client {
-                    DohDebugLog.record("Upstream failed \(addresses[addressIndex]):\(port.rawValue), trying next")
+                if didBindTunnel { return }
+                if case .failed = state, let client {
+                    DohDebugLog.record("Upstream failed \(target):\(port.rawValue), trying next")
                     self.connectUpstream(
                         addresses: addresses,
                         port: port,
                         addressIndex: addressIndex + 1,
                         client: client,
-                        bufferedClientData: bufferedClientData
+                        bufferedClientData: bufferedClientData,
+                        hostname: hostname,
+                        readyReply: readyReply,
+                        replayHello: replayHello
                     )
                 }
             default:
@@ -243,14 +389,21 @@ final class LocalConnectProxy {
         upstream.start(queue: queue)
     }
 
-    private func sendConnectSuccess(to client: NWConnection?, upstream: NWConnection, bufferedClientData: Data) {
+    private func sendConnectSuccess(
+        to client: NWConnection?,
+        upstream: NWConnection,
+        bufferedClientData: Data,
+        addresses: [String],
+        addressIndex: Int,
+        hostname: String,
+        readyReply: Data
+    ) {
         guard let client else {
             close(upstream)
             return
         }
 
-        let response = Data("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Doer-DoH\r\n\r\n".utf8)
-        client.send(content: response, completion: .contentProcessed { [weak self, weak client, weak upstream] error in
+        sendStreaming(client, content: readyReply) { [weak self, weak client, weak upstream] error in
             guard let self, let client, let upstream else { return }
             if error != nil {
                 DohDebugLog.record("CONNECT success response send failed: \(String(describing: error))")
@@ -259,67 +412,310 @@ final class LocalConnectProxy {
                 return
             }
             DohDebugLog.record("CONNECT tunnel established")
-            let diagnostics = TunnelDiagnostics()
-            if !bufferedClientData.isEmpty {
-                diagnostics.logClientHelloIfNeeded(bufferedClientData)
-                upstream.send(content: bufferedClientData, completion: .contentProcessed { [weak self, weak client, weak upstream] sendError in
-                    guard let self, let client, let upstream else { return }
-                    if sendError != nil {
-                        DohDebugLog.record("Buffered client data send failed: \(String(describing: sendError))")
-                        self.close(client)
-                        self.close(upstream)
-                        return
-                    }
-                    self.pipe(from: client, to: upstream, diagnostics: diagnostics)
-                    self.pipe(from: upstream, to: client)
-                })
-                return
-            }
-            self.pipe(from: client, to: upstream, diagnostics: diagnostics)
-            self.pipe(from: upstream, to: client)
-        })
+            self.startByteTunnel(
+                client: client,
+                upstream: upstream,
+                bufferedClientData: bufferedClientData,
+                addresses: addresses,
+                addressIndex: addressIndex,
+                hostname: hostname,
+                readyReply: readyReply
+            )
+        }
     }
 
-    private func pipe(from source: NWConnection, to target: NWConnection, diagnostics: TunnelDiagnostics? = nil) {
+    private func startByteTunnel(
+        client: NWConnection?,
+        upstream: NWConnection,
+        bufferedClientData: Data,
+        addresses: [String],
+        addressIndex: Int,
+        hostname: String,
+        readyReply: Data
+    ) {
+        guard let client else {
+            close(upstream)
+            return
+        }
+        let diagnostics = TunnelDiagnostics()
+        let beginPipes = { [weak self, weak client, weak upstream] (hello: Data) in
+            guard let self, let client, let upstream else { return }
+            self.pipe(
+                from: client,
+                to: upstream,
+                sourceRole: "client",
+                diagnostics: diagnostics,
+                relay: (hello, addresses, addressIndex, hostname, readyReply)
+            )
+            self.pipe(
+                from: upstream,
+                to: client,
+                sourceRole: "upstream",
+                diagnostics: nil,
+                relay: (hello, addresses, addressIndex, hostname, readyReply)
+            )
+        }
+
+        if !bufferedClientData.isEmpty {
+            diagnostics.logClientHelloIfNeeded(bufferedClientData)
+            sendStreaming(upstream, content: bufferedClientData) { [weak self, weak client, weak upstream] sendError in
+                guard let self, let client, let upstream else { return }
+                if sendError != nil {
+                    DohDebugLog.record("Buffered client data send failed: \(String(describing: sendError))")
+                    self.retryOrClose(
+                        client: client,
+                        upstream: upstream,
+                        hello: bufferedClientData,
+                        addresses: addresses,
+                        addressIndex: addressIndex,
+                        hostname: hostname,
+                        readyReply: readyReply
+                    )
+                    return
+                }
+                beginPipes(bufferedClientData)
+            }
+            return
+        }
+
+        receiveFirstPayload(from: client, sourceRole: "client", diagnostics: diagnostics) { [weak self, weak client, weak upstream] firstBytes in
+            guard let self, let client, let upstream else { return }
+            guard let firstBytes else {
+                self.close(client)
+                self.close(upstream)
+                return
+            }
+            self.sendStreaming(upstream, content: firstBytes) { [weak self, weak client, weak upstream] sendError in
+                guard let self, let client, let upstream else { return }
+                if sendError != nil {
+                    DohDebugLog.record("First client payload send failed: \(String(describing: sendError))")
+                    self.retryOrClose(
+                        client: client,
+                        upstream: upstream,
+                        hello: firstBytes,
+                        addresses: addresses,
+                        addressIndex: addressIndex,
+                        hostname: hostname,
+                        readyReply: readyReply
+                    )
+                    return
+                }
+                beginPipes(firstBytes)
+            }
+        }
+    }
+
+    private func receiveFirstPayload(
+        from source: NWConnection,
+        sourceRole: String,
+        diagnostics: TunnelDiagnostics?,
+        allowSpuriousComplete: Bool = true,
+        completion: @escaping (Data?) -> Void
+    ) {
+        source.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self, weak source] data, _, isComplete, error in
+            guard let self, let source else {
+                completion(nil)
+                return
+            }
+            if let data, !data.isEmpty {
+                diagnostics?.logClientHelloIfNeeded(data)
+                completion(data)
+                return
+            }
+            if let error {
+                DohDebugLog.record("Tunnel receive failed (\(sourceRole)): \(error)")
+                completion(nil)
+                return
+            }
+            if isComplete {
+                if allowSpuriousComplete {
+                    DohDebugLog.record("Ignoring empty complete on \(sourceRole) before first payload")
+                    self.receiveFirstPayload(
+                        from: source,
+                        sourceRole: sourceRole,
+                        diagnostics: diagnostics,
+                        allowSpuriousComplete: false,
+                        completion: completion
+                    )
+                    return
+                }
+                DohDebugLog.record("Tunnel side closed (\(sourceRole)) before first payload")
+                completion(nil)
+                return
+            }
+            self.receiveFirstPayload(
+                from: source,
+                sourceRole: sourceRole,
+                diagnostics: diagnostics,
+                allowSpuriousComplete: allowSpuriousComplete,
+                completion: completion
+            )
+        }
+    }
+
+    private func pipe(
+        from source: NWConnection,
+        to target: NWConnection,
+        sourceRole: String,
+        diagnostics: TunnelDiagnostics? = nil,
+        relay: (hello: Data, addresses: [String], addressIndex: Int, hostname: String, readyReply: Data),
+        sawUpstreamData: Bool = false
+    ) {
         source.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self, weak source, weak target] data, _, isComplete, error in
             guard let self, let source, let target else { return }
             if let data, !data.isEmpty {
                 diagnostics?.logClientHelloIfNeeded(data)
-                target.send(content: data, completion: .contentProcessed { [weak self, weak source, weak target] sendError in
+                let isUpstream = sourceRole == "upstream"
+                self.sendStreaming(target, content: data) { [weak self, weak source, weak target] sendError in
                     guard let self, let source, let target else { return }
                     if sendError != nil {
-                        DohDebugLog.record("Tunnel send failed: \(String(describing: sendError))")
-                        self.close(source)
-                        self.close(target)
+                        DohDebugLog.record("Tunnel send failed (\(sourceRole)): \(String(describing: sendError))")
+                        if isUpstream {
+                            self.close(source)
+                            self.close(target)
+                        } else {
+                            self.retryOrClose(
+                                client: source,
+                                upstream: target,
+                                hello: relay.hello,
+                                addresses: relay.addresses,
+                                addressIndex: relay.addressIndex,
+                                hostname: relay.hostname,
+                                readyReply: relay.readyReply,
+                                sawUpstreamData: sawUpstreamData
+                            )
+                        }
                         return
                     }
-                    self.pipe(from: source, to: target, diagnostics: diagnostics)
-                })
+                    // Never FIN the TCP stream: URLSession TLS through CONNECT
+                    // can mark a message complete without ending the socket.
+                    self.pipe(
+                        from: source,
+                        to: target,
+                        sourceRole: sourceRole,
+                        diagnostics: diagnostics,
+                        relay: relay,
+                        sawUpstreamData: sawUpstreamData || isUpstream
+                    )
+                }
                 return
             }
 
-            if isComplete || error != nil {
-                if let error {
-                    DohDebugLog.record("Tunnel receive failed: \(error)")
+            if let error {
+                DohDebugLog.record("Tunnel receive failed (\(sourceRole)): \(error)")
+                if sourceRole == "upstream", !sawUpstreamData {
+                    self.retryOrClose(
+                        client: target,
+                        upstream: source,
+                        hello: relay.hello,
+                        addresses: relay.addresses,
+                        addressIndex: relay.addressIndex,
+                        hostname: relay.hostname,
+                        readyReply: relay.readyReply,
+                        sawUpstreamData: false
+                    )
                 } else {
-                    DohDebugLog.record("Tunnel side closed")
+                    self.close(source)
+                    self.close(target)
                 }
-                close(source)
-                close(target)
                 return
             }
-            pipe(from: source, to: target)
+
+            if isComplete {
+                DohDebugLog.record("Tunnel side closed (\(sourceRole)); keeping peer open")
+                return
+            }
+            self.pipe(
+                from: source,
+                to: target,
+                sourceRole: sourceRole,
+                diagnostics: diagnostics,
+                relay: relay,
+                sawUpstreamData: sawUpstreamData
+            )
         }
     }
 
-    private func reject(_ connection: NWConnection, reason: String) {
-        DohDebugLog.record("Reject CONNECT: \(reason)")
-        let response = Data("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n".utf8)
-        connection.send(content: response, completion: .contentProcessed { [weak self, weak connection] _ in
+    private func retryOrClose(
+        client: NWConnection,
+        upstream: NWConnection,
+        hello: Data,
+        addresses: [String],
+        addressIndex: Int,
+        hostname: String,
+        readyReply: Data,
+        sawUpstreamData: Bool = false
+    ) {
+        close(upstream)
+        guard !sawUpstreamData, addressIndex + 1 < addresses.count else {
+            DohDebugLog.record("All DoH IPs RST TLS for \(hostname)")
+            onTLSHandshakeReset?(hostname)
+            reject(client, reason: "tls reset", socks: readyReply == Socks5Handshake.connectOK)
+            return
+        }
+        let current = addresses[addressIndex]
+        let next = addresses[addressIndex + 1]
+        DohDebugLog.record("TLS reset on DoH IP \(current); trying \(next)")
+        guard let tlsPort = NWEndpoint.Port(rawValue: 443) else {
+            reject(client, reason: "tls reset", socks: readyReply == Socks5Handshake.connectOK)
+            return
+        }
+        connectUpstream(
+            addresses: addresses,
+            port: tlsPort,
+            addressIndex: addressIndex + 1,
+            client: client,
+            bufferedClientData: hello,
+            hostname: hostname,
+            readyReply: readyReply,
+            replayHello: hello
+        )
+    }
+
+    private func sendStreaming(
+        _ connection: NWConnection,
+        content: Data?,
+        completion: @escaping (NWError?) -> Void
+    ) {
+        guard let content, !content.isEmpty else {
+            completion(nil)
+            return
+        }
+        connection.send(
+            content: content,
+            contentContext: Self.streamContext(),
+            isComplete: false,
+            completion: .contentProcessed { error in
+                completion(error)
+            }
+        )
+    }
+
+    private func reject(_ connection: NWConnection, reason: String, socks: Bool = false) {
+        DohDebugLog.record("Reject proxy: \(reason)")
+        let response = socks
+            ? Socks5Handshake.connectFailed
+            : Data("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n".utf8)
+        sendStreaming(connection, content: response) { [weak self, weak connection] _ in
             if let connection {
                 self?.close(connection)
             }
-        })
+        }
+    }
+
+    /// TCP streaming context. `defaultMessage` is final and can FIN the
+    /// socket after the CONNECT 200, so URLSession never sends ClientHello.
+    private static func streamContext() -> NWConnection.ContentContext {
+        NWConnection.ContentContext(identifier: "doer.doh.stream", isFinal: false)
+    }
+
+    static let connectSuccessResponse = Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8)
+
+    private static func streamTCPParameters() -> NWParameters {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        tcp.enableKeepalive = false
+        return NWParameters(tls: nil, tcp: tcp)
     }
 
     private static func hexPrefix(_ data: Data, limit: Int = 16) -> String {
@@ -338,6 +734,16 @@ final class LocalConnectProxy {
         return .name(address, nil)
     }
 
+    /// Prefer IPv4 when both families are present. IPv6 answers often stall
+    /// on networks that advertise AAAA but cannot actually route it.
+    static func preferredUpstreamAddresses(_ addresses: [String]) -> [String] {
+        var seen = Set<String>()
+        let unique = addresses.filter { seen.insert($0).inserted }
+        let ipv4 = unique.filter { !$0.contains(":") }
+        if !ipv4.isEmpty { return ipv4 }
+        return unique.filter { $0.contains(":") }
+    }
+
     private func rotatedAddresses(for host: String, addresses: [String]) -> [String] {
         guard !addresses.isEmpty else { return [] }
         let offset = hostAttemptOffsets[host, default: 0]
@@ -353,7 +759,7 @@ final class LocalConnectProxy {
     }
 }
 
-private final class TunnelDiagnostics {
+nonisolated private final class TunnelDiagnostics: @unchecked Sendable {
     private var didLogClientHello = false
 
     func logClientHelloIfNeeded(_ data: Data) {

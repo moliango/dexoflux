@@ -11,8 +11,8 @@ nonisolated enum DohDebugLog {
     }()
 
     static func record(_ message: String, subsystem: String = "DoH") {
-        let line = "\(formatter.string(from: Date())) [\(subsystem)] \(message)"
         lock.lock()
+        let line = "\(formatter.string(from: Date())) [\(subsystem)] \(message)"
         entries.append(line)
         if entries.count > maxLines {
             entries.removeFirst(entries.count - maxLines)

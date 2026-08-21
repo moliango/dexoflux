@@ -25,6 +25,7 @@ enum ExternalImageFetcher {
             diskCapacity: 64 * 1024 * 1024,
             diskPath: "doer.external-image-urlcache-v2"
         )
+        LightweightDohProxyService.shared.apply(to: config)
         return URLSession(configuration: config)
     }()
 
