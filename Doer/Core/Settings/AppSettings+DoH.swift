@@ -34,6 +34,18 @@ extension AppSettings {
             case .dnspod: return "https://doh.pub/dns-query"
             }
         }
+
+        /// IPs used to reach the DoH server without system DNS.
+        var bootstrapIPs: [String] {
+            switch self {
+            case .cloudflare: return ["1.1.1.1", "1.0.0.1"]
+            case .google: return ["8.8.8.8", "8.8.4.4"]
+            case .quad9: return ["9.9.9.9", "149.112.112.112"]
+            case .alidns: return ["223.5.5.5", "223.6.6.6"]
+            case .dnspod: return ["1.12.12.12", "120.53.53.53"]
+            case .custom: return []
+            }
+        }
     }
 
     var dohEnabled: Bool {

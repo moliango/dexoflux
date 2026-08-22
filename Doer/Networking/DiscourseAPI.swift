@@ -77,7 +77,14 @@ final class DiscourseAPI {
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 45
         LightweightDohProxyService.shared.apply(to: config, hostURL: baseURL)
-        return Session(configuration: config, interceptor: interceptor)
+        let trustManager: ServerTrustManager? = UserDefaults.standard.bool(forKey: "dohEnabled")
+            ? FluxDoMitmTrustManager.make()
+            : nil
+        return Session(
+            configuration: config,
+            interceptor: interceptor,
+            serverTrustManager: trustManager
+        )
     }
 
     func resetSession() {

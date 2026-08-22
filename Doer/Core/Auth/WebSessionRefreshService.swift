@@ -488,7 +488,7 @@ private final class LoadWaiter: NSObject, WKNavigationDelegate {
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        completionHandler(.performDefaultHandling, nil)
+        MitmTrust.handle(challenge, completionHandler: completionHandler)
     }
 
     private func finish() {

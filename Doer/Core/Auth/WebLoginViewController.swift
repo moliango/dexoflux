@@ -254,7 +254,7 @@ final class WebLoginViewController: UIViewController {
             didReceive challenge: URLAuthenticationChallenge,
             completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
         ) {
-            completionHandler(.performDefaultHandling, nil)
+            MitmTrust.handle(challenge, completionHandler: completionHandler)
         }
 
         func collectAndFireIfPossible(from webView: WKWebView, force: Bool = false) {

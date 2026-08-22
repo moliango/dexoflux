@@ -23,15 +23,18 @@ final class LocalConnectProxyTests: XCTestCase {
         )
     }
 
-    func testSOCKSProxyDictionaryUsesSystemConfigurationKeysOnly() {
+    func testCONNECTProxyDictionaryUsesHTTPSKeys() {
         let dict = LightweightDohProxyService.proxyDictionary(port: 1080)
-        XCTAssertEqual(dict["SOCKSEnable"] as? NSNumber, 1)
-        XCTAssertEqual(dict["SOCKSProxy"] as? String, "127.0.0.1")
-        XCTAssertEqual(dict["SOCKSPort"] as? NSNumber, 1080)
+        XCTAssertEqual(dict["HTTPSEnable"] as? NSNumber, 1)
+        XCTAssertEqual(dict["HTTPSProxy"] as? String, "127.0.0.1")
+        XCTAssertEqual(dict["HTTPSPort"] as? NSNumber, 1080)
         XCTAssertEqual(dict["ExceptionsList"] as? [String], ["127.0.0.1", "localhost", "::1"])
-        XCTAssertNil(dict[kCFStreamPropertySOCKSVersion as String])
-        XCTAssertNil(dict[kCFStreamPropertySOCKSProxyHost as String])
-        XCTAssertNil(dict[kCFStreamPropertySOCKSProxyPort as String])
+    }
+
+    func testMITMSkipsCloudflareChallengeHost() {
+        XCTAssertTrue(LocalConnectProxy.shouldMITM("linux.do"))
+        XCTAssertFalse(LocalConnectProxy.shouldMITM("challenges.cloudflare.com"))
+        XCTAssertFalse(LocalConnectProxy.shouldMITM("example.com"))
     }
 
     func testSocks5GreetingAndDomainConnect() throws {

@@ -9,6 +9,7 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
     private var listener: NWListener?
     private var boundPort: UInt16?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var mitmBridges: [ObjectIdentifier: MitmTLSBridge] = [:]
     private var hostAttemptOffsets: [String: Int] = [:]
     var onTLSHandshakeReset: ((String) -> Void)?
     var onListening: ((UInt16) -> Void)?
@@ -270,6 +271,7 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
             return
         }
 
+        let useMITM = Self.shouldMITM(host)
         // WKWebView may send every HTTPS host. Only linux.do uses DoH IPs.
         guard DohResolver.isAllowedHost(host) else {
             DohDebugLog.record("Proxy passthrough \(host):\(port) (system DNS)")
@@ -280,7 +282,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                 client: client,
                 bufferedClientData: bufferedClientData,
                 hostname: host,
-                readyReply: readyReply
+                readyReply: readyReply,
+                useMITM: false
             )
             return
         }
@@ -309,7 +312,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                         client: client,
                         bufferedClientData: bufferedClientData,
                         hostname: host,
-                        readyReply: readyReply
+                        readyReply: readyReply,
+                        useMITM: useMITM
                     )
                 }
             }
@@ -324,7 +328,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
         bufferedClientData: Data,
         hostname: String,
         readyReply: Data,
-        replayHello: Data? = nil
+        replayHello: Data? = nil,
+        useMITM: Bool = false
     ) {
         guard addressIndex < addresses.count else {
             reject(client, reason: "all upstream addresses failed")
@@ -333,7 +338,10 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
 
         let target = addresses[addressIndex]
         let host = Self.endpointHost(from: target)
-        let upstream = NWConnection(host: host, port: port, using: Self.streamTCPParameters())
+        let parameters = useMITM
+            ? Self.tlsTCPParameters(serverName: hostname)
+            : Self.streamTCPParameters()
+        let upstream = NWConnection(host: host, port: port, using: parameters)
         let upstreamId = ObjectIdentifier(upstream)
         var didBindTunnel = false
         connections[upstreamId] = upstream
@@ -363,7 +371,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                         addresses: addresses,
                         addressIndex: addressIndex,
                         hostname: hostname,
-                        readyReply: readyReply
+                        readyReply: readyReply,
+                        useMITM: useMITM
                     )
                 }
             case .failed, .cancelled:
@@ -379,7 +388,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                         bufferedClientData: bufferedClientData,
                         hostname: hostname,
                         readyReply: readyReply,
-                        replayHello: replayHello
+                        replayHello: replayHello,
+                        useMITM: useMITM
                     )
                 }
             default:
@@ -396,7 +406,8 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
         addresses: [String],
         addressIndex: Int,
         hostname: String,
-        readyReply: Data
+        readyReply: Data,
+        useMITM: Bool
     ) {
         guard let client else {
             close(upstream)
@@ -411,6 +422,10 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                 self.close(upstream)
                 return
             }
+            if useMITM {
+                self.startMITM(client: client, upstream: upstream, hostname: hostname, leftover: bufferedClientData)
+                return
+            }
             DohDebugLog.record("CONNECT tunnel established")
             self.startByteTunnel(
                 client: client,
@@ -421,6 +436,36 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
                 hostname: hostname,
                 readyReply: readyReply
             )
+        }
+    }
+
+    private func startMITM(
+        client: NWConnection,
+        upstream: NWConnection,
+        hostname: String,
+        leftover: Data
+    ) {
+        guard let identity = MitmCertificateAuthority.shared.identity(for: hostname) else {
+            DohDebugLog.record("MITM identity missing for \(hostname)")
+            reject(client, reason: "mitm identity", socks: false)
+            close(upstream)
+            return
+        }
+        let bridge = MitmTLSBridge(client: client, upstream: upstream)
+        mitmBridges[ObjectIdentifier(client)] = bridge
+        if !leftover.isEmpty {
+            bridge.preload(leftover)
+        }
+        DohDebugLog.record("MITM CONNECT \(hostname)")
+        bridge.start(identity: identity) { [weak self, weak client, weak upstream] ok in
+            guard let self, !ok else { return }
+            self.queue.async {
+                if let client {
+                    self.mitmBridges.removeValue(forKey: ObjectIdentifier(client))
+                    self.close(client)
+                }
+                self.close(upstream)
+            }
         }
     }
 
@@ -716,6 +761,20 @@ nonisolated final class LocalConnectProxy: @unchecked Sendable {
         tcp.noDelay = true
         tcp.enableKeepalive = false
         return NWParameters(tls: nil, tcp: tcp)
+    }
+
+    private static func tlsTCPParameters(serverName: String) -> NWParameters {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        let tls = NWProtocolTLS.Options()
+        serverName.withCString { pointer in
+            sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, pointer)
+        }
+        return NWParameters(tls: tls, tcp: tcp)
+    }
+
+    static func shouldMITM(_ host: String) -> Bool {
+        DohResolver.isAllowedHost(host) && !MitmCertificateAuthority.isCloudflareChallengeHost(host)
     }
 
     private static func hexPrefix(_ data: Data, limit: Int = 16) -> String {

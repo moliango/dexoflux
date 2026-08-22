@@ -143,7 +143,7 @@ final class NetworkSettingsViewController: ObservableViewController {
             title: "DNS over HTTPS",
             subtitle: String(
                 localized: "settings.network.doh.subtitle",
-                defaultValue: "通过加密 DNS 解析论坛域名"
+                defaultValue: "在 App 内解析 linux.do，不用去系统设置"
             ),
             symbolName: "network.badge.shield.half.filled",
             isOn: settings.dohEnabled,
