@@ -33,10 +33,14 @@ extension PostNativeCell: UITextViewDelegate {
         DiscourseQuoteMarkdown.editMenu(
             for: textView,
             range: range,
-            suggestedActions: suggestedActions
-        ) { [weak self] selected in
-            self?.delegate?.postCell(didQuoteSelectedText: selected, postId: self?.postId)
-        }
+            suggestedActions: suggestedActions,
+            handler: { [weak self] selected in
+                self?.delegate?.postCell(didQuoteSelectedText: selected, postId: self?.postId)
+            },
+            decryptHandler: { [weak self] selected in
+                self?.delegate?.postCell(didRequestDecrypt: selected, postId: self?.postId)
+            }
+        )
     }
 }
 

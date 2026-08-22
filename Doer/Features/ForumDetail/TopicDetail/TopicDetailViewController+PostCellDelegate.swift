@@ -193,6 +193,17 @@ extension TopicDetailViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didRequestDecrypt text: String, postId: Int?) {
+        CryptoSheetViewController.present(
+            mode: .decrypt,
+            text: text,
+            from: self,
+            onQuoteReply: { [weak self] plaintext in
+                self?.postCell(didQuoteSelectedText: plaintext, postId: postId)
+            }
+        )
+    }
+
     func postCell(didTapShareImageForPost post: DiscourseTopicDetail.Post) {
         shareTopicImage(postId: post.id)
     }

@@ -5,6 +5,19 @@ final class PreferencesSettingsViewController: ObservableViewController {
 
     private let clipboardRow = ReadingToggleRowView()
     private let autoOpenRow = ReadingToggleRowView()
+    private let cryptoRememberRow = ReadingToggleRowView()
+    private let cryptoClearButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.cornerStyle = .medium
+        config.baseBackgroundColor = UIColor.secondarySystemGroupedBackground
+        config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+        config.title = String(localized: "crypto.settings.clear", defaultValue: "清除已记住的密码")
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let notificationFilterButton: UIButton = {
         var config = UIButton.Configuration.filled()
         config.cornerStyle = .medium
@@ -64,6 +77,11 @@ final class PreferencesSettingsViewController: ObservableViewController {
             self?.refreshDataViews()
         }
         notificationFilterButton.addTarget(self, action: #selector(notificationFilterTapped), for: .touchUpInside)
+        cryptoRememberRow.onValueChanged = { [weak self] isOn in
+            self?.settings.cryptoRememberPassword = isOn
+            self?.refreshDataViews()
+        }
+        cryptoClearButton.addTarget(self, action: #selector(cryptoClearTapped), for: .touchUpInside)
 
         rebuildContent()
         refreshDataViews()
@@ -104,6 +122,15 @@ final class PreferencesSettingsViewController: ObservableViewController {
             symbolName: "bell.badge",
             body: notifyStack
         ))
+
+        let cryptoStack = UIStackView(arrangedSubviews: [cryptoRememberRow, cryptoClearButton])
+        cryptoStack.axis = .vertical
+        cryptoStack.spacing = 12
+        contentStack.addArrangedSubview(makeSection(
+            title: String(localized: "crypto.settings.group", defaultValue: "加解密"),
+            symbolName: "key.fill",
+            body: cryptoStack
+        ))
     }
 
     @objc private func notificationFilterTapped() {
@@ -125,6 +152,14 @@ final class PreferencesSettingsViewController: ObservableViewController {
             pop.sourceRect = notificationFilterButton.bounds
         }
         present(sheet, animated: true)
+    }
+
+    @objc private func cryptoClearTapped() {
+        CryptoKeyStore.clear()
+        DoerFeedback.presentToast(
+            String(localized: "crypto.settings.clear.done", defaultValue: "已清除记住的密码"),
+            on: self
+        )
     }
 
     private func makeSection(title: String, symbolName: String, body: UIView) -> UIView {
@@ -160,6 +195,18 @@ final class PreferencesSettingsViewController: ObservableViewController {
             accentColor: accent,
             backgroundColor: card
         )
+        cryptoRememberRow.configure(
+            title: String(localized: "crypto.settings.remember", defaultValue: "记住加密密码"),
+            subtitle: String(
+                localized: "crypto.settings.remember.desc",
+                defaultValue: "密码保存在系统钥匙串，仅本机可用。"
+            ),
+            symbolName: "key.fill",
+            isOn: settings.cryptoRememberPassword,
+            accentColor: accent,
+            backgroundColor: card
+        )
+
         autoOpenRow.configure(
             title: String(localized: "settings.auto_open_last_forum"),
             subtitle: String(

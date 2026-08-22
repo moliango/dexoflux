@@ -164,6 +164,10 @@ final class NewTopicComposerViewController: UIViewController {
         systemName: "face.smiling",
         accessibilityLabel: String(localized: "reply.toolbar.emoji")
     )
+    private let encryptToolbarButton = ComposerToolbarFactory.makeCircleButton(
+        systemName: "key.fill",
+        accessibilityLabel: String(localized: "crypto.encrypt.action", defaultValue: "加密")
+    )
     private let previewToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "eye",
         accessibilityLabel: String(localized: "reply.toolbar.preview")
@@ -293,6 +297,7 @@ final class NewTopicComposerViewController: UIViewController {
         markdownCoordinator.surface = self
         categoryButton.addTarget(self, action: #selector(categoryButtonPressed), for: .touchDown)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
+        encryptToolbarButton.addTarget(self, action: #selector(encryptToolbarTapped), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
         modeToggleButton.addTarget(self, action: #selector(toggleEditingMode), for: .touchUpInside)
         toolsToggleButton.addTarget(self, action: #selector(toggleToolsPanel), for: .touchUpInside)
@@ -417,7 +422,8 @@ final class NewTopicComposerViewController: UIViewController {
             rightPill: rightToolbarPill,
             previewButton: previewToggleButton,
             modeButton: modeToggleButton,
-            toolsButton: toolsToggleButton
+            toolsButton: toolsToggleButton,
+            encryptButton: encryptToolbarButton
         )
     }
 
@@ -563,6 +569,10 @@ final class NewTopicComposerViewController: UIViewController {
         if isPreviewingMarkdown {
             previewView.update(markdown: bodyRaw)
         }
+    }
+
+    @objc private func encryptToolbarTapped() {
+        markdownCoordinator.handleTool(.encrypt)
     }
 
     @objc private func toggleEmojiPicker() {

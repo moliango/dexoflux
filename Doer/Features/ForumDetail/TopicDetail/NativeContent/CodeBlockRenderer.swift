@@ -509,7 +509,10 @@ private final class MacStyleCodeBlockView: UIView {
     }
 
     private let code: String
+    private let postId: Int?
+    private let isEncryptedBlock: Bool
     private let copyButton = UIButton(type: .system)
+    private let decryptButton = UIButton(type: .system)
     private let copyButtonBackground = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
     private let scrollView = UIScrollView()
     private var resetCopyIconWorkItem: DispatchWorkItem?
@@ -517,6 +520,8 @@ private final class MacStyleCodeBlockView: UIView {
 
     init(language: String?, code: String, config: NativeRenderConfig) {
         self.code = code
+        self.postId = config.postId
+        self.isEncryptedBlock = language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "enc"
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         let palette = CodeBlockThemePalette.dynamic
@@ -601,6 +606,22 @@ private final class MacStyleCodeBlockView: UIView {
             codeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: measured.contentWidth),
         ])
 
+        if isEncryptedBlock {
+            let decryptConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+            decryptButton.translatesAutoresizingMaskIntoConstraints = false
+            decryptButton.setImage(UIImage(systemName: "lock.open", withConfiguration: decryptConfig), for: .normal)
+            decryptButton.tintColor = .secondaryLabel
+            decryptButton.accessibilityLabel = String(localized: "crypto.decrypt.action", defaultValue: "解密")
+            decryptButton.addTarget(self, action: #selector(decryptCodeTapped), for: .touchUpInside)
+            addSubview(decryptButton)
+            NSLayoutConstraint.activate([
+                decryptButton.trailingAnchor.constraint(equalTo: copyButtonBackground.leadingAnchor, constant: -8),
+                decryptButton.centerYAnchor.constraint(equalTo: copyButtonBackground.centerYAnchor),
+                decryptButton.widthAnchor.constraint(equalToConstant: 30),
+                decryptButton.heightAnchor.constraint(equalToConstant: 30),
+            ])
+        }
+
         copyButton.addTarget(self, action: #selector(copyCodeTapped), for: .touchUpInside)
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
         addGestureRecognizer(hover)
@@ -623,6 +644,21 @@ private final class MacStyleCodeBlockView: UIView {
     deinit {
         resetCopyIconWorkItem?.cancel()
         hideCopyButtonWorkItem?.cancel()
+    }
+
+    @objc private func decryptCodeTapped() {
+        var view: UIView? = superview
+        while let current = view {
+            if let cell = current as? PostNativeCell {
+                cell.delegate?.postCell(didRequestDecrypt: code, postId: postId)
+                return
+            }
+            if let cell = current as? WeChatChatPostCell {
+                cell.handleDecryptSelectedText(code)
+                return
+            }
+            view = current.superview
+        }
     }
 
     @objc private func copyCodeTapped() {

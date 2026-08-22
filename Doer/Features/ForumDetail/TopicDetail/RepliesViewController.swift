@@ -263,6 +263,17 @@ extension RepliesViewController: PostCellDelegate {
         }
     }
 
+    func postCell(didRequestDecrypt text: String, postId: Int?) {
+        CryptoSheetViewController.present(
+            mode: .decrypt,
+            text: text,
+            from: self,
+            onQuoteReply: { [weak self] plaintext in
+                self?.postCell(didQuoteSelectedText: plaintext, postId: postId)
+            }
+        )
+    }
+
     func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {
         performAuthenticated { [weak self] in
             self?.loadAndPresentPostEditor(postId: post.id)

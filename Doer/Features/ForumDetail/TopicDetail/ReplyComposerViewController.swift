@@ -169,6 +169,11 @@ final class ReplyComposerViewController: UIViewController {
         accessibilityLabel: String(localized: "reply.toolbar.emoji")
     )
 
+    private let encryptToolbarButton = ComposerToolbarFactory.makeCircleButton(
+        systemName: "key.fill",
+        accessibilityLabel: String(localized: "crypto.encrypt.action", defaultValue: "加密")
+    )
+
     private let previewToggleButton = ComposerToolbarFactory.makePlainButton(
         systemName: "eye",
         accessibilityLabel: String(localized: "reply.toolbar.preview")
@@ -345,6 +350,7 @@ final class ReplyComposerViewController: UIViewController {
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         emojiToggleButton.addTarget(self, action: #selector(toggleEmojiPicker), for: .touchUpInside)
+        encryptToolbarButton.addTarget(self, action: #selector(encryptToolbarTapped), for: .touchUpInside)
         previewToggleButton.addTarget(self, action: #selector(toggleMarkdownPreview), for: .touchUpInside)
         modeToggleButton.addTarget(self, action: #selector(toggleEditingMode), for: .touchUpInside)
         toolsToggleButton.addTarget(self, action: #selector(toggleToolsPanel), for: .touchUpInside)
@@ -415,7 +421,8 @@ final class ReplyComposerViewController: UIViewController {
             rightPill: rightToolbarPill,
             previewButton: previewToggleButton,
             modeButton: modeToggleButton,
-            toolsButton: toolsToggleButton
+            toolsButton: toolsToggleButton,
+            encryptButton: encryptToolbarButton
         )
     }
 
@@ -425,6 +432,10 @@ final class ReplyComposerViewController: UIViewController {
             emojiPanel: emojiPickerView,
             toolsPanel: toolsPanelView
         )
+    }
+
+    @objc private func encryptToolbarTapped() {
+        markdownCoordinator.handleTool(.encrypt)
     }
 
     @objc private func toggleEmojiPicker() {

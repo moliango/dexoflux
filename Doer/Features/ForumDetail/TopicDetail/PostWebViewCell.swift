@@ -617,11 +617,13 @@ protocol PostCellDelegate: AnyObject {
     func postCell(didSubmitPollVoteForPostId postId: Int, pollName: String, optionIds: [String])
     func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post)
     func postCell(didQuoteSelectedText text: String, postId: Int?)
+    func postCell(didRequestDecrypt text: String, postId: Int?)
 }
 
 extension PostCellDelegate {
     func postCell(didCastPostVotingVote direction: String, forPost post: DiscourseTopicDetail.Post) {}
     func postCell(didQuoteSelectedText text: String, postId: Int?) {}
+    func postCell(didRequestDecrypt text: String, postId: Int?) {}
 }
 
 final class PostWebViewCell: UITableViewCell {

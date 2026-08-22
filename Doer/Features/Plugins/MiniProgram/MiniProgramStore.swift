@@ -563,10 +563,10 @@ private extension MiniProgramStore {
         MiniProgramRecord(
             id: MiniProgramID.toolbox,
             kind: .builtIn,
-            displayName: "工具箱",
+            displayName: "加解密工具箱",
             urlString: nil,
             categoryID: MiniProgramCategoryID.tools,
-            icon: .system(symbolName: "wrench.and.screwdriver.fill"),
+            icon: .system(symbolName: "key.fill"),
             isVisible: true,
             order: 5
         ),

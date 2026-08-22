@@ -58,9 +58,13 @@ final class LinkTextView: UITextView {
         } else {
             UIMenuController.shared.menuItems = [
                 UIMenuItem(
+                    title: String(localized: "crypto.decrypt.action", defaultValue: "解密"),
+                    action: #selector(doerDecryptSelected(_:))
+                ),
+                UIMenuItem(
                     title: DiscourseQuoteMarkdown.actionTitle,
                     action: #selector(doerQuoteReply(_:))
-                )
+                ),
             ]
         }
         textContainer.lineFragmentPadding = 0
@@ -237,24 +241,43 @@ final class LinkTextView: UITextView {
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        let selected = DiscourseQuoteMarkdown.selectedText(in: self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         if action == #selector(doerQuoteReply(_:)) {
-            let selected = DiscourseQuoteMarkdown.selectedText(in: self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
             return !selected.isEmpty
+        }
+        if action == #selector(doerDecryptSelected(_:)) {
+            return CryptoSniffer.isDecryptableText(selected)
         }
         return super.canPerformAction(action, withSender: sender)
     }
 
     @objc func doerQuoteReply(_ sender: Any?) {
+        routeSelectedText { cell, text in
+            if let native = cell as? PostNativeCell {
+                native.delegate?.postCell(didQuoteSelectedText: text, postId: native.postId)
+            } else if let chat = cell as? WeChatChatPostCell {
+                chat.handleQuoteSelectedText(text)
+            }
+        }
+    }
+
+    @objc func doerDecryptSelected(_ sender: Any?) {
+        routeSelectedText { cell, text in
+            if let native = cell as? PostNativeCell {
+                native.delegate?.postCell(didRequestDecrypt: text, postId: native.postId)
+            } else if let chat = cell as? WeChatChatPostCell {
+                chat.handleDecryptSelectedText(text)
+            }
+        }
+    }
+
+    private func routeSelectedText(_ body: (UIView, String) -> Void) {
         let text = DiscourseQuoteMarkdown.selectedText(in: self)
         var view: UIView? = superview
         while let current = view {
-            if let cell = current as? PostNativeCell {
-                cell.delegate?.postCell(didQuoteSelectedText: text, postId: cell.postId)
-                return
-            }
-            if let cell = current as? WeChatChatPostCell {
-                cell.handleQuoteSelectedText(text)
+            if current is PostNativeCell || current is WeChatChatPostCell {
+                body(current, text)
                 return
             }
             view = current.superview

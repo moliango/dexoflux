@@ -28,7 +28,8 @@ enum DiscourseQuoteMarkdown {
         for textView: UITextView,
         range: NSRange,
         suggestedActions: [UIMenuElement],
-        handler: @escaping (String) -> Void
+        handler: @escaping (String) -> Void,
+        decryptHandler: ((String) -> Void)? = nil
     ) -> UIMenu {
         let selected = selectedText(in: textView, range: range)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,6 +42,18 @@ enum DiscourseQuoteMarkdown {
         ) { _ in
             handler(selected)
         }
-        return UIMenu(children: [quote] + suggestedActions)
+        var children: [UIMenuElement] = [quote]
+        if let decryptHandler, CryptoSniffer.isDecryptableText(selected) {
+            children.insert(
+                UIAction(
+                    title: String(localized: "crypto.decrypt.action", defaultValue: "解密"),
+                    image: UIImage(systemName: "lock.open")
+                ) { _ in
+                    decryptHandler(selected)
+                },
+                at: 0
+            )
+        }
+        return UIMenu(children: children + suggestedActions)
     }
 }

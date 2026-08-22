@@ -251,7 +251,8 @@ enum ComposerToolbarFactory {
         rightPill: UIView,
         previewButton: UIButton,
         modeButton: UIButton,
-        toolsButton: UIButton
+        toolsButton: UIButton,
+        encryptButton: UIButton? = nil
     ) {
         toolbar.addSubview(emojiButton)
         toolbar.addSubview(uploadStatusLabel)
@@ -261,6 +262,20 @@ enum ComposerToolbarFactory {
         rightPill.addSubview(toolsButton)
         toolbar.heightAnchor.constraint(equalToConstant: 58).isActive = true
         toolbar.backgroundColor = ComposerTypography.backgroundColor
+
+        let statusLeading: NSLayoutAnchor<NSLayoutXAxisAnchor>
+        if let encryptButton {
+            toolbar.addSubview(encryptButton)
+            NSLayoutConstraint.activate([
+                encryptButton.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 4),
+                encryptButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+                encryptButton.widthAnchor.constraint(equalToConstant: 44),
+                encryptButton.heightAnchor.constraint(equalToConstant: 44),
+            ])
+            statusLeading = encryptButton.trailingAnchor
+        } else {
+            statusLeading = emojiButton.trailingAnchor
+        }
 
         NSLayoutConstraint.activate([
             emojiButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 16),
@@ -272,7 +287,7 @@ enum ComposerToolbarFactory {
             rightPill.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             rightPill.heightAnchor.constraint(equalToConstant: 44),
 
-            uploadStatusLabel.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 12),
+            uploadStatusLabel.leadingAnchor.constraint(equalTo: statusLeading, constant: 12),
             uploadStatusLabel.trailingAnchor.constraint(equalTo: rightPill.leadingAnchor, constant: -12),
             uploadStatusLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
@@ -433,11 +448,27 @@ final class ComposerMarkdownCoordinator: NSObject {
             presentInsertBlockMenu()
         case .poll:
             presentPollBuilder()
+        case .encrypt:
+            presentEncryptSheet()
         }
 
         if tool.closesPanelAfterAction {
             surface.composerCloseToolPanel(returnToKeyboard: true)
         }
+    }
+
+    private func presentEncryptSheet() {
+        guard let surface else { return }
+        let selected = surface.composerSelectedRawText()
+        CryptoSheetViewController.present(
+            mode: .encrypt,
+            text: selected,
+            from: surface.composerHostViewController,
+            onFinished: { [weak surface] ciphertext in
+                surface?.composerInsertRaw("```enc\n\(ciphertext)\n```")
+                surface?.composerDidEditContent()
+            }
+        )
     }
 
     private func presentPollBuilder() {
