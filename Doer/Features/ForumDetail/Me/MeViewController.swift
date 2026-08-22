@@ -16,12 +16,15 @@ final class MeViewController: ObservableViewController {
     private let loadingSkeletonView = MeDashboardSkeletonView()
     private var balanceCache: LinuxDoExtensionCache?
     private var balanceRefreshTask: Task<Void, Never>?
+    private var connectingServices = Set<LinuxDoExtensionService>()
 
     private lazy var scrollView: UIScrollView = {
-        let sv = UIScrollView()
+        let sv = MeDashboardScrollView()
         sv.translatesAutoresizingMaskIntoConstraints = false
         sv.alwaysBounceVertical = true
         sv.showsVerticalScrollIndicator = false
+        sv.delaysContentTouches = false
+        sv.canCancelContentTouches = true
         return sv
     }()
 
@@ -583,8 +586,8 @@ final class MeViewController: ObservableViewController {
                     service: .ldc,
                     title: String(localized: "me.balance.ldc", defaultValue: "LDC 余额"),
                     valueText: connected ? (info?.balanceText ?? "--") : String(localized: "extensions.connect", defaultValue: "点击连接"),
-                    dailyIncomeText: connected ? income : nil,
-                    isLoading: false,
+                    dailyIncomeText: connected && !connectingServices.contains(.ldc) ? income : nil,
+                    isLoading: connectingServices.contains(.ldc),
                     isConnected: connected
                 )
             )
@@ -598,13 +601,15 @@ final class MeViewController: ObservableViewController {
                     title: String(localized: "me.balance.cdk", defaultValue: "CDK 积分"),
                     valueText: connected ? (info?.balanceText ?? "--") : String(localized: "extensions.connect", defaultValue: "点击连接"),
                     dailyIncomeText: nil,
-                    isLoading: false,
+                    isLoading: connectingServices.contains(.cdk),
                     isConnected: connected
                 )
             )
         }
         balanceCard.configure(rows: rows)
-        refreshBalancesIfNeeded(username: username)
+        if connectingServices.isEmpty {
+            refreshBalancesIfNeeded(username: username)
+        }
     }
 
     private static func dailyIncomeText(gamificationScore: Int?, communityBalance: String?) -> String? {
@@ -665,9 +670,19 @@ final class MeViewController: ObservableViewController {
             navigationController?.pushViewController(browser, animated: true)
             return
         }
+        guard connectingServices.insert(service).inserted else { return }
+        configureBalanceCard(isLoggedIn: true)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        DoerFeedback.presentLoadingHUD(Self.connectingMessage(for: service), on: self)
         // 未连接：FluxDo 同款原生授权确认，不先打开内置浏览器。
         Task { [weak self] in
             guard let self else { return }
+            var presentedFollowUp = false
+            defer {
+                if !presentedFollowUp {
+                    self.finishBalanceConnecting(service)
+                }
+            }
             do {
                 let info = try await LinuxDoExtensionOAuthCoordinator(
                     service: service,
@@ -676,34 +691,46 @@ final class MeViewController: ObservableViewController {
                 guard let info else { return }
                 cache.setEnabled(true, service: service)
                 cache.setUserInfo(info, service: service)
-                await MainActor.run {
-                    self.configureBalanceCard(isLoggedIn: true)
-                }
             } catch LinuxDoExtensionError.cloudflare {
-                await MainActor.run {
-                    let verifier = CloudflareVerificationViewController(
-                        baseURL: service.baseURL,
-                        responseURL: nil,
-                        verificationURL: service.baseURL,
-                        autoDismissOnSuccess: true
-                    ) { [weak self] in
-                        self?.handleBalanceServiceTap(service)
-                    }
-                    let nav = UINavigationController(rootViewController: verifier)
-                    nav.modalPresentationStyle = .pageSheet
-                    self.present(nav, animated: true)
+                presentedFollowUp = true
+                self.finishBalanceConnecting(service)
+                let verifier = CloudflareVerificationViewController(
+                    baseURL: service.baseURL,
+                    responseURL: nil,
+                    verificationURL: service.baseURL,
+                    autoDismissOnSuccess: true
+                ) { [weak self] in
+                    self?.handleBalanceServiceTap(service)
                 }
+                let nav = UINavigationController(rootViewController: verifier)
+                nav.modalPresentationStyle = .pageSheet
+                self.present(nav, animated: true)
             } catch {
-                await MainActor.run {
-                    let alert = UIAlertController(
-                        title: nil,
-                        message: error.localizedDescription,
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
-                    self.present(alert, animated: true)
-                }
+                presentedFollowUp = true
+                self.finishBalanceConnecting(service)
+                let alert = UIAlertController(
+                    title: nil,
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: String(localized: "common.ok"), style: .default))
+                self.present(alert, animated: true)
             }
+        }
+    }
+
+    private func finishBalanceConnecting(_ service: LinuxDoExtensionService) {
+        DoerFeedback.dismissLoadingHUD(on: self)
+        connectingServices.remove(service)
+        configureBalanceCard(isLoggedIn: true)
+    }
+
+    private static func connectingMessage(for service: LinuxDoExtensionService) -> String {
+        switch service {
+        case .ldc:
+            return String(localized: "extensions.connecting.ldc", defaultValue: "正在连接 LDC…")
+        case .cdk:
+            return String(localized: "extensions.connecting.cdk", defaultValue: "正在连接 CDK…")
         }
     }
 
@@ -883,5 +910,15 @@ final class MeViewController: ObservableViewController {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: String(localized: "action.cancel"), style: .cancel))
         present(alert, animated: true)
+    }
+}
+
+private final class MeDashboardScrollView: UIScrollView {
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        // Instant highlight (delaysContentTouches = false) still has to yield to
+        // dragging: the dashboard is almost entirely UIControls, so refusing to
+        // cancel them makes vertical pans feel stuck.
+        if view is UIControl { return true }
+        return super.touchesShouldCancel(in: view)
     }
 }

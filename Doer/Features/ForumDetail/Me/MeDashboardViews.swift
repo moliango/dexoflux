@@ -372,13 +372,29 @@ final class MeProfileCardView: UIView {
     }
 }
 
+/// Horizontal stats strip that refuses vertical pans so the Me dashboard can scroll.
+private final class MeHorizontalStatsScrollView: UIScrollView {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === panGestureRecognizer {
+            let velocity = panGestureRecognizer.velocity(in: self)
+            let translation = panGestureRecognizer.translation(in: self)
+            let dx = abs(velocity.x) > abs(translation.x) ? abs(velocity.x) : abs(translation.x)
+            let dy = abs(velocity.y) > abs(translation.y) ? abs(velocity.y) : abs(translation.y)
+            if dy > dx {
+                return false
+            }
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+}
+
 final class MeStatsCardView: UIView {
     var onCustomizeTapped: (() -> Void)?
 
     private let cardView = MeCardSurfaceView()
     private let titleLabel = UILabel()
     private let customizeButton = UIButton(type: .system)
-    private let statsScrollView = UIScrollView()
+    private let statsScrollView = MeHorizontalStatsScrollView()
     private let gridStackView = UIStackView()
     private let emptyLabel = UILabel()
     private var gridWidthConstraint: NSLayoutConstraint?
@@ -416,6 +432,7 @@ final class MeStatsCardView: UIView {
         statsScrollView.showsHorizontalScrollIndicator = false
         statsScrollView.showsVerticalScrollIndicator = false
         statsScrollView.alwaysBounceVertical = false
+        statsScrollView.isDirectionalLockEnabled = true
         statsScrollView.addSubview(gridStackView)
 
         emptyLabel.text = String(localized: "me.stats.login_required")

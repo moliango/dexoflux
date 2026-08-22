@@ -421,6 +421,13 @@ final class LinuxDoExtensionOAuthCoordinator {
         )
         guard allowed else { return nil }
 
+        let connectingMessage = service == .ldc
+            ? String(localized: "extensions.connecting.ldc", defaultValue: "正在连接 LDC…")
+            : String(localized: "extensions.connecting.cdk", defaultValue: "正在连接 CDK…")
+        await MainActor.run {
+            DoerFeedback.presentLoadingHUD(connectingMessage, on: viewController)
+        }
+
         try await Task.sleep(nanoseconds: UInt64.random(in: 400_000_000...900_000_000))
 
         let approveResponse = try await client.requestResponse(
@@ -466,6 +473,10 @@ final class LinuxDoExtensionOAuthCoordinator {
             )
         }
         return await withCheckedContinuation { continuation in
+            DoerFeedback.dismissLoadingHUD(on: viewController, animated: false)
+            if let navigation = viewController.navigationController {
+                DoerFeedback.dismissLoadingHUD(on: navigation, animated: false)
+            }
             let alert = UIAlertController(
                 title: String(localized: "extensions.auth.confirm_title", defaultValue: "授权确认"),
                 message: message,
@@ -654,11 +665,25 @@ final class MetaverseServicesViewController: UITableViewController {
             let service = visibleServices[indexPath.row]
             let enabled = cache.isEnabled(service)
             let info = cache.userInfo(service)
+            let isConnecting = processing.contains(service)
             content.image = UIImage(systemName: service.symbolName)
             content.text = service.title
-            content.secondaryText = enabled ? "\(info?.username ?? username) · \(info?.balanceText ?? "--")" : String(localized: "extensions.connect", defaultValue: "点击连接账户")
-            cell.accessoryType = enabled ? .detailButton : .disclosureIndicator
-            cell.isUserInteractionEnabled = !processing.contains(service)
+            if isConnecting {
+                content.secondaryText = String(localized: "extensions.connecting", defaultValue: "连接中…")
+                let spinner = UIActivityIndicatorView(style: .medium)
+                spinner.startAnimating()
+                cell.accessoryView = spinner
+                cell.accessoryType = .none
+                cell.selectionStyle = .none
+            } else {
+                content.secondaryText = enabled
+                    ? "\(info?.username ?? username) · \(info?.balanceText ?? "--")"
+                    : String(localized: "extensions.connect", defaultValue: "点击连接账户")
+                cell.accessoryView = nil
+                cell.accessoryType = enabled ? .detailButton : .disclosureIndicator
+                cell.selectionStyle = .default
+            }
+            cell.isUserInteractionEnabled = !isConnecting
         } else {
             content.image = UIImage(systemName: "hands.sparkles.fill")
             content.text = String(localized: "extensions.ldc.credentials", defaultValue: "商户凭证")
@@ -740,7 +765,15 @@ final class MetaverseServicesViewController: UITableViewController {
     ) async {
         guard processing.insert(service).inserted else { return }
         tableView.reloadData()
-        defer { processing.remove(service); tableView.reloadData() }
+        let connectingMessage = service == .ldc
+            ? String(localized: "extensions.connecting.ldc", defaultValue: "正在连接 LDC…")
+            : String(localized: "extensions.connecting.cdk", defaultValue: "正在连接 CDK…")
+        DoerFeedback.presentLoadingHUD(connectingMessage, on: self)
+        defer {
+            DoerFeedback.dismissLoadingHUD(on: self)
+            processing.remove(service)
+            tableView.reloadData()
+        }
         do {
             if let info = try await LinuxDoExtensionOAuthCoordinator(service: service, forumBaseURL: api.baseURL).authorize(from: self) {
                 cache.setEnabled(true, service: service)
