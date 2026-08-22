@@ -2367,6 +2367,34 @@
         }
       }
     },
+    "chat.time.yesterday" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "昨天"
+          }
+        }
+      }
+    },
     "chat.title" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -3007,6 +3035,556 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "保存草稿失败"
+          }
+        }
+      }
+    },
+    "crypto.algo.caesar" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "凯撒"
+          }
+        }
+      }
+    },
+    "crypto.algo.morse" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "摩斯电码"
+          }
+        }
+      }
+    },
+    "crypto.algo.railfence" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "栅栏"
+          }
+        }
+      }
+    },
+    "crypto.algo.vigenere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "维吉尼亚"
+          }
+        }
+      }
+    },
+    "crypto.algorithm" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "算法"
+          }
+        }
+      }
+    },
+    "crypto.algorithm.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没有匹配的算法"
+          }
+        }
+      }
+    },
+    "crypto.algorithm.search" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索算法"
+          }
+        }
+      }
+    },
+    "crypto.algorithm.search.results" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索结果"
+          }
+        }
+      }
+    },
+    "crypto.auto_detected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已自动识别"
+          }
+        }
+      }
+    },
+    "crypto.caesar.shift" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "移位"
+          }
+        }
+      }
+    },
+    "crypto.category.asymmetric" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "非对称"
+          }
+        }
+      }
+    },
+    "crypto.category.classic" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "经典密码"
+          }
+        }
+      }
+    },
+    "crypto.category.encoding" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "编码"
+          }
+        }
+      }
+    },
+    "crypto.category.hash" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "哈希"
+          }
+        }
+      }
+    },
+    "crypto.category.symmetric" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "对称加密"
+          }
+        }
+      }
+    },
+    "crypto.ciphertext" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "密文"
+          }
+        }
+      }
+    },
+    "crypto.copied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已复制"
+          }
+        }
+      }
+    },
+    "crypto.copy" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "复制"
+          }
+        }
+      }
+    },
+    "crypto.decrypt.action" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "解密"
+          }
+        }
+      }
+    },
+    "crypto.decrypt.hero" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自动识别密文算法，解出来可复制或引用回复。"
+          }
+        }
+      }
+    },
+    "crypto.decrypt.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "解密内容"
+          }
+        }
+      }
+    },
+    "crypto.encrypt.action" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加密"
+          }
+        }
+      }
+    },
+    "crypto.encrypt.hero" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选择算法后加密，可复制或插回编辑器。"
+          }
+        }
+      }
+    },
+    "crypto.encrypt.title" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加密内容"
+          }
+        }
+      }
+    },
+    "crypto.error.empty" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "请输入内容"
+          }
+        }
+      }
+    },
+    "crypto.format" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输出格式"
+          }
+        }
+      }
+    },
+    "crypto.format.enc1" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ENC1（自描述）"
+          }
+        }
+      }
+    },
+    "crypto.format.enc1.short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ENC1"
+          }
+        }
+      }
+    },
+    "crypto.format.openssl" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OpenSSL Salted"
+          }
+        }
+      }
+    },
+    "crypto.format.openssl.short" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OpenSSL"
+          }
+        }
+      }
+    },
+    "crypto.insert" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "插入编辑器"
+          }
+        }
+      }
+    },
+    "crypto.password" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "密码"
+          }
+        }
+      }
+    },
+    "crypto.pem" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PEM 密钥"
+          }
+        }
+      }
+    },
+    "crypto.plaintext" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "明文"
+          }
+        }
+      }
+    },
+    "crypto.quote_reply" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "引用回复"
+          }
+        }
+      }
+    },
+    "crypto.rail.count" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "栅栏数"
+          }
+        }
+      }
+    },
+    "crypto.recent" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近使用"
+          }
+        }
+      }
+    },
+    "crypto.remember_password" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "记住密码"
+          }
+        }
+      }
+    },
+    "crypto.result" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "结果"
+          }
+        }
+      }
+    },
+    "crypto.settings" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加解密设置"
+          }
+        }
+      }
+    },
+    "crypto.settings.clear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清除已记住的密码"
+          }
+        }
+      }
+    },
+    "crypto.settings.clear.done" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已清除记住的密码"
+          }
+        }
+      }
+    },
+    "crypto.settings.group" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "加解密"
+          }
+        }
+      }
+    },
+    "crypto.settings.remember" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "记住加密密码"
+          }
+        }
+      }
+    },
+    "crypto.settings.remember.desc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "密码保存在系统钥匙串，仅本机可用。"
+          }
+        }
+      }
+    },
+    "crypto.toolbox.decrypt.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "自动识别算法，解出来可复制"
+          }
+        }
+      }
+    },
+    "crypto.toolbox.encrypt.subtitle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "明文 → 密文，可复制或插入编辑器"
+          }
+        }
+      }
+    },
+    "crypto.toolbox.hero" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "帖子划词解密，编辑器一键加密，与 openssl 密文互通。"
+          }
+        }
+      }
+    },
+    "crypto.toolbox.intro" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "选中帖子里的疑似密文会出现「解密」。编辑器里点钥匙或「+」菜单即可加密插回。算法覆盖 AES、3DES、ChaCha20、Base64/Hex/ROT13、哈希、RSA 与经典密码。"
+          }
+        }
+      }
+    },
+    "crypto.vigenere.key" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "维吉尼亚密钥"
           }
         }
       }
@@ -3773,6 +4351,63 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "点击连接"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "点击连接"
+          }
+        }
+      }
+    },
+    "extensions.connecting" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接中…"
+          }
+        }
+      }
+    },
+    "extensions.connecting.cdk" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在连接 CDK…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在连接 CDK…"
+          }
+        }
+      }
+    },
+    "extensions.connecting.ldc" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在连接 LDC…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在连接 LDC…"
           }
         }
       }
@@ -10727,6 +11362,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "勳章"
+          }
+        }
+      }
+    },
+    "notifications.filter.chat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聊天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聊天"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聊天"
           }
         }
       }
@@ -21428,12 +22091,17 @@
       }
     },
     "settings.network.doh.subtitle" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "通过加密 DNS 解析论坛域名"
+            "state" : "translated",
+            "value" : "Resolve linux.do inside the app. No system DNS profile."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 App 内解析 linux.do，不用去系统设置"
           }
         }
       }
@@ -24462,35 +25130,13 @@
         }
       }
     },
-    "toolbox.section.encoding" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "编解码"
-          }
-        }
-      }
-    },
     "toolbox.title" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "工具箱"
-          }
-        }
-      }
-    },
-    "toolbox.tool.base64.subtitle" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "文本编码 / 解码"
+            "value" : "加解密工具箱"
           }
         }
       }
@@ -26418,6 +27064,118 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "在浏览器打开"
+          }
+        }
+      }
+    },
+    "topic.preview.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No preview"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无预览内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫無預覽內容"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫無預覽內容"
+          }
+        }
+      }
+    },
+    "topic.preview.loading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading preview…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载预览…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "載入預覽…"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "載入預覽…"
+          }
+        }
+      }
+    },
+    "topic.preview.open" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open topic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开话题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打開話題"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打開話題"
+          }
+        }
+      }
+    },
+    "topic.preview.stats" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d replies · %d views"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 回复 · %d 浏览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 回覆 · %d 瀏覽"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 回覆 · %d 瀏覽"
           }
         }
       }
@@ -28628,17 +29386,6 @@
         }
       }
     },
-    "wechat_chat.bookmark" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "收藏"
-          }
-        }
-      }
-    },
     "wechat_chat.empty_post" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -28661,17 +29408,6 @@
         }
       }
     },
-    "wechat_chat.like" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "点赞"
-          }
-        }
-      }
-    },
     "wechat_chat.more" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -28683,17 +29419,6 @@
         }
       }
     },
-    "wechat_chat.reply" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "回复"
-          }
-        }
-      }
-    },
     "wechat_chat.reply_to_fmt" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -28701,28 +29426,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "回复 %1$@：%2$@"
-          }
-        }
-      }
-    },
-    "wechat_chat.unbookmark" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "取消收藏"
-          }
-        }
-      }
-    },
-    "wechat_chat.unlike" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "取消点赞"
           }
         }
       }
