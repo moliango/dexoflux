@@ -173,6 +173,67 @@ extension HomeViewController: UITableViewDelegate {
 
     func tableView(
         _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              Self.xiaohongshuRowIndex(from: topicId) == nil,
+              let topic = viewModel.topic(id: topicId)
+        else { return nil }
+        let category = viewModel.category(for: topic)
+        let username = AuthManager.shared.username(for: api.baseURL)
+        let inQueue = TopicReadLaterStore.shared.contains(
+            topicId: topicId,
+            baseURL: api.baseURL,
+            username: username
+        )
+        let open = UIAction(
+            title: String(localized: "topic.preview.open", defaultValue: "打开话题"),
+            image: UIImage(systemName: "arrow.up.right.square")
+        ) { [weak self] _ in
+            self?.openTopic(topicId)
+        }
+        let bookmark = UIAction(
+            title: String(localized: "topic.bookmark.add", defaultValue: "书签"),
+            image: UIImage(systemName: "bookmark")
+        ) { [weak self] _ in
+            self?.bookmarkTopicFromList(topicId: topicId, title: topic.title)
+        }
+        let later = UIAction(
+            title: inQueue
+                ? String(localized: "topic.read_later.remove", defaultValue: "移出稍后")
+                : String(localized: "topic.read_later.add", defaultValue: "稍后阅读"),
+            image: UIImage(systemName: "clock")
+        ) { [weak self] _ in
+            TopicReadLaterStore.shared.toggle(
+                topicId: topicId,
+                baseURL: self?.api.baseURL ?? "",
+                username: username,
+                title: topic.title,
+                lastReadPostNumber: topic.lastReadPostNumber
+            )
+        }
+        return TopicPreviewMenu.configuration(
+            topic: topic,
+            api: api,
+            categoryName: viewModel.categoryDisplayName(for: category),
+            actions: [open, bookmark, later]
+        )
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: UIContextMenuInteractionCommitAnimating
+    ) {
+        guard let number = configuration.identifier as? NSNumber else { return }
+        animator.addCompletion { [weak self] in
+            self?.openTopic(number.intValue)
+        }
+    }
+
+    func tableView(
+        _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let topicId = dataSource.itemIdentifier(for: indexPath),

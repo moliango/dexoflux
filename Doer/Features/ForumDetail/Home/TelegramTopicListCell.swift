@@ -452,9 +452,25 @@ final class TelegramTopicListCell: UITableViewCell {
             badgeContainer.isHidden = true
         }
 
-        monogramLabel.text = Self.monogram(from: item.title)
+        let background = item.monogramColor ?? Self.avatarColor(for: item.title)
+        let letter = item.monogramText ?? Self.monogram(from: item.title)
+        let foreground = item.monogramForegroundColor
+            ?? DiscourseChatChannel.contrastingForeground(for: background)
         monogramLabel.isHidden = false
-        avatarImageView.backgroundColor = Self.avatarColor(for: item.title)
+        monogramLabel.textColor = foreground
+        if letter.contains(":") {
+            TitleEmojiRenderer.apply(
+                letter,
+                to: monogramLabel,
+                font: monogramLabel.font ?? .systemFont(ofSize: 24, weight: .semibold),
+                textColor: foreground,
+                baseURL: item.baseURL
+            )
+        } else {
+            monogramLabel.attributedText = nil
+            monogramLabel.text = letter
+        }
+        avatarImageView.backgroundColor = background
         avatarImageView.image = nil
         let resolvedURL = item.avatarURL ?? AvatarImageLoader.url(
             from: item.avatarTemplate,
@@ -468,6 +484,13 @@ final class TelegramTopicListCell: UITableViewCell {
             cloudflareBaseURL: item.baseURL
         ) { [weak self] image, _, _, _ in
             self?.monogramLabel.isHidden = (image != nil)
+            if image != nil {
+                self?.avatarImageView.backgroundColor = .clear
+            }
+        }
+        if resolvedURL == nil {
+            avatarImageView.image = nil
+            monogramLabel.isHidden = false
         }
     }
 
@@ -494,6 +517,7 @@ final class TelegramTopicListCell: UITableViewCell {
         verifiedIcon.isHidden = true
         monogramLabel.isHidden = true
         monogramLabel.text = nil
+        monogramLabel.attributedText = nil
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
     }

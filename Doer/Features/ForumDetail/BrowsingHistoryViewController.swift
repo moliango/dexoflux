@@ -478,6 +478,43 @@ extension BrowsingHistoryViewController: UITableViewDelegate {
         navigationController?.pushViewController(detailVC, animated: true)
     }
 
+    func tableView(
+        _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let topicId = dataSource.itemIdentifier(for: indexPath),
+              let topic = viewModel.topics.first(where: { $0.id == topicId })
+        else { return nil }
+        let open = UIAction(
+            title: String(localized: "topic.preview.open", defaultValue: "打开话题"),
+            image: UIImage(systemName: "arrow.up.right.square")
+        ) { [weak self] _ in
+            guard let self else { return }
+            let detailVC = TopicDetailFactory.make(api: self.api, topicId: topicId)
+            self.navigationController?.pushViewController(detailVC, animated: true)
+        }
+        return TopicPreviewMenu.configuration(
+            topic: topic,
+            api: api,
+            categoryName: viewModel.categoryDisplayName(for: viewModel.category(for: topic)),
+            actions: [open]
+        )
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: UIContextMenuInteractionCommitAnimating
+    ) {
+        guard let number = configuration.identifier as? NSNumber else { return }
+        animator.addCompletion { [weak self] in
+            guard let self else { return }
+            let detailVC = TopicDetailFactory.make(api: self.api, topicId: number.intValue)
+            self.navigationController?.pushViewController(detailVC, animated: true)
+        }
+    }
+
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         let totalRows = tableView.numberOfRows(inSection: 0)
         if indexPath.row >= totalRows - 5 {

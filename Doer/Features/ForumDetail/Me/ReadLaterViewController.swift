@@ -359,8 +359,51 @@ extension ReadLaterViewController: UITableViewDataSource, UITableViewDelegate {
         )
     }
 
+    func tableView(
+        _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        let entry = entries[indexPath.row]
+        let topic = topicsById[entry.topicId] ?? DiscourseTopicList.Topic.readLaterPlaceholder(
+            id: entry.topicId,
+            title: entry.title,
+            lastReadPostNumber: entry.lastReadPostNumber
+        )
+        let open = UIAction(
+            title: String(localized: "topic.preview.open", defaultValue: "打开话题"),
+            image: UIImage(systemName: "arrow.up.right.square")
+        ) { [weak self] _ in
+            self?.openReadLaterEntry(at: indexPath)
+        }
+        return TopicPreviewMenu.configuration(
+            topic: topic,
+            api: api,
+            categoryName: topic.categoryId.flatMap { categoriesById[$0]?.name },
+            actions: [open]
+        )
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: UIContextMenuInteractionCommitAnimating
+    ) {
+        guard let number = configuration.identifier as? NSNumber,
+              let index = entries.firstIndex(where: { $0.topicId == number.intValue })
+        else { return }
+        animator.addCompletion { [weak self] in
+            self?.openReadLaterEntry(at: IndexPath(row: index, section: 0))
+        }
+    }
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        openReadLaterEntry(at: indexPath)
+    }
+
+    private func openReadLaterEntry(at indexPath: IndexPath) {
+        guard entries.indices.contains(indexPath.row) else { return }
         let entry = entries[indexPath.row]
         let username = AuthManager.shared.username(for: api.baseURL)
         let topic = topicsById[entry.topicId]

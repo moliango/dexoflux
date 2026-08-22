@@ -96,6 +96,12 @@ extension DiscourseAPI {
         }
     }
 
+    /// First-post cooked HTML for list long-press preview (FluxDo `getTopicFirstPostCooked`).
+    func fetchTopicFirstPostCooked(id: Int) async throws -> String? {
+        let detail = try await fetchTopic(id: id, trackVisit: false)
+        return detail.postStream.posts.first?.cooked
+    }
+
     func fetchTopic(id: Int, trackVisit: Bool = false) async throws -> DiscourseTopicDetail {
         var headers: HTTPHeaders?
         if trackVisit {

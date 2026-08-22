@@ -20,6 +20,18 @@ final class WeChatTopicListCell: UITableViewCell {
         return iv
     }()
 
+    /// Letter tile when a session row has no avatar / category logo.
+    private let monogramLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 20, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isHidden = true
+        label.isUserInteractionEnabled = false
+        return label
+    }()
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16, weight: .medium)
@@ -151,6 +163,8 @@ final class WeChatTopicListCell: UITableViewCell {
         metaColumn.addArrangedSubview(replyLabel)
 
         contentView.addSubview(avatarImageView)
+        // Keep the letter on contentView — UIImageView does not reliably layout subviews.
+        contentView.addSubview(monogramLabel)
         contentView.addSubview(textColumn)
         contentView.addSubview(metaColumn)
         contentView.addSubview(separator)
@@ -160,6 +174,11 @@ final class WeChatTopicListCell: UITableViewCell {
             avatarImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             avatarImageView.widthAnchor.constraint(equalToConstant: 48),
             avatarImageView.heightAnchor.constraint(equalToConstant: 48),
+
+            monogramLabel.centerXAnchor.constraint(equalTo: avatarImageView.centerXAnchor),
+            monogramLabel.centerYAnchor.constraint(equalTo: avatarImageView.centerYAnchor),
+            monogramLabel.widthAnchor.constraint(equalTo: avatarImageView.widthAnchor),
+            monogramLabel.heightAnchor.constraint(equalTo: avatarImageView.heightAnchor),
 
             textColumn.leadingAnchor.constraint(equalTo: avatarImageView.trailingAnchor, constant: 12),
             textColumn.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
@@ -239,6 +258,7 @@ final class WeChatTopicListCell: UITableViewCell {
 
         currentAvatarURL = avatarURL
         avatarImageView.layer.cornerRadius = 6
+        hideMonogram()
         AvatarImageLoader.setImage(
             on: avatarImageView,
             url: avatarURL,
@@ -295,13 +315,62 @@ final class WeChatTopicListCell: UITableViewCell {
         )
         currentAvatarURL = resolvedURL
         avatarImageView.layer.cornerRadius = 6
-        AvatarImageLoader.setImage(
+        applySessionMonogram(item)
+        ForumImageLoader.setImage(
             on: avatarImageView,
             url: resolvedURL,
-            cloudflareBaseURL: item.baseURL,
-            avatarBaseURL: item.baseURL,
-            userId: nil
-        )
+            placeholder: nil,
+            cloudflareBaseURL: item.baseURL
+        ) { [weak self] image, _, _, _ in
+            self?.monogramLabel.isHidden = (image != nil)
+            if image != nil {
+                self?.avatarImageView.backgroundColor = .clear
+            }
+        }
+        if resolvedURL == nil {
+            avatarImageView.image = nil
+            monogramLabel.isHidden = false
+        }
+    }
+
+    private func applySessionMonogram(_ item: TopicListSessionItem) {
+        let letter: String = {
+            if let custom = item.monogramText?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+                return custom
+            }
+            let trimmed = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let first = trimmed.first else { return "#" }
+            return String(first).uppercased()
+        }()
+        let background = item.monogramColor ?? .secondarySystemFill
+        let foreground = item.monogramForegroundColor
+            ?? DiscourseChatChannel.contrastingForeground(for: background)
+        monogramLabel.adjustsFontSizeToFitWidth = true
+        monogramLabel.minimumScaleFactor = 0.5
+        monogramLabel.textColor = foreground
+        if letter.contains(":") {
+            TitleEmojiRenderer.apply(
+                letter,
+                to: monogramLabel,
+                font: monogramLabel.font ?? .systemFont(ofSize: 20, weight: .semibold),
+                textColor: foreground,
+                baseURL: item.baseURL
+            )
+        } else {
+            monogramLabel.attributedText = nil
+            monogramLabel.text = letter
+        }
+        monogramLabel.isHidden = false
+        contentView.bringSubviewToFront(monogramLabel)
+        avatarImageView.backgroundColor = background
+        avatarImageView.image = nil
+    }
+
+    private func hideMonogram() {
+        monogramLabel.isHidden = true
+        monogramLabel.text = nil
+        monogramLabel.attributedText = nil
+        avatarImageView.backgroundColor = .secondarySystemFill
     }
 
     private func applyTitle(_ title: String) {
@@ -323,6 +392,7 @@ final class WeChatTopicListCell: UITableViewCell {
         subtitleLabel.text = nil
         timeLabel.text = nil
         replyLabel.text = nil
+        hideMonogram()
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
     }

@@ -43,6 +43,10 @@ struct TopicListSessionItem {
     var isEmphasized: Bool
     var badgeText: String?
     var baseURL: String?
+    /// Letter-tile fallback when the session has no avatar or category logo.
+    var monogramText: String?
+    var monogramColor: UIColor?
+    var monogramForegroundColor: UIColor?
 
     init(
         title: String,
@@ -52,7 +56,10 @@ struct TopicListSessionItem {
         avatarTemplate: String? = nil,
         isEmphasized: Bool = false,
         badgeText: String? = nil,
-        baseURL: String? = nil
+        baseURL: String? = nil,
+        monogramText: String? = nil,
+        monogramColor: UIColor? = nil,
+        monogramForegroundColor: UIColor? = nil
     ) {
         self.title = title
         self.subtitle = subtitle
@@ -62,6 +69,9 @@ struct TopicListSessionItem {
         self.isEmphasized = isEmphasized
         self.badgeText = badgeText
         self.baseURL = baseURL
+        self.monogramText = monogramText
+        self.monogramColor = monogramColor
+        self.monogramForegroundColor = monogramForegroundColor
     }
 }
 
