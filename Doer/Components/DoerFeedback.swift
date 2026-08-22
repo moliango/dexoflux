@@ -48,11 +48,45 @@ enum DoerFeedback {
     @MainActor
     static func presentLoadingHUD(_ message: String?, on host: UIViewController) {
         dismissLoadingHUD(on: host, animated: false)
+        host.loadViewIfNeeded()
 
-        let overlay = UIView()
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        overlay.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        let overlay = LoadingHUDOverlay(message: message)
         overlay.tag = LoadingHUD.tag
+        host.view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: host.view.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: host.view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: host.view.bottomAnchor),
+        ])
+        host.view.bringSubviewToFront(overlay)
+        overlay.startSpinner()
+    }
+
+    @MainActor
+    static func dismissLoadingHUD(on host: UIViewController, animated: Bool = true) {
+        guard let overlay = host.view.viewWithTag(LoadingHUD.tag) else { return }
+        guard animated else {
+            overlay.removeFromSuperview()
+            return
+        }
+        AnimationOptimizer.animateAlpha(overlay, to: 0, duration: 0.15) {
+            overlay.removeFromSuperview()
+        }
+    }
+
+    private enum LoadingHUD {
+        static let tag = 9_101_203
+    }
+}
+
+private final class LoadingHUDOverlay: UIView {
+    private let spinner = UIActivityIndicatorView(style: .large)
+
+    init(message: String?) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = UIColor.black.withAlphaComponent(0.28)
 
         let card = UIView()
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -60,9 +94,8 @@ enum DoerFeedback {
         card.layer.cornerRadius = 16
         card.layer.cornerCurve = .continuous
 
-        let spinner = UIActivityIndicatorView(style: .large)
         spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.startAnimating()
+        spinner.hidesWhenStopped = false
 
         var arranged: [UIView] = [spinner]
         if let message, !message.isEmpty {
@@ -82,42 +115,30 @@ enum DoerFeedback {
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
-        overlay.addSubview(card)
-
-        host.view.addSubview(overlay)
+        addSubview(card)
         NSLayoutConstraint.activate([
-            overlay.topAnchor.constraint(equalTo: host.view.topAnchor),
-            overlay.leadingAnchor.constraint(equalTo: host.view.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
-            overlay.bottomAnchor.constraint(equalTo: host.view.bottomAnchor),
-
-            card.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            card.centerXAnchor.constraint(equalTo: centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: centerYAnchor),
             card.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            card.widthAnchor.constraint(lessThanOrEqualTo: overlay.widthAnchor, multiplier: 0.7),
-
+            card.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.7),
             stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 22),
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -22),
         ])
-        overlay.alpha = 0
-        AnimationOptimizer.animateAlpha(overlay, to: 1, duration: 0.18)
     }
 
-    @MainActor
-    static func dismissLoadingHUD(on host: UIViewController, animated: Bool = true) {
-        guard let overlay = host.view.viewWithTag(LoadingHUD.tag) else { return }
-        guard animated else {
-            overlay.removeFromSuperview()
-            return
-        }
-        AnimationOptimizer.animateAlpha(overlay, to: 0, duration: 0.15) {
-            overlay.removeFromSuperview()
-        }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func startSpinner() {
+        spinner.startAnimating()
     }
 
-    private enum LoadingHUD {
-        static let tag = 9_101_203
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            spinner.startAnimating()
+        }
     }
 }
