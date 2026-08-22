@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/fluxdo-porting.md", "reason": "Confirm FluxDo behavior was ported, UI stayed native, ECH/Gateway deviations are documented with ponytail."}
+{"file": ".trellis/spec/frontend/build-and-dependencies.md", "reason": "New DoH files and NIO packages must be in the generated project; no duplicate SPM graphs."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API, WebView, images, and settings must share one CONNECT path and clear it together when DoH is off."}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/fluxdo-porting.md", "reason": "Behavior from FluxDo by contract; native cards; secrets in Keychain; ponytail deviations."}
+{"file": ".trellis/spec/frontend/build-and-dependencies.md", "reason": "Tuist regenerate after new Swift files; SPM packages via Tuist/Package.swift .external like Alamofire; compile-only verification."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Proxy config flows Settings → facade → URLSession/WKWebView/images; trust and DNS must stay consistent across those layers."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse LocalConnectProxy, MitmCertificateAuthority, Socks5Handshake, DohConnectRequest, LightweightDohProxyService call sites."}
