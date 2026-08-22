@@ -410,6 +410,11 @@ final class NotificationsViewController: ObservableViewController {
             }
         }
 
+        if notification.isChatNotification {
+            openChatNotification(notification)
+            return
+        }
+
         guard let topicId = notification.topicId else { return }
         let postNumber = notification.postNumber
         let postId = notification.actingPostId
@@ -430,6 +435,24 @@ final class NotificationsViewController: ObservableViewController {
             )
             navigationController?.pushViewController(detailVC, animated: true)
         }
+    }
+
+    private func openChatNotification(_ notification: DiscourseNotification) {
+        guard let channelId = notification.data.chatChannelId else {
+            navigationController?.pushViewController(
+                ChatChannelsViewController(api: api),
+                animated: true
+            )
+            return
+        }
+        let channel = DiscourseChatChannel(
+            id: channelId,
+            title: notification.data.chatChannelTitle
+        )
+        navigationController?.pushViewController(
+            ChatRoomViewController(api: api, channel: channel),
+            animated: true
+        )
     }
 }
 

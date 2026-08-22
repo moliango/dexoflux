@@ -7,6 +7,49 @@ struct DiscourseNotificationList: Decodable {
     let seenNotificationId: Int?
     let loadMoreNotifications: String?
 
+    init(
+        notifications: [DiscourseNotification],
+        totalRowsNotifications: Int? = nil,
+        seenNotificationId: Int? = nil,
+        loadMoreNotifications: String? = nil
+    ) {
+        self.notifications = notifications
+        self.totalRowsNotifications = totalRowsNotifications
+        self.seenNotificationId = seenNotificationId
+        self.loadMoreNotifications = loadMoreNotifications
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let items = (try? container.decode([LossyNotification].self, forKey: .notifications)) ?? []
+        notifications = items.compactMap(\.value)
+        totalRowsNotifications = try container.decodeIfPresent(Int.self, forKey: .totalRowsNotifications)
+        seenNotificationId = try container.decodeIfPresent(Int.self, forKey: .seenNotificationId)
+        loadMoreNotifications = try container.decodeIfPresent(String.self, forKey: .loadMoreNotifications)
+    }
+
+    func merging(_ other: DiscourseNotificationList) -> DiscourseNotificationList {
+        var byId: [Int: DiscourseNotification] = [:]
+        for notification in notifications + other.notifications {
+            byId[notification.id] = notification
+        }
+        let merged = byId.values.sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.id > rhs.id
+        }
+        return DiscourseNotificationList(
+            notifications: merged,
+            totalRowsNotifications: max(
+                totalRowsNotifications ?? notifications.count,
+                other.totalRowsNotifications ?? other.notifications.count
+            ),
+            seenNotificationId: max(seenNotificationId ?? 0, other.seenNotificationId ?? 0),
+            loadMoreNotifications: loadMoreNotifications ?? other.loadMoreNotifications
+        )
+    }
+
     var username: String? {
         guard let loadMoreNotifications,
               let url = URLComponents(string: loadMoreNotifications),
@@ -165,6 +208,11 @@ struct DiscourseNotification: Decodable, Identifiable {
             return String(localized: "notifications.title.new_features", defaultValue: "有新功能可用")
         case 38: // admin_problems
             return String(localized: "notifications.title.admin_problems", defaultValue: "站点有新的管理建议")
+        case 29, 30, 31, 32, 33, 40:
+            if let title = data.chatChannelTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !title.isEmpty {
+                return title
+            }
         default:
             break
         }
@@ -177,6 +225,12 @@ struct DiscourseNotification: Decodable, Identifiable {
         }
 
         return typeLabel
+    }
+
+    static let chatNotificationTypes: Set<Int> = [29, 30, 31, 32, 33, 40]
+
+    var isChatNotification: Bool {
+        Self.chatNotificationTypes.contains(notificationType)
     }
 
     /// Post id of the acting post (reply / mention / like target), when Discourse includes it.
@@ -486,6 +540,10 @@ struct DiscourseNotification: Decodable, Identifiable {
         let username: String?
         let username2: String?
         let avatarTemplate: String?
+        let chatChannelId: Int?
+        let chatMessageId: Int?
+        let chatThreadId: Int?
+        let chatChannelTitle: String?
 
         init(
             badgeId: Int? = nil,
@@ -503,7 +561,11 @@ struct DiscourseNotification: Decodable, Identifiable {
             revisionNumber: Int? = nil,
             username: String? = nil,
             username2: String? = nil,
-            avatarTemplate: String? = nil
+            avatarTemplate: String? = nil,
+            chatChannelId: Int? = nil,
+            chatMessageId: Int? = nil,
+            chatThreadId: Int? = nil,
+            chatChannelTitle: String? = nil
         ) {
             self.badgeId = badgeId
             self.badgeName = badgeName
@@ -521,6 +583,10 @@ struct DiscourseNotification: Decodable, Identifiable {
             self.username = username
             self.username2 = username2
             self.avatarTemplate = avatarTemplate
+            self.chatChannelId = chatChannelId
+            self.chatMessageId = chatMessageId
+            self.chatThreadId = chatThreadId
+            self.chatChannelTitle = chatChannelTitle
         }
 
         enum CodingKeys: String, CodingKey {
@@ -541,6 +607,11 @@ struct DiscourseNotification: Decodable, Identifiable {
             case username2
             case avatarTemplate = "avatar_template"
             case actingUserAvatarTemplate = "acting_user_avatar_template"
+            case mentionedByUsername = "mentioned_by_username"
+            case chatChannelId = "chat_channel_id"
+            case chatMessageId = "chat_message_id"
+            case chatThreadId = "chat_thread_id"
+            case chatChannelTitle = "chat_channel_title"
         }
 
         init(from decoder: Decoder) throws {
@@ -559,10 +630,15 @@ struct DiscourseNotification: Decodable, Identifiable {
                     originalPostType: try container.decodeLossyIntIfPresent(forKey: .originalPostType),
                     originalUsername: try container.decodeIfPresent(String.self, forKey: .originalUsername),
                     revisionNumber: try container.decodeLossyIntIfPresent(forKey: .revisionNumber),
-                    username: try container.decodeIfPresent(String.self, forKey: .username),
+                    username: try container.decodeIfPresent(String.self, forKey: .username)
+                        ?? container.decodeIfPresent(String.self, forKey: .mentionedByUsername),
                     username2: try container.decodeIfPresent(String.self, forKey: .username2),
                     avatarTemplate: try container.decodeIfPresent(String.self, forKey: .actingUserAvatarTemplate)
-                        ?? container.decodeIfPresent(String.self, forKey: .avatarTemplate)
+                        ?? container.decodeIfPresent(String.self, forKey: .avatarTemplate),
+                    chatChannelId: try container.decodeLossyIntIfPresent(forKey: .chatChannelId),
+                    chatMessageId: try container.decodeLossyIntIfPresent(forKey: .chatMessageId),
+                    chatThreadId: try container.decodeLossyIntIfPresent(forKey: .chatThreadId),
+                    chatChannelTitle: try container.decodeIfPresent(String.self, forKey: .chatChannelTitle)
                 )
                 return
             }
@@ -589,10 +665,15 @@ struct DiscourseNotification: Decodable, Identifiable {
                 originalPostType: Self.intValue(object["original_post_type"]),
                 originalUsername: Self.stringValue(object["original_username"]),
                 revisionNumber: Self.intValue(object["revision_number"]),
-                username: Self.stringValue(object["username"]),
+                username: Self.stringValue(object["username"])
+                    ?? Self.stringValue(object["mentioned_by_username"]),
                 username2: Self.stringValue(object["username2"]),
                 avatarTemplate: Self.stringValue(object["acting_user_avatar_template"])
-                    ?? Self.stringValue(object["avatar_template"])
+                    ?? Self.stringValue(object["avatar_template"]),
+                chatChannelId: Self.intValue(object["chat_channel_id"]),
+                chatMessageId: Self.intValue(object["chat_message_id"]),
+                chatThreadId: Self.intValue(object["chat_thread_id"]),
+                chatChannelTitle: Self.stringValue(object["chat_channel_title"])
             )
         }
 
@@ -618,6 +699,14 @@ struct DiscourseNotification: Decodable, Identifiable {
             }
             return nil
         }
+    }
+}
+
+private struct LossyNotification: Decodable {
+    let value: DiscourseNotification?
+
+    init(from decoder: Decoder) throws {
+        value = try? DiscourseNotification(from: decoder)
     }
 }
 
@@ -672,6 +761,7 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
     case replies
     case mentions
     case messages
+    case chat
     case badges
     case system
 
@@ -687,6 +777,8 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
             return String(localized: "notifications.filter.mentions", defaultValue: "@我")
         case .messages:
             return String(localized: "notifications.filter.messages", defaultValue: "私信")
+        case .chat:
+            return String(localized: "notifications.filter.chat", defaultValue: "聊天")
         case .badges:
             return String(localized: "notifications.filter.badges", defaultValue: "勋章")
         case .system:
@@ -704,17 +796,20 @@ enum NotificationListFilter: Int, CaseIterable, Hashable {
             // replied / quoted / posted in topic
             return [2, 3, 9].contains(notification.notificationType)
         case .mentions:
-            return notification.notificationType == 1 || notification.notificationType == 15
+            return [1, 15, 29, 32].contains(notification.notificationType)
         case .messages:
             // private message (+ group message type 7 if present)
             return [6, 7, 16].contains(notification.notificationType)
+        case .chat:
+            return notification.isChatNotification
         case .badges:
             // granted badge (Discourse notification_type = 12)
             return notification.notificationType == 12
         case .system:
             // Catch-all for non-chat/social buckets. Keep badges here too so users
             // who stay on「系统」still see medal grants;「勋章」is a focused shortcut.
-            return ![1, 2, 3, 5, 6, 7, 9, 15, 19, 25, 43].contains(notification.notificationType)
+            return ![1, 2, 3, 5, 6, 7, 9, 15, 19, 25, 29, 30, 31, 32, 33, 40, 43]
+                .contains(notification.notificationType)
         }
     }
 }

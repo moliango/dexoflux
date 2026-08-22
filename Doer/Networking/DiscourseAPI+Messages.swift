@@ -5,7 +5,15 @@ import UniformTypeIdentifiers
 // MARK: - messages
 extension DiscourseAPI {
     func fetchNotifications() async throws -> DiscourseNotificationList {
-        try await request(route: .notifications)
+        let primary: DiscourseNotificationList = try await request(route: .notifications)
+        let chat: DiscourseNotificationList
+        do {
+            chat = try await request(route: .chatNotifications)
+        } catch {
+            return primary
+        }
+        guard !chat.notifications.isEmpty else { return primary }
+        return primary.merging(chat)
     }
 
     func markNotificationRead(id: Int) async throws {

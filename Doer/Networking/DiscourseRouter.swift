@@ -22,6 +22,9 @@ enum DiscourseRouter {
     case topicNotificationLevel(topicId: Int)
     case updateTopic(topicId: Int)
     case notifications
+    /// Chat types live in a separate user-menu panel on Discourse web
+    /// (`filter_by_types=chat_mention,...`). Fetch and merge into the list.
+    case chatNotifications
     case privateMessages(username: String)
     case privateMessagesSent(username: String)
     case privateMessagesArchive(username: String)
@@ -137,7 +140,9 @@ enum DiscourseRouter {
         case .updateTopic(let topicId):
             return "/t/-/\(topicId).json"
         case .notifications:
-            return "/notifications.json"
+            return "/notifications.json?limit=60"
+        case .chatNotifications:
+            return "/notifications.json?limit=60&filter_by_types=chat_mention,chat_message,chat_invitation,chat_group_mention,chat_quoted,chat_watched_thread"
         case .privateMessages(let username):
             return "/topics/private-messages/\(username).json"
         case .privateMessagesSent(let username):

@@ -299,6 +299,112 @@ final class ForumNotificationStateTests: XCTestCase {
         XCTAssertEqual(notification.actingPostId, 556677)
     }
 
+    func testChatMentionNotificationDecodesChannelAndTitle() throws {
+        let json = """
+        {
+          "notifications": [{
+            "id": 88,
+            "notification_type": 29,
+            "read": false,
+            "high_priority": true,
+            "created_at": "2026-08-22T14:16:00.000Z",
+            "topic_id": null,
+            "data": {
+              "mentioned_by_username": "alice",
+              "chat_message_id": 9001,
+              "chat_channel_id": 3,
+              "chat_channel_title": "常规频道"
+            }
+          }]
+        }
+        """
+        let list = try JSONDecoder().decode(
+            DiscourseNotificationList.self,
+            from: Data(json.utf8)
+        )
+        let notification = try XCTUnwrap(list.notifications.first)
+
+        XCTAssertTrue(notification.isChatNotification)
+        XCTAssertEqual(notification.data.chatChannelId, 3)
+        XCTAssertEqual(notification.data.chatMessageId, 9001)
+        XCTAssertEqual(notification.data.chatChannelTitle, "常规频道")
+        XCTAssertEqual(notification.displayTitle, "常规频道")
+        XCTAssertEqual(notification.actorName, "alice")
+        XCTAssertTrue(NotificationListFilter.chat.matches(notification))
+        XCTAssertTrue(NotificationListFilter.mentions.matches(notification))
+        XCTAssertFalse(NotificationListFilter.messages.matches(notification))
+        XCTAssertFalse(NotificationListFilter.system.matches(notification))
+    }
+
+    func testChatMessageNotificationStringDataDecodes() throws {
+        let json = """
+        {
+          "notifications": [{
+            "id": 89,
+            "notification_type": 30,
+            "read": true,
+            "created_at": "2026-08-22T14:16:00.000Z",
+            "data": "{\\"display_username\\":\\"bob\\",\\"chat_channel_id\\":7,\\"chat_channel_title\\":\\"Lounge\\",\\"chat_message_id\\":12}"
+          }]
+        }
+        """
+        let list = try JSONDecoder().decode(
+            DiscourseNotificationList.self,
+            from: Data(json.utf8)
+        )
+        let notification = try XCTUnwrap(list.notifications.first)
+        XCTAssertTrue(notification.isChatNotification)
+        XCTAssertEqual(notification.data.chatChannelId, 7)
+        XCTAssertEqual(notification.displayTitle, "Lounge")
+        XCTAssertTrue(NotificationListFilter.chat.matches(notification))
+        XCTAssertFalse(NotificationListFilter.mentions.matches(notification))
+    }
+
+    func testNotificationListSkipsMalformedItems() throws {
+        let json = """
+        {
+          "notifications": [
+            {"id": "bad"},
+            {
+              "id": 2,
+              "notification_type": 29,
+              "read": false,
+              "created_at": "2026-08-22T00:00:00.000Z",
+              "data": {"chat_channel_id": 1, "chat_channel_title": "常规频道"}
+            }
+          ]
+        }
+        """
+        let list = try JSONDecoder().decode(
+            DiscourseNotificationList.self,
+            from: Data(json.utf8)
+        )
+        XCTAssertEqual(list.notifications.count, 1)
+        XCTAssertEqual(list.notifications.first?.id, 2)
+        XCTAssertTrue(list.notifications.first?.isChatNotification == true)
+    }
+
+    func testChatNotificationsRouteUsesFilterByTypes() {
+        XCTAssertTrue(DiscourseRouter.notifications.path.contains("limit=60"))
+        XCTAssertTrue(DiscourseRouter.chatNotifications.path.contains("filter_by_types="))
+        XCTAssertTrue(DiscourseRouter.chatNotifications.path.contains("chat_mention"))
+    }
+
+    func testNotificationListMergesChatTypesById() throws {
+        let mainJSON = """
+        {"notifications":[{"id":1,"notification_type":2,"read":true,"created_at":"2026-08-21T00:00:00.000Z","topic_id":9,"data":{"topic_title":"A"}}]}
+        """
+        let chatJSON = """
+        {"notifications":[{"id":8,"notification_type":29,"read":false,"created_at":"2026-08-22T00:00:00.000Z","data":{"chat_channel_title":"常规频道","chat_channel_id":3}}]}
+        """
+        let main = try JSONDecoder().decode(DiscourseNotificationList.self, from: Data(mainJSON.utf8))
+        let chat = try JSONDecoder().decode(DiscourseNotificationList.self, from: Data(chatJSON.utf8))
+        let merged = main.merging(chat)
+        XCTAssertEqual(merged.notifications.count, 2)
+        XCTAssertEqual(merged.notifications.first?.id, 8)
+        XCTAssertTrue(merged.notifications.contains(where: { $0.isChatNotification }))
+    }
+
     private func decodeNotifications(idsAndReadState: [(Int, Bool)]) throws -> [DiscourseNotification] {
         let entries = idsAndReadState.map { id, read in
             """
