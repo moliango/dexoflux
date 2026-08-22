@@ -1,5 +1,6 @@
 import Alamofire
 import Foundation
+import UIKit
 
 // MARK: - Models
 
@@ -12,6 +13,8 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
     let iconUploadURL: String?
     /// Nested upload object used by some Discourse chat serializers.
     let iconUpload: IconUpload?
+    /// Site-configured channel emoji (`:speech_balloon:` or a unicode glyph).
+    let emoji: String?
     let chatableType: String?
     let chatable: Chatable?
 
@@ -36,17 +39,35 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
             case origin = "original_url"
         }
 
+        init(url: String?, origin: String? = nil) {
+            self.url = url
+            self.origin = origin
+        }
+
+        init(from decoder: Decoder) throws {
+            if let single = try? decoder.singleValueContainer(),
+               let value = try? single.decode(String.self) {
+                url = value
+                origin = nil
+                return
+            }
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            url = try container.decodeIfPresent(String.self, forKey: .url)
+            origin = try container.decodeIfPresent(String.self, forKey: .origin)
+        }
+
         var resolvedURL: String? {
             let raw = (url ?? origin)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return raw.isEmpty ? nil : raw
         }
     }
 
-    /// Category / DirectMessage payload. DM carries peer avatars.
+    /// Category / DirectMessage payload. DM carries peer avatars; category channels carry color + logo.
     struct Chatable: Decodable, Equatable {
         let users: [ChatUser]?
         let color: String?
         let name: String?
+        let uploadedLogo: IconUpload?
 
         struct ChatUser: Decodable, Equatable {
             let id: Int?
@@ -59,16 +80,78 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
                 case avatarTemplate = "avatar_template"
             }
         }
+
+        enum CodingKeys: String, CodingKey {
+            case users, color, name
+            case uploadedLogo = "uploaded_logo"
+        }
+
+        init(users: [ChatUser]? = nil, color: String? = nil, name: String? = nil, uploadedLogo: IconUpload? = nil) {
+            self.users = users
+            self.color = color
+            self.name = name
+            self.uploadedLogo = uploadedLogo
+        }
+
+        init(from decoder: Decoder) throws {
+            // Category chatable is a full object; some payloads send only an id integer.
+            // Throw so the channel decoder can treat that as a missing chatable.
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            users = try c.decodeIfPresent([ChatUser].self, forKey: .users)
+            color = try c.decodeIfPresent(String.self, forKey: .color)
+            name = try c.decodeIfPresent(String.self, forKey: .name)
+            uploadedLogo = try? c.decodeIfPresent(IconUpload.self, forKey: .uploadedLogo) ?? nil
+        }
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, slug
+        case id, title, slug, emoji, icon
         case lastMessageSentAt = "last_message_sent_at"
         case currentUserMembership = "current_user_membership"
         case iconUploadURL = "icon_upload_url"
         case iconUpload = "icon_upload"
         case chatableType = "chatable_type"
         case chatable
+    }
+
+    init(
+        id: Int,
+        title: String? = nil,
+        slug: String? = nil,
+        lastMessageSentAt: String? = nil,
+        currentUserMembership: Membership? = nil,
+        iconUploadURL: String? = nil,
+        iconUpload: IconUpload? = nil,
+        emoji: String? = nil,
+        chatableType: String? = nil,
+        chatable: Chatable? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.slug = slug
+        self.lastMessageSentAt = lastMessageSentAt
+        self.currentUserMembership = currentUserMembership
+        self.iconUploadURL = iconUploadURL
+        self.iconUpload = iconUpload
+        self.emoji = emoji
+        self.chatableType = chatableType
+        self.chatable = chatable
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        slug = try c.decodeIfPresent(String.self, forKey: .slug)
+        lastMessageSentAt = try c.decodeIfPresent(String.self, forKey: .lastMessageSentAt)
+        currentUserMembership = try c.decodeIfPresent(Membership.self, forKey: .currentUserMembership)
+        iconUploadURL = try c.decodeIfPresent(String.self, forKey: .iconUploadURL)
+        iconUpload = (try? c.decodeIfPresent(IconUpload.self, forKey: .iconUpload))
+            ?? (try? c.decodeIfPresent(IconUpload.self, forKey: .icon))
+            ?? nil
+        emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
+        chatableType = try c.decodeIfPresent(String.self, forKey: .chatableType)
+        chatable = try? c.decodeIfPresent(Chatable.self, forKey: .chatable) ?? nil
     }
 
     var displayTitle: String {
@@ -94,10 +177,13 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
         max(currentUserMembership?.unreadCount ?? 0, 0)
     }
 
-    /// Best-effort channel avatar: custom icon → first DM peer → nil.
+    /// Best-effort channel avatar: custom icon → emoji PNG → category logo → first DM peer → nil.
     func avatarURL(baseURL: String) -> URL? {
         if let raw = resolvedIconURLString {
             return Self.absoluteURL(raw, baseURL: baseURL)
+        }
+        if let emojiURL = namedEmojiImageURL(baseURL: baseURL) {
+            return emojiURL
         }
         if let template = chatable?.users?.first(where: {
             ($0.avatarTemplate?.isEmpty == false)
@@ -105,6 +191,36 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
             return AvatarImageLoader.url(from: template, baseURL: baseURL, size: 96)
         }
         return nil
+    }
+
+    var isPublicChannel: Bool {
+        (chatableType ?? "").caseInsensitiveCompare("Category") == .orderedSame
+    }
+
+    var monogramLetter: String {
+        // Named shortcodes (`:speech_balloon:`) render as the Twemoji PNG avatar.
+        // Unicode glyphs (💬) stay as the letter-tile fallback.
+        if namedEmojiCode == nil,
+           let mark = emoji?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !mark.isEmpty {
+            return mark
+        }
+        // Discourse / FluxDo public rooms use a # tile on the category color.
+        if isPublicChannel { return "#" }
+        let trimmed = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return "#" }
+        return String(first).uppercased()
+    }
+
+    var monogramColor: UIColor {
+        if let hex = accentHexColor, let color = Self.color(fromHex: hex) {
+            return color
+        }
+        return Self.hashedColor(for: displayTitle)
+    }
+
+    var monogramForegroundColor: UIColor {
+        Self.contrastingForeground(for: monogramColor)
     }
 
     var avatarTemplate: String? {
@@ -120,7 +236,64 @@ struct DiscourseChatChannel: Decodable, Identifiable, Equatable {
         if let raw = iconUploadURL?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             return raw
         }
-        return iconUpload?.resolvedURL
+        if let raw = iconUpload?.resolvedURL {
+            return raw
+        }
+        return chatable?.uploadedLogo?.resolvedURL
+    }
+
+    /// ASCII shortcode without colons (`speech_balloon`), when the site configured a named emoji.
+    var namedEmojiCode: String? {
+        guard let raw = emoji?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        guard !stripped.isEmpty else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_+-"))
+        guard stripped.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+        return stripped
+    }
+
+    private func namedEmojiImageURL(baseURL: String) -> URL? {
+        guard let code = namedEmojiCode else { return nil }
+        guard let raw = EmojiStore.resolvedURLString(for: code, baseURL: baseURL),
+              !raw.isEmpty
+        else { return nil }
+        return URL(string: raw) ?? Self.absoluteURL(raw, baseURL: baseURL)
+    }
+
+    private static func color(fromHex hex: String) -> UIColor? {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard cleaned.count == 6, let rgb = UInt64(cleaned, radix: 16) else { return nil }
+        return UIColor(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+
+    static func contrastingForeground(for background: UIColor) -> UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        background.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return luminance > 0.55 ? UIColor.black.withAlphaComponent(0.85) : .white
+    }
+
+    private static func hashedColor(for seed: String) -> UIColor {
+        let palette: [UIColor] = [
+            UIColor(red: 0.20, green: 0.56, blue: 0.93, alpha: 1),
+            UIColor(red: 0.40, green: 0.73, blue: 0.42, alpha: 1),
+            UIColor(red: 0.91, green: 0.40, blue: 0.38, alpha: 1),
+            UIColor(red: 0.55, green: 0.48, blue: 0.91, alpha: 1),
+            UIColor(red: 0.20, green: 0.70, blue: 0.70, alpha: 1),
+            UIColor(red: 0.95, green: 0.61, blue: 0.25, alpha: 1),
+        ]
+        var hash: UInt64 = 5381
+        for byte in seed.utf8 {
+            hash = ((hash << 5) &+ hash) &+ UInt64(byte)
+        }
+        return palette[Int(hash % UInt64(palette.count))]
     }
 
     private static func absoluteURL(_ raw: String, baseURL: String) -> URL? {
@@ -228,6 +401,52 @@ struct DiscourseChatMessage: Decodable, Identifiable, Equatable {
         return cookedHTML
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func formattedSendTime(now: Date = Date()) -> String {
+        Self.formatSendTime(createdAt, now: now)
+    }
+
+    static func formatSendTime(_ iso: String?, now: Date = Date()) -> String {
+        guard let iso, let date = parseISODate(iso) else { return "" }
+        let calendar = Calendar.current
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = .current
+        timeFormatter.dateFormat = "HH:mm"
+        let time = timeFormatter.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return time
+        }
+        if calendar.isDateInYesterday(date) {
+            return String(localized: "chat.time.yesterday", defaultValue: "昨天")
+                + "\n" + time
+        }
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = .current
+        dateFormatter.dateFormat = "M/d"
+        return dateFormatter.string(from: date) + "\n" + time
+    }
+
+    private static func parseISODate(_ iso: String) -> Date? {
+        let trimmed = iso.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: trimmed) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let date = plain.date(from: trimmed) { return date }
+        // ISO8601DateFormatter rejects 1/2/6-digit fractional seconds; strip them and retry.
+        if let dot = trimmed.firstIndex(of: ".") {
+            var suffix = trimmed[trimmed.index(after: dot)...]
+            while let first = suffix.first, first.isNumber {
+                suffix = suffix.dropFirst()
+            }
+            let stripped = String(trimmed[..<dot]) + suffix
+            if let date = plain.date(from: stripped) { return date }
+            if let date = withFraction.date(from: stripped) { return date }
+        }
+        return nil
     }
 }
 

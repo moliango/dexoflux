@@ -136,7 +136,10 @@ extension ChatChannelsViewController: UITableViewDataSource, UITableViewDelegate
             avatarTemplate: channel.avatarTemplate,
             isEmphasized: channel.unreadCount > 0,
             badgeText: badge,
-            baseURL: api.baseURL
+            baseURL: api.baseURL,
+            monogramText: channel.monogramLetter,
+            monogramColor: channel.monogramColor,
+            monogramForegroundColor: channel.monogramForegroundColor
         )
         // Always use session row chrome so channel icons load (standard fallback has no avatar).
         let rowLayout: TopicListLayoutKind = layout.usesChatSessionRows ? layout : .weChat
@@ -160,12 +163,14 @@ extension ChatChannelsViewController: UITableViewDataSource, UITableViewDelegate
 
 // MARK: - Chat room
 
-final class ChatRoomViewController: ObservableViewController, UITableViewDataSource {
+final class ChatRoomViewController: ObservableViewController, UITableViewDataSource, UITableViewDelegate {
     private let api: DiscourseAPI
     private let channel: DiscourseChatChannel
     private var messages: [DiscourseChatMessage] = []
     private var isLoading = false
     private var isSending = false
+    /// Keep the transcript pinned to the latest message (open, send, keyboard).
+    private var pinsToLatestMessage = true
     private var currentUsername: String? {
         AuthManager.shared.username(for: api.baseURL)?.lowercased()
     }
@@ -174,12 +179,13 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         let table = UITableView(frame: .zero, style: .plain)
         table.translatesAutoresizingMaskIntoConstraints = false
         table.dataSource = self
+        table.delegate = self
         table.register(ChatBubbleCell.self, forCellReuseIdentifier: ChatBubbleCell.reuseIdentifier)
         table.keyboardDismissMode = .interactive
         table.separatorStyle = .none
         table.allowsSelection = false
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = 72
+        table.estimatedRowHeight = 88
         return table
     }()
 
@@ -213,6 +219,18 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         chatInputBar.onEmoji = { [weak self] in
             self?.showPlusMenu()
         }
+        chatInputBar.onBeginEditing = { [weak self] in
+            guard let self else { return }
+            self.pinsToLatestMessage = true
+            self.scrollToBottom(animated: false)
+        }
+        chatInputBar.onHeightChange = { [weak self] in
+            guard let self else { return }
+            self.view.layoutIfNeeded()
+            if self.pinsToLatestMessage {
+                self.scrollToBottom(animated: false)
+            }
+        }
         // Conversation UI owns the bottom chrome — hide host tab bar (WeChat-like).
         hidesBottomBarWhenPushed = true
         setupLayout()
@@ -241,6 +259,23 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
                 NotificationCenter.default.removeObserver(emojiStoreObserver)
                 self.emojiStoreObserver = nil
             }
+            NotificationCenter.default.removeObserver(
+                self,
+                name: UIResponder.keyboardWillChangeFrameNotification,
+                object: nil
+            )
+            NotificationCenter.default.removeObserver(
+                self,
+                name: UIResponder.keyboardWillHideNotification,
+                object: nil
+            )
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if pinsToLatestMessage {
+            scrollToBottom(animated: false, layout: false)
         }
     }
 
@@ -249,6 +284,7 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         tableView.reloadData()
         chatInputBar.setSending(isSending)
         chatInputBar.isComposerEnabled = !isSending
+        pinsToLatestMessage = true
         scrollToBottom(animated: false)
     }
 
@@ -293,12 +329,22 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         chatInputBarBottomConstraint?.constant = -lift
         let curve = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt)
             ?? UIView.AnimationOptions.curveEaseInOut.rawValue
+        if lift > 0 {
+            pinsToLatestMessage = true
+        }
         UIView.animate(
             withDuration: duration,
             delay: 0,
             options: UIView.AnimationOptions(rawValue: curve << 16).union(.beginFromCurrentState)
         ) {
             self.view.layoutIfNeeded()
+            if lift > 0 {
+                self.scrollToBottom(animated: false, layout: false)
+            }
+        } completion: { _ in
+            if lift > 0 {
+                self.scrollToBottom(animated: false)
+            }
         }
     }
 
@@ -326,10 +372,39 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
         view.tintColor = theme.accentColor
     }
 
-    private func scrollToBottom(animated: Bool) {
+    private func scrollToBottom(animated: Bool, layout: Bool = true) {
         guard !messages.isEmpty else { return }
-        let last = IndexPath(row: messages.count - 1, section: 0)
-        tableView.scrollToRow(at: last, at: .bottom, animated: animated)
+        if layout {
+            tableView.layoutIfNeeded()
+        }
+        let inset = tableView.adjustedContentInset
+        let maxOffset = tableView.contentSize.height - tableView.bounds.height + inset.bottom
+        let target = max(-inset.top, maxOffset)
+        guard abs(tableView.contentOffset.y - target) > 0.5 else { return }
+        if animated {
+            tableView.setContentOffset(CGPoint(x: 0, y: target), animated: true)
+        } else {
+            tableView.contentOffset = CGPoint(x: 0, y: target)
+        }
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        pinsToLatestMessage = false
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { updatePinState(scrollView) }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        updatePinState(scrollView)
+    }
+
+    private func updatePinState(_ scrollView: UIScrollView) {
+        let inset = scrollView.adjustedContentInset
+        let distance = scrollView.contentSize.height
+            - (scrollView.contentOffset.y + scrollView.bounds.height - inset.bottom)
+        pinsToLatestMessage = distance < 80
     }
 
     private func loadMessages() async {
@@ -358,6 +433,7 @@ final class ChatRoomViewController: ObservableViewController, UITableViewDataSou
                     inReplyToId: replyId
                 )
                 chatInputBar.clearAfterSend()
+                pinsToLatestMessage = true
                 await loadMessages()
                 scrollToBottom(animated: true)
             } catch {
@@ -551,6 +627,18 @@ private final class ChatBubbleCell: UITableViewCell {
         return label
     }()
 
+    private let timeLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 10)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentHuggingPriority(.required, for: .vertical)
+        return label
+    }()
+
     private var avatarLeading: NSLayoutConstraint?
     private var avatarTrailing: NSLayoutConstraint?
     private var bubbleLeadingFromAvatar: NSLayoutConstraint?
@@ -571,6 +659,7 @@ private final class ChatBubbleCell: UITableViewCell {
 
         contentView.addSubview(avatarView)
         contentView.addSubview(nameLabel)
+        contentView.addSubview(timeLabel)
         contentView.addSubview(bubbleView)
         bubbleView.addSubview(replyPreviewLabel)
         bubbleView.addSubview(bodyLabel)
@@ -598,11 +687,16 @@ private final class ChatBubbleCell: UITableViewCell {
             avatarView.widthAnchor.constraint(equalToConstant: 36),
             avatarView.heightAnchor.constraint(equalToConstant: 36),
 
+            timeLabel.topAnchor.constraint(equalTo: avatarView.bottomAnchor, constant: 3),
+            timeLabel.centerXAnchor.constraint(equalTo: avatarView.centerXAnchor),
+            timeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 64),
+
             nameLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
 
             bubbleView.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
-            bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
             bubbleView.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, multiplier: 0.78),
+            contentView.bottomAnchor.constraint(greaterThanOrEqualTo: bubbleView.bottomAnchor, constant: 8),
+            contentView.bottomAnchor.constraint(greaterThanOrEqualTo: timeLabel.bottomAnchor, constant: 8),
 
             replyPreviewLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
             replyPreviewLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
@@ -615,6 +709,13 @@ private final class ChatBubbleCell: UITableViewCell {
             bubbleLead,
             bubbleTrail,
         ])
+
+        let bubbleBottomPin = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+        bubbleBottomPin.priority = UILayoutPriority(250)
+        bubbleBottomPin.isActive = true
+        let timeBottomPin = timeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+        timeBottomPin.priority = UILayoutPriority(250)
+        timeBottomPin.isActive = true
 
         let replyHeight = replyPreviewLabel.heightAnchor.constraint(equalToConstant: 0)
         replyPreviewHeightConstraint = replyHeight
@@ -652,6 +753,10 @@ private final class ChatBubbleCell: UITableViewCell {
         nameLabel.text = displayName
         nameLabel.textAlignment = isOutgoing ? .right : .left
         nameLabel.isHidden = isOutgoing && chatStyle == .telegram
+
+        let sendTime = message.formattedSendTime()
+        timeLabel.text = sendTime
+        timeLabel.isHidden = sendTime.isEmpty
 
         if let replyPreview, !replyPreview.isEmpty {
             replyPreviewLabel.isHidden = false
@@ -723,6 +828,12 @@ private final class ChatBubbleCell: UITableViewCell {
             avatarBaseURL: baseURL,
             userId: message.user?.id
         )
+
+        if sendTime.isEmpty {
+            accessibilityLabel = displayName
+        } else {
+            accessibilityLabel = "\(displayName), \(sendTime.replacingOccurrences(of: "\n", with: " "))"
+        }
     }
 
     override func prepareForReuse() {
@@ -734,6 +845,9 @@ private final class ChatBubbleCell: UITableViewCell {
         replyPreviewLabel.text = nil
         replyPreviewLabel.isHidden = true
         nameLabel.text = nil
+        timeLabel.text = nil
+        timeLabel.isHidden = false
+        accessibilityLabel = nil
     }
 }
 
