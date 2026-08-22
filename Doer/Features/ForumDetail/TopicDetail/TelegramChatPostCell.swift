@@ -1,10 +1,6 @@
 import UIKit
 
 final class TelegramChatPostCell: WeChatChatPostCell {
-    override func prefersContextMenuForLongPress() -> Bool { true }
-
-    override func bubbleLongPressDuration() -> TimeInterval { 0.35 }
-
     override func dateChipCornerRadius() -> CGFloat { 11 }
 
     override func dateChipHeight() -> CGFloat { 22 }

@@ -181,8 +181,8 @@ enum BoostActionPolicy {
     }
 }
 
-/// WeChat / Telegram chat bubbles: tap must not open like/reaction sheets.
-/// Long-press and dedicated action-bar buttons remain available.
+/// WeChat / Telegram chat bubbles: like / reply / bookmark live on the
+/// under-bubble action bar. Tap and long-press must not open reaction sheets.
 enum ChatBubbleInteractionPolicy {
     enum Trigger {
         case tap
@@ -192,11 +192,7 @@ enum ChatBubbleInteractionPolicy {
 
     static func shouldPresentReactionSheet(on trigger: Trigger) -> Bool {
         switch trigger {
-        case .tap:
-            return false
-        case .longPress:
-            return true
-        case .actionButton:
+        case .tap, .longPress, .actionButton:
             return false
         }
     }

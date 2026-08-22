@@ -65,10 +65,6 @@ enum ChatActionBarChrome {
 class WeChatChatPostCell: UITableViewCell {
     static let reuseIdentifier = "WeChatChatPostCell"
 
-    func prefersContextMenuForLongPress() -> Bool { false }
-
-    func bubbleLongPressDuration() -> TimeInterval { 0.5 }
-
     func dateChipCornerRadius() -> CGFloat { 4 }
 
     func dateChipHeight() -> CGFloat { 20 }
@@ -109,7 +105,6 @@ class WeChatChatPostCell: UITableViewCell {
     private var isMine = false
     private var heightReconcileGeneration = 0
     private var lastReconciledHeight: CGFloat = 0
-    private var didInstallBubbleGestures = false
 
     private let dateChipLabel: UILabel = {
         let label = UILabel()
@@ -176,6 +171,20 @@ class WeChatChatPostCell: UITableViewCell {
     private var contentStackTrailingConstraint: NSLayoutConstraint?
     private var contentStackBottomConstraint: NSLayoutConstraint?
     private var contentStackWidthConstraint: NSLayoutConstraint?
+
+    /// Reply time under the avatar (WeChat / Telegram incoming).
+    private let avatarTimeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 10, weight: .regular)
+        label.textColor = .tertiaryLabel
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        label.setContentHuggingPriority(.required, for: .vertical)
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
+        return label
+    }()
 
     /// Time under the bubble (trailing) — no longer inside the bubble (avoids empty tail row).
     private let timeLabel: UILabel = {
@@ -334,20 +343,6 @@ class WeChatChatPostCell: UITableViewCell {
         avatarImageView.addGestureRecognizer(avatarTap)
     }
 
-    func installBubbleGestures() {
-        let bubbleTap = UITapGestureRecognizer(target: self, action: #selector(handleBubbleTap(_:)))
-        bubbleTap.cancelsTouchesInView = false
-        if prefersContextMenuForLongPress() {
-            bubbleView.addInteraction(UIContextMenuInteraction(delegate: self))
-        } else {
-            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-            longPress.minimumPressDuration = bubbleLongPressDuration()
-            bubbleView.addGestureRecognizer(longPress)
-            bubbleTap.require(toFail: longPress)
-        }
-        bubbleView.addGestureRecognizer(bubbleTap)
-    }
-
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -356,6 +351,7 @@ class WeChatChatPostCell: UITableViewCell {
     private func setupUI() {
         contentView.addSubview(dateChipLabel)
         contentView.addSubview(avatarImageView)
+        contentView.addSubview(avatarTimeLabel)
         contentView.addSubview(nameLabel)
         contentView.addSubview(bubbleView)
         contentView.addSubview(weChatReplyQuoteView)
@@ -481,6 +477,13 @@ class WeChatChatPostCell: UITableViewCell {
             avatarW,
             avatarH,
             avatarTop,
+            avatarTimeLabel.topAnchor.constraint(equalTo: avatarImageView.bottomAnchor, constant: 2),
+            avatarTimeLabel.centerXAnchor.constraint(equalTo: avatarImageView.centerXAnchor),
+            avatarTimeLabel.widthAnchor.constraint(lessThanOrEqualTo: avatarImageView.widthAnchor, constant: 8),
+            avatarTimeLabel.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -4
+            ),
 
             nameLabel.topAnchor.constraint(equalTo: dateChipLabel.bottomAnchor, constant: 2),
             nameHeight,
@@ -604,10 +607,6 @@ class WeChatChatPostCell: UITableViewCell {
         imageBaseURL = baseURL
         isMine = post.yours
         appliedChatStyle = chatStyle
-        if !didInstallBubbleGestures {
-            didInstallBubbleGestures = true
-            installBubbleGestures()
-        }
         let style = appliedChatStyle
         let isTelegram = style == .telegram
         let pad = bubblePadding
@@ -652,13 +651,24 @@ class WeChatChatPostCell: UITableViewCell {
             nameLabel.textColor = .secondaryLabel
         }
 
-        // Time is always outside the bubble (trailing under-bubble row).
-        // Avoids the empty full-width time row that hollowed long bubbles.
-        if isTelegram {
-        timeLabel.text = self.formatBubbleTime(post.createdAt)
+        let clock = formatBubbleTime(post.createdAt)
+        let showAvatar = !isMine || style.showsOutgoingAvatar
+        avatarTimeLabel.text = clock
+        avatarTimeLabel.isHidden = !showAvatar || clock.isEmpty
+        avatarTimeLabel.font = TopicDetailTypography.chromeFont(.time, weight: .regular)
+        avatarTimeLabel.adjustsFontForContentSizeCategory = true
+        avatarTimeLabel.textColor = .tertiaryLabel
+        avatarTimeLabel.textAlignment = .center
+
+        // Keep a floor stamp on WeChat's under-bubble row; clock lives under the avatar.
+        if showAvatar {
+            timeLabel.text = isTelegram ? nil : "#\(floorNumber)"
+        } else if isTelegram {
+            timeLabel.text = clock
         } else {
             timeLabel.text = "#\(floorNumber) · \(TopicCell.formatDate(post.createdAt))"
         }
+        timeLabel.isHidden = (timeLabel.text ?? "").isEmpty
         timeLabel.font = TopicDetailTypography.chromeFont(.time, weight: .regular)
         timeLabel.adjustsFontForContentSizeCategory = true
         timeLabel.textColor = style.bubbleTimeColor(isMine: isMine, isDark: isDark)
@@ -1217,6 +1227,9 @@ class WeChatChatPostCell: UITableViewCell {
         avatarHeightConstraint?.constant = avatarSize
         avatarImageView.isHidden = !showAvatar
         avatarImageView.isUserInteractionEnabled = showAvatar
+        if !showAvatar {
+            avatarTimeLabel.isHidden = true
+        }
         avatarImageView.layer.cornerRadius = style.avatarCornerRadius
         avatarImageView.layer.cornerCurve = style == .telegram ? .circular : .continuous
         bubbleView.layer.cornerRadius = style.bubbleCornerRadius
@@ -1378,137 +1391,6 @@ class WeChatChatPostCell: UITableViewCell {
         actionDelegate?.weChatChatPostCell(self, didRequestBoost: post)
     }
 
-    @objc private func handleBubbleTap(_ gesture: UITapGestureRecognizer) {
-        // FluxDo chat: tap does not open like/reaction menus. Keep long-press + action bar.
-        let location = gesture.location(in: bubbleView)
-        if isReplyQuoteView(bubbleView.hitTest(location, with: nil)) { return }
-        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .tap) else { return }
-        guard let post = currentPost else { return }
-        presentActionSheet(actions: makeActionMenu(for: post))
-    }
-
-    private func isReplyQuoteView(_ view: UIView?) -> Bool {
-        var current = view
-        while let node = current {
-            if node.tag == 88002 { return true }
-            if node === bubbleView { break }
-            current = node.superview
-        }
-        return false
-    }
-
-    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        guard !prefersContextMenuForLongPress() else { return }
-        guard gesture.state == .began, let post = currentPost else { return }
-        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .longPress) else { return }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        presentActionSheet(actions: makeActionMenu(for: post))
-    }
-
-    fileprivate struct MenuAction {
-        let title: String
-        let handler: () -> Void
-        let destructive: Bool
-        let disabled: Bool
-    }
-
-    fileprivate func makeActionMenu(for post: DiscourseTopicDetail.Post) -> [MenuAction] {
-        var actions: [MenuAction] = []
-
-        if !post.yours {
-            let liked = post.currentUserReaction != nil
-            actions.append(
-                MenuAction(
-                    title: liked
-                        ? String(localized: "wechat_chat.unlike", defaultValue: "取消点赞")
-                        : String(localized: "wechat_chat.like", defaultValue: "点赞"),
-                    handler: { [weak self] in
-                        guard let self else { return }
-                        self.actionDelegate?.weChatChatPostCell(self, didRequestLike: post)
-                    },
-                    destructive: false,
-                    disabled: false
-                )
-            )
-        }
-
-        actions.append(
-            MenuAction(
-                title: String(localized: "wechat_chat.reply", defaultValue: "回复"),
-                handler: { [weak self] in
-                    guard let self else { return }
-                    self.actionDelegate?.weChatChatPostCell(self, didRequestReply: post)
-                },
-                destructive: false,
-                disabled: false
-            )
-        )
-
-        actions.append(
-            MenuAction(
-                title: post.bookmarked
-                    ? String(localized: "wechat_chat.unbookmark", defaultValue: "取消收藏")
-                    : String(localized: "wechat_chat.bookmark", defaultValue: "收藏"),
-                handler: { [weak self] in
-                    guard let self else { return }
-                    self.actionDelegate?.weChatChatPostCell(self, didRequestBookmark: post)
-                },
-                destructive: false,
-                disabled: false
-            )
-        )
-
-        if !post.yours {
-            actions.append(
-                MenuAction(
-                    title: String(localized: "post.boost", defaultValue: "Boost"),
-                    handler: { [weak self] in
-                        guard let self else { return }
-                        self.actionDelegate?.weChatChatPostCell(self, didRequestBoost: post)
-                    },
-                    destructive: false,
-                    disabled: !post.canBoost
-                )
-            )
-        }
-
-        return actions
-    }
-
-    private func presentActionSheet(actions: [MenuAction]) {
-        guard let host = nearestViewController() else { return }
-        let sheet = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        for action in actions where !action.disabled {
-            sheet.addAction(
-                UIAlertAction(
-                    title: action.title,
-                    style: action.destructive ? .destructive : .default,
-                    handler: { _ in action.handler() }
-                )
-            )
-        }
-        sheet.addAction(
-            UIAlertAction(
-                title: String(localized: "common.cancel", defaultValue: "取消"),
-                style: .cancel
-            )
-        )
-        if let pop = sheet.popoverPresentationController {
-            pop.sourceView = bubbleView
-            pop.sourceRect = bubbleView.bounds
-        }
-        host.present(sheet, animated: true)
-    }
-
-    private func nearestViewController() -> UIViewController? {
-        var responder: UIResponder? = self
-        while let current = responder {
-            if let vc = current as? UIViewController { return vc }
-            responder = current.next
-        }
-        return nil
-    }
-
     override func systemLayoutSizeFitting(
         _ targetSize: CGSize,
         withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority,
@@ -1532,6 +1414,10 @@ class WeChatChatPostCell: UITableViewCell {
 
     func handleQuoteSelectedText(_ text: String) {
         contentDelegate?.postCell(didQuoteSelectedText: text, postId: currentPost?.id)
+    }
+
+    func handleDecryptSelectedText(_ text: String) {
+        contentDelegate?.postCell(didRequestDecrypt: text, postId: currentPost?.id)
     }
 
     func requestHeightReconciliation() {
@@ -1585,6 +1471,8 @@ class WeChatChatPostCell: UITableViewCell {
         solvedStampView.configure(acceptedAnswer: false, canAcceptAnswer: false, compact: true)
         nameLabel.text = nil
         timeLabel.text = nil
+        avatarTimeLabel.text = nil
+        avatarTimeLabel.isHidden = true
         if var likeConfig = likeButton.configuration {
             likeConfig.title = nil
             likeButton.configuration = likeConfig
@@ -1592,30 +1480,6 @@ class WeChatChatPostCell: UITableViewCell {
         applyDateSeparator(nil)
         avatarImageView.sd_cancelCurrentImageLoad()
         avatarImageView.image = nil
-    }
-}
-
-extension WeChatChatPostCell: UIContextMenuInteractionDelegate {
-    func contextMenuInteraction(
-        _ interaction: UIContextMenuInteraction,
-        configurationForMenuAtLocation location: CGPoint
-    ) -> UIContextMenuConfiguration? {
-        guard prefersContextMenuForLongPress() else { return nil }
-        guard ChatBubbleInteractionPolicy.shouldPresentReactionSheet(on: .longPress) else { return nil }
-        guard let post = currentPost else { return nil }
-        let actions = makeActionMenu(for: post).filter { !$0.disabled }
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-            UIMenu(
-                children: actions.map { action in
-                    UIAction(
-                        title: action.title,
-                        attributes: action.destructive ? .destructive : []
-                    ) { _ in
-                        action.handler()
-                    }
-                }
-            )
-        }
     }
 }
 
@@ -1639,9 +1503,13 @@ extension WeChatChatPostCell: UITextViewDelegate {
         DiscourseQuoteMarkdown.editMenu(
             for: textView,
             range: range,
-            suggestedActions: suggestedActions
-        ) { [weak self] selected in
-            self?.contentDelegate?.postCell(didQuoteSelectedText: selected, postId: self?.currentPost?.id)
-        }
+            suggestedActions: suggestedActions,
+            handler: { [weak self] selected in
+                self?.contentDelegate?.postCell(didQuoteSelectedText: selected, postId: self?.currentPost?.id)
+            },
+            decryptHandler: { [weak self] selected in
+                self?.contentDelegate?.postCell(didRequestDecrypt: selected, postId: self?.currentPost?.id)
+            }
+        )
     }
 }

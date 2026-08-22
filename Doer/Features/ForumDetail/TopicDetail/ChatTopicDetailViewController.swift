@@ -52,7 +52,7 @@ class ChatTopicDetailViewController: ObservableViewController {
     lazy var readingTracker = TopicReadingTracker(api: api)
 
     private lazy var tableView: UITableView = {
-        let tv = UITableView(frame: .zero, style: .plain)
+        let tv = ChatTopicTableView(frame: .zero, style: .plain)
         tv.translatesAutoresizingMaskIntoConstraints = false
         registerChatCells(on: tv)
         tv.separatorStyle = .none
@@ -396,9 +396,6 @@ class ChatTopicDetailViewController: ObservableViewController {
         super.viewWillDisappear(animated)
         readingTracker.stop()
         syncReadLaterProgressOnExit()
-        if let nav = navigationController {
-            nav.interactivePopGestureRecognizer?.isEnabled = nav.viewControllers.count > 1
-        }
     }
 
     private var lastContentFontSize = AppSettings.shared.contentFontSize
@@ -1056,7 +1053,6 @@ class ChatTopicDetailViewController: ObservableViewController {
             && navigationController.viewControllers.first !== self
     }
 
-
     // MARK: - Reading Tracking
 
     func updateVisibleReadingPosts() {
@@ -1104,6 +1100,29 @@ class ChatTopicDetailViewController: ObservableViewController {
             }
         }
         ForumImageLoader.prefetch(urls: urls, cloudflareBaseURL: baseURL, maxUncached: 8)
+    }
+}
+
+/// Same system edge-pop as classic Topic Detail. Incoming chat bubbles sit on the
+/// left edge, so the table pan must not begin on a rightward swipe from that strip
+/// — otherwise it wins and the nav gesture never starts. No `require(toFail:)`:
+/// waiting on the edge recognizer delays every left-edge pan and can freeze.
+private final class ChatTopicTableView: UITableView {
+    private static let systemPopEdgeWidth: CGFloat = 20
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === panGestureRecognizer,
+           let pan = gestureRecognizer as? UIPanGestureRecognizer {
+            let location = pan.location(in: self)
+            let translation = pan.translation(in: self)
+            let velocity = pan.velocity(in: self)
+            let dx = abs(translation.x) >= 1 ? translation.x : velocity.x
+            let dy = abs(translation.y) >= 1 ? translation.y : velocity.y
+            if location.x <= Self.systemPopEdgeWidth, dx > 0, abs(dx) >= abs(dy) {
+                return false
+            }
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
 }
 
@@ -1350,6 +1369,17 @@ extension ChatTopicDetailViewController: PostCellDelegate {
         performAuthenticated { [weak self] in
             self?.presentReplyComposer(for: post, initialText: markdown)
         }
+    }
+
+    func postCell(didRequestDecrypt text: String, postId: Int?) {
+        CryptoSheetViewController.present(
+            mode: .decrypt,
+            text: text,
+            from: self,
+            onQuoteReply: { [weak self] plaintext in
+                self?.postCell(didQuoteSelectedText: plaintext, postId: postId)
+            }
+        )
     }
 
     func postCell(didTapEditPost post: DiscourseTopicDetail.Post) {}
